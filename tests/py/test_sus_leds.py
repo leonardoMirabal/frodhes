@@ -4,8 +4,9 @@ dark) once it is let go while the sustain rings its note on: 0 DARK (every recor
 or 1 LIT (the map again at once). A former reserved byte, so every older record reads 0 = DARK; above 1 sanitized to
 DARK. LEDS ROOTS / PLAYED (the sounding keys lit) are the same either way. The record stays 256 B.
 
-The setting has no card yet (the DISPLAY page's four are taken): the tests write the byte into a saved record and
-switch on with it. The pedal is REC tapped (the latch); key 0 = F3 = LED 14."""
+The card: DISPLAY 2's K1, one SELECT detent on from DISPLAY (tests/scripts/sus_leds.txt turns it); here it is saved
+and back after a power cycle. The other tests write the byte into a saved record and switch on with it (every value,
+the old and bad ones too). The pedal is REC tapped (the latch); key 0 = F3 = LED 14."""
 import pytest
 
 from hostrun import run
@@ -13,6 +14,7 @@ from test_persistence import boot, flash_file, put_settings, read_img, settings_
 from test_play_led import DISPLAY, offsets
 
 PEDAL = "btn 13"
+PG2 = 25                                                        # ui.c PG_DISPLAY2 (host: card.<page>.<k>)
 # LEDS card (DISPLAY K3) from ROOTS: +1 ALL, +2 SCALE (no scale on: SCALE lights every key, as ALL); -1 PLAYED
 LEDS_TURN = {"ALL": 1, "SCALE": 2, "ROOTS": 0, "PLAYED": -1}
 # the pedal latched, F3 struck and let go under it (ringing), F3's state sampled; the pedal let go, sampled again
@@ -71,3 +73,19 @@ def test_sounding_keys_unchanged(leds, byte):
     """ROOTS / PLAYED: lit while held and while the pedal rings it, dark after, whatever the byte"""
     r = with_byte(f"{leds}-{byte}", leds, byte)
     assert (led(r, 450), led(r, 700), led(r, 900), led(r, 1300)) == ("1", "1", "1", "0"), (leds, byte)
+
+
+def test_card_saved_and_back_after_a_power_cycle():
+    """DISPLAY 2: SELECT on from DISPLAY, K1 SUSTAIN LEDS DARK; turned to LIT, saved (the byte 1), LIT after a power
+    cycle, and the key lit at once when let go under the pedal (LEDS ALL, saved with it)"""
+    fl = flash_file("susled-card")
+    r1 = run("susled-card1", DISPLAY + ["500 turn 4 1", "600 turn 0 1", "650 dump", "700 turn 2 1", "750 dump",
+                                        "4500 dump"], 4700, flash=fl)
+    s = r1.state(650)
+    assert (s["page"], s["label0"], s["card0"], s["label1"], s["card1"]) == ("DISPLAY 2", "SUSTAIN LEDS", "DARK", "", ""), s
+    assert r1.state(750)["card0"] == "LIT" and r1.saves, "turned and saved"
+    rec = settings_record(read_img(fl))
+    assert rec[lay()["sus_leds"]] == 1
+    r2 = boot("susled-card2", fl, PLAY, 1400, check_preset=False)
+    assert (r2.state(100)[f"card.{PG2}.0"], r2.state(100)["card.21.2"]) == ("LIT", "ALL")
+    assert (led(r2, 450), led(r2, 700), led(r2, 1300)) == ("0", "1", "1")

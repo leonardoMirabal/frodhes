@@ -30,7 +30,7 @@ static void tempo_set10(uint32_t b);
  * engines' pages came from their tables (eng_pages.h): VOICE 1/n .. n/n, one PG_VOICE page with its number ui_vp */
 enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_RETIRED4, PG_COMP, PG_FILTER, PG_TREM, PG_PHA, PG_CHO, PG_DELAY,
        PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_SETUP, PG_MIDI, PG_DRIVE, PG_REVERB, PG_DISPLAY,
-       PG_REVERB2, PG_EQ, PG_SEQ2, PG_N };                       /* REVERB 2 (0.9.5): PRE-DELAY, SIZE, MOD, LOW CUT; EQ: before
+       PG_REVERB2, PG_EQ, PG_SEQ2, PG_DISPLAY2, PG_N };                       /* REVERB 2 (0.9.5): PRE-DELAY, SIZE, MOD, LOW CUT; EQ: before
                                                          * the drive (fx_eq.c) */
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_ROLL = 8, E_N = 9, E_CARDS = 10 };   /* E_CARDS: all four;
                                     * E_METER: COMP's meter / SEQUENCER's cells, E_ROLL: SEQUENCER's NOW / NEXT */
@@ -53,6 +53,8 @@ enum { S_KVEL = 80, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, 
 #define UI_TRS_LAB ""
 #define UI_LEDS S_NONE
 #define UI_LEDS_LAB ""
+#define UI_SUSLED S_NONE                               /* (no key lights: DISPLAY 2 not walked, PG_WALK) */
+#define UI_SUSLED_LAB ""
 #define UI_K1 '5'
 static const char *const UI_SMK_TEXT[][2] = {           /* the FM-1's text -> the SMK-37's (tests/host.c too) */
     {"K1 THRESH: UP = ON, 0 = OFF", "K5 THRESH: UP = ON, 0 = OFF"}, {"LFO BUTTON: ON / OFF", "NOTE REPEAT: ON / OFF"},
@@ -79,6 +81,8 @@ FR_COLD static const char *ui_text(const char *s)
 #define UI_TRS_LAB "TRS IN"
 #define UI_LEDS S_LEDS
 #define UI_LEDS_LAB "LEDS"
+#define UI_SUSLED S_SUSLED
+#define UI_SUSLED_LAB "SUSTAIN LEDS"
 #define UI_K1 '1'
 #define ui_text(s) (s)
 #endif
@@ -113,10 +117,10 @@ static int32_t sq_step_chance(void);
 static void sq_step_chance_set(int32_t d);
 /* the SELECT order (0.9.3, user: the instrument pages next to each other right after PERFORM; ASSIGN, rarely used,
  * next to SETUP); VOICE stands for all the engine's VOICE pages */
-#define PG_NORD 24u
+#define PG_NORD 25u
 static const uint8_t PG_ORDER[PG_NORD] = {PG_PERF, PG_PIANO, PG_VOICE, PG_COMP, PG_EQ, PG_DRIVE, PG_FILTER, PG_TREM, PG_PHA,
                                           PG_CHO, PG_DELAY, PG_REVERB, PG_REVERB2, PG_TEMPO, PG_SCALE, PG_CHORD, PG_ARP,
-                                          PG_LFO, PG_SEQ, PG_SEQ2, PG_ASSIGN, PG_SETUP, PG_MIDI, PG_DISPLAY};   /* DRIVE before FILTER
+                                          PG_LFO, PG_SEQ, PG_SEQ2, PG_ASSIGN, PG_SETUP, PG_MIDI, PG_DISPLAY, PG_DISPLAY2};   /* (DISPLAY 2 last: the SMK-37 stops before it, PG_WALK) DRIVE before FILTER
                                     * (0.9.5, the user), REVERB the last effect, as in the chain, its second page right
                                     * after it (0.9.5); SEQUENCER after LFO (user, TODO 3); EQ between COMPRESSOR and
                                     * DRIVE, as in the chain */
@@ -124,11 +128,16 @@ static uint8_t ui_vp;                                   /* the VOICE page shown:
 FR_COLD static int ui_bars(void) { return TYPE_IS_BARS(PV(P_TYPE)); }    /* the main loop's TYPE (not the ISR's latch) */
 static void ui_goto(uint32_t pg);
 static void ui_goto_v(uint32_t pg, uint32_t vp);
-FR_COLD static uint32_t pg_count(void) { return PG_NORD - 1u + vp_count(); }    /* the pages SELECT walks */
+#if BOARD_SMK37
+#define PG_WALK (PG_NORD - 1u)                          /* the SMK-37: no key lights, so no DISPLAY 2 (PG_ORDER's last) */
+#else
+#define PG_WALK PG_NORD
+#endif
+FR_COLD static uint32_t pg_count(void) { return PG_WALK - 1u + vp_count(); }    /* the pages SELECT walks */
 FR_COLD static uint32_t pg_pos(uint32_t pg, uint32_t vp)        /* a page's place in the SELECT order */
 {
     uint32_t i, k = 0;
-    for (i = 0; i < PG_NORD; i++) {
+    for (i = 0; i < PG_WALK; i++) {
         if (PG_ORDER[i] == pg) return k + (pg == PG_VOICE ? vp : 0u);
         k += PG_ORDER[i] == PG_VOICE ? vp_count() : 1u;
     }
@@ -137,7 +146,7 @@ FR_COLD static uint32_t pg_pos(uint32_t pg, uint32_t vp)        /* a page's plac
 FR_COLD static uint32_t pg_at(uint32_t k, uint32_t *vp)         /* the k-th page (and its VOICE number) */
 {
     uint32_t i, n;
-    for (i = 0; i < PG_NORD; i++) {
+    for (i = 0; i < PG_WALK; i++) {
         n = PG_ORDER[i] == PG_VOICE ? vp_count() : 1u;
         if (k < n) { *vp = PG_ORDER[i] == PG_VOICE ? k : 0u; return PG_ORDER[i]; }
         k -= n;
@@ -148,7 +157,7 @@ FR_COLD static uint32_t pg_at(uint32_t k, uint32_t *vp)         /* the k-th page
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "", "COMPRESSOR", "FILTER", "TREM/WAH",
                                              "PHASER", "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
                                              "ARPEGGIO", "LFO", "SETUP", "MIDI", "DRIVE", "REVERB", "DISPLAY",
-                                             "REVERB 2", "EQ", "SEQUENCER 2"};
+                                             "REVERB 2", "EQ", "SEQUENCER 2", "DISPLAY 2"};
 static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 / K3: the engine's (slot_at) */
     {S_PERF0, S_PERF0 + 1, S_PERF0 + 2, S_PERF0 + 3},
     {S_ASG0, S_ASG0 + 1, S_ASG0 + 2, S_ASG0 + 3},
@@ -175,6 +184,7 @@ static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 
     {P_RV_PREDLY, P_RV_SIZE, P_RV_MOD, P_RV_LOCUT},     /* REVERB 2: PRE-DELAY moved here from REVERB */
     {P_EQ_LO, P_EQ_MID, P_EQ_FREQ, P_EQ_HI},            /* EQ: before the drive */
     {S_SQSTEP, S_SQCHANCE, S_NONE, S_NONE},             /* SEQUENCER 2: a step's CHANCE (0.9.9) */
+    {UI_SUSLED, S_NONE, S_NONE, S_NONE},                /* DISPLAY 2: SUSTAIN LEDS (issue #35) */
 };
 static const char *const PAGE_LAB[PG_N][4] = {
     {"", "", "", ""},                                   /* PERFORM: the assigned parameter's name (slot_label) */
@@ -202,6 +212,7 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"PRE-DELAY", "SIZE", "MOD", "LOW CUT"},
     {"LOW", "MID", "MID FREQ", "HIGH"},
     {"STEP", "CHANCE", "", ""},
+    {UI_SUSLED_LAB, "", "", ""},
 };
 static const char *const PAGE_HINT[PG_N] = {"THE KNOBS: SET ON ASSIGN", "WHAT EACH PERFORM KNOB PLAYS",
                                             "FX: ALL EFFECTS ON / OFF", "", "",
@@ -210,7 +221,8 @@ static const char *const PAGE_HINT[PG_N] = {"THE KNOBS: SET ON ASSIGN", "WHAT EA
                                             "EDIT: CHORDS ON / OFF", "", "ARP: ON / OFF   SEL: HOLD", "MOVES THE FILTER (ITS LFO)", "",
                                             "USB AND TRS: THE SAME CHANNEL", "K1: THE DRIVE TYPE", "NEXT PAGE: SIZE, MOD, LOW CUT",
                                             "THE SCREEN AND THE KEY LIGHTS", "SIZE AUTO: MIX SETS THE SIZE",
-                                            "BEFORE THE DRIVE  0 DB: FLAT", "HOW OFTEN THE STEP'S NOTES PLAY"};
+                                            "BEFORE THE DRIVE  0 DB: FLAT", "HOW OFTEN THE STEP'S NOTES PLAY",
+                                            "KEY LIGHTS UNDER THE SUSTAIN"};
 /* the reverb's TYPE card (P_RV_TYPE, as the drive's: 0 OFF, then the types; params.c N_RV / N_RV_LONG) */
 #define RV_INF 3u                                       /* INFINITE: DECAY 120..126 SUSTAIN (the tail holds, the input
                                                          * open), 127 FREEZE (the input closed): rev_ctl_t.freeze */
@@ -1895,7 +1907,8 @@ FR_COLD static void ui_leds(uint32_t lit, uint32_t beat_on)
     BTN(BTN_HOME, ui_page == PG_PIANO || ui_page == PG_PERF);
     BTN(BTN_EDIT, chord_on());                                  /* chord mode (0.9.3) */
     BTN(BTN_ENV, PV(P_PH_SW) != 0);
-    BTN(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP || ui_page == PG_MIDI || ui_page == PG_DISPLAY);
+    BTN(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP || ui_page == PG_MIDI || ui_page == PG_DISPLAY ||
+        ui_page == PG_DISPLAY2);
     BTN(BTN_SAVE, pr_save_mode && (fm1_ms & 256u));
     BTN(BTN_PLAY, !set.play_off && (play_is_seq() ? seq_play && beat_on : beat_on));   /* PLAY LED OFF: dark */
     BTN(BTN_OCT_DOWN, set.oct < 0);

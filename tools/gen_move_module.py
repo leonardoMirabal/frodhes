@@ -109,12 +109,13 @@ HELP_MAX = 20                      # a help line: about 20 characters on the 128
 FM1_ONLY_PAGES = {"PERFORM": "the Move's knobs are direct: no assignable performance knobs",
                   "ASSIGN": "the Move's knobs are direct: no assignable performance knobs",
                   "DISPLAY": "the FM-1's screen and key lights",
+                  "DISPLAY 2": "the FM-1's key lights (SUSTAIN LEDS)",
                   "SEQUENCER 2": "the FM-1's sequencer (a step's CHANCE): the Move has its own, ours stays inert"}
 # the FM-1's settings cards that are hardware only (ui.c S_*), with the reason
 FM1_ONLY_SLOTS = {"S_KVEL": "the FM-1's own keys' velocity", "S_TOUCH": "the FM-1's own keys' touch",
                   "S_USBVOL": "the FM-1's USB audio", "S_TRS": "the FM-1's TRS MIDI jack",
                   "S_COLOR": "the FM-1's screen", "S_BRIGHT": "the FM-1's screen", "S_LEDS": "the FM-1's key lights",
-                  "S_PLED": "the FM-1's PLAY light",
+                  "S_PLED": "the FM-1's PLAY light", "S_SUSLED": "the FM-1's key lights under the sustain",
                   "S_SQSTEP": "the FM-1's sequencer cursor (SEQUENCER 2): no sequencer on the Move",
                   "S_SQCHANCE": "the FM-1's sequencer, a step's CHANCE (SEQUENCER 2): no sequencer on the Move"}
 # the settings cards the Move owns (the user, 2026-10-28 12:10): the Move's tempo and transport lead (move_bridge.h
@@ -316,8 +317,8 @@ def model():
     rows_l = re.findall(r"\{([^{}]*)\}", re.search(r"PAGE_LAB\[PG_N\]\[4\] = \{(.*?)\n\};", ui, re.S).group(1))
     order = [p.strip() for p in re.search(r"PG_ORDER\[PG_NORD\] = \{(.*?)\};", ui, re.S).group(1).split(",")]
     assert len(titles) == len(pg_enum) == len(rows_s) == len(rows_l), "ui.c's page tables disagree"
-    lab_tok = {"UI_TRS_LAB": "TRS IN", "UI_LEDS_LAB": "LEDS"}      # (the FM-1's: the SMK-37 leaves them empty)
-    slot_tok = {"UI_TRS": "S_TRS", "UI_LEDS": "S_LEDS"}
+    lab_tok = {"UI_TRS_LAB": "TRS IN", "UI_LEDS_LAB": "LEDS", "UI_SUSLED_LAB": "SUSTAIN LEDS"}      # (the FM-1's: the SMK-37 leaves them empty)
+    slot_tok = {"UI_TRS": "S_TRS", "UI_LEDS": "S_LEDS", "UI_SUSLED": "S_SUSLED"}
     pages = {}
     for i, pg in enumerate(pg_enum):
         cards = [slot_tok.get(t.strip(), t.strip()) for t in rows_s[i].split(",")]

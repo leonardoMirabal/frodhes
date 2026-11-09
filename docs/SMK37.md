@@ -150,7 +150,7 @@ Everything in the [manual](MANUAL.md) applies, with these differences:
 - 37 keys, C3..C6 at OCTAVE 0, each at its own velocity: KEY VEL is the velocity of a medium press.
 - The pads, the faders (soft takeover), the pitch and mod wheels and the pedal jack, as above.
 - No TRS MIDI input: MIDI is USB only, and the MIDI page has no TRS IN card.
-- No LEDs on the keys: the DISPLAY page has no LEDS card; BRIGHTNESS dims the pads and the button LEDs.
+- No LEDs on the keys: the DISPLAY page has no LEDS card and there is no DISPLAY 2 page (SUSTAIN LEDS): DISPLAY is the last page; BRIGHTNESS dims the pads and the button LEDs.
 
 ## For developers
 

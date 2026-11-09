@@ -8,3 +8,5 @@ pc_stall_trs
 # there and the key LEDs (ROOTS / PLAYED / ALL / SCALE, glow.N) stay dark
 display
 leds_scale
+# ... nor DISPLAY 2 (SUSTAIN LEDS): the SMK-37 skips that page (tests/smk/smk_pages.txt)
+sus_leds

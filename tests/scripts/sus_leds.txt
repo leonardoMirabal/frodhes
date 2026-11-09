@@ -1,0 +1,47 @@
+# DISPLAY 2 (issue #35): K1 SUSTAIN LEDS (encoder 2), DARK (the default, as before) / LIT. Under LEDS ALL / SCALE a key
+# let go while the sustain rings its note on: DARK until the sound stops, LIT the map again at once. SELECT (encoder 0)
+# one page on from DISPLAY: the last page (26/26 on the Rhodes; its title and label: tests/py/test_sus_leds.py). Key
+# 0 = LED 14; REC (button 13) tapped latches the sustain. A device setting, saved with the record (the power cycle:
+# tests/py/test_sus_leds.py).
+100 btn 7
+200 btn 7
+300 btn 7
+400 btn 7
+450 expect state page DISPLAY
+# LEDS ALL
+500 turn 4 1
+550 expect state card2 ALL
+600 turn 0 1
+650 expect state count 26/26
+650 expect state card0 DARK
+650 expect led 7 1
+# DARK: struck and let go under the sustain, dark while it rings
+700 btn 13
+800 keys 0x1
+850 expect led 14 0
+900 keys 0
+1000 expect led 14 0
+1200 expect led 14 0
+# LIT: the map again at once
+1300 turn 2 1
+1350 expect state card0 LIT
+1350 expect led 14 1
+# held: dark either way
+1400 keys 0x1
+1450 expect led 14 0
+1500 keys 0
+1550 expect led 14 1
+# the sustain off: saved when silent (dirty, then saved)
+1600 btn 13
+1650 expect state dirty 1
+5500 expect state dirty 0
+5500 expect state card0 LIT
+# back to DARK, the end of the turn range both ways
+5600 turn 2 -1
+5650 expect state card0 DARK
+5700 turn 2 -1
+5750 expect state card0 DARK
+5800 turn 2 1
+5850 turn 2 1
+5900 expect state card0 LIT
+6000 end
