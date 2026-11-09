@@ -1209,6 +1209,12 @@ def _places(x, fs, events, rng, k, kind, avoid_lim=None, ccs=(), widen=0.0, cloc
         d0, d1 = q[1:-1, 0] - q[:-2, 0], q[2:, 0] - q[1:-1, 0]
         sl = np.zeros(len(ok), bool)
         sl[1:-1] = (np.sign(d0) == np.sign(d1)) & (np.abs(d0) >= 40) & (np.abs(d1) >= 40)
+        if q.shape[1] > 1:                                  # every channel on its slope (2026-11-09, rc-0910: a copy
+            e0, e1 = q[1:-1, 1] - q[:-2, 1], q[2:, 1] - q[1:-1, 1]   # with the other channel at its turn shows that
+            sl[1:-1] &= (np.sign(e0) == np.sign(e1)) & (np.abs(e0) >= 40) & (np.abs(e1) >= 40)   # channel 3.5 dB
+                                                            # smoother, under det_repeat's agree (4 dB, every channel):
+                                                            # a 25-frame hold at VIBES worst1 12.336 s, L 23 dB, missed;
+                                                            # the detector's own rule, not a new limit)
         ok &= np.roll(sl, 1)                                # (the copy goes in at p: frame p - 1 on the slope)
     cand = np.flatnonzero(ok)
     out = []
