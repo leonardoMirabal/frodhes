@@ -100,6 +100,13 @@ names the Move (default `ableton@move.local`).
   install falls back to `releases/latest/download/frodhes-module.tar.gz` and the GitHub URL install refuses the
   repository, and a placeholder would point at a file that does not exist. The catalog entry
   (`module-catalog.json` in Schwung's repository, `asset_name` `frodhes-module.tar.gz`) waits for that release.
+- **`make quick` covers the Move too** (`tools/quick.py`, on the HQ host build `build/host-hq/frodhes`, which is
+  `MOVE_DEFS` with the HQ Rhodes on, as the plugin loads): `move-dry` (`tools/dry_dist.py --hq` against 0.9.9's Move
+  build, `tests/baselines/dry_dist_099_hq.json`), `move-fx` (`tools/fx_pristine.py --builds hq`: every effect but
+  DRIVE at 0 / 64 / 127), `move-byp` (`tests/py/test_move_bypass_comp.py`), `move-lvl` (every TYPE and F01..F19,
+  RMS within 1.5 dB and the peak at most + 1 dB of 0.9.9's Move build, `tests/baselines/quick_level_099_hq.json`,
+  saved with `tools/quick.py --save-level --hq` on 456b5da4 only) and `move-ui` (Gate U and
+  `move/ui/test_chain.mjs`). About 16 s of the run, in parallel with the FM-1's checks.
 - **The gates**: `tools/ci_move.sh` is the Move's MT0 (Gate U: the generated module is current, `make test-move`,
   Gate M: the plugin replays the host renders, and the Move pytest suites). `make gate-p` (ASan + UBSan, the
   seccomp and no-allocation guards), `make gate-h` (the HQ renders) and `tools/gate_s.py` (the FM-1 and SMK binaries

@@ -22,9 +22,18 @@ limit. The big grids (make release-diff, the long make pytest) are the net befor
             moves against 0.9.9 (tests/expected_changes.yaml). One line per TYPE
   crackle   tools/hil_crackle.py --host: the worst case (every voice, every effect, the pedal) through the glitch
             detectors, per engine
+The Move (K27; its HQ host build, MOVE_DEFS + HQ_DEFAULT=1: the plugin as it loads, 16 voices):
+  move-dry  tools/dry_dist.py --hq: the same cells against tests/baselines/dry_dist_099_hq.json (0.9.9's Move build)
+  move-fx   tools/fx_pristine.py --builds hq: every effect but DRIVE, as fx, on the Move's build
+  move-byp  tests/py/test_move_bypass_comp.py: the Move's FX off keeps the compressor, at the level of FX on
+  move-lvl  level's cases on the Move's build: RMS within 1.5 dB of 0.9.9's Move build, the peak at most + 1 dB
+            (tests/baselines/quick_level_099_hq.json)
+  move-ui   Gate U (tools/gen_move_module.py --check) and move/ui/test_chain.mjs (the screen; no pad or step LED)
 
   tools/quick.py [--fm1 BIN] [--hq BIN] [--only dry,fx,...]      exit 1 on any FAIL; build/quick/report.txt
   tools/quick.py --save-level --fm1 BIN                          the level baseline (ONLY on the last release's build)
+  tools/quick.py --save-level --hq BIN                           the Move's level baseline (the last release's Move
+                                                                 build: tools/dry_dist.py --build-hq OUT --src TREE)
 """
 import argparse
 import hashlib
@@ -44,6 +53,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 OUT = os.path.join(ROOT, "build", "quick")
 PY = sys.executable
 LEVEL_BASE = os.path.join(ROOT, "tests", "baselines", "quick_level_099.json")
+LEVEL_BASE_HQ = os.path.join(ROOT, "tests", "baselines", "quick_level_099_hq.json")
 FS = 44100
 LVL_TOL, PEAK_TOL = 1.5, 1.0
 
@@ -58,10 +68,10 @@ def row(ok, area, name, detail):
 
 
 # ---------------------------------------------------------------- dry: the dry engine's distortion
-def check_dry(b):
+def check_dry(b, key="fm1", area="dry"):
     import dry_dist
-    cells = dry_dist.measure(b["fm1"], os.path.join(OUT, "dry"))
-    rows = dry_dist.judge(cells, json.load(open(dry_dist.BASE)))
+    cells = dry_dist.measure(b[key], os.path.join(OUT, area))
+    rows = dry_dist.judge(cells, json.load(open(dry_dist.BASE_HQ if key == "hq" else dry_dist.BASE)))
     by = {}
     for c, m, v, base, lim, ok in rows:
         tag = c.split()[0]
@@ -72,7 +82,7 @@ def check_dry(b):
     out = []
     for tag, (ok, worst) in sorted(by.items()):
         d = f"worst {worst[1]} {worst[2]} {worst[3]:.1f} dB (limit {worst[4]:.1f})" if worst else "-"
-        out.append(row(ok, "dry", tag, d + ("" if ok else f"; {sum(1 for r in rows if r[0].startswith(tag) and not r[5])} over")))
+        out.append(row(ok, area, tag, d + ("" if ok else f"; {sum(1 for r in rows if r[0].startswith(tag) and not r[5])} over")))
     return out
 
 
@@ -89,22 +99,23 @@ def check_keys(b):
 
 
 # ---------------------------------------------------------------- fx: every effect but DRIVE
-def check_fx(b):
+def check_fx(b, key="fm1", area="fx"):
     import fx_pristine
-    if b"fx-clip delay" not in open(b["fm1"], "rb").read():
+    fb = "hq" if key == "hq" else "one"           # (fx_pristine's build names: one = the FM-1, hq = MOVE_DEFS)
+    if b"fx-clip delay" not in open(b[key], "rb").read():
         # (fx_pristine reads a build without the counters as the limiter acting everywhere: say what it is instead)
-        return [row(False, "fx", "counters", "this build has no fx-clip counters (engine.c fx_h_clip, 523d8fa7): "
+        return [row(False, area, "counters", "this build has no fx-clip counters (engine.c fx_h_clip, 523d8fa7): "
                     "the limiter and the clamps are not measured")]
     os.makedirs(fx_pristine.OUT, exist_ok=True)
-    shutil.copy2(b["fm1"], os.path.join(fx_pristine.OUT, "one"))
-    code, txt = sh([PY, "tools/fx_pristine.py", "--builds", "one"])
+    shutil.copy2(b[key], os.path.join(fx_pristine.OUT, fb))
+    code, txt = sh([PY, "tools/fx_pristine.py", "--builds", fb])
     bad = {}
-    for m in re.finditer(r"^\s+one (\S+)@(\d+): (.*)$", txt, re.M):
+    for m in re.finditer(r"^\s+%s (\S+)@(\d+): (.*)$" % fb, txt, re.M):
         bad.setdefault(m.group(1), []).append(f"@{m.group(2)} {m.group(3)}")
-    out = [row(name not in bad, "fx", name, "clean at 0 / 64 / 127" if name not in bad else "; ".join(bad[name][:3]))
+    out = [row(name not in bad, area, name, "clean at 0 / 64 / 127" if name not in bad else "; ".join(bad[name][:3]))
            for name in fx_pristine.EFFECTS]
     if code and not bad:
-        out.append(row(False, "fx", "run", txt.strip().splitlines()[-1][:120]))
+        out.append(row(False, area, "run", txt.strip().splitlines()[-1][:120]))
     return out
 
 
@@ -135,13 +146,13 @@ LEVEL_CASES = [(f"TYPE-{n}", [f"100 midi 0xB0 {c} {v}"]) for n, c, v in
                for pc in list(range(16)) + [32, 33, 34]]
 
 
-def level_one(binary, name, setup):
+def level_one(binary, name, setup, sub="level"):
     import release_diff as rd
     bars = name in ("TYPE-VIBES", "TYPE-MARIMBA") or name in ("F13", "F14", "F15", "F16")
     chord, note = ((65, 69, 72, 77), 69) if bars else ((48, 55, 60, 64), 45)
     ls = list(setup) + [f"1000 midi 0x90 {n} 127" for n in chord] + [f"1800 midi 0x80 {n} 0" for n in chord]
     ls += [f"3500 midi 0x90 {note} 127", "4300 midi 0x80 {} 0".format(note), "6000 end"]
-    x = rd.render(binary, os.path.join(OUT, "level", name), sorted(ls, key=lambda l: int(l.split()[0])))
+    x = rd.render(binary, os.path.join(OUT, sub, name), sorted(ls, key=lambda l: int(l.split()[0])))
     seg = lambda a, b: x[int(a * FS):int(b * FS)]
     lv = lambda s: float(10 * np.log10(np.mean(np.square(s / 32768.0)) + 1e-20))
     pk = lambda s: float(20 * np.log10(np.abs(s).max() / 32768.0 + 1e-12))
@@ -149,14 +160,14 @@ def level_one(binary, name, setup):
             "note": {"level": lv(seg(3.5, 4.3)), "peak": pk(seg(3.5, 5.9))}}
 
 
-def level_all(binary):
+def level_all(binary, sub="level"):
     with ThreadPoolExecutor(4) as ex:
-        return dict(zip([n for n, _ in LEVEL_CASES], ex.map(lambda c: level_one(binary, *c), LEVEL_CASES)))
+        return dict(zip([n for n, _ in LEVEL_CASES], ex.map(lambda c: level_one(binary, *c, sub), LEVEL_CASES)))
 
 
-def check_level(b):
-    base = json.load(open(LEVEL_BASE))["cases"]
-    got = level_all(b["fm1"])
+def check_level(b, key="fm1", area="level"):
+    base = json.load(open(LEVEL_BASE_HQ if key == "hq" else LEVEL_BASE))["cases"]
+    got = level_all(b[key], area)
     out = []
     for name, segs in got.items():
         bad, worst = [], None
@@ -169,7 +180,7 @@ def check_level(b):
                 bad.append(f"{s} peak {m['peak']:.1f} dBFS ({dp:+.1f})")
             if worst is None or abs(dl) > abs(worst[1]):
                 worst = (s, dl, m["peak"], dp)
-        out.append(row(not bad, "level", name, f"{worst[0]} level {worst[1]:+.1f} dB (limit +-{LVL_TOL}), peak "
+        out.append(row(not bad, area, name, f"{worst[0]} level {worst[1]:+.1f} dB (limit +-{LVL_TOL}), peak "
                        f"{worst[2]:.1f} dBFS ({worst[3]:+.1f}, limit +{PEAK_TOL})" if not bad else "; ".join(bad)))
     return out
 
@@ -250,8 +261,30 @@ def check_crackle(b):
     return out
 
 
+# ---------------------------------------------------------------- the Move (K27): its HQ build, the same limits
+def check_move_bypass(b):
+    code, txt = sh([PY, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/py/test_move_bypass_comp.py"])
+    last = [l for l in txt.splitlines() if "passed" in l or "failed" in l or "error" in l]
+    fails = re.findall(r"^FAILED (\S+)", txt, re.M)
+    return [row(code == 0, "move-byp", "FX off keeps the comp, = FX on", (last[-1] if last else txt[-120:])
+                + ("" if not fails else "; " + ", ".join(f.split("::")[-1] for f in fails)))]
+
+
+def check_move_ui(b):
+    code, txt = sh([PY, "tools/gen_move_module.py", "--check"])
+    out = [row(code == 0, "move-ui", "Gate U (move/module current)", "current" if code == 0 else txt.strip()[-120:])]
+    code, txt = sh(["node", os.path.join("move", "ui", "test_chain.mjs")])
+    fails = re.findall(r"^FAIL (.*)$", txt, re.M)
+    out.append(row(code == 0, "move-ui", "the screen (test_chain.mjs)", "ok: no pad or step LED, the arrows only"
+                   if code == 0 else f"{len(fails)} failed: " + "; ".join(fails[:2])[:120]))
+    return out
+
+
 CHECKS = {"dry": check_dry, "keys": check_keys, "fx": check_fx, "bypass": check_bypass, "level": check_level,
-          "midi": check_midi, "pristine": check_pristine, "crackle": check_crackle}
+          "midi": check_midi, "pristine": check_pristine, "crackle": check_crackle,
+          "move-dry": lambda b: check_dry(b, "hq", "move-dry"), "move-fx": lambda b: check_fx(b, "hq", "move-fx"),
+          "move-byp": check_move_bypass, "move-lvl": lambda b: check_level(b, "hq", "move-lvl"),
+          "move-ui": check_move_ui}
 
 
 def host_bins():
@@ -273,12 +306,14 @@ def main():
     t0 = time.time()
     os.makedirs(OUT, exist_ok=True)
     if a.save_level:
-        if not a.fm1:
-            raise SystemExit("--save-level --fm1 BIN (the last release's FM-1 host build)")
+        if not a.fm1 and not a.hq:
+            raise SystemExit("--save-level --fm1 BIN | --hq BIN (the last release's FM-1 / Move host build)")
         import release_diff as rd
-        json.dump({"release": rd.LAST, "cases": level_all(os.path.abspath(a.fm1))}, open(LEVEL_BASE, "w"), indent=1,
-                  sort_keys=True)
-        print(LEVEL_BASE)
+        for binary, base, sub in ((a.fm1, LEVEL_BASE, "level"), (a.hq, LEVEL_BASE_HQ, "move-lvl")):
+            if binary:
+                json.dump({"release": rd.LAST, "cases": level_all(os.path.abspath(binary), sub)}, open(base, "w"),
+                          indent=1, sort_keys=True)
+                print(base)
         return 0
     b = {"fm1": os.path.abspath(a.fm1), "hq": os.path.abspath(a.hq)} if a.fm1 and a.hq else host_bins()
     b["tree"] = os.path.abspath(a.tree) if a.tree else ROOT

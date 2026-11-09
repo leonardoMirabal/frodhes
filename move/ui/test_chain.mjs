@@ -252,11 +252,14 @@ ui.handleBack();
 // stays white after its release until another pad is played; the Move's own output does that, on its stock tracks
 // too). The screen must never write a note LED, never take a pad's note-on or note-off (velocity 0 too) in any mode
 // (a page, the list, the save card), and its button LEDs are the arrows only.
+// Every pad (68-99) and step (16-31), as each of the Move's layouts and octaves sends them (the note numbers are the
+// pads', not the pitches: the Move maps them by its own SCALE / ROOT / layout, which the screen never sees)
+const PAD_NOTES = [...Array(16).keys()].map((i) => 16 + i).concat([...Array(32).keys()].map((i) => 68 + i));
 const padCase = (what) => {
     const s0 = JSON.stringify({ page: st().page, list: st().list, save: !!st().save, cursor: st().cursor });
     const nb = btn.sends.length, nw2 = p.writes.length, l0 = JSON.stringify(leds.last);
     let claimed = false;
-    for (const n of [16, 31, 68, 75, 80, 99]) {
+    for (const n of PAD_NOTES) {
         for (const d of [[0x90, n, 100], [0xA0, n, 40], [0x80, n, 0], [0x90, n, 90], [0x90, n, 0]])
             if (ui.onMidiMessageInternal(d) !== undefined) claimed = true;
         p.apply();
@@ -276,6 +279,39 @@ midi(0xB0, 63, 127); t += 2000; ui.tick(); padCase("SUS on");
 midi(0xB0, 3, 127); padCase("the list");
 check(go("SAVE TO USER"), "pads: the jog reaches SAVE TO USER"); midi(0xB0, 3, 127); padCase("the save card");
 ui.handleBack(); ui.handleBack();
+// the K31 audit (2026-11-09, the user's photo: scale mode, most roots white until a pad is played): every event that
+// can come with a Move pad repaint, the Move's own controls included (octave Up 55 / Down 54, Shift 49 + a pad or a
+// step: its SCALE / ROOT / layout menus, Note / Session 50), a page and a preset change, the engine, the module
+// reloaded (init again) and the screen left and opened again (Back, then init: a wake, a track switched back). In
+// each: no note LED, no pad / step / Move-control note or CC claimed, the knob and arrow LEDs only.
+const moveCase = (what) => {
+    const nb = btn.sends.length, nw2 = p.writes.length;
+    const s0 = JSON.stringify({ page: st().page, list: st().list, save: !!st().save });
+    for (const d of [[0xB0, 55, 127], [0xB0, 55, 0], [0xB0, 54, 127], [0xB0, 54, 0], [0xB0, 50, 127], [0xB0, 50, 0]])
+        ui.onMidiMessageInternal(d);
+    ui.onMidiMessageInternal([0xB0, 49, 127]);
+    for (const n of PAD_NOTES) { ui.onMidiMessageInternal([0x90, n, 100]); ui.onMidiMessageInternal([0x80, n, 0]); }
+    ui.onMidiMessageInternal([0xB0, 49, 0]);
+    p.apply(); ui.tick();
+    check(btn.sends.length === nb, "pads: " + what + ": the Move's controls send no LED (" +
+          JSON.stringify(btn.sends.slice(nb)) + ")");
+    check(p.writes.length === nw2, "pads: " + what + ": the Move's controls write no param (" +
+          JSON.stringify(p.writes.slice(nw2)) + ")");
+    check(JSON.stringify({ page: st().page, list: st().list, save: !!st().save }) === s0,
+          "pads: " + what + ": the Move's controls leave the screen as it was");
+    padCase(what);
+};
+ui.init(); t += 2000; ui.tick();
+moveCase("open");
+midi(0xB0, 14, 1); t += 2000; ui.tick(); moveCase("the next page (jog)");
+midi(0xB0, 14, 127); t += 2000; ui.tick();
+p.external("p_dly_mix", 40); t += 2000; ui.tick(); moveCase("a change from outside (rev)");
+p.preset = 3; p.rev++; t += 2000; ui.tick(); moveCase("a preset change");
+p.external("p_type", 4); t += 2000; ui.tick(); moveCase("the engine changed (TYPE VIBE)");
+p.external("p_type", 0); t += 2000; ui.tick();
+ui.init(); t += 2000; ui.tick(); moveCase("the module reloaded (init again)");
+ui.handleBack(); ui.init(); t += 2000; ui.tick(); moveCase("Back, then opened again (a wake, a track switched back)");
+ui.handleBack();
 check(btn.sends.every(([cc]) => cc === 62 || cc === 63), "LEDs: the only button LEDs written are the arrows (" +
       [...new Set(btn.sends.map(([cc]) => cc))].join(",") + ")");
 check(!/move_midi_internal_send|setLED\b/.test(src), "LEDs: the screen has no path to a note LED (no setLED, no raw send)");
