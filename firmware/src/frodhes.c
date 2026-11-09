@@ -345,9 +345,9 @@ static void c1_one_core(void)
     for (i = FR_C1_NV1; i < BAR_NV; i++)
         if (bv[i].alive) { if (bv[i].fade == 32768) bv[i].fade = 32767; bv[i].pend = 0; }
 }
-#define C1_DEADLINE_US 5200u                    /* a job not done this long after the block's start is late (the user
-                                                 * 2026-11-09: 5200, it was 4600; the block 5805: a late job's rest on
-                                                 * core 0 fits only if under ~1 chunk of effects is left) */
+#define C1_DEADLINE_US 5100u                    /* a job not done this long after the block's start is late (the user
+                                                 * 2026-11-09: 5100, it was 4600; the block 5805: a late job's one
+                                                 * chunk of effects redone on core 0 + the tail still fit) */
 #else
 static int32_t voice_mono[256];
 #endif
