@@ -163,6 +163,13 @@ def ports():
         import mido
         outs = fm1_ports.pick(mido.get_output_names())
         ins = fm1_ports.pick(mido.get_input_names())
+        if fm1_ports.AUDIO_LOC is not None:           # a pinned unit (FM1_LOCATION): its MIDI too, never the other
+            at = fm1_ports.midi_names_at(fm1_ports.AUDIO_LOC)
+            if not at or not at[0] or not at[1]:
+                sys.exit(f"hil_cpu: no MIDI ports at USB 0x{fm1_ports.AUDIO_LOC:08x}")
+            ins, outs = at
+        elif len(outs) > 1 or len(ins) > 1:
+            sys.exit("hil_cpu: two FM-1 MIDI ports: give FM1_LOCATION=0x...")
         if not outs or not ins:
             sys.exit("no FM-1 MIDI port")
         import fm1_midi
