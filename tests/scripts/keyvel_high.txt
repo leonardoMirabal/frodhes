@@ -1,14 +1,16 @@
 # KEY VEL above 107 (keyvel.c KV_MIDMAX, 2026-11-08): at KEY VEL 127 every press firmer than a medium one played 127
 # (the user's FM-1: 54 % of the presses). Now the medium press plays at most 107, so a harder one keeps 20 steps to
 # 127; KEY VEL above 107 lifts the soft end instead (1 + KEY VEL - 107 at the lightest press). TOUCH MEDIUM.
-60 btn 7
-80 btn 7
+# KEY VEL: K3 of the velocity page (the last VOICE page, VOICE 3/3: FRODHES, then SELECT three times)
 100 btn 8
-150 btn 8
-200 expect state page FRODHES
-200 expect state label3 KEY_VEL
-250 turn 5 10
-300 expect state card3 127
+150 expect state page FRODHES
+160 turn 0 1
+170 turn 0 1
+180 turn 0 1
+200 expect state vpage 3/3
+200 expect state label2 KEY_VEL
+250 turn 4 10
+300 expect state card2 127
 # a medium press (743 on the first floor, 450): 107, not 127
 400 vkey 7 743
 410 keys 0x80
