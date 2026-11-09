@@ -158,3 +158,36 @@ def test_ports_by_location():
     assert fp.fm1_usb_at(0x20130000, devs) == "Frodhes FM-1"
     assert fp.fm1_usb_at(0x1, devs) is None and fp.fm1_usb_at(0x2, devs) is None
     assert fp.fm1_usb_at(0x3, devs) is None and fp.fm1_usb_at(0x4, devs) is None   # (two there / nothing there)
+
+
+def test_audio_by_location(monkeypatch):
+    """2026-11-09: both units' USB audio devices are named "Frodhes FM-1": devices() took the first one, whichever
+    unit it was. Now the one at the pinned location (CoreAudio's UID carries the USB location), and two without a
+    location are refused"""
+    sd = [dict(name="M6", max_input_channels=6), dict(name="Frodhes FM-1", max_input_channels=2),
+          dict(name="Frodhes FM-1", max_input_channels=2), dict(name="MacBook Pro Speakers", max_input_channels=0)]
+    ca = [("M6", "AppleUSBAudioEngine:MOTU:M6:M6AE045D2Y:1,2"),
+          ("Frodhes FM-1", "AppleUSBAudioEngine:Hügelton Instruments:Frodhes FM-1:100000:2"),
+          ("Frodhes FM-1", "AppleUSBAudioEngine:Hügelton Instruments:Frodhes FM-1:20130000:2"),
+          ("MacBook Pro Speakers", "BuiltInSpeakerDevice")]
+    assert fp.uid_loc(ca[1][1]) == 0x00100000 and fp.uid_loc(ca[2][1]) == 0x20130000
+    assert fp.uid_loc(ca[0][1]) is None and fp.uid_loc(ca[3][1]) is None
+    monkeypatch.delenv("FM1_LOCATION", raising=False)
+    monkeypatch.setattr(fp, "AUDIO_LOC", None)
+    with pytest.raises(SystemExit) as e:
+        fp.devices(sd, 2, ca=ca)
+    assert "0x00100000" in str(e.value) and "0x20130000" in str(e.value)
+    assert fp.devices(sd[:2], 2, ca=ca[:2]) == [1]                                # (one unit: as before)
+    fp.pin_audio(0x20130000)
+    try:
+        assert fp.devices(sd, 2, ca=ca) == [2]
+        assert os.environ["FM1_LOCATION"] == "0x20130000"
+        fp.pin_audio(0x00100000)
+        assert fp.devices(sd, 2, ca=ca) == [1]
+        fp.pin_audio(0x30000000)
+        assert fp.devices(sd, 2, ca=ca) == []                                     # (nothing there: no device)
+        with pytest.raises(SystemExit):
+            fp.devices(sd, 2, ca=ca[:3])                                          # (lists disagree: refused)
+    finally:
+        fp.pin_audio(None)
+    assert "FM1_LOCATION" not in os.environ

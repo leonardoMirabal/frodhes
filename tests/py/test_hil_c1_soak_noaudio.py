@@ -156,3 +156,35 @@ def test_input_reads_through_a_real_mido_parser(fake, monkeypatch):
     reply["pending"].append([0x7F])
     assert [(x.control, x.value) for x in inp.iter_pending()] == [(2, 127)]
     assert list(inp.iter_pending()) == []
+
+
+def test_audio_stream_follows_location(fake, monkeypatch):
+    """with USB audio and --location the stream opens the audio device at that location, not the first "Frodhes FM-1"
+    (both units share the name)"""
+    soak, opened, reply = fake
+    import fm1_ports
+    opened_audio = []
+
+    class Stream:
+        def __init__(self, device=None, **kw):
+            opened_audio.append(device)
+
+        def start(self):
+            raise SystemExit("stop here")
+
+    sd = types.SimpleNamespace(
+        query_devices=lambda: [dict(name="Frodhes FM-1", max_input_channels=2),
+                               dict(name="Frodhes FM-1", max_input_channels=2)],
+        CoreAudioSettings=lambda **kw: None, InputStream=Stream)
+    monkeypatch.setitem(sys.modules, "sounddevice", sd)
+    monkeypatch.setattr(fm1_ports, "coreaudio_devices", lambda: [
+        ("Frodhes FM-1", "AppleUSBAudioEngine:H:Frodhes FM-1:100000:2"),
+        ("Frodhes FM-1", "AppleUSBAudioEngine:H:Frodhes FM-1:20130000:2")])
+    monkeypatch.setattr(sys, "argv", ["hil_c1_soak.py", "--row", "277", "--location", "0x20130000"])
+    monkeypatch.setattr(soak.time, "sleep", lambda s: None)
+    try:
+        with pytest.raises(SystemExit, match="stop here"):
+            soak.main()
+        assert opened_audio == [1]
+    finally:
+        fm1_ports.pin_audio(None)

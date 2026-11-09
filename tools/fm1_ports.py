@@ -8,7 +8,10 @@ NEVER names are other firmware on another unit and are never matched, not even a
 
   pick(names)        the candidate names, Frodhes ones only when any exist (keeps the order given)
   first(names)       pick(names)[0], or None
-  devices(devs, ch)  the indices of sounddevice.query_devices() entries picked the same way, with >= ch inputs
+  devices(devs, ch)  the indices of sounddevice.query_devices() entries picked the same way, with >= ch inputs; with
+                     a location pinned (pin_audio(loc), FM1_LOCATION=0x...) only the one at that USB location
+                     (CoreAudio UID); two FM-1 audio devices without one: refused
+  coreaudio_devices() [(name, UID)] in CoreAudio's order (= sounddevice's); uid_loc(uid) the USB location in a UID
   is_fm1(name)       the name is an FM-1 port by any key (a guard: "is this port the FM-1's own?")
   force(name, loc)   from now on pick()/devices() take only the names that contain `name` (a tool's --port, for
                      a second unit with its own USB name, tools/build.py --usb-name); nothing else is ever matched.
@@ -39,6 +42,7 @@ NEVER = ("textura",)                         # another unit's firmware: never op
 
 
 FORCED = os.environ.get("FM1_PORT") or None  # force(); FM1_PORT=NAME does the same for every tool
+AUDIO_LOC = int(os.environ["FM1_LOCATION"], 0) if os.environ.get("FM1_LOCATION") else None   # pin_audio()
 
 
 def force(name, loc=None, devs=None):
@@ -282,8 +286,85 @@ def first(names, keys=PORT_KEYS):
     return p[0] if p else None
 
 
-def devices(devs, ch=2, keys=PORT_KEYS):
+def devices(devs, ch=2, keys=PORT_KEYS, ca=None):
+    """the FM-1's audio inputs among sounddevice's devs. Two units share the name "Frodhes FM-1": with a location
+    pinned (pin_audio, a tool's --location, FM1_LOCATION=0x... for every tool) only the device at that USB location
+    (CoreAudio's device UID); without one, two FM-1 audio devices are refused (SystemExit), never one taken at
+    random. ca: coreaudio_devices() (the tests)"""
     devs = list(devs)
     ok = [i for i, d in enumerate(devs) if d["max_input_channels"] >= ch]
     names = pick([devs[i]["name"] for i in ok], keys)
-    return [i for i in ok if devs[i]["name"] in names]
+    sel = [i for i in ok if devs[i]["name"] in names]
+    if AUDIO_LOC is None and len(sel) < 2:
+        return sel
+    ca = coreaudio_devices() if ca is None else ca
+    if ca is None or [n for n, _ in ca] != [d["name"] for d in devs]:
+        if AUDIO_LOC is not None:
+            sys.exit(f"--location 0x{AUDIO_LOC:08x}: the audio devices' USB locations cannot be read (CoreAudio's "
+                     "list is not sounddevice's): no audio device taken")
+        sys.exit(f"{len(sel)} FM-1 audio devices ({', '.join(devs[i]['name'] for i in sel)}) and their USB locations "
+                 "cannot be read: give the unit's --location (or FM1_LOCATION=0x...)")
+    if AUDIO_LOC is None:
+        where = ", ".join(f"{devs[i]['name']!r} at " + (f"0x{uid_loc(ca[i][1]):08x}" if uid_loc(ca[i][1]) is not None
+                                                        else "?") for i in sel)
+        sys.exit(f"{len(sel)} FM-1 audio devices ({where}): give the unit's --location (or FM1_LOCATION=0x...)")
+    return [i for i in sel if uid_loc(ca[i][1]) == AUDIO_LOC]
+
+
+def pin_audio(loc):
+    """devices() takes only the audio device at USB location loc from now on (None: off); child processes too"""
+    global AUDIO_LOC
+    AUDIO_LOC = loc
+    if loc is None:
+        os.environ.pop("FM1_LOCATION", None)
+    else:
+        os.environ["FM1_LOCATION"] = f"0x{loc:08x}"
+
+
+def uid_loc(uid):
+    """the USB locationID in a CoreAudio USB device UID ("AppleUSBAudioEngine:maker:product:20130000:2"; leading
+    zeros dropped: "...:100000:2"); a device with a serial number has the serial there (None, or a number that
+    matches no FM-1's location)"""
+    if not uid or not uid.startswith("AppleUSBAudioEngine:"):
+        return None
+    p = uid.rsplit(":", 2)
+    return int(p[1], 16) if len(p) == 3 and re.fullmatch(r"[0-9A-Fa-f]{1,8}", p[1]) else None
+
+
+def coreaudio_devices():
+    """[(name, UID)] of CoreAudio's devices in its own order (PortAudio's, so sounddevice's indices), read only;
+    None off macOS"""
+    import ctypes
+    import ctypes.util
+    lca, lcf = ctypes.util.find_library("CoreAudio"), ctypes.util.find_library("CoreFoundation")
+    if not lca or not lcf:
+        return None
+    ca, cf = ctypes.cdll.LoadLibrary(lca), ctypes.cdll.LoadLibrary(lcf)
+    u32, vp = ctypes.c_uint32, ctypes.c_void_p
+
+    class Addr(ctypes.Structure):
+        _fields_ = [("sel", u32), ("scope", u32), ("elem", u32)]
+
+    def cc4(t):
+        return int.from_bytes(t.encode(), "big")
+
+    ca.AudioObjectGetPropertyDataSize.argtypes = [u32, ctypes.POINTER(Addr), u32, vp, ctypes.POINTER(u32)]
+    ca.AudioObjectGetPropertyData.argtypes = [u32, ctypes.POINTER(Addr), u32, vp, ctypes.POINTER(u32), vp]
+    cf.CFStringGetCString.argtypes = [vp, ctypes.c_char_p, ctypes.c_long, u32]
+    cf.CFRelease.argtypes = [vp]
+    a, n = Addr(cc4("dev#"), cc4("glob"), 0), u32()
+    if ca.AudioObjectGetPropertyDataSize(1, ctypes.byref(a), 0, None, ctypes.byref(n)):
+        return None
+    ids = (u32 * (n.value // 4))()
+    if ca.AudioObjectGetPropertyData(1, ctypes.byref(a), 0, None, ctypes.byref(n), ids):
+        return None
+
+    def prop(dev, sel):
+        q, r, sz = Addr(cc4(sel), cc4("glob"), 0), vp(), u32(ctypes.sizeof(vp))
+        if ca.AudioObjectGetPropertyData(dev, ctypes.byref(q), 0, None, ctypes.byref(sz), ctypes.byref(r)) or not r.value:
+            return None
+        b = ctypes.create_string_buffer(1024)
+        cf.CFStringGetCString(r, b, 1024, 0x08000100)
+        cf.CFRelease(r)
+        return b.value.decode("utf-8", "replace")
+    return [(prop(d, "lnam") or "", prop(d, "uid ")) for d in ids]

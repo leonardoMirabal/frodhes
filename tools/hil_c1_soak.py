@@ -382,6 +382,8 @@ def run(a):  # noqa: C901 (the device run)
         print("--no-audio: no USB audio stream (sounddevice not imported); the whole ISR has no USB tap in it",
               flush=True)
     else:
+        if a.location is not None:                # (the audio device at that USB location too: two units share
+            fm1_ports.pin_audio(fm1_ports.parse_loc(a.location))   # the name "Frodhes FM-1", CoreAudio's UID)
         devs = fm1_ports.devices(sd.query_devices(), 2)
         if not devs:
             sys.exit("no FM-1 audio input")
@@ -620,8 +622,8 @@ def main():
                     "(a second FM-1 with its own USB name, tools/build.py --usb-name); refused when two USB "
                     "devices share the name")
     ap.add_argument("--location", metavar="LOC", help="the unit's USB location (macOS ioreg / CoreMIDI locationID, "
-                    "e.g. 0x20130000): every MIDI port opened is that unit's (two units of one name told apart); "
-                    "refused when no FM-1 is there")
+                    "e.g. 0x20130000): every MIDI port opened and the USB audio stream are that unit's (two units "
+                    "of one name told apart); refused when no FM-1 is there")
     ap.add_argument("--no-audio", action="store_true", help="no USB audio stream: sounddevice / PortAudio never "
                     "imported (the whole ISR then has no USB tap in it: lower than the gate's number)")
     a = ap.parse_args()
