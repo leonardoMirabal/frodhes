@@ -54,6 +54,8 @@ def test_every_cc79_selector_is_stable():
                     continue
                 p = os.path.join(dp, f)
                 for i, line in enumerate(open(p, errors="replace"), 1):
+                    if "(note, velocity)" in line:   # (a note list's pairs, marked so: not a CC)
+                        continue
                     for pat in PATS:
                         for m in pat.finditer(line):
                             if int(m.group(1)) not in STABLE:
