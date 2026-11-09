@@ -389,7 +389,7 @@ def run_cpu(argv):  # noqa: C901
             take()
             time.sleep(0.005)
         if not {116, 117} <= got.keys():
-            sys.exit("no profiler reply (a firmware without CC 116?)")
+            sys.exit("hil_cpu: no profiler reply (a firmware without CC 116?)")
         t0 = time.monotonic()
         while time.monotonic() - t0 < (0.15 if "--stages" in sys.argv or "--tick" in sys.argv else 0.08):   # the replies after 115-118
             take()
@@ -509,22 +509,31 @@ def run_cpu(argv):  # noqa: C901
         rate = int(sys.argv[sys.argv.index("--usb") + 1]) if "--usb" in sys.argv else 48000
         devs = fm1_ports.devices(sd.query_devices(), 2)
         if not devs:
-            sys.exit("--usb: no FM-1 audio input")
+            sys.exit("hil_cpu: --usb: no FM-1 audio input")
         # the device itself switched to RATE (as rh_devcmp): without it Core Audio keeps the FM-1 at its current
         # nominal rate and converts, and the firmware runs the other rate's path
         ca = sd.CoreAudioSettings(change_device_parameters=True, fail_if_conversion_required=True)
         if _USB.get("rate") != rate:              # (open once: --keyadc gate runs many measurements on it)
             close_usb()
-            stream = sd.InputStream(device=devs[0], samplerate=rate, channels=2, dtype="int16", blocksize=128,
-                                    callback=lambda *a: None, extra_settings=ca)
-            stream.start()
+            for k in (0, 1):                      # (a PortAudio error at the start: once more after 2 s, then a
+                stream = sd.InputStream(device=devs[0], samplerate=rate, channels=2, dtype="int16",   # one-line exit
+                                        blocksize=128, callback=lambda *a: None, extra_settings=ca)   # the logs keep)
+                try:
+                    stream.start()
+                    break
+                except sd.PortAudioError as e:
+                    stream.close()
+                    if k:
+                        sys.exit(f"hil_cpu: --usb {rate}: the FM-1 stream did not start: {e}")
+                    print(f"hil_cpu: --usb {rate}: the stream did not start ({e}); once more in 2 s")
+                    time.sleep(2.0)
             _USB.update(rate=rate, stream=stream)
             time.sleep(1.0)
         query.usb = {}
         query()                                       # the firmware's own view of the stream (CC 100 id 12)
         st = query.usb.get("state")
         if st is not None and (not st & 2 or bool(st & 4) != (rate == 48000)):
-            sys.exit(f"--usb {rate}: the FM-1 reports the stream {usb_line(query.usb)} (state {st}): not at {rate} Hz")
+            sys.exit(f"hil_cpu: --usb {rate}: the FM-1 reports the stream {usb_line(query.usb)} (state {st}): not at {rate} Hz")
         print(f"USB audio open at {rate} Hz, blocksize 128 (the FM-1 confirms: {usb_line(query.usb).split(':')[0]})")
     heavy = dict(DRIVE=127, EQ_LO=127, EQ_MID=0, EQ_HI=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
                  CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
