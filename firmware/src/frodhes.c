@@ -422,7 +422,16 @@ static int c1_stream_step(void)                 /* the frames ready, not done: t
     fx_process(c1_job.mono, o < fxc_ce - FR_LAT_TAIL ? lat_ob : lat_sb, n);
 #else
     fxc_o = o; fxc_e = r; fxc_n = n;
+#if defined(C1PF_ON) && FR_LAT
+    {
+        uint32_t a0 = fm1_ticks();
+        fx_process(c1_job.mono, c1_job.out, n);
+        a0 = fm1_ticks() - a0;
+        if (r == n) C1PF(23, a0); else if (!o) C1PF(24, a0); else C1PF(25, a0);
+    }
+#else
     fx_process(c1_job.mono, c1_job.out, n);
+#endif
 #endif
     fr_c1_sync();
     c1_fxd = r;
@@ -666,6 +675,9 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
             }
         }
+#if defined(C1PF_ON)
+        C1PF(o ? 21u : 16u, fm1_ticks() - t0);  /* (C1_PROF: core 0's voices done, the block's first interrupt / a later one) */
+#endif
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
         if (e == LAT_LB) host_race_check();
 #endif
@@ -711,6 +723,9 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
     us = (fm1_ticks() - t0) / 24u;
     prof_us = us;
     if (us > prof_max_us) prof_max_us = us;
+#if defined(C1PF_ON)
+    C1PF(o ? 22u : 20u, fm1_ticks() - t0);      /* (C1_PROF: this interrupt's whole, the block's first / a later one) */
+#endif
     prof_over = us > LAT_SHED_US ? prof_over + 1u : 0u;   /* (two interrupts over 5.0 ms x n / 256: shed a voice) */
     if (prof_over >= 2u) { eng_shed_req = 1; prof_over = 0; }
 #endif

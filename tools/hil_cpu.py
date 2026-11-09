@@ -138,6 +138,9 @@ STAGES = {1: "engine (eng_render)", 2: "fx copy", 3: "compressor", 4: "filter + 
           14: "fx (other)", 15: "after the last stamp",
           # FR_C1 + C1_PROF (frodhes.c C1PF): since the block's start (@), or a span; "blk" = summed over a block
           16: "c0 voices done @", 17: "c0 voices blk", 18: "c1 block-start job", 19: "c0 last wait", 20: "c0 waits before",
+          # (FR_LAT_HALF + C1_PROF: 16 / 21 core 0's voices done @ the block's first / a later interrupt, 20 / 22 the
+          # interrupt's whole, first / later; 23-25 core 1's ranges: the one ending the block, starting it, between)
+          # (on such a build 21 = lat c0 voices done @ (later irq), 22 = lat irq whole (later))
           21: "c0 tail-loop wait", 22: "c1 done @", 44: "front chunks on c0 (count)",
           45: "c0 eng_begin", 46: "SNAP end @", 47: "SNAP c0 voices done @", 48: "SNAP c0 voices blk",
           49: "SNAP c0 eng_begin", 50: "SNAP c1 done @", 51: "SNAP blocks after PC +1 (count)",
