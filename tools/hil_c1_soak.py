@@ -101,9 +101,12 @@ def max_rev(t):
 MAX_DRV = (76, 70, 76)                                   # row 276: the drive TYPE in turn (CC 84): TSH8, KHLON, TSH8
 MAX_SWEEP = dict(FL_FREQ=(0, 127), DL_TIME=(60, 127), PH_DEPTH=(64, 127), TW_DEPTH=(64, 127), CMP_AMT=(60, 127),
                  DRIVE=(64, 127))                        # row 276: CC -> the sweep's range (a triangle, 100 ms steps)
-BARS = dict(app_us=5000, whole_us=4500, c1_busy_us=5000, stack=11 * 1024, vdc14=7, sysvdd=15)
-WHOLE_ROW = {"276": 4800, "277": 4800}                   # the stress rows' whole-ISR bar (the user, 2026-11-09: the
-                                                         # two-core gate 4800; tools/hil_cpu.py stays at 4500)
+LAT_SCALE = int(os.environ.get("FRODHES_LAT_HALF", "256")) / 256.0   # (a frodhes.c FR_LAT_HALF build: per interrupt)
+BARS = dict(app_us=round(5000 * LAT_SCALE), whole_us=round(4500 * LAT_SCALE), c1_busy_us=round(5000 * LAT_SCALE),
+            stack=11 * 1024, vdc14=7, sysvdd=15)
+WHOLE_ROW = {"276": round(4800 * LAT_SCALE), "277": round(4800 * LAT_SCALE)}   # the stress rows' whole-ISR bar (the
+                                                         # user, 2026-11-09: the two-core gate 4800; tools/hil_cpu.py
+                                                         # stays at 4500), per interrupt on an FR_LAT_HALF build
 
 
 def bars(row=None):

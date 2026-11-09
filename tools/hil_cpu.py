@@ -115,9 +115,13 @@ def usb_line(acc):
 
 CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_TONE=82, DRV_MIX=83, RV_PREDLY=94, RV_TYPE=95, EQ_LO=34, EQ_MID=35, EQ_FREQ=36,
           EQ_HI=37)
-TARGET_US = 4500
+# FRODHES_LAT_HALF=128 (or 64): a build with frodhes.c FR_LAT_HALF: CC 116 reports an interrupt of that many frames;
+# every limit scales with it (4500 / 5000 / 5805 us x N / 256)
+LAT_SCALE = int(os.environ.get("FRODHES_LAT_HALF", "256")) / 256.0
+TARGET_US = round(4500 * LAT_SCALE)
+SHED_US = round(5000 * LAT_SCALE)
 
-BLOCK_US = 5805
+BLOCK_US = round(5805 * LAT_SCALE)
 PC_BURST = [(47, 1), (23, 10), (26, 10), (29, 10), (42, 11), (45, 11), (127, 93), (86, 91), (123, 93), (59, 107),
             (120, 93), (28, 88), (40, 11), (34, 49), (37, 11), (41, 49), (21, 83), (68, 83), (117, 93), (60, 107),
             (33, 1), (36, 1), (27, 83), (19, 85), (22, 88), (25, 88)]   # monkey seed 3037's step (the --worst PC row)
@@ -699,8 +703,8 @@ def run_cpu(argv):  # noqa: C901
         reset()
         allrows = list(rows)
         worst = max(w for n, w in rows if not n.startswith("idle"))
-        print(f"\nworst {worst} us with {nv} voices ({100 * worst / BLOCK_US:.0f} %); design target 4500 us "
-              f"(margin {4500 - worst}), shedder 5000 us (margin {5000 - worst})")
+        print(f"\nworst {worst} us with {nv} voices ({100 * worst / BLOCK_US:.0f} %); design target {TARGET_US} us "
+              f"(margin {TARGET_US - worst}), shedder {SHED_US} us (margin {SHED_US - worst})")
         code = verdict(worst)
         return dict(rows=allrows, worst=worst, keyadc=keyadc_check(mido, out, inp, kmode), code=code)
     att = shed0 = 0
@@ -725,8 +729,8 @@ def run_cpu(argv):  # noqa: C901
     reset()
     worst = max(w for _, w in rows)
     print(f"\nworst {worst} us of {BLOCK_US} us per block ({100 * worst / BLOCK_US:.0f} %) with {nv} voices; shedder at "
-          f"5000 us; headroom to the shedder {5000 - worst} us, to real time {BLOCK_US - worst} us; to the 4500 us "
-          f"design target {4500 - worst} us")
+          f"{SHED_US} us; headroom to the shedder {SHED_US - worst} us, to real time {BLOCK_US - worst} us; to the "
+          f"{TARGET_US} us design target {TARGET_US - worst} us")
     code = verdict(worst)
     return dict(rows=list(rows), worst=worst, keyadc=keyadc_check(mido, out, inp, kmode), code=code)
 
