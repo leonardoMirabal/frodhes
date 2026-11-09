@@ -328,7 +328,7 @@ FX_RAM __attribute__((noinline)) static int32_t ri_input(rev_inf_t *s, const int
 #if REV_INF_QUARTER
     int32_t b[10u + RQ_NC];                         /* the half-band's history, then this block's input */
     for (i = 0; i < 10u; i++) b[i] = s->dz[i];
-    for (i = 0; i < RQ_NC; i++) b[10u + i] = clampi(in[i], -65535, 65535);
+    for (i = 0; i < RQ_NC; i++) b[10u + i] = clampi(FX_HC(1, in[i], -65535, 65535), -65535, 65535);
     for (i = 0; i < 10u; i++) s->dz[i] = b[RQ_NC + i];
 #endif
     for (i = 0; i < RQ_NC; i++) pk |= in[i] ^ (in[i] >> 31);
@@ -343,7 +343,7 @@ FX_RAM __attribute__((noinline)) static int32_t ri_input(rev_inf_t *s, const int
 #else
         int32_t x = in[i];
 #endif
-        x = clampi(x, -65535, 65535);
+        x = clampi(FX_HC(1, x, -65535, 65535), -65535, 65535);
         x = (x - il) * ik + ie;                     /* TONE's input one-pole, Q14 (the remainder carried: it settles
                                                      * to 0) */
         ie = x & 16383;

@@ -87,7 +87,7 @@ The screen shows one page with four cards. **K1-K4** always change the four card
   PHASER, **LFO** to TREM/WAH, **SEL** to DELAY, **ARP** to ARPEGGIO, **SEQ** to SEQUENCER, **GLO** to TEMPO and
   the setup pages. On its own page, the button switches that effect or tool on and off.
 - **ALGORITHM** changes the instrument (TYPE) from any page: four electric pianos, VIBES and MARIMBA.
-- **FX** switches all effects off and on, to compare with the dry instrument.
+- **FX** switches all effects but the compressor off and on, to compare with the dry instrument.
 
 On PERFORM the four knobs are DRIVE, FILTER, DELAY and REVERB. Turning one up switches that effect on. You can put
 other controls on these knobs on the ASSIGN page.
@@ -206,7 +206,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **SEL** | DELAY page; press again there to switch the delay on / off. On ARPEGGIO, and on every page while the arpeggiator is on: the arpeggiator's HOLD on / off |
 | **ARP** | ARPEGGIO page; press again there to switch the arpeggiator on / off |
 | **GLO** | TEMPO page; press again for SETUP, again for MIDI, again for DISPLAY, and back to TEMPO |
-| **FX** | All effects off / on at once (see [7](#7-effects-on-and-off)) |
+| **FX** | All effects but the compressor off / on at once (see [7](#7-effects-on-and-off)) |
 | **PLAY** | Tap tempo, on every page (ARPEGGIO too); on SEQUENCER, start / stop the loop, except while the arpeggiator is on: then it taps the tempo there too |
 | **REC** | Sustain pedal |
 | **SAVE** | Save the sound to a user preset; hold to undo the last preset load |
@@ -261,7 +261,7 @@ The page after PERFORM (press **HOME** twice) carries the instrument's name as i
 | K1 | **TYPE** | The instrument: **STAGE 77** (the classic stage piano), **SUITCASE** (with its own amp and four 12-inch speakers in a closed cabinet: warm lows, a gently rolled-off treble), **EARLY FELT** (early felt hammers: rounder, darker), **BELL DYNO** (a modified, bell-like voicing: glassy), **VIBES**, the vibraphone (see [VIBES](#vibes-the-vibraphone)), or **MARIMBA** (see [MARIMBA](#marimba)). Applies to the next notes. |
 | K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE 1/2's TONE). On VIBES and MARIMBA: **MALLET** |
 | K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE 1/2's BELL). On VIBES: **MOTOR** on / off; on MARIMBA: **TUBE** |
-| K4 | **KEY VEL** | How hard the FM-1's own keys strike: the velocity of a medium press (TOUCH on [SETUP](#setup); harder presses play louder, softer ones quieter), and with TOUCH at **FIXED** the velocity of every press. Around 60–80 soft and round, 96 medium (the default), 108–127 hard with bark. MIDI notes keep their own velocity. |
+| K4 | **KEY VEL** | How hard the FM-1's own keys strike: the velocity of a medium press (TOUCH on [SETUP](#setup); harder presses play louder, softer ones quieter), and with TOUCH at **FIXED** the velocity of every press. Around 60–80 soft and round, 96 medium (the default). With velocity on, a medium press plays at most 107, so a harder press always has room to play louder: KEY VEL from 108 to 127 lifts the soft presses instead (at 127 the lightest press plays 21). With TOUCH at FIXED, 108–127 is hard with bark. MIDI notes keep their own velocity. |
 
 ### VOICE 1/2 and 2/2
 
@@ -670,7 +670,7 @@ DRIVE, FILTER, DELAY and REVERB.
 to C5** do this. The top 7 keys (**C#5 to G5**) have no way to measure it: they play the average of your recent
 presses, so they follow how you are playing (after 5 s without a press, KEY VEL again). A note starts a few
 milliseconds after the key closes, while the reading comes in. The notes the keys send over USB-MIDI carry the same
-velocity. TOUCH and KEY VEL belong to the FM-1, not to a preset (a preset does not change them). The browser
+velocity. Each key learns how firmly you can press it: a press as firm as your firmest so far plays a little under 127 (119 at KEY VEL 96, 122 from KEY VEL 107 up), and only a clearly firmer one reaches 127, so velocity 127 stays for the hardest hits. TOUCH and KEY VEL belong to the FM-1, not to a preset (a preset does not change them). The browser
 emulator has no velocity: its keys play at KEY VEL.
 
 The bottom line shows the name and the version installed, the battery's reading (BAT, the raw value the battery
@@ -973,9 +973,9 @@ later for instance, sounds at once.
 Each effect has its own on / off: its page button pressed twice (LFO: tremolo / wah, ENV: phaser, SEL: delay), its
 K1 card on its page (chorus: EFFECT; compressor: THRESH; reverb: TYPE), or turning it up on PERFORM. Switching an effect on whose depth is 0 gives it a useful starting depth, so you always hear it.
 
-**FX** switches **all** effects off at once and back on (the compressor, filter, drive and reverb included, with a
-short crossfade), without changing any setting: compare the dry piano with
-your sound. The header shows **BYP** while they are off. It is not saved, so the FM-1 always starts with the effects
+**FX** switches the effects off at once and back on (the filter, drive, modulation, delay and reverb, with a short
+crossfade), without changing any setting: compare the dry piano with your sound. The **compressor stays on**, so the
+piano's dynamics and level do not change: with the effects' depths at 0, FX on and off sound the same. The header shows **BYP** while they are off. It is not saved, so the FM-1 always starts with the effects
 on.
 
 ![FX bypass](manual/img/bypass.png?v=1a61120e)
@@ -1123,7 +1123,7 @@ MARIMBA ignore it.
 | 56 / 57 | CHORD TYPE (0–14 as listed) / INVERSION (0–3) | 58 / 59 | CHORD VOICING (0–2) / STRUM (0–12 × 5 ms) |
 | 60 / 61 | SEQUENCER play (≥ 64) or stop (< 64) / BARS (1–16) | 62 / 63 | SEQUENCER QUANT (0–5) / recording (≥ 64) |
 | 43 / 44 | SEQUENCER CLEAR / UNDO (≥ 64) | 45 / 46 | SEQUENCER ERASE (≥ 64 on) / SWING (50–75) |
-| 110 | LEVEL (64 = 0 dB) | 111 | All effects off (≥ 64) / on |
+| 110 | LEVEL (64 = 0 dB) | 111 | All effects but the compressor off (≥ 64) / on |
 | 114 | USB VOL: knob (< 64) / fixed | 40 | RESPONSE: 0–63 DEEP, 64–127 EVEN (the electric piano's velocity response) |
 
 **For developers and testing.** These CCs are for test tools, not for playing; [BUILD.md](BUILD.md#developer-midi-ccs) says

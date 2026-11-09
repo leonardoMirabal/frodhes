@@ -7,7 +7,7 @@ Each seed must:
   - run to the end without a crash, and without any undefined behaviour or memory error (a second build with
     UBSan + ASan runs a share of the seeds; left shifts of negative numbers are allowed: the chip shifts
     arithmetically), and without the host's event ring dropping an event;
-  - never put out more than the limiter's ceiling (LIM_T 29204, fx.c; 24576 = the old master clip's knee before
+  - never put out more than the limiter's ceiling (LIM_T 24000, fx.c; 24576 = the old master clip's knee before
     0.9.10; CC 119 RAW is not fuzzed);
   - go silent after the panic (the engine alone, RAW, within 3 s), with no voice left (the Rhodes; VIBES can keep a
     silent voice, a reported bars.c bug, test_persistence.py);
@@ -32,7 +32,7 @@ import pytest
 
 from hostrun import BIN, FS, OUT, ROOT, build, env_rms, rms_db, run
 
-LIM_T = 29204   # 2026-11-08: fx.c LIM_T (-1.0 dBFS since 0.9.10; the checks were at 24576, the old clip knee over LIM_T 24000)
+LIM_T = 24000   # fx.c LIM_T (-2.7 dBFS; the 0.9.10 RCs' 29204 reverted 2026-11-08; the checks were at 24576, the old clip knee)
 
 SAN = os.path.join(ROOT, "build", "host", "frodhes-san")
 SAN_FLAGS = ["-fsanitize=undefined,address", "-fno-sanitize=shift-base", "-fno-omit-frame-pointer"]

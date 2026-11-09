@@ -17,9 +17,15 @@ Cells (every one measured on the host build, 44.1 kHz):
             upper modes are in it too, so it is judged against 0.9.9, never alone)
   chords    4-note chords at v127 (low, mid, high): "imd", the energy off every harmonic band of the four notes re
             the energy of their fundamentals
+  attack    every note and key cell also aH2..aH6: H2..H6 re H1 in the strike's own window, 0..150 ms (2026-11-08: the
+            user heard the hard key presses distort; the 150..650 ms window had left the attack out)
+  keys      the FM-1's own keys F3 A3 C4 E4 G4 C5 through the key path at their hardest (tests/host.c "vkey K 200": the
+            reading under any floor, keyvel.c's curve at MEDIUM, its 127): "key<K>/max", judged as v127. Host only
+            (nothing presses the FM-1's keys in tools/hil_jack.py --dist)
 
-Limits (judge): every value <= 0.9.9's same cell + 3 dB (or <= -60 dB re H1: never heard, the path's floor); and at v127 the absolute ceiling H3 re H1 <= -25 dB (the
-limit min(base + 3, -25)). A cell where 0.9.9 itself is above -25 keeps base + 3 (0.9.9 is the reference).
+Limits (judge): every value <= 0.9.9's same cell + 3 dB, H2 and aH2 + 1.5 dB (or <= -60 dB re H1: never heard, the
+path's floor); and at v127 and on the keys' cells the absolute ceiling H3 and aH3 re H1 <= -25 dB (the limit
+min(base + 3, -25)). A cell where 0.9.9 itself is above -25 keeps base + 3 (0.9.9 is the reference).
 
   tools/dry_dist.py --bin BIN [--out FILE]          measure a host binary, write the cells (JSON)
   tools/dry_dist.py --save                          measure the host binary BIN (default build/host/frodhes) and write
@@ -57,6 +63,12 @@ CONFIGS = (("FXOFF", 111), ("RAW", 119))
 CHORDS = (("low", (33, 40, 45, 49)), ("mid", (57, 60, 64, 67)), ("high", (69, 72, 76, 79)))
 STEP, HOLD = 1500, 800            # ms: a note every STEP, released after HOLD
 W0, W1 = 0.15, 0.65               # s: the analysis window after the strike
+A0, A1 = 0.0, 0.15                # s: the attack's window (aH2..aH6: the strike itself, which W0..W1 leaves out)
+KEYK = (0, 4, 7, 11, 14, 19)      # the FM-1's own keys (analog: F3 A3 C4 E4 G4 C5 = notes 53 + k) through the key path
+KEY_HARD = 200                    # their driven reading: under any floor (KV_FLOOR_MIN 217): the hardest press, the most
+                                  # the key path delivers at the TOUCH in force (MEDIUM)
+MARGIN_H2 = 1.5                   # H2 / aH2: <= 0.9.9 + 1.5 dB (the pickup's even-order growth, what a hard key press
+                                  # brings up first)
 BAND = 0.03                       # the harmonic peaks: within +-3 % of k f0
 IBW, IREL = 15.0, 0.003           # inh / imd: a harmonic's band, +-15 Hz (the window's main lobe +-8 Hz, and a harmonic's own envelope: the harmonic decay glide from 0.4 s spreads H2 +-12 Hz)
                                   # or +-0.3 % (the pickup's products are exact multiples of the tine's frequency)
@@ -71,8 +83,9 @@ def f0(n):
     return 440.0 * 2 ** ((n - 69) / 12)
 
 
-def events():
-    """[(kind, label, t_ms, notes, vel)] in the order one script plays them"""
+def events(keys=True):
+    """[(kind, label, t_ms, notes, vel)] in the order one script plays them; keys: and the FM-1's own keys at their
+    hardest (kind "key", vel = the key index: the velocity is what keyvel.c's curve makes of KEY_HARD), last"""
     ev, t = [], 400
     for k in KEYS:
         for v in VELS:
@@ -81,13 +94,19 @@ def events():
     for name, ns in CHORDS:
         ev.append(("chord", name, t, ns, 127))
         t += STEP + 500
+    for k in KEYK if keys else ():
+        ev.append(("key", f"key{k}/max", t, (53 + k,), k))
+        t += STEP
     return ev, t
 
 
-def script(cfg_cc, type_cc, meth_cc):
-    ev, end = events()
+def script(cfg_cc, type_cc, meth_cc, keys=True):
+    ev, end = events(keys)
     ls = [f"100 midi 0xB0 {cfg_cc} 127", f"110 midi 0xB0 80 {type_cc}", f"120 midi 0xB0 40 {meth_cc}"]
-    for _, _, t, ns, v in ev:
+    for kind, _, t, ns, v in ev:
+        if kind == "key":             # the host's key path: the press lands with the reading (tests/host.c vkey)
+            ls += [f"{t - 20} vkey {v} {KEY_HARD}", f"{t} keys {1 << v:#x}", f"{t + HOLD} keys 0"]
+            continue
         for n in ns:
             ls.append(f"{t} midi 0x90 {n} {v}")
         for n in ns:
@@ -109,14 +128,16 @@ def render(binary, tag, lines, outdir):
     return x.mean(1)
 
 
-def spectrum(x, fs=FS):
+def spectrum(x, fs=FS, pad=1):
     """the power spectrum through a 4-term Blackman-Harris window (sidelobes -92 dB, main lobe +-4 bins = +-8 Hz at
     0.5 s). Hann's sidelobes (-31 dB at +-6 Hz) put the fundamental's own skirt in inh: at key 93 that skirt WAS inh
     (-45 dB at the host's clock), and an f0 a fraction of a bin off (the FM-1's clock on USB) moved it by 6 dB"""
     from scipy.signal.windows import blackmanharris
     s = x * blackmanharris(len(x))
-    p = np.abs(np.fft.rfft(s)) ** 2
-    return p, np.fft.rfftfreq(len(x), 1 / fs)
+    n = len(x) * pad                  # (zero-padded: the attack's short window has bins 6.7 Hz apart, wider than
+                                      # +-3 % of a low key's f0; padded, every band has its peak)
+    p = np.abs(np.fft.rfft(s, n)) ** 2
+    return p, np.fft.rfftfreq(n, 1 / fs)
 
 
 def tuned(p, fr, funds):
@@ -140,9 +161,9 @@ def tuned(p, fr, funds):
     return [fu * r for fu in funds]
 
 
-def harm_cells(seg, fund, fs=FS):
+def harm_cells(seg, fund, fs=FS, pad=1):
     """H2..H6 re H1 (dB, band peaks) and inh: the power off the harmonic bands re the power of H1 (dB)"""
-    p, fr = spectrum(seg, fs)
+    p, fr = spectrum(seg, fs, pad)
     fund = tuned(p, fr, [fund])[0]
     pk = []
     for k in range(1, 7):
@@ -177,18 +198,21 @@ def strike(x, t, fs):
     return (i0 + int(np.argmax(a > 0.25 * a.max()))) / fs
 
 
-def measure_wave(x, t0=0.0, fs=FS):
+def measure_wave(x, t0=0.0, fs=FS, keys=False):
     """the cells of one script's recording (x mono at fs; t0: where the script's 0 ms is in x, s). Every cell is a
-    ratio, so the FM-1's USB at 48 kHz is judged against the host's 44.1 kHz reference as it is"""
-    ev, _ = events()
+    ratio, so the FM-1's USB at 48 kHz is judged against the host's 44.1 kHz reference as it is. keys: the script has
+    the key cells (the host's)"""
+    ev, _ = events(keys)
     out = {}
     for kind, label, t, ns, v in ev:
         ts = strike(x, t0 + t / 1000, fs)
         i0, i1 = int((ts + W0) * fs), int((ts + W1) * fs)
         seg = x[i0:i1]
-        if kind == "note":
+        if kind in ("note", "key"):
             h, inh = harm_cells(seg, f0(ns[0]), fs)
-            out[label] = dict(H2=h[0], H3=h[1], H4=h[2], H5=h[3], H6=h[4], inh=inh)
+            a, _ = harm_cells(x[int((ts + A0) * fs):int((ts + A1) * fs)], f0(ns[0]), fs, pad=8)
+            out[label] = dict(H2=h[0], H3=h[1], H4=h[2], H5=h[3], H6=h[4], inh=inh,
+                              aH2=a[0], aH3=a[1], aH4=a[2], aH5=a[3], aH6=a[4])
         else:
             p, fr = spectrum(seg, fs)
             out["chord/" + label] = dict(imd=inharm(p, fr, [f0(n) for n in ns]))
@@ -201,9 +225,10 @@ def tags():
 
 
 def device_events(tag):
-    """the same script for the FM-1 (tools/hil_jack.py --dist): [(t_s, kind, a, b)] and the take's length (s)"""
+    """the same script for the FM-1 (tools/hil_jack.py --dist): [(t_s, kind, a, b)] and the take's length (s). No key
+    cells there: nothing presses the FM-1's keys (the host's key cells prove the key path's notes equal MIDI's)"""
     ev = []
-    for l in script(*next(x for x in tags() if x[0] == tag)[1:]):
+    for l in script(*next(x for x in tags() if x[0] == tag)[1:], keys=False):
         f = l.split()
         if f[1] == "end":
             return sorted(ev, key=lambda e: e[0]), int(f[0]) / 1000 + 0.3
@@ -213,7 +238,7 @@ def device_events(tag):
 
 def measure_tag(binary, tag, outdir):
     _, ccc, tcc, mcc = next(x for x in tags() if x[0] == tag)
-    return measure_wave(render(binary, tag, script(ccc, tcc, mcc), outdir))
+    return measure_wave(render(binary, tag, script(ccc, tcc, mcc), outdir), keys=True)
 
 
 def measure(binary, outdir=None):
@@ -244,9 +269,9 @@ def judge(cells, base, methods_base="A"):
                 if b is None:
                     rows.append((f"{tag} {label}", m, v, None, None, False))
                     continue
-                lim = b + MARGIN
+                lim = b + (MARGIN_H2 if m in ("H2", "aH2") else MARGIN)
                 lim = max(lim, FLOOR)
-                if m == "H3" and label.endswith("/127"):
+                if m in ("H3", "aH3") and (label.endswith("/127") or label.endswith("/max")):
                     lim = min(b + MARGIN, CEIL_H3) if b <= CEIL_H3 else b + MARGIN
                 rows.append((f"{tag} {label}", m, v, b, lim, bool(v <= lim + 1e-9)))
     return rows

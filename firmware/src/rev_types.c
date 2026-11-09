@@ -189,7 +189,7 @@ __attribute__((noinline)) static void rv_send_ramp(const int32_t *L, const int32
     uint32_t j;
     for (j = 0; j < CTL; j++) {
         q += dq;
-        rv_in[j] = clampi((int32_t)(((int64_t)((L[j] + R[j]) >> 1) * (q >> 5)) >> 15), -131071, 131071);
+        rv_in[j] = clampi(FX_HC(1, (int32_t)(((int64_t)((L[j] + R[j]) >> 1) * (q >> 5)) >> 15), -131071, 131071), -131071, 131071);
     }
 }
 #if FR_C1
@@ -230,7 +230,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
         else
         for (j = 0; j < CTL; j++)                      /* 64-bit: the bus can be several times full scale here
                                                         * (feedback effects, many v127 notes: fuzz seed 95) */
-            rv_in[j] = clampi((int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15), -131071, 131071);
+            rv_in[j] = clampi(FX_HC(1, (int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15), -131071, 131071), -131071, 131071);
         if (lcv || rv_lc) rev_locut(rv_in, lcv);
         if (pd || pd_on) fx_predelay(rv_in, pd);
         if (rv_off != off) rv_off += rv_off < off ? 1 : -1;

@@ -23,7 +23,7 @@ Measured per note (mono, 44.1 kHz; t = the strike): H2..H6 re H1 (dB, band peaks
 re the median: in the body re the body, after the key-up re the 200 ms before it: clicks), and in full mode "lu" (K-weighted loudness of the hold), "cb" (critical-band
 loudness, phon-like, tools/cb_loud.py) and "lim" (the limiter's gain reduction: RAW minus effects-off level). Per
 chord: "imd" (the energy off every harmonic band of the notes re their fundamentals), level, peak. Per script: "clip"
-(samples at full scale) and "noise" (the floor 2..3 s after the last note).
+(samples at full scale) and "noise" (the floor 2..3 s after the last note, the effects' lines reset by CC 10 2 s before).
 
 The verdict (exit 1 on any failure):
   ceilings  pristine, from AGENTS.md section 1, NOT overridable by the expected-changes file:
@@ -81,6 +81,9 @@ W0, W1 = 0.05, 0.45                 # s: the harmonic window after the strike
 BAND, IBW, IREL = 0.03, 6.0, 0.003  # harmonic peaks +-3 %; inh / imd: a harmonic's band +-6 Hz or +-0.3 %
 SILENT = -70.0                      # dBFS: a note below this (out of the engine's range) has no spectral cells
 FLOOR_H, MARGIN, CEIL_H3 = -60.0, 3.0, -25.0
+LSB_FLOOR = 1.0                     # clk_off: a tail sample of at most 1 LSB is silence, not a click (a measurement
+                                    # floor: a reverb tail's last 1-LSB sample against 0.9.9's exact zero read -12 dB
+                                    # against -300; never raise it)
 TOL = {"H": 3.0, "inh": 3.0, "imd": 3.0, "level": 1.5, "peak": 2.0, "cent": 0.10, "decay": 3.0, "keyup": 2.0,
        "clk": 6.0, "noise": 3.0, "clip": 0, "lu": 1.0, "cb": 1.5, "lim": 1.5}
 
@@ -99,6 +102,9 @@ def cases(grid):
             for cfg, ccs in CONFIGS.items():
                 for m, mv in METHODS:
                     setup = [(110, 0xB0, tcc, tval), (120, 0xB0, 40, mv)] + [(100, 0xB0, c, v) for c, v in ccs]
+                    if cfg == "FXOFF" and build == "fm1":    # the dry engine, as v0.9.9's bypass: the FX button keeps
+                        setup.append((125, 0xB0, 106, 0))    # the compressor from 0.9.10 (fx.c FR_BYP_KEEP_CMP), so
+                                                             # COMP off too (the HQ build kept it in v0.9.9 already)
                     keys = g["keys_ep"] if tcc == 80 else g["keys_bar"]
                     out.append((f"{build}/{tname}/{cfg}/{m}", build, setup, keys, "type"))
         if grid == "full" and build == "fm1":
@@ -106,7 +112,7 @@ def cases(grid):
                 for cname, ccn in CONTROLS:
                     for cv in (0, 127):
                         setup = [(100, 0xB0, 111, 127), (110, 0xB0, tcc, tval), (120, 0xB0, 40, 0),
-                                 (130, 0xB0, ccn, cv)]
+                                 (125, 0xB0, 106, 0), (130, 0xB0, ccn, cv)]   # (COMP off: the dry, as FXOFF)
                         out.append((f"{build}/{tname}/{cname}{cv}/A", build, setup,
                                     g["keys_ep"] if tcc == 80 else g["keys_bar"], "control"))
         for pc in g["presets"]:
@@ -144,6 +150,8 @@ def script(grid, setup, keys, shift=0):
         ls += [f"{t + HOLD} midi 0x80 {n} 0" for n in ns]
         if ped:
             ls.append(f"{t + HOLD + 1500} midi 0xB0 64 0")
+    ls.append(f"{end - 3000} midi 0xB0 10 127")    # (the delay / reverb lines reset 2 s before the noise window: a
+                                                    # preset's echo (F17 FDBK 72) still sat at -55 dBFS there)
     ls.append(f"{end} end")
     return sorted(ls, key=lambda l: int(l.split()[0]))
 
@@ -194,12 +202,13 @@ def offharm(p, fr, funds):
 
 
 def clicks(x, ref):
-    """dB: the largest 1 ms peak of the second difference in x re ref's median 1 ms peak"""
+    """dB: the largest 1 ms peak of the second difference in x re ref's median 1 ms peak; -100 at most below (a
+    numerical floor: a silent tail reads -300, a tail of float residue -150, neither is a click)"""
     def frames(y):
         d = np.abs(np.diff(y, 2))
         n = len(d) // 44
         return d[:n * 44].reshape(n, 44).max(1) if n else np.zeros(1)
-    return db((frames(x).max() / (np.median(frames(ref)) + 1e-9)) ** 2)
+    return max(db((frames(x).max() / (np.median(frames(ref)) + 1e-9)) ** 2), -100.0)
 
 
 _KW = None
@@ -291,9 +300,9 @@ def measure_once(binary, case, grid, tmp, shift):
         c["clk"] = clicks(body, body)
         if not ped:
             c["keyup"] = rms_db(mono[off + int(0.08 * FS):off + int(0.28 * FS)]) - rms_db(mono[off - int(0.2 * FS):off])
-            c["clk_off"] = clicks(mono[off:off + int(0.3 * FS)], mono[off - int(0.2 * FS):off])   # (2026-11-08: re the
-            # 200 ms before the key-up, not the whole body: a longer sustain left the note louder at the key-up than
-            # the body's median and read as a click with none after the key-up, k93)
+            tail = mono[off:off + int(0.3 * FS)]                  # (re the 200 ms before the key-up, not the
+            c["clk_off"] = clicks(np.where(np.abs(tail) <= LSB_FLOOR, 0.0, tail),   # whole body: k93, 2026-11-08)
+                                  mono[off - int(0.2 * FS):off])
         if full:
             import cb_loud
             c["lu"] = -0.691 + db(np.mean(np.square(kweight(hold / 32768.0))))

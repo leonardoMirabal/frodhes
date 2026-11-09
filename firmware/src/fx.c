@@ -63,6 +63,9 @@ static volatile int32_t fx_cmp_gr;               /* ISR: the compressor's gain r
 static volatile uint32_t fx_dly_sync_samples;    /* main loop (tempo.c): a synced delay time, 0 = free */
 static volatile uint32_t fx_tw_sync_inc;         /* main loop: a synced tremolo rate (Q32 step), 0 = free */
 static volatile uint8_t fx_bypass;              /* main loop (the FX button): all effects off, settings kept */
+#ifndef FR_BYP_KEEP_CMP
+#define FR_BYP_KEEP_CMP 1                       /* the bypass keeps the compressor (fx_process: dry_c) */
+#endif
 static volatile int32_t fx_peak;                 /* ISR: last block's max |out| */
 static volatile uint32_t prof_us, prof_max_us;   /* ISR (frodhes.c app_audio): its own time, this block / maximum */
 static uint32_t prof_over;
@@ -79,6 +82,14 @@ static int fx_quiet(void) { return fx_quiet_blocks >= 86u || fx_gz >= 86u; }
  * carries) instead of one instruction. */
 #define FX_K32 volatile int32_t
 static inline __attribute__((always_inline)) int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
+/* FX_HC(k, v, lo, hi): v, and on the host a count when a clamp to [lo, hi] would cut it (engine.c fx_h_clip: the
+ * effects' headroom gate, tests/py/test_fx_pristine.py); the firmware: v (nothing) */
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+static inline int32_t fx_hc(int k, int32_t v, int32_t lo, int32_t hi) { if (v < lo || v > hi) fx_h_clip[k]++; return v; }
+#define FX_HC(k, v, lo, hi) fx_hc(k, v, lo, hi)
+#else
+#define FX_HC(k, v, lo, hi) (v)
+#endif
 static inline __attribute__((always_inline)) int32_t mulq15(int32_t a, int32_t b) { return (a * b) >> 15; }        /* |a|,|b| small enough */
 /* ---- the on / off crossfade (0.9.6, the bug hunt: switching an effect replaced the dry signal by the processed one,
  * or back, in one sample: up to 1700 LSB steps under a held chord). An effect switched on or off keeps running while
@@ -1178,7 +1189,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
     {   /* the chunk's line first, then its taps (they read 153 .. 465 samples back: written in the chunks before) */
         uint32_t p = 0u - cho_w;
         const int32_t *l = L + fxc_o, *r = R + fxc_o, *le = L + fxc_e;
-        for (; l < le; l++, r++) { cho_b[p & 1023u] = clampi((*l + *r) >> 1, -1048575, 1048575); p--; }
+        for (; l < le; l++, r++) { cho_b[p & 1023u] = clampi(FX_HC(2, (*l + *r) >> 1, -1048575, 1048575), -1048575, 1048575); p--; }
         cho_w += fxc_e - fxc_o;
         cho_b[-1] = cho_b[1023]; cho_b[1024] = cho_b[0]; cho_b[1025] = cho_b[1];
     }
@@ -1219,7 +1230,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
          * 153 .. 465 samples back, all written by then and none overwritten (the ring holds 1024) */
         uint32_t p = 0u - cho_w;
         const int32_t *l = L, *r = R, *le = L + n;
-        for (; l < le; l++, r++) { cho_b[p & 1023u] = clampi((*l + *r) >> 1, -1048575, 1048575); p--; }
+        for (; l < le; l++, r++) { cho_b[p & 1023u] = clampi(FX_HC(2, (*l + *r) >> 1, -1048575, 1048575), -1048575, 1048575); p--; }
         cho_w += n;
         cho_b[-1] = cho_b[1023]; cho_b[1024] = cho_b[0]; cho_b[1025] = cho_b[1];
     }
@@ -1545,7 +1556,7 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
         hp += (f - hp + 64) >> 7;
         f -= hp;
         fq += fs; kfb = fq >> 8;
-        dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + (int32_t)(((int64_t)f * kfb) >> 15), -32768, 32767);
+        dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi(FX_HC(0, (in >> 1) + (int32_t)(((int64_t)f * kfb) >> 15), -32768, 32767), -32768, 32767);
         w++;
         wq += ws;
         r = (int32_t)(((int64_t)r * (wq >> 8)) >> 15);   /* (64 bits: the 4-point read overshoots 2^16, c1-int) */
@@ -1914,7 +1925,7 @@ static FX_RAM __attribute__((noinline)) void rev_down(const int32_t *in, int32_t
     for (i = 0; i < HL_NC; i++) {
         const int32_t *c = in + 2u * i - 4u;                /* (c[5]: this pair's second sample, in[2i + 1]) */
         int32_t x = (1024 * c[0] + RV_HB(c + 1, 2) + 1024) >> 11, v;
-        x = mulq15(clampi(x, -131071, 131071), HL_IN);
+        x = mulq15(clampi(FX_HC(1, x, -131071, 131071), -131071, 131071), HL_IN);
         v = x - hp + he;
         he = v & 31;
         hp += v >> 5;
@@ -2038,9 +2049,7 @@ static uint32_t rev_cost_us(void);
 static void rev_reset_state(void);
 
 /* ---- master: DC blocker, peak limiter (Felucca master_out; its soft clip never acted: gone, 0.9.5) */
-#define LIM_T 29204                                     /* -1.0 dBFS: the look-ahead limiter's ceiling (-2.7 dBFS, 24000, 0.8 ..
-                                                         * 0.9.9; 0.9.10: a safety net for pile-ups only, the hot presets' LEVELs
-                                                         * trimmed so hard playing never reaches it) */
+#define LIM_T 24000                                     /* -2.7 dBFS: the look-ahead limiter's ceiling (0.8) */
 static int32_t dc_l, dc_r, dce_l, dce_r;
 /* look-ahead limiter (0.8): the output runs one 32-sample sub-block (0.73 ms) late; the gain ramps linearly over
  * each sub-block towards the lowest gain this one and the next need, so no sample ever passes LIM_T, nothing is
@@ -2317,7 +2326,7 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
         } else for (i = 0; i < (int32_t)LK; i++) {
             /* limiting: g0 (the last sub-block's tgt, <= lk_need of its pn, which is lk_pk now) and tgt are both
              * <= lk_need(lk_pk) and the ramp stays between them, so |x g >> 15| <= lk_pk lk_need(lk_pk) >> 15 <=
-             * LIM_T (-1.0 dBFS since 0.9.10): no clip after it (the master clip never acted and is gone, 0.9.5) */
+             * LIM_T (-2.7 dBFS): no clip after it (the master clip never acted and is gone, 0.9.5) */
             int32_t g = g0 + (int32_t)(((int64_t)(tgt - g0) * LK_S[i]) >> 15), xl = lk_l[i], xr = lk_r[i];
             lk_l[i] = fx_L[sb + (uint32_t)i]; lk_r[i] = fx_R[sb + (uint32_t)i];
             if (g != 32768) { xl = (int32_t)(((int64_t)xl * g) >> 15); xr = (int32_t)(((int64_t)xr * g) >> 15); }
@@ -2330,6 +2339,9 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
         }
         lk_pk = pn;
         lk_g = tgt;
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+        if (tgt < 32768 || g0 < 32768) fx_h_clip[3]++;  /* (the limiter acted on this sub-block) */
+#endif
     }
     fx_wet = wet; dc_l = dl; dce_l = el; dc_r = dr; dce_r = er;
 #if FR_C1
@@ -2405,11 +2417,17 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
 #if defined(C1PF_ON)
     C1PS(0);
 #endif
-#ifdef FR_BYP_KEEP_CMP
-    /* the Move (FR_BYP_KEEP_CMP, the user 2026-10-28): FX bypasses every effect but the compressor, so its dry is the
-     * compressor's output; the FM-1 (no define) bypasses the compressor too */
+#if FR_BYP_KEEP_CMP
+    /* FX bypasses every effect but the compressor, so its dry is the compressor's output (the Move, the user
+     * 2026-10-28; every build from 0.9.10, the user 2026-11-08: "leave compressor aside of the efx off button, I don't
+     * want to change the dynamic of the piano": the bypass had dropped the compressor's make-up, the effects-on sound
+     * 1-2.6 dB over the bypass on the factory presets). -DFR_BYP_KEEP_CMP=0: the bypass without the compressor */
     static int32_t dry_c[256];
+#if FR_C1
+    for (j = fxc_o; j < fxc_e; j++) dry_c[j] = m[j];   /* (this chunk's: the later chunks' m is not written yet) */
+#else
     for (j = 0; j < n; j++) dry_c[j] = m[j];
+#endif
 #endif
     fx_eq(m, n);                                       /* the EQ before the drive (flat: m untouched, no loop) */
 #if defined(C1PF_ON)
@@ -2441,7 +2459,7 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
 #if defined(C1PF_ON)
     C1PS(7);
 #endif
-#ifdef FR_BYP_KEEP_CMP
+#if FR_BYP_KEEP_CMP
     FR_FAR(fx_out)(dry_c, out, n);
 #else
     FR_FAR(fx_out)(mono, out, n);

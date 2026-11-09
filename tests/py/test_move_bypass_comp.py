@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""The Move's FX bypass keeps the compressor (FR_BYP_KEEP_CMP, MOVE_DEFS; the user, 2026-10-28): with FX off, the
-Move build's output is the compressor's (its make-up and gain reduction heard), the FM-1 build's the plain dry; with
-the compressor off, the two bypasses are the same samples."""
+"""The FX bypass keeps the compressor (FR_BYP_KEEP_CMP: the Move from 2026-10-28, every build by default from 0.9.10,
+the user 2026-11-08): with FX off, the output is the compressor's (its make-up and gain reduction heard), with
+-DFR_BYP_KEEP_CMP=0 the plain dry; with the compressor off, the two bypasses are the same samples."""
 import os
 import subprocess
 
@@ -16,7 +16,7 @@ CC = ["cc", "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", '-DAPP_VER=
 
 def binary(keep):
     b = os.path.join(ROOT, "build", "move_bypass", "keep" if keep else "fm1")
-    defs = ["-DFR_BYP_KEEP_CMP=1"] if keep else []
+    defs = ["-DFR_BYP_KEEP_CMP=1"] if keep else ["-DFR_BYP_KEEP_CMP=0"]
     return hostrun.once(b, lambda p: subprocess.run(CC + defs + ["-o", p, "firmware/src/frodhes.c", "-lm"],
                                                      cwd=ROOT, check=True))
 
