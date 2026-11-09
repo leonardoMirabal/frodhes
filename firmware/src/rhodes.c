@@ -141,6 +141,7 @@ typedef struct {
     int32_t lvl, lvl0;                         /* the modes' peak sum: the last sub-block's, the highest since the
                                                 * strike (the key-up thump's cap: rh_left) */
     uint16_t felt_g;                           /* Q15: the key-up felt noise's gain (the same cap: RH_FELT_K) */
+    uint16_t atk;                              /* Q15: the strike's output lift still to decay (RH_ATK_A, rh_voice_sub) */
     int32_t kd, kr;                            /* DECAY's and RELEASE's k at the note-on: eps0 / eps1's (rh_retune) */
     int32_t hd_off0, hd_g0, hd_gc, hd_d, hd_y1, hd_y2; /* the harmonic decay glide (rh_hd_init): the strike's offset and
                                                 * gain there, the gain it set last, the glide's end (Q25 gap), its two
@@ -549,6 +550,16 @@ static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /
     for (; i < 64u; i++) { d2 += *t++; d1 += d2; x += d1; o[i] = (int16_t)(o[i] + (((x - o[i]) * w) >> 15)); }
 }
 
+/* the attack's lift (2026-11-09, the user: the Rhodes weak; the 0.9.10 Rhodes' longer mid / upper decay, matched to
+ * 0.9.9's loudness, left its first 60 ms 0.9 .. 1.4 dB under 0.9.9's at every velocity, the crest 1.4 .. 3 dB lower):
+ * the voice's output gain x (1 + RH_ATK_A / 32768) at the strike, back to 1 over ~0.2 s (rh_voice_sub). Up to
+ * RH_ATK_V, then less to none at v127: the hardest chords' peak stays where it was (the user: "loudness no need to be
+ * a hotter signal") */
+#ifndef RH_ATK_A
+#define RH_ATK_A 6200u                                  /* +1.5 dB */
+#endif
+#define RH_ATK_V 96u
+
 /* The dynamics stage (0.9.10): a key x velocity gain on the voice, set at the strike (no per-sample cost), relative
  * to 0.9.9's loudness. From v40 up both keep 0.9.9's level exactly (2026-11-09, the user: the soft end back toward
  * 0.9.9; it was 0 dB at v60 to -9 dB at v20: v40 -4.5, v50 -1.6 dB, the FM-1's keys' usual range heard weak); below,
@@ -719,6 +730,8 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
                      * (a + ((a2 - a) w >> 15), between a and a2: an int16), so the force is byte-identical */
         rh_pz_mix(v->pbuf, &RH_PZB, RH_PZI(key, l + 1u < RH_NLAYER ? l + 1u : RH_NLAYER - 1u), w);
     v->ptab = v->pbuf;
+    v->atk = (uint16_t)(vel <= RH_ATK_V ? RH_ATK_A : (RH_ATK_A * (127u - vel)) / (127u - RH_ATK_V));   /* (each strike,
+                                                       * a re-strike too: the attack's lift, none at v127) */
     v->pamp = (int32_t)pa[i] + ((((int32_t)pa[i + 1] - (int32_t)pa[i]) * (int32_t)f) >> 8);
 #ifdef RH_DRIVE
     if (RH_IS_MAP(v)) v->pphys = v->pamp;             /* MAP: the physical force is the modes' force */
@@ -1789,6 +1802,13 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
     const rh_key_t *k = v->k;
     uint32_t j, m;
     int32_t sum = 0, Hp = v->Hprev, off = v->off, gain = v->gain, fnz = 0;
+    if (v->atk) {                                         /* the attack's lift: x (1 + atk), atk from RH_ATK_A at the
+                                                           * strike down by 1/64 a sub-block (~46 ms); after the
+                                                           * pickup (its output gain): the same harmonics */
+        int64_t g = ((int64_t)gain * (32768 + v->atk)) >> 15;
+        gain = g > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)g;
+        v->atk = v->atk > 63u ? (uint16_t)(v->atk - (v->atk >> 6)) : 0u;
+    }
     if (v->ramp) {                                        /* damper crossfade: E and eps together */
         int32_t f;
         v->ramp--;
