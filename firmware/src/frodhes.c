@@ -81,6 +81,7 @@ static uint32_t c1_nv = FR_VOICES;              /* the voices a strike may take:
  * the audio (as .bss would be). Core 0's data only: rhodes.c rh_cc (14 KB, the note-on cache: the main loop fills it,
  * the ISR reads it) and seq.c sq_ev (3.5 KB, the pattern); no core 1 job touches .ramx */
 #define RH_CC_SEC ".ramx.rh_cc"
+#define BAR_CC_SEC ".ramx.bar_cc"                  /* (bars.c: the strike coefficient cache, 4.6 KB) */
 #define SQ_EV_SEC __attribute__((section(".ramx.sq_ev")))
 static void fr_ramx_clear(void)
 {
@@ -135,11 +136,18 @@ static uint32_t smk_btn_leds;                   /* the SMK's own buttons' LEDs (
 /* and the two cores' timeline (APP_DEFS="-DRH_PROF_STAGES -DC1_PROF" ./build.sh --c1): C1PF(i, ticks) keeps item i's
  * maximum, written by either core (a lost maximum at the query's reset is fine here). Since the block's start: 16
  * core 0's voices done (the last chunk's, eng_end); 17 core 0's voice time in a block (the waits out); 18 core 1's block-start job (c1_pre_job); 19 its last wait,
- * 20 the waits before it summed; 23 the last chunk's effects, 24 the first's, 25 a middle one's; each stage's time in a
+ * 20 the waits before it summed; 21 core 0's wait with the tail's pieces (C1_STREAM, APP_TAIL_EARLY: before item 19's,
+ * which then is only the rest), 22 core 1's last frame done (C1_STREAM, since the block's start); 23 the last chunk's effects, 24 the first's, 25 a middle one's; each stage's time in a
  * block (its chunks summed): 26 COMP, 27 EQ, 28 DRIVE, 29 FILTER, 30 TREM / WAH, 31 SPREAD + PHASER, 32 the delay
- * (chorus too), 33 the reverb, 34 fx_out; 35-43 the same stages in the first chunk alone */
-#define PROF_NST 44u
+ * (chorus too), 33 the reverb, 34 fx_out; 35-43 the same stages in the first chunk alone; 44 (C1_PRE_C0) the chunks
+ * whose front core 0 ran in a block (a count, not us); 45 core 0's eng_begin (the block's note starts, before its
+ * first chunk). 46-51 one block's own values, not maxima: the block whose app_audio ended latest since the block's
+ * start (46, that end) and in it 47 core 0's voices done @, 48 core 0's voice time, 49 its eng_begin, 50 core 1's last
+ * frame done @, 51 the blocks since the last Program Change (presets.c preset_load; a count, not us) */
+#define PROF_NST 52u
 static volatile uint32_t c1_pf_t0;
+static volatile uint32_t c1_pf_d22;                 /* core 1: this block's item 22 (the snapshot's 50) */
+static volatile uint8_t c1_pf_pc;                   /* the main loop: a Program Change was loaded (preset_load) */
 #define C1PF_ON 1
 #define C1PF(i, d) do { uint32_t d2_ = (d); if (d2_ > prof_st_max[i]) prof_st_max[i] = d2_; } while (0)
 #else
@@ -266,6 +274,9 @@ FR_COLD static int usb_link(void) { return host_usb_link; }
 #define C1_SUB 8u                               /* chunks a block: 8 (32 frames) or 4 (64) */
 #endif
 _Static_assert(C1_SUB == 1u || C1_SUB == 2u || C1_SUB == 4u || C1_SUB == 8u, "C1_SUB: 1, 2, 4 or 8 chunks a block");
+#if C1_PRE_C0 && !C1_STREAM
+#error "C1_PRE_C0: the C1_STREAM job only"
+#endif
 #ifdef C1_EDGES
 /* uneven chunks (experiment: APP_DEFS=-DC1_EDGES=32,128,224): the inner edges of a 256-frame block, each a multiple of 32
  * (every effect's sub-block), rising */
@@ -308,6 +319,34 @@ static void c1_pre_job(uint32_t a)
  * to), until the block's end: it never waits for a post, core 0 never waits for it before the block's end. Each word
  * read twice (a word read wrong once is not believed), checked (a multiple of 32, rising, within the block) */
 static volatile uint32_t c1_rdy, c1_fxd;
+#if C1_PRE_C0
+/* C1_PRE_C0: core 0 runs chunk j's front itself (fx.c fx_front) when core 1 has no front left before it and is still
+ * on the chunks handed before (behind: the effects are the longer path now), else core 1 does (fx_process). The
+ * output is the same either way (tests/py/test_c1_pre_c0.py: forced placements); the host's FRODHES_C1 front=N forces
+ * one: 1 core 0 always, 2 core 1 always, 3 alternating blocks, 4 random blocks, 5 random chunks (0: as on the FM-1) */
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+#define FR_C1_FRONT() c1h.front
+#else
+#define FR_C1_FRONT() 0u
+#endif
+static int c1_front_take(uint32_t j, uint32_t k)
+{
+    uint32_t x, y;
+    if (fxf_rd() != j * k) return 0;            /* (a chunk before it still core 1's) */
+    switch (FR_C1_FRONT()) {
+    case 1u: return 1;
+    case 2u: return 0;
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    case 3u: return (int)(blk_n & 1u);
+    case 4u: { static uint32_t b = 0xFFFFFFFFu, v; if (b != blk_n) { b = blk_n; c1h.rnd = c1h.rnd * 1664525u + 1013904223u; v = c1h.rnd >> 31; } return (int)v; }
+    case 5u: c1h.rnd = c1h.rnd * 1664525u + 1013904223u; return (int)(c1h.rnd >> 31);
+#endif
+    default: break;
+    }
+    fr_c1_sync(); x = c1_fxd; fr_c1_sync(); y = c1_fxd;
+    return x == y && x < j * k;                 /* core 1 behind: still on the chunks before */
+}
+#endif
 static int c1_stream_step(void)                 /* the frames ready, not done: their effects (1), or none ready (0) */
 {
     uint32_t r, o = c1_fxd, n = c1_job.n;
@@ -371,6 +410,10 @@ static void c1_stream_job(uint32_t a)
 #if !defined(DINGHY_HOST) && !(defined(FR_FAULT) && FR_C1)
     while (c1_fxd < c1_job.n)                   /* (core 0's wait holds core 1 if this runs late: fr_c1_wait_us) */
         if (!c1_stream_step()) fr_c1_pause();
+    C1PF(22, fm1_ticks() - c1_pf_t0);           /* (C1_PROF: core 1's last frame done, since the block's start) */
+#if defined(C1PF_ON)
+    c1_pf_d22 = fm1_ticks() - c1_pf_t0;         /* (this block's: the snapshot, item 50) */
+#endif
 #elif defined(DINGHY_HOST)
     c1_stream_step();                           /* (the host twin: the rest at core 0's ticks and its wait) */
 #endif
@@ -438,6 +481,9 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
         PROF_STAMP(1);
         c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n; c1_job.o = 0; c1_job.e = n;
+#if C1_PRE_C0
+        fxc_front_whole = 1;                    /* (the whole chain here, the front over the block at once, as before) */
+#endif
         c1_fx_job(0);
         if (rst) rh_side_on = 0;                /* (the voices CC 10 ended: as one core) */
     }
@@ -453,20 +499,42 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
         c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n;
         c1_rdy = 0; c1_fxd = 0;
+#if defined(C1PF_ON)
+        c1_pf_t0 = t0;
+#endif
+#if C1_PRE_C0
+        fxc_front_whole = 0; fxf_done = 0; fxf_k = k;   /* (each chunk's front on either core: c1_front_take) */
+        uint32_t ftk = 0;
+#endif
         fr_c1_sync();
         if (!fr_c1_run(c1_stream_job, 0)) { solo = 1; fx_pre_c(); }
 #if defined(C1PF_ON)
-        uint32_t pv = 0, pt;
+        uint32_t pv = 0, pt, eb, c0d = 0;
+        pt = fm1_ticks();
 #endif
         eng_begin(n);
+#if defined(C1PF_ON)
+        eb = fm1_ticks() - pt;
+        C1PF(45, eb);
+#endif
         for (j = 0; j < C1_SUB; j++) {
 #if defined(C1PF_ON)
             pt = fm1_ticks();
 #endif
             eng_chunk(c1_mono, j * k, j * k + k);   /* core 0: chunk j's voices */
-            if (j + 1u == C1_SUB) { eng_end(c1_mono, n); C1PF(16, fm1_ticks() - t0); }
+            if (j + 1u == C1_SUB) {
+                eng_end(c1_mono, n);
+#if defined(C1PF_ON)
+                c0d = fm1_ticks() - t0;
+#endif
+                C1PF(16, fm1_ticks() - t0);
+            }
 #if defined(C1PF_ON)
             pv += fm1_ticks() - pt;
+#endif
+#if C1_PRE_C0
+            if (!solo && c1_front_take(j, k)) { fxf_chunk(c1_mono, j * k, j * k + k, n); ftk++; }   /* core 0: chunk
+                                                 * j's COMP, EQ, DRIVE, FILTER (fx.c C1_PRE_C0); else core 1's */
 #endif
 #ifndef DINGHY_HOST
             if (!solo && !fr_c1_busy()) {       /* (the job over before the block's end: refused, or core 1 held)
@@ -494,6 +562,10 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
         PROF_STAMP(1);
         C1PF(17, pv);
+#if C1_PRE_C0
+        C1PF(44, ftk * 24u);                    /* (C1_PROF: the chunks whose front core 0 ran, as "us") */
+        (void)ftk;
+#endif
         if (!solo) {
 #ifndef DINGHY_HOST
             uint32_t el = (fm1_ticks() - t0) / 24u, wu = el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u;
@@ -509,6 +581,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
                     else fr_c1_pause();
                 }
                 sp = (fm1_ticks() - tw) / FM1_TICKS_PER_US;
+                C1PF(21, fm1_ticks() - tw);     /* (C1_PROF: this wait, item 19 the one after it) */
                 wu = sp < wu ? wu - sp : 1u;    /* (the wait's rest: late at the same time as without the pieces) */
             }
 #endif
@@ -527,6 +600,17 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
             d = c1_fxd;
             if (r && d < n) { c1_job.o = d; c1_job.e = n; c1_fx_job(0); c1_fxd = n; }   /* (refused / late: core 0) */
         }
+#if defined(C1PF_ON)
+        {   /* the snapshot (items 46-51): this block's own values, kept when it ended later than the one kept */
+            static uint32_t pc_blk = 0xFFFFu;
+            uint32_t end = fm1_ticks() - t0;
+            if (c1_pf_pc) { c1_pf_pc = 0; pc_blk = 0; } else if (pc_blk < 0xFFFFu) pc_blk++;
+            if (end > prof_st_max[46]) {
+                prof_st_max[46] = end; prof_st_max[47] = c0d; prof_st_max[48] = pv; prof_st_max[49] = eb;
+                prof_st_max[50] = solo ? 1u : c1_pf_d22; prof_st_max[51] = (pc_blk < 600u ? pc_blk : 600u) * 24u + 24u;
+            }
+        }
+#endif
     }
 #else
     else {

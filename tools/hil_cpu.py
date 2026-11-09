@@ -134,6 +134,9 @@ STAGES = {1: "engine (eng_render)", 2: "fx copy", 3: "compressor", 4: "filter + 
           14: "fx (other)", 15: "after the last stamp",
           # FR_C1 + C1_PROF (frodhes.c C1PF): since the block's start (@), or a span; "blk" = summed over a block
           16: "c0 voices done @", 17: "c0 voices blk", 18: "c1 block-start job", 19: "c0 last wait", 20: "c0 waits before",
+          21: "c0 tail-loop wait", 22: "c1 done @", 44: "front chunks on c0 (count)",
+          45: "c0 eng_begin", 46: "SNAP end @", 47: "SNAP c0 voices done @", 48: "SNAP c0 voices blk",
+          49: "SNAP c0 eng_begin", 50: "SNAP c1 done @", 51: "SNAP blocks after PC +1 (count)",
           23: "c1 last chunk fx", 24: "c1 first chunk fx", 25: "c1 middle chunk fx", 26: "COMP blk", 27: "EQ blk",
           28: "DRIVE blk", 29: "FILTER blk", 30: "TREM blk", 31: "SPREAD+PHASER blk", 32: "delay blk", 33: "reverb blk",
           34: "fx_out blk", **{35 + i: f"first: {k}" for i, k in enumerate(("COMP", "EQ", "DRIVE", "FILTER", "TREM",
@@ -160,6 +163,13 @@ def ports():
         import mido
         outs = fm1_ports.pick(mido.get_output_names())
         ins = fm1_ports.pick(mido.get_input_names())
+        if fm1_ports.AUDIO_LOC is not None:           # a pinned unit (FM1_LOCATION): its MIDI too, never the other
+            at = fm1_ports.midi_names_at(fm1_ports.AUDIO_LOC)
+            if not at or not at[0] or not at[1]:
+                sys.exit(f"hil_cpu: no MIDI ports at USB 0x{fm1_ports.AUDIO_LOC:08x}")
+            ins, outs = at
+        elif len(outs) > 1 or len(ins) > 1:
+            sys.exit("hil_cpu: two FM-1 MIDI ports: give FM1_LOCATION=0x...")
         if not outs or not ins:
             sys.exit("no FM-1 MIDI port")
         import fm1_midi

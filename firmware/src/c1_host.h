@@ -10,6 +10,8 @@
  *   late=N      the Nth job is late (run, then -1: core 1 held for good, core 0 redoes it)
  *   busy=N      fr_c1_busy: N - 1 of every N looks say busy (C1_AHEAD: chunks merged into one job)
  *   off=1       core 1 never started (the one-core fallback from the first block)
+ *   front=N     C1_PRE_C0 builds: where each chunk's front runs (frodhes.c c1_front_take): 0 as on the FM-1, 1 core 0,
+ *               2 core 1, 3 alternating blocks, 4 random blocks, 5 random chunks (seed=S: the random's start)
  * The web build: order 0, nothing injected. */
 #pragma once
 #include <stdint.h>
@@ -18,8 +20,8 @@
 
 enum { C1_OFF, C1_ON, C1_BAD, C1_LATE, C1_DEAF, C1_LOWV, C1_FAULT, C1_PARK, C1_DESYNC };
 static struct {
-    uint8_t st, order, cfg;
-    uint32_t refuse, late_at, jobs, ref, holds, posted, busy, bq;
+    uint8_t st, order, cfg, front;
+    uint32_t refuse, late_at, jobs, ref, holds, posted, busy, bq, rnd;
     void (*fn)(uint32_t);
     uint32_t arg;
 } c1h;
@@ -36,6 +38,8 @@ static void c1h_config(void)
         else if (!strncmp(e, "refuse=", 7)) c1h.refuse = (uint32_t)atoi(e + 7);
         else if (!strncmp(e, "late=", 5)) c1h.late_at = (uint32_t)atoi(e + 5);
         else if (!strncmp(e, "busy=", 5)) c1h.busy = (uint32_t)atoi(e + 5);
+        else if (!strncmp(e, "front=", 6)) c1h.front = (uint8_t)atoi(e + 6);
+        else if (!strncmp(e, "seed=", 5)) c1h.rnd = (uint32_t)atoi(e + 5);
         else if (!strncmp(e, "off=", 4) && atoi(e + 4)) c1h.st = C1_OFF;
         e = strchr(e, ',');
         if (e) e++;

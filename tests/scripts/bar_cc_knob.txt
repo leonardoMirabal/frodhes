@@ -1,0 +1,51 @@
+# The bars' strike coefficient cache (bars.c BAR_CC): a note-on's coefficients are computed at its queueing (the main
+# loop), stamped with the type, the key, TUNE, RING and DAMPER; a strike whose inputs moved in between takes rh_coef in
+# the ISR (the fallback). Here RING (CC 102), DAMPER (CC 103) and the TYPE (CC 79) move in the same millisecond as the
+# note-ons, after them: the strikes see the new values, the slots hold the old ones. The host output is the same with
+# the cache off (tests/py/test_bar_cc.py: -DBAR_CC=0, and FRODHES_BARCC_STAT counts hits and misses).
+50 midi 0xB0 119 127
+60 midi 0xB0 79 0
+100 midi 0x90 48 100
+100 midi 0x90 55 100
+100 midi 0xB0 102 20
+300 midi 0x90 60 110
+300 midi 0x90 64 90
+300 midi 0xB0 103 110
+500 midi 0x90 67 100
+500 midi 0xB0 102 120
+700 expect rms > -40
+# the TYPE moves after the note-on (VIBES -> MARIMBA): the strike waits for the fade, on MARIMBA's coefficients
+900 midi 0x90 72 100
+900 midi 0xB0 79 127
+# the same note queued twice around a RING move: one slot stale, one current
+1100 midi 0x90 50 100
+1100 midi 0xB0 102 64
+1100 midi 0x90 50 80
+# a 26-note burst on one value (every slot current; the steals start later from a slot or rh_coef)
+1300 midi 0x90 21 90
+1300 midi 0x90 24 90
+1300 midi 0x90 27 90
+1300 midi 0x90 30 90
+1300 midi 0x90 33 90
+1300 midi 0x90 36 90
+1300 midi 0x90 39 90
+1300 midi 0x90 42 90
+1300 midi 0x90 45 90
+1300 midi 0x90 49 90
+1300 midi 0x90 53 90
+1300 midi 0x90 57 90
+1300 midi 0x90 61 90
+1300 midi 0x90 65 90
+1300 midi 0x90 69 90
+1300 midi 0x90 73 90
+1300 midi 0x90 77 90
+1300 midi 0x90 81 90
+1300 midi 0x90 85 90
+1300 midi 0x90 89 90
+1300 midi 0x90 93 90
+1300 midi 0x90 97 90
+1300 midi 0x90 101 90
+1300 midi 0x90 105 90
+1300 midi 0x90 107 90
+1300 midi 0x90 108 90
+1600 expect rms > -40
