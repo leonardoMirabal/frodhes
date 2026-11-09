@@ -44,7 +44,7 @@
  *   rev_plate_run: the pointers 25 x 4 + 10 x 22 + 11 x 8, the guard copies 2 x 27, the rest 317     779
  *   = 4981 at rest; at worst + a SIZE step's 3 delays 87 + the decay gain 40 + the warm-up's checked reads (the
  *   first 0.15 s after a start) 132 + a wrapped write's copy 81 = 5321.
- * A SIZE fade (0.9.6, BUGHUNT #19; 128 ms after a turn under a ringing tail), on top: one site's blend (pl_xblend,
+ * A SIZE fade (0.9.6, BUGHUNT #19; 0.5 s after a turn under a ringing tail, PL_XS), on top: one site's blend (pl_xblend,
  *   11 a sample, ~190) + its pointers ~40 + the gains anew ~140: ~+370. (All 22 sites at once cost ~+3190 from flash,
  *   measured +210 us on the FM-1 under the VIBES worst case, 4296 us; ~+2780 from RAM still 4272 us.)
  * HALL (fx.c rev_hall, its own decimator and DC blocker included), counted the same way: 5644 at rest, 5864 with its
@@ -176,8 +176,12 @@ static int rev_plate_active(const rev_plate_t *s) { return s->quiet < PL_N; }
  * old ones one site after the other, 128 samples each (22 x 5.8 ms = 128 ms; one site at a time: the cost of one
  * blend, not 22; one fade at a time: a SIZE turned on during it waits for its end); the decay and output gains follow
  * the lengths and the size between as it fades. From silence, at once */
-#define PL_XS 32                                       /* a site's fade's step a sample (Q14): 512 samples (11.6 ms) a
-                                                         * site (64, the half rate's time: zipper 2.6x on a SIZE turn) */
+#define PL_XS 16                                       /* a site's fade's step a sample (Q14): 1024 samples (23 ms) a
+                                                         * site, 0.5 s for the 22 (64, the half rate's time: zipper 2.6x
+                                                         * on a SIZE turn; 0.9.10, 32: the sweep's wet bent 6.3 cents
+                                                         * p90 and its level stepped 3.3 dB, at 16 -0.1 and 1.6; equal
+                                                         * power, 32 / 16: 7.0 / -0.9 cents) */
+_Static_assert(16384 % (RQ_NC * PL_XS) == 0, "a site's fade ends on a block (pl_xw past 16384 would go negative)");
 static void pl_dset(rev_plate_t *s, uint32_t k, int32_t sz)
 {
     uint32_t d = (PL_R(PL_D0[k]) * (uint32_t)(128 + sz)) >> 8;

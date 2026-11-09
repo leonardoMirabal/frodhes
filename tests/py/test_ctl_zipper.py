@@ -4,6 +4,7 @@ every second, every other effect off), each with its own bound, tighter than the
 on rc-0910 before its fix (the numbers: before -> after). The renders are shared with test_control_sweep.py
 (build/host/ctl_sweep, cached by the binary's hash)."""
 import os
+import subprocess
 import sys
 
 import numpy as np
@@ -13,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import control_sweep as cs  # noqa: E402
 
 import hostrun  # noqa: E402
+from test_control_sweep import BASE  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -87,3 +89,31 @@ def test_reverb_type_starts_without_a_step(binary):
     assert max(starts) <= ref and max(starts) <= 1.5 * min(starts), (starts, ref)
     z, zw = sweep_zipper("rev TYPE", binary)
     assert zw <= 2.0, zw
+
+
+# the reverb's SIZE and TYPE cases on the other reverb kernels: the HQ build (rev_hq.c, rev_hq_plate.c, full rate) and
+# the two-core one (FR_C1: the effects on core 1, the same HQ reverb), each check at the sweep's general LIMITS (or
+# test_control_sweep.py's BASE bound for the case). 0.9.10: PLATE SIZE's wet bent 6.3 cents p90 there, its jump 3.3
+# (PL_XS 32), now -0.1 / 1.6
+BUILDS = {
+    "hq": ("build/host-hq/frodhes", ["make", "-C", hostrun.ROOT, "build/host-hq/frodhes"]),
+    "c1": ("build/host-c1/frodhes", ["make", "-C", hostrun.ROOT, "build/host-c1/frodhes",
+                                     "HOSTBIN=build/host-c1/frodhes", "HOST_DEFS=-DFR_C1=1"]),
+}
+REV_CASES = ["rev HALL SIZE", "rev PLATE SIZE", "rev INF SIZE", "rev TYPE"]
+
+
+@pytest.fixture(scope="module", params=list(BUILDS))
+def other(request):
+    rel, cmd = BUILDS[request.param]
+    return hostrun.once(os.path.join(hostrun.ROOT, rel),
+                        lambda b: subprocess.run(cmd, check=True, capture_output=True))
+
+
+@pytest.mark.parametrize("name", REV_CASES)
+def test_reverb_size_type_hq_c1(name, other):
+    c = cs.BY_NAME[name]
+    base = BASE.get(name, {})                          # (test_control_sweep.py's bounds: PLATE SIZE's jump 2.4)
+    bad = {k: v for k, v in cs.checks(c, cs.measure(c, other)).items()
+           if not v[2] and not (k in base and v[0] <= base[k][0])}
+    assert not bad, f"{name} ({other}): " + ", ".join(f"{k} {v[0]} (limit {v[1]})" for k, v in bad.items())

@@ -163,7 +163,11 @@ static int rev_plate_active(const rev_plate_t *s) { return s->quiet < PL_N; }
  * old ones one site after the other, 128 samples each (22 x 5.8 ms = 128 ms; one site at a time: the cost of one
  * blend, not 22; one fade at a time: a SIZE turned on during it waits for its end); the decay and output gains follow
  * the lengths and the size between as it fades. From silence, at once */
-#define PL_XS 128                                       /* a site's fade's step a sample (Q14): 128 samples a site */
+#define PL_XS 128                                       /* a site's fade's step a sample (Q14): 128 samples a site
+                                                         * (0.9.10, the sweep's wet: 5.0 cents p90, zipper 1.87; at 64
+                                                         * 0.3 cents but zipper 4.2; equal power at 128 5.1 cents; a
+                                                         * step must divide 16384 / HL_NC: the site ends on a block) */
+_Static_assert(16384 % (HL_NC * PL_XS) == 0, "a site's fade ends on a block (pl_xw past 16384 would go negative)");
 static void pl_dset(rev_plate_t *s, uint32_t k, int32_t sz)
 {
     uint32_t d = (PL_R(PL_D0[k]) * (uint32_t)(128 + sz)) >> 8;
