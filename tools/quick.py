@@ -99,6 +99,20 @@ def check_keys(b):
 
 
 # ---------------------------------------------------------------- fx: every effect but DRIVE
+def stage_fx(b):
+    """the two builds into fx_pristine's folder (build/fxp/one, build/fxp/hq), before any check's thread starts: a
+    copy made while other threads fork (a multiprocessing pool's workers never exec, and keep every descriptor) left
+    the file open for writing in a child, and fx_pristine's exec of it failed 'Text file busy' (Linux arm64 CI,
+    rc2-0910 e4628db5). Each goes in under a temporary name and is renamed into place."""
+    import fx_pristine
+    os.makedirs(fx_pristine.OUT, exist_ok=True)
+    for key, fb in (("fm1", "one"), ("hq", "hq")):
+        tmp = os.path.join(fx_pristine.OUT, fb + ".stage")
+        shutil.copy2(b[key], tmp)
+        os.replace(tmp, os.path.join(fx_pristine.OUT, fb))
+    b["fx_staged"] = True
+
+
 def check_fx(b, key="fm1", area="fx"):
     import fx_pristine
     fb = "hq" if key == "hq" else "one"           # (fx_pristine's build names: one = the FM-1, hq = MOVE_DEFS)
@@ -106,8 +120,8 @@ def check_fx(b, key="fm1", area="fx"):
         # (fx_pristine reads a build without the counters as the limiter acting everywhere: say what it is instead)
         return [row(False, area, "counters", "this build has no fx-clip counters (engine.c fx_h_clip, 523d8fa7): "
                     "the limiter and the clamps are not measured")]
-    os.makedirs(fx_pristine.OUT, exist_ok=True)
-    shutil.copy2(b[key], os.path.join(fx_pristine.OUT, fb))
+    if not b.get("fx_staged"):                     # (main() stages them before its threads: see stage_fx)
+        stage_fx(b)
     code, txt = sh([PY, "tools/fx_pristine.py", "--builds", fb])
     bad = {}
     for m in re.finditer(r"^\s+%s (\S+)@(\d+): (.*)$" % fb, txt, re.M):
@@ -338,6 +352,8 @@ def main():
             r = [row(False, n, "error", f"{type(e).__name__}: {str(e)[:150]}")]
         times[n] = time.time() - s
         return r
+    if {"fx", "move-fx"} & set(names):
+        stage_fx(b)
     with ThreadPoolExecutor(len(names)) as ex:
         for r in ex.map(run, names):
             rows += r
