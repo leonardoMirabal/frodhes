@@ -22,7 +22,9 @@ Measured per note (mono, 44.1 kHz; t = the strike): H2..H6 re H1 (dB, band peaks
 (the level 80..280 ms after the key-up re the last 200 ms before it; "silent" when that window is exact zeros, a
 state compared as silent / sounding, never a dB of zeros; an effects-on cell: the median of the shifts that sound), "clk" (the largest 1 ms second-difference peak
 re the median: in the body re the body, after the key-up re the 200 ms before it: clicks), and in full mode "lu" (K-weighted loudness of the hold), "cb" (critical-band
-loudness, phon-like, tools/cb_loud.py) and "lim" (the limiter's gain reduction: RAW minus effects-off level). Per
+loudness, phon-like, tools/cb_loud.py) and "lim" (RAW minus effects-off level: on the FM-1 build the output limiter's
+gain reduction; on HQ, whose effects-off keeps the compressor, the compressor's and the limiter's together: hq DYNO
+FXOFF chord-low's +1.5 is the compressor, the limiter reads 0 there, build/t3/limgr.py, 2026-11-09). Per
 chord: "imd" (the energy off every harmonic band of the notes re their fundamentals), level, peak. Per script: "clip"
 (samples at full scale) and "noise" (the floor 2..3 s after the last note, the effects' lines reset by CC 10 2 s before).
 Every strike starts from the same state: CC 10 (the developer reset: every voice, line and LFO back to boot) RESET_LEAD

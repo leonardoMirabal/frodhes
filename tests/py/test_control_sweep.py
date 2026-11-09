@@ -92,3 +92,20 @@ def test_the_known_list_names_cases():
     """every expected failure names a case that exists (a renamed case must not silently pass)"""
     assert set(KNOWN) <= {c.name for c in cs.CASES}
     assert set(BASE) <= {c.name for c in cs.CASES}
+
+
+@pytest.mark.parametrize("t_ms", [2310, 3270, 4630])
+def test_jump3_finds_a_smooth_step(t_ms, binary):
+    """K20 (2026-11-09): a gain step smoothed over 50 ms spreads over 2-3 of the jump check's 23 ms windows (wah RATE,
+    +3 dB: jump 1.27 / 1.68 / 1.29 at these instants, two under its 1.5). jump3 (the step over 3 windows against the renders held near the sweep's values) reads wah RATE's
+    clean sweep under 1.5 dB and the same sweep with a +3 dB step injected over 50 ms (raised cosine) over it"""
+    import numpy as np
+    case = cs.BY_NAME["wah RATE"]
+    held = {v: cs.render(cs.script(case, value=v), binary) for v in cs.NEAR}
+    sw = cs.render(cs.script(case, sweep=True), binary)
+    assert cs.jump3_db(sw, held) <= cs.LIMITS["jump3"]
+    i0, n = cs.ms(t_ms), cs.ms(50)
+    g = np.ones(len(sw))
+    g[i0:i0 + n] = 1 + (10 ** (3 / 20) - 1) * 0.5 * (1 - np.cos(np.pi * np.arange(n) / n))
+    g[i0 + n:] = 10 ** (3 / 20)
+    assert cs.jump3_db(sw * g[:, None], held) > cs.LIMITS["jump3"]
