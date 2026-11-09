@@ -80,3 +80,48 @@ def test_the_hq_build_is_the_makefiles():
     mk = open(os.path.join(ROOT, "Makefile")).read()
     move = re.search(r"^MOVE_DEFS \?= (.*)$", mk, re.M).group(1).split()
     assert rd.HQ_DEFS == move + ["-DHQ_DEFAULT=1"]
+
+
+def _quiet_note(amp, n, ph=0.0):
+    import numpy as np
+    t = np.arange(n) / rd.FS
+    return np.round(amp * np.sin(2 * np.pi * 440.0 * t + ph))
+
+
+def test_key_rise_fails_a_cut_at_the_key_up():
+    """clk_off where the note sounds at the key-up (CLK_RISE, 2026-11-09): a quiet note's int16 steps pass, a cut fails
+    (a step injected at the key-up), at -70 dBFS and at -20 dBFS"""
+    import numpy as np
+    n_pre, n_tail = int(0.2 * rd.FS), int(0.3 * rd.FS)
+    for amp in (10.0, 3000.0):
+        x = _quiet_note(amp, n_pre + n_tail)
+        pre, tail = x[:n_pre], x[n_pre:].copy()
+        fade = np.round(amp * np.sin(2 * np.pi * 440.0 * np.arange(n_pre, n_pre + n_tail) / rd.FS)
+                        * np.exp(-np.arange(n_tail) / (0.01 * rd.FS)))     # a 10 ms damper: no click
+        assert rd.key_rise(fade, pre) <= rd.CLK_RISE, (amp, rd.key_rise(fade, pre))
+        k = int(np.argmax(np.abs(tail[:200])))                              # the cut at the wave's crest
+        cut = tail.copy()
+        cut[k:] = 0.0
+        assert rd.key_rise(cut, pre) > rd.CLK_RISE, (amp, rd.key_rise(cut, pre))
+        step = fade.copy()
+        step[5:] += amp                                                     # a step injected after the key-up
+        assert rd.key_rise(step, pre) > rd.CLK_RISE, (amp, rd.key_rise(step, pre))
+
+
+def test_clk_off_judged_by_the_rise_where_the_note_sounds():
+    """a sounding key-up over the ratio's ceiling passes with no rise and fails with one; a silent key-up keeps the
+    ceiling (v0.9.9 -100: silent)"""
+    base = cells(clk_off=-100.0)
+    ok = rd.judge(cells(clk_off=4.0, clk_rise=1.0), base, [])[0]
+    assert not [f for f in ok if f[2] == "clk_off"], ok
+    bad = rd.judge(cells(clk_off=4.0, clk_rise=8.0), base, [])[0]
+    assert any(f[2] == "clk_off" and f[6].startswith("CEILING") for f in bad), bad
+    silent = rd.judge(cells(clk_off=4.0), base, [])[0]
+    assert any(f[2] == "clk_off" and f[6].startswith("CEILING") for f in silent), silent
+
+
+def test_harmonic_floor_bins_under_minus_100_dbfs_exempt():
+    """H_ABS_FLOOR (2026-11-09): a bin at or under -100 dBFS (re H1 + H1) is the floor; above it, judged"""
+    base = cells(h1=-50.0, H5=-50.0)                          # (a bin under -60 re H1 in both is no move anyway)
+    assert not [f for f in rd.judge(cells(h1=-46.0, H5=-56.0), base, [])[0] if f[2] == "H5"]   # -102 dBFS
+    assert [f for f in rd.judge(cells(h1=-30.0, H5=-56.0), base, [])[0] if f[2] == "H5"]       # -86 dBFS

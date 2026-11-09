@@ -218,6 +218,17 @@ def clicks(x, ref):
     return max(db((frames(x).max() / (np.median(frames(ref)) + 1e-9)) ** 2), -100.0)
 
 
+def key_rise(tail, pre):
+    """LSB: the key-up tail's largest 1 ms peak of the second difference over the 200 ms before the key-up's (judged
+    where the note still sounds at the key-up: CLK_RISE; the ratio clk_off reads the int16 output's 1-LSB steps of a
+    quiet note as a click, 2026-11-09)"""
+    def frames(y):
+        d = np.abs(np.diff(y, 2))
+        n = len(d) // 44
+        return d[:n * 44].reshape(n, 44).max(1) if n else np.zeros(1)
+    return float(frames(tail).max() - frames(pre).max())
+
+
 _KW = None
 
 
@@ -249,6 +260,16 @@ def fx_cell(cid):
 
 
 SHIFTS = (0, 29, 61, 97)            # ms: the strike-time offsets of an effects-on case (the median of the four)
+CLK_RISE = 2.0                      # LSB: clk_off where the note still sounds at the key-up: the tail's largest 1 ms
+                                    # second difference over the 200 ms before (key_rise) may grow by the int16
+                                    # rounding's 2 LSB, no more; the ratio against the median read a -80 dBFS MARIMBA B
+                                    # note's 1-LSB steps as +2.5..6 dB (THRESHOLD, the coordinator 2026-11-09;
+                                    # 688 sounding cells of the fast grid: <= 2.0; a cut at the key-up fails:
+                                    # tests/py/test_release_diff.py)
+H_ABS_FLOOR = -100.0                # dBFS: a harmonic bin at or under this in the candidate (H re H1 + H1) is the
+                                    # 16-bit / reverb floor, judged by neither the ceiling nor the diff (THRESHOLD, the
+                                    # coordinator 2026-11-09: MARIMBA B's H2..H6 at -105..-129 dBFS fell re H1 by the
+                                    # level rise; build/sonic/resp-ab/mar/hfloor.txt)
 FX_FLOOR = -95.0                    # dBFS: a harmonic of an effects-on cell below this is under the reverb's grain
 
 
@@ -310,6 +331,8 @@ def measure_once(binary, case, grid, tmp, shift):
             tail = mono[off:off + int(0.3 * FS)]      # (re the 200 ms before the key-up, 935763a5; samples of at
             c["clk_off"] = clicks(np.where(np.abs(tail) <= LSB_FLOOR, 0.0, tail), mono[off - int(0.2 * FS):off])
             # most 1 LSB are silence, 1d3c1ca9)
+            if np.abs(mono[off - int(0.01 * FS):off]).max() > LSB_FLOOR:   # the note still sounds at the key-up
+                c["clk_rise"] = key_rise(tail, mono[off - int(0.2 * FS):off])
         if full:
             import cb_loud
             c["lu"] = -0.691 + db(np.mean(np.square(kweight(hold / 32768.0))))
@@ -422,8 +445,14 @@ def moved(m, v, b):
     return d if abs(d) > tol_of(m) else None
 
 
-INFO = ("h1",)                      # measured for the other rules, judged by none
+INFO = ("h1", "clk_rise")          # measured for the other rules (clk_rise: judge, with clk_off), not diffed
 NODIFF = ("grain",)                 # a ceiling only (a lower grain needs no entry)
+
+
+def floor_bin(v, cell):
+    """a harmonic bin (re H1) at or under H_ABS_FLOOR dBFS in the candidate: the floor, not the note's harmonic (a bin
+    that fell there from above has only got lower; one above it is judged as before, ceiling and diff)"""
+    return "h1" in cell and v + cell["h1"] <= H_ABS_FLOOR
 
 
 def ceiling(cid, lab, m, v, b, cell=None):
@@ -481,6 +510,13 @@ def judge(cand, base, expected):
             bl = bc.get(lab, {})
             for m, v in ms.items():
                 if m in INFO:
+                    continue
+                if m == "clk_off" and "clk_rise" in ms and ms["clk_rise"] <= CLK_RISE + 1e-9 and \
+                        (bl.get(m) is None or bl[m] <= -100.0 + 1e-9 or v > ceiling(cid, lab, m, v, bl[m], ms)[0]):
+                    continue                    # the note sounds at the key-up and its second difference does not rise
+                                                # there (CLK_RISE): the ratio's ceiling / its move from a silent v0.9.9
+                                                # key-up is the int16 output's 1-LSB steps, not a click
+                if m[0] == "H" and m[1:].isdigit() and floor_bin(v, ms):
                     continue
                 b = bl.get(m)
                 if b is None:
