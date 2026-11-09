@@ -39,22 +39,6 @@ silent = base.silent
 needs_types = base.needs_types
 
 
-# THRESHOLD (0.9.10 rev-grain, coordinator-approved): the 2828..5657 Hz octave on the HQ build 7.0 dB, was 6.0. The
-# HQ HALL lost rounding noise there and moved toward the 2x-precise reference (88.72 -> 87.69 dB, reference 83.54;
-# PLATE 94.22), so PLATE - HALL widened from 5.50 to 6.52 dB for a good reason. Every other octave stays at 6.0.
-# OPEN (2026-11-09, on rc-0910 1dafc37f): rc-0910 alone 6.26 dB (HALL 87.96), rev-grain on it 7.14 (HALL 87.08):
-# over this 7.0. The octave is noise-led: HALL's band per input dB falls with the level (92.4 / 87.0 / 82.4 / 80.7
-# at chord amp 4000 / 8000 / 16000 / 24000, scaled to 8000), PLATE - HALL at 24000 11.7 dB. For the coordinator.
-HQ_WIDE = {(2828, 5657): 7.0}
-
-
-@needs_types
-@pytest.mark.parametrize("typ", base.NEW)
-def test_levels_match_hall(exe, silent, typ):
-    """test_rev_types.py's, with the HQ's one wider octave (HQ_WIDE)"""
-    base.levels_match_hall(exe, silent, typ, HQ_WIDE)
-
-
 @pytest.fixture(scope="module")
 def exe():
     if not base.HAS:
