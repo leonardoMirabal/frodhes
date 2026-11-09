@@ -665,14 +665,14 @@ changes:
     reason: "F12: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
   - match: "*/F14/PRESET/*"
     metric: "level peak lu cb"
-    min: 1.0
-    max: 2.1
-    reason: "F14: the preset LEVEL 59 to 66 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.5 dB; the bar engine itself unchanged, PH_G refit (dab6f113)"
+    min: -1.9
+    max: 0.3
+    reason: "F14: the preset LEVEL 59 to 66 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.5 dB; the bar engine itself unchanged, PH_G refit (dab6f113); 2026-11-09 LEVEL 48 (no limiter on normal playing): 1.9 dB lower (the full grid not re-run)"
   - match: "*/F15/PRESET/*"
     metric: "level peak lu cb"
-    min: 0.81
-    max: 2.89
-    reason: "F15: the preset LEVEL 59 to 66 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.3 dB; the bar engine itself unchanged, PH_G refit (dab6f113)"
+    min: -2.6
+    max: -0.4
+    reason: "F15: the preset LEVEL 59 to 66 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.3 dB; the bar engine itself unchanged, PH_G refit (dab6f113); 2026-11-09 LEVEL 41 (no limiter on normal playing): 3.4 dB lower (the full grid not re-run)"
   - match: "*/F16/PRESET/*"
     metric: "level peak lu cb"
     min: -10.53
@@ -1170,6 +1170,16 @@ changes:
     min: -8.5
     max: -5.3
     reason: "F16 WOOD ECHO LEVEL 41 -> 25 (Move B 34 -> 28, C 31 -> 27): no limiter on normal playing (the user's rule; the coordinator 2026-11-09). At 41 its 4-note v127 chords with the pedal reached the limiter in 20 of 20 takes (build/fxp/hrw.py: Rhodes range and two octaves up, five start phases, FM-1 + HQ); 25 is the highest step whose worst take peaks <= -3.2 dBFS (0.5 dB under LIM_T) with no gain reduction. 0.9.9 reached its level only through the limiter: its quick chord peaks at -2.70 dBFS, the ceiling (LIM_T 24000), crest 15.2 dB against F15's 17.4 on the same engine. Now chord -6.0, note -7.8 dB against 0.9.9 (FM-1 and HQ)"
+  - match: "quick-level/*/F1[345]/*"
+    metric: "level"
+    min: -4.0
+    max: -1.4
+    reason: "F13 VIBES LEVEL 55 -> 45, F14 VIBES ECHO 58 -> 48, F15 MARIMBA 59 -> 41 (Move B / C by the same sweep): no limiter on normal playing, the rule F16 follows (audited with it, 2026-11-09). At their old LEVELs the 4-note v127 chords with the pedal reached the limiter in 10..18 of 20 takes (build/fxp/hrw.py); now every take peaks <= -3.2 dBFS with the limiter idle. 0.9.9 reached these levels through the limiter too (F15's quick chord peaks at the ceiling, -2.70 dBFS; F13 -3.2). Against 0.9.9: F13 chord -2.4 / note -1.9, F14 -2.5 / -1.8, F15 -3.2 / -3.5 dB (FM-1 and HQ)"
+  - match: "*/F13/PRESET/*"
+    metric: "level peak lu cb"
+    min: -3.5
+    max: -0.5
+    reason: "F13 VIBES LEVEL 55 -> 45 (-1.9 dB): no limiter on normal playing (see quick-level/*/F1[345]/*); the full grid not re-run"
 # ---- 11. RESPONSE B ("light touch", being redesigned: soft notes louder, the same tone, range ~25.5 dB). Its moves are
 # not listed yet: add a group matching "*/*/*/B/*" (RESPONSE B cells only) once the redesign lands. Until then the
 # entries above cover B where it moves with A.

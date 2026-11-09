@@ -59,6 +59,7 @@ _Static_assert(sizeof pr_user == ST_TAIL_N, "the user presets are the store reco
  * through the limiter). Then F16 41 -> 25: no limiter on normal playing (the user's rule): at 41 its 4-note v127
  * chords with the pedal reached the limiter in every take; 25 is the highest step whose worst take (Rhodes range and two
  * octaves up, five start phases, FM-1 + HQ) peaks at most -3.2 dBFS (0.5 dB under LIM_T): ~6 / ~7.8 dB under 0.9.9.
+ * By the same rule F13 55 -> 45, F14 58 -> 48, F15 59 -> 41 (they reached the limiter in 10..18 of 20 takes).
  *
  * The drive TYPEs (P_DRV_SW, drive.c: 1 FDRV, 2 KHLON, 3 TSH8, 4 OHCD, 5 BHLUE) in six of them, their LEVELs
  * re-run with the TYPE in (the chord's level moves with it), each one's CPU predicted with its TYPE's own cost in
@@ -135,18 +136,18 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
      * contact; the mallet compressor (1.5:1, 9 ms: the strike passes) and a trace of hall */
     P_TYPE, 4, P_TONE, 64, P_BARK, 52, P_BELL, 70, P_HAMMER, 64, P_DECAY, 64, P_RELEASE, 64, P_NOISE, 40, P_MOT_ON, 1,
     P_MOT_DEPTH, 90, P_MOT_RATE, 66, P_MOT_SHAPE, 0, P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92,
-    P_CMP_REL, 64, P_CMP_GAIN, 6, P_RV_DEPTH, 20, P_RV_TYPE, 1, P_RV_PREDLY, 20, P_RV_LOCUT, 70, P_LEVEL, 55, 0xFF,
+    P_CMP_REL, 64, P_CMP_GAIN, 6, P_RV_DEPTH, 20, P_RV_TYPE, 1, P_RV_PREDLY, 20, P_RV_LOCUT, 70, P_LEVEL, 45, 0xFF,
     /* F14 VIBES ECHO: the motor off, a cord mallet, a longer ring and a softer damper, a light slow chorus, a dotted-1/8
      * tape echo on the tempo (darker repeats), a bright plate behind a short pre-delay */
     P_TYPE, 4, P_TONE, 64, P_BARK, 82, P_BELL, 64, P_HAMMER, 60, P_DECAY, 72, P_RELEASE, 54, P_NOISE, 36, P_MOT_ON, 0,
     P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_CP_SW, 1,
     P_CP_DEPTH, 40, P_CP_SPEED, 40, P_DL_SW, 3, P_DL_DEPTH, 20, P_DL_SYNC, 8, P_DL_FDBK, 50, P_DL_TONE, 56,
-    P_RV_DEPTH, 34, P_RV_TYPE, 2, P_RV_DECAY, 70, P_RV_PREDLY, 16, P_RV_LOCUT, 80, P_LEVEL, 58, 0xFF,
+    P_RV_DEPTH, 34, P_RV_TYPE, 2, P_RV_DECAY, 70, P_RV_PREDLY, 16, P_RV_LOCUT, 80, P_LEVEL, 48, 0xFF,
     /* F15 MARIMBA (dry): the default mallet, tube and weight, MUTE 0 (rings out, as the instrument), a soft mallet
      * tick, the mallet compressor and a trace of hall */
     P_TYPE, 5, P_TONE, 64, P_BARK, 64, P_BELL, 64, P_HAMMER, 64, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40, P_CMP_SW, 1,
     P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_RV_DEPTH, 22, P_RV_TYPE, 1,
-    P_RV_PREDLY, 12, P_RV_LOCUT, 70, P_LEVEL, 59, 0xFF,
+    P_RV_PREDLY, 12, P_RV_LOCUT, 70, P_LEVEL, 41, 0xFF,
     /* F16 WOOD ECHO: a hard yarn mallet, heavier, MUTE 0, a light chorus, a dotted-1/8 digital echo on the tempo with a
      * few soft repeats, a hall behind a pre-delay */
     P_TYPE, 5, P_TONE, 60, P_BARK, 80, P_BELL, 64, P_HAMMER, 110, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40, P_CMP_SW, 1,
