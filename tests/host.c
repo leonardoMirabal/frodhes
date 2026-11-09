@@ -108,7 +108,21 @@ static void fm1_led_key_glow(uint32_t id, int on) { if (id < 64u) host_glow[id] 
 
 /* the screen: 240 x 240 RGB565, as the ST7789 gets it (gfx.c sends the bytes swapped) */
 static uint16_t fb[240 * 240];
-static void lcd_sync(void) {}
+static void host_ms(void);
+/* FRODHES_LCDMS=N: each lcd_sync lasts N ms (the FM-1 waits there for a strip's DMA, up to ~20 ms at 12 MHz): the
+ * clock, the script and the audio run on meanwhile, and the app's LCD_IDLE (frodhes.c app_idle) once a millisecond */
+static void lcd_sync(void)
+{
+    static int ms = -1;
+    int i;
+    if (ms < 0) ms = getenv("FRODHES_LCDMS") ? atoi(getenv("FRODHES_LCDMS")) : 0;
+    for (i = 0; i < ms; i++) {
+        host_ms();
+#ifdef LCD_IDLE
+        LCD_IDLE();
+#endif
+    }
+}
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
     uint32_t i, j;

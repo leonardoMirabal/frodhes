@@ -133,6 +133,14 @@ static int lat_fl_ok(void);
 #define FL_SLICE_OK() lat_fl_ok()
 #endif
 #endif
+#ifndef FR_LCD_IDLE
+#define FR_LCD_IDLE 1                           /* the notes (the keys, MIDI) read while the screen's DMA sends a strip
+                                                 * (lcd.c LCD_IDLE, Dinghy's: docs/API.md; 0: they wait for the strip) */
+#endif
+#if FR_LCD_IDLE
+static void app_idle(void);
+#define LCD_IDLE app_idle
+#endif
 #include "fr_cold.h"     /* FR_COLD: the cold code built for flash, not speed */
 #include "frodhes_store.h"   /* the flash Frodhes writes, per board, and its allow-list APP_FL_RANGE (store.h) */
 #include "keyvel.h"     /* key velocity's interfaces: first, so the scan tick (platform.c) can reach its hooks */
@@ -726,17 +734,6 @@ static int lat_fl_ok(void)                      /* (FL_SLICE_OK, the interrupts 
 #endif
 }
 #endif
-static int lat_midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2)   /* midi_get, but a message other than a note held
-                                                 * (in order: the notes after it wait too) while a block is under way */
-{
-    static uint8_t h0, h1, h2;
-    static int hs;
-    int s = hs;
-    if (s) { *st = h0; *d1 = h1; *d2 = h2; hs = 0; }
-    else if ((s = midi_get(st, d1, d2)) == 0) return 0;
-    if ((*st & 0xE0u) != 0x80u && lat_mid()) { h0 = *st; h1 = *d1; h2 = *d2; hs = s; return 0; }
-    return s;
-}
 #else
 /* noinline (0.9.5): with the filter and the tremolo out of it, app_audio became small enough for the compiler to
  * inline it into the audio interrupt (fm1_alnk0_irq): its own function, as before (tools/build.py counts its loops) */
@@ -1309,9 +1306,64 @@ FR_COLD static void st_old_scan(void)
         if (!st_new || (st_oid[i] && st_oid[i] != was[i])) st_mig |= (uint8_t)(1u << i);
 }
 
+#if !FR_LAT
+#define lat_mid() 0                             /* (FR_LAT: a block under way, above) */
+#endif
+/* MIDI in with one message held back: hold 1 keeps every message but a note in the queue (it waits, the notes after
+ * it too: the order kept) for the main loop's next pass (FR_LAT: a block under way; LCD_IDLE: inside a strip's draw) */
+static uint8_t mh_st, mh_d1, mh_d2;
+static int mh_src;
+static int midi_get_h(uint8_t *st, uint8_t *d1, uint8_t *d2, int hold)
+{
+    int s = mh_src;
+    if (s) { *st = mh_st; *d1 = mh_d1; *d2 = mh_d2; mh_src = 0; }
+    else if ((s = midi_get(st, d1, d2)) == 0) return 0;
+    if (hold && (*st & 0xE0u) != 0x80u) { mh_st = *st; mh_d1 = *d1; mh_d2 = *d2; mh_src = s; return 0; }
+    return s;
+}
+static void midi_note(uint8_t st, uint8_t d1, uint8_t d2)   /* a note on / off (the MIDI page's CHANNEL: 0 = all) */
+{
+    uint8_t ty = st & 0xF0u;
+    if (set.midi_ch && (st & 0x0Fu) != set.midi_ch - 1u) return;
+    if (ty == 0x90u && d2) src_on(SRC_MIDI + (d1 & 127u), d1 & 127u, d2, 0);
+    else if (ty == 0x80u) src_off_v(SRC_MIDI + (d1 & 127u), d2 & 127u);   /* its release velocity */
+    else if (ty == 0x90u) src_off(SRC_MIDI + (d1 & 127u));                /* a note-on at 0: none */
+}
+static uint32_t keys_prev;
+static void keys_pass(void)                     /* the FM-1's keys: a key stops exactly the notes it started */
+{
+    uint32_t keys = fm1_in.notes, down, up, go, k;   /* bit k: key k (0 = F3 .. 26 = G5) */
+    down = keys & ~keys_prev;
+    up = keys_prev & ~keys;
+    keys_prev = keys;
+    go = kv_keys(down, up);                     /* the presses whose velocity is known (keyvel.h: held up to 6 ms; a
+                                                 * key let go first plays here, then stops below) */
+    for (k = 0; k < NKEYS; k++) {               /* (notes.c sources) */
+        if (go >> k & 1u) {
+            uint32_t n = scale_key_note(k);
+            if (n < 128u) src_on(SRC_KEYS + k, n, FR_KEY_VEL(k), 1);
+        }
+        if (up >> k & 1u) src_off(SRC_KEYS + k);
+    }
+}
+#if FR_LCD_IDLE
+/* lcd.c, while a strip goes out (ui_draw only: idle_ok; never inside itself): the keys and the MIDI notes to the engine
+ * now, not after the strip (up to ~20 ms at 12 MHz); anything else waits for the main loop (midi_get_h). Notes touch
+ * nothing the drawing reads but what they mark for a redraw (ui.c clears an element's mark before drawing it) */
+static uint8_t idle_ok, idle_in;
+static void app_idle(void)
+{
+    uint8_t st, d1, d2;
+    if (!idle_ok || idle_in) return;
+    idle_in = 1;
+    keys_pass();
+    while (midi_get_h(&st, &d1, &d2, 1)) midi_note(st, d1, d2);
+    idle_in = 0;
+}
+#endif
 FR_COLD static void app_main(void)
 {
-    uint32_t prev = 0, k;
+    uint32_t k;
     int link = 0, fresh;
     st_tail = (uint8_t *)pr_user;                   /* the record: the settings, then the user presets (set_store.c) */
     st_new = settings_load(&set, sizeof set) == 0;
@@ -1385,7 +1437,7 @@ FR_COLD static void app_main(void)
     ui_splash();
 
     for (;;) {
-        uint32_t keys, down, up, go, rel, b, lit = 0;
+        uint32_t rel, b, lit = 0;
         int src;
         uint8_t st, d1, d2;
 #if FELUCCA_OTA && !defined(DINGHY_HOST)
@@ -1398,19 +1450,7 @@ FR_COLD static void app_main(void)
 #endif
         platform_poll();
 
-        keys = fm1_in.notes;                    /* bit k: key k (0 = F3 .. 26 = G5) */
-        down = keys & ~prev;
-        up = prev & ~keys;
-        prev = keys;
-        go = kv_keys(down, up);                 /* the presses whose velocity is known (keyvel.h: held up to 6 ms; a
-                                                 * key let go first plays here, then stops below) */
-        for (k = 0; k < NKEYS; k++) {           /* a key stops exactly the notes it started (notes.c sources) */
-            if (go >> k & 1u) {
-                uint32_t n = scale_key_note(k);
-                if (n < 128u) src_on(SRC_KEYS + k, n, FR_KEY_VEL(k), 1);
-            }
-            if (up >> k & 1u) src_off(SRC_KEYS + k);
-        }
+        keys_pass();
 #if BOARD_SMK37
         smk_poll();                             /* the outer keys, pads, faders, wheels, the pedal (frodhes_smk.h) */
 #endif
@@ -1431,17 +1471,12 @@ FR_COLD static void app_main(void)
 
         if (link && !usb_link()) eng_bend_reset();   /* the USB cable out (or the computer let go): no bend left on */
         link = usb_link();
-#if FR_LAT
-        while ((src = lat_midi_get(&st, &d1, &d2)) != 0) {
-#else
-        while ((src = midi_get(&st, &d1, &d2)) != 0) {
-#endif   /* USB-MIDI and the TRS jack; the MIDI page's CHANNEL (0 = all) */
+        while ((src = midi_get_h(&st, &d1, &d2, lat_mid())) != 0) {   /* USB-MIDI and the TRS jack; the MIDI page's
+                                                 * CHANNEL (0 = all) */
             uint8_t ty = st & 0xF0u;
+            if (ty == 0x80u || ty == 0x90u) { midi_note(st, d1, d2); continue; }
             if (st < 0xF0u && set.midi_ch && (st & 0x0Fu) != set.midi_ch - 1u) continue;
-            if (ty == 0x90u && d2) src_on(SRC_MIDI + (d1 & 127u), d1 & 127u, d2, 0);
-            else if (ty == 0x80u) src_off_v(SRC_MIDI + (d1 & 127u), d2 & 127u);   /* its release velocity */
-            else if (ty == 0x90u) src_off(SRC_MIDI + (d1 & 127u));          /* a note-on at 0: none */
-            else if (ty == 0xB0u) midi_cc(d1, d2);
+            if (ty == 0xB0u) midi_cc(d1, d2);
             else if (ty == 0xE0u) eng_bend_set((int32_t)(d1 & 127u) | (int32_t)(d2 & 127u) << 7);   /* the Rhodes */
             else if (st >= 0xF8u) {             /* clock and transport, from USB or TRS (CLOCK EXT) */
                 if (tempo_clock(st, (uint32_t)d1 | (uint32_t)d2 << 8, src)) {   /* (d1 d2: the arrival, usb.c /
@@ -1483,7 +1518,13 @@ FR_COLD static void app_main(void)
         smk_leds();
         if (!smk_panel())                       /* KNOB BANK held: the panel check owns the screen (frodhes_smk.h) */
 #endif
+#if FR_LCD_IDLE
+        idle_ok = 1;
         ui_draw();
+        idle_ok = 0;
+#else
+        ui_draw();
+#endif
         presets_save_poll();
         seq_save_poll();
 
