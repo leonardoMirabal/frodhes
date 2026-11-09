@@ -1154,6 +1154,16 @@ changes:
     min: -7.5
     max: -3.0
     reason: "MARIMBA's top key under the compressor (HQ: FX and FXOFF keep it): H3 4..7 dB lower, the compressor's gain no longer moving in 0.023 dB table steps nor rippling with the detector (fx.c cmp_log2 / cmp_exp2, CMP_HOLD); decreases only"
+  - match: "hq/MARIMBA/FX/*/k69v40"
+    metric: "H5"
+    min: -9.6
+    max: -3.0
+    reason: "MARIMBA k69 v40 under the HQ compressor: H5 9 dB lower, the gain no longer stepping nor rippling (fx.c cmp_log2 / cmp_exp2, CMP_HOLD); a decrease only"
+  - match: "hq/DYNO/FXOFF/*/k57v127"
+    metric: "H4"
+    min: -40.0
+    max: -3.0
+    reason: "DYNO k57 v127, HQ FXOFF (the compressor kept): H4 down to the floor, the compressor's gain no longer rippling with the detector at 2 f0 (fx.c CMP_HOLD); a decrease only"
 
 # ---- 11. RESPONSE B ("light touch", being redesigned: soft notes louder, the same tone, range ~25.5 dB). Its moves are
 # not listed yet: add a group matching "*/*/*/B/*" (RESPONSE B cells only) once the redesign lands. Until then the

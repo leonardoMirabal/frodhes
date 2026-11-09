@@ -5,7 +5,7 @@ user wants it always on), so it must not dirty the piano: with F01's compressor 
 re their fundamentals) was -46 .. -56 dB, the dry engine's -76 .. -86: the detector released between a note's
 waveform peaks (its ripple at twice the f0 moved the gain) and the gain moved in 0.023 dB table steps. fx.c now holds
 the detector across a cycle (CMP_HOLD), smooths the reduction's release (CMP_GSH) and interpolates its log2 / exp2:
--68 .. -79 dB. Each chord within DRY_TOL of the dry engine's and under ABS_LIM, on every electric-piano TYPE."""
+-66.4 dB at worst. Each chord within DRY_TOL of the dry engine's and under ABS_LIM, on every electric-piano TYPE."""
 import os
 import sys
 
@@ -17,7 +17,8 @@ sys.path.insert(0, os.path.join(hostrun.ROOT, "tools"))
 import dry_dist  # noqa: E402
 
 ABS_LIM = -62.0          # dB (dry_dist's floor "never heard" is -60)
-DRY_TOL = 14.0           # dB over the dry engine's own (measured: at most +12.1, SUIT's mid chord, -67.9 against -80.0)
+DRY_TOL = 15.0           # dB over the dry engine's own (measured: at most +14.6, SUIT's mid chord, -66.4 against -81.0, at
+                         # CMP_HOLD 256: 1024 read +12.1 but held a loud chord's reduction 0.45 dB longer)
 
 
 def chords(binary, type_cc, comp, outdir):
