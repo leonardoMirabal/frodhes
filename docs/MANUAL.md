@@ -1204,6 +1204,7 @@ what each one does.
 | 24 | Reserved: accepted and saved, no effect yet |
 | 41 / 42 | Key velocity's test mode and counters (not saved) |
 | 116 | CPU load and USB audio health query |
+| 117 / 118 | Extra work added to the first / second core, to find the two-core load limit (fault-test builds only; the released images ignore them) |
 | 119 | Raw voice: every effect and the limiter bypassed (≥ 64) |
 
 On the Move the same CCs reach Frodhes through Schwung's track, except the sequencer's and the chords'
