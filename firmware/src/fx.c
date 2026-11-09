@@ -790,8 +790,7 @@ static int32_t tw_amp_sub(uint32_t ph, int32_t *tr)   /* a sub-block's gains (AM
         uint32_t th = (1u << 29) + (uint32_t)((d * lfo) * 129);
         int32_t gl = (osc_sine(th + (1u << 30)) * 46341) >> 15;
         *tr = (osc_sine(th) * 46341) >> 15;
-        *tr = *tr > 32768 ? 32768 : *tr;               /* (capped at unity, as fx_trem's) */
-        return gl > 32768 ? 32768 : gl;
+        return gl;
     }
     g = 32768 - (((d * 258) * ((32767 - lfo) >> 1)) >> 15);
     g = (g * (254 + d)) / 254;                       /* the linear law, as in fx_trem */
@@ -853,10 +852,10 @@ static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, in
                 uint32_t th = (1u << 29) + (uint32_t)((depth * lfo) * 129);
                 tl = (osc_sine(th + (1u << 30)) * 46341) >> 15;   /* sqrt2 cos(theta): unity at the centre */
                 tr = (osc_sine(th) * 46341) >> 15;
-                /* each side capped at unity (2026-11-08): a side's sqrt2 cos rose to +3 dB, a v127 chord's peak +2.6 dB
-                 * at DEPTH 127 (tools/fx_pristine.py); the side away from the centre keeps its sqrt2 sin (more power
-                 * than a balance law's tan), so the sweep dips at most 3 dB, the peak never over the dry's */
-                tl = tl > 32768 ? 32768 : tl; tr = tr > 32768 ? 32768 : tr;
+                /* (2026-11-09: 0.9.9's equal-power law again. 2eba440e had capped each side at unity for a v127
+                 * chord's +2.6 dB peak at DEPTH 127; with 0.9.10's output level the law's chord peak is +2.0 dB, the
+                 * limiter idle (tools/fx_pristine.py pan 127), and the cap's corner at the centre had put the LFO's
+                 * sidebands on every note: F05's off-harmonic energy +8 dB over 0.9.9's, tools/release_diff.py inh) */
             } else {                                     /* amplitude: down from full by depth */
                 int32_t g = 32768 - (((depth * 258) * ((32767 - lfo) >> 1)) >> 15);
                 tl = tr = (g * (254 + depth)) / 254;     /* the average dip, given back (0.6) */
