@@ -1576,13 +1576,18 @@ HQ_RESOLVE_DB = 3.0        # usb-host: the HQ probe judges Classic only when the
 TAIL_JUDGED_DBFS = -60.0   # usb-host: a note whose tail (0.5-1.0 s, the host's, after the gain) is quieter is not
                            # judged on its residual: a short bar note (MARIMBA 84 v40) has died there, the floor
                            # and the rounding are all that is left
+TAKE_FLOOR_LSB = 0.5       # usb-host: the take's own rounding floor (whole LSB with TPDF dither: 0.5 LSB RMS)
+JUDGE_OVER_FLOOR_DB = 40.0 # and a note is judged only when its tail (after the gain, in the take's LSB) is this far
+                           # over it: the residual's -40 dB limit, so the floor alone can never fail a note (the
+                           # quiet-mix take, 2026-11-09: 96 v90's tail at -59.6 dBFS left -39.7 dB of pure rounding)
 
 
 def usb_host(r, d, program=0, out=print):
     """the same phrase on the Move and on the host build (program change program, CC 10): one gain for the whole
     take, each note aligned on its own (MIDI over USB lands up to a ms or two apart), then per note: the residual
     after the gain (dB under the note), f0 (cents, the steady part), the time to -20 dB, the centroid, the third-
-    octave bands' largest difference. A note whose tail is under TAIL_JUDGED_DBFS is not judged on its residual. Classic is the host's code: the residual should be at the floor, the gain
+    octave bands' largest difference. A note whose tail is under TAIL_JUDGED_DBFS, or under JUDGE_OVER_FLOOR_DB over the
+    take's rounding floor (TAKE_FLOOR_LSB), is not judged on its residual. Classic is the host's code: the residual should be at the floor, the gain
     the Move's volume"""
     ev, marks, dur = phrase_events()
     r._send("cc", 123, 0)
@@ -1639,12 +1644,15 @@ def usb_host(r, d, program=0, out=print):
                 break
         st = slice(int(0.25 * sr), int(0.75 * sr))
         fm, fh = _f0(mm[st], sr, note_hz(n)), _f0(hm[st], sr, note_hz(n))
-        tail = 20 * np.log10((np.sqrt(np.mean((g * hm[-nt:]) ** 2)) + 1e-9) / 32768)
+        tail_lsb = float(np.sqrt(np.mean((g * hm[-nt:]) ** 2)))
+        tail = 20 * np.log10((tail_lsb + 1e-9) / 32768)
+        over_floor = 20 * np.log10((tail_lsb + 1e-9) / TAKE_FLOOR_LSB)
         hs_ = _strikes(hm[held], sr)
         again = [t for t in _strikes(mm[held], sr) if all(abs(t - u) > 15 for u in hs_)]
         rows.append({"note": name, "lag_ms": round(1000 * lag / sr, 2), "tail_corr": round(corr, 4), "again_ms": again,
                      "residual_db": round(float(rd), 1), "tail_dbfs": round(float(tail), 1),
-                     "judged": bool(tail >= TAIL_JUDGED_DBFS), "extra_db": round(float(ex_db), 1), "extra_hz": peaks,
+                     "over_floor_db": round(float(over_floor), 1),
+                     "judged": bool(tail >= TAIL_JUDGED_DBFS and over_floor >= JUDGE_OVER_FLOOR_DB), "extra_db": round(float(ex_db), 1), "extra_hz": peaks,
                      "f0_move_c": round(1200 * np.log2(fm / note_hz(n)), 2) if fm else None,
                      "f0_host_c": round(1200 * np.log2(fh / note_hz(n)), 2) if fh else None,
                      "decay_move_s": _decay_s(mm, sr), "decay_host_s": _decay_s(hm, sr),
