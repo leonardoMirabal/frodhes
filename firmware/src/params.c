@@ -212,12 +212,16 @@ typedef struct {
                                                 * smk_mst, which keeps its place (offset 235) */
     uint8_t vel_resp;                          /* 0.9.10: MIDI RESPONSE, the velocity response (N_VRESP; rhodes.c
                                                 * rh_touch_mode): 0 = A (every record before) */
-    uint8_t reserved[17];
+    uint8_t sus_leds;                          /* 0.9.10: SUSTAIN LEDS, a key the sustain rings on under LEDS ALL /
+                                                * SCALE: 0 DARK (every record before), 1 LIT (frodhes.c key LEDs) */
+    uint8_t reserved[16];
 #else
     uint8_t play_off;                          /* 0.9.9: DISPLAY PLAY LED: 0 BEAT (every record before), 1 OFF */
     uint8_t vel_resp;                          /* 0.9.10: MIDI RESPONSE, the velocity response (N_VRESP; rhodes.c
                                                 * rh_touch_mode): 0 = A (every record before) */
-    uint8_t reserved[19];
+    uint8_t sus_leds;                          /* 0.9.10: SUSTAIN LEDS, a key the sustain rings on under LEDS ALL /
+                                                * SCALE: 0 DARK (every record before), 1 LIT (frodhes.c key LEDs) */
+    uint8_t reserved[18];
 #endif
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
@@ -362,6 +366,7 @@ FR_COLD static void params_sanitize(void)
 #endif
         set.play_off = 0;
         set.vel_resp = 0;
+        set.sus_leds = 0;
         set.flags2 = 0;
         for (i = 0; i < 4u; i++) set.perf[i] = 0;
         params_split_phaser(p, P_SLOTS);
@@ -428,6 +433,7 @@ FR_COLD static void params_sanitize(void)
     if (!set.key_vel || set.key_vel > 127) set.key_vel = 96;
     if (set.vel_curve > 3u) set.vel_curve = 0;              /* TOUCH (keyvel.h): 0 = MEDIUM */
     if (set.vel_resp >= VRESP_N) set.vel_resp = 0;          /* RESPONSE: 0 = A */
+    if (set.sus_leds > 1u) set.sus_leds = 0;                /* SUSTAIN LEDS: 0 = DARK */
     if (set.tune < -50 || set.tune > 50) set.tune = 0;
     if (set.focus > 2) set.focus = 0;
     if (set.sc_mode > 2) set.sc_mode = 0;

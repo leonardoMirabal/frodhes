@@ -939,11 +939,13 @@ FR_COLD static void app_main(void)
 
         for (k = 0; k < NKEYS; k++)             /* LEDs per key: held (the FM-1's key, or its note over MIDI), or its
                                                  * note still rings under the sustain (0.9.4: MIDI notes too; only
-                                                 * a note the pedal holds, not one let go before it went down) */
+                                                 * a note the pedal holds, not one let go before it went down).
+                                                 * SUSTAIN LEDS LIT (DISPLAY, issue #35): under LEDS ALL / SCALE a key
+                                                 * let go shows the map again though its note rings on */
             if (src_active[SRC_KEYS + k]) lit |= 1u << k;
             else {
                 uint32_t n = scale_key_note(k);
-                if ((n < 128u && src_active[SRC_MIDI + n]) || note_sustained(n)) lit |= 1u << k;
+                if ((n < 128u && src_active[SRC_MIDI + n]) || (note_sustained(n) && !leds_sus_lit())) lit |= 1u << k;
             }
         tempo_lock_poll();                      /* (tempo.c: the synced LFOs locked to the clock's beats) */
         src_poll();
