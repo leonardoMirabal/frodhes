@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The Rhodes dynamics stage (rhodes.c rh_dyn, 0.9.10): a key x velocity gain at the strike.
-- the soft end quieter: v20 -> v127 at least 5 dB wider than without the stage (0.9.9: 25.6 -> 31.4 dB), the curve
-  without a step (v8..v64 every 8 rising);
-- mf and f untouched below key 82 (the table is exactly 1 at v >= 60: the levels of the build without it, -DRH_NO_DYN);
+- the soft end quieter: v20 -> v127 at least 5 dB wider than without the stage (0.9.9: 25.6 -> 32.1 dB), the curve
+  without a step (v8..v64 every 8 rising, or level from v40: the table is 1 there);
+- mf and f untouched below key 82 (the table is exactly 1 at v >= 40 since 2026-11-09, the soft end back toward
+  0.9.9: the levels of the build without it, -DRH_NO_DYN);
 - the top taper: key 96 at v64 4..8 dB under key 60;
 - a re-strike takes the new strike's gain: a v127 re-strike on a ringing v20 note as loud as a fresh v127 strike
   (within 1 dB, or no further under it than without the stage), and a soft re-strike on a ringing loud note does not
@@ -39,14 +40,15 @@ def test_soft_end_range_and_curve():
         wide = (lv[-1] - note("v", key, 20)) - (note("v", key, 127, NODYN) - note("v", key, 20, NODYN))
         assert wide >= 5.0, (key, wide)                              # the range ~6 dB wider than without the stage
         d = np.diff(lv[:-1])
-        assert np.all(d > 0.8) and np.all(d < 5.0), (key, d)   # rising, no step
+        assert np.all(d[:4] > 0.8) and np.all(d < 6.5), (key, d)   # rising to v40 (8 velocities: up to 5.6 dB), no step
 
 
 def test_mf_f_kept_soft_cut():
     for key in (40, 60):
-        for v in (64, 96, 127):                                  # mf, f: exactly the levels without the stage
+        for v in (40, 48, 64, 96, 127):                          # from v40: exactly the levels without the stage
             assert abs(note("v", key, v) - note("v", key, v, NODYN)) < 0.05, (key, v)
-        for v, lo, hi in ((20, -9.5, -8.0), (40, -5.2, -3.8)):   # the soft end's cut (0.9.10 FULL: -9 dB at v20, -4.5 at v40)
+        for v, lo, hi in ((10, -9.5, -8.0), (20, -7.4, -6.0), (30, -3.0, -1.6)):   # the soft end's cut (FULL: -9 dB at
+            # v10, -6.7 at v20, -2.3 at v30; until 2026-11-09 -9 at v20, -4.5 at v40)
             d = note("v", key, v) - note("v", key, v, NODYN)
             assert lo <= d <= hi, (key, v, d)
 
