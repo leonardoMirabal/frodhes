@@ -672,7 +672,7 @@ static int32_t wah_ein, wah_eout, wah_g = 4096, wah_pi, wah_po;   /* the wah's m
                                                  * input and the output (pre-emphasised), the gain (Q12), last samples */
 static int32_t wah_eslow, wah_g1 = 4096;        /* the input's slow envelope (onsets), the gain's first smoothing pole */
 #ifndef WAH_PKH
-#define WAH_PKH 4096
+#define WAH_PKH 8192                                        /* (Q12: the peak cap's headroom, x2) */
 #endif
 static int32_t wah_pki, wah_pko;                /* peak envelopes of the input and the wah at unity (the make-up's cap) */
 /* v / 10, truncated as C's division, for every int32 v: a multiply and a shift instead of the core's divide in the wah's
@@ -876,10 +876,11 @@ static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, in
             int32_t ei = wah_ein, eo = wah_eout, tg = 4096, gs = wah_ein > 4 * wah_eslow ? 2 : 3;
             while (ei > 0x7FFFF || eo > 0x7FFFF) { ei >>= 1; eo >>= 1; }
             if (eo > 8) tg = clampi((ei << 12) / eo, 512, 131072);   /* x0.125 .. x32 */
-            /* the make-up never takes the wah's peak over the input's (2026-11-08: a v127 note's attack +7 dB, a
-             * chord's +3.2 dB on the limiter, tools/fx_pristine.py): the loudness gain capped at the peaks' ratio */
+            /* the make-up capped at twice the peaks' ratio (2026-11-08: a v127 note's attack +7 dB, a chord's +3.2 dB
+             * on the limiter, tools/fx_pristine.py; now +1.6 at most). At x1 it held the peak but lost the level of a
+             * soft high note under a closed resonant wah (C7 v40 RATE 127 -5.6 LU, tests/py/test_hil_limits.py); an
+             * onset cap (no make-up while the input is 4x over its slow envelope) lost MARIMBA C5 -1.3: not kept */
             if (wah_pko > 8) { int32_t tp = (int32_t)(((int64_t)((wah_pki << 12) / wah_pko) * WAH_PKH) >> 12); tg = tg < tp ? tg : tp < 512 ? 512 : tp; }
-            if (gs == 2 && tg > 4096) tg = 4096;        /* (an onset: no make-up until the attack has passed) */
             wah_g1 += (tg - wah_g1) >> gs;
             wah_g += (wah_g1 - wah_g) >> gs;
             wgs = wah_g - (wgq >> 5);                    /* the gain ramps over the sub-block: no zipper */
