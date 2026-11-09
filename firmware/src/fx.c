@@ -82,6 +82,8 @@ static int fx_quiet(void) { return fx_quiet_blocks >= 86u || fx_gz >= 86u; }
  * carries) instead of one instruction. */
 #define FX_K32 volatile int32_t
 static inline __attribute__((always_inline)) int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
+static volatile uint8_t eng_cur;   /* (a tentative definition, engine.c's type: its own when it is in the unit, else the C
+                                    * harnesses', which have no engine: the output gate reads it) */
 /* FX_HC(k, v, lo, hi): v, and on the host a count when a clamp to [lo, hi] would cut it (engine.c fx_h_clip: the
  * effects' headroom gate, tests/py/test_fx_pristine.py); the firmware: v (nothing) */
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
