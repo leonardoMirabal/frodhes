@@ -142,3 +142,19 @@ def test_force_refuses_a_shared_name_and_a_wrong_location():
         assert fp.pick(["Frodhes FM-1", "Dualcore Test"]) == ["Dualcore Test"]
     finally:
         fp.force(None)
+
+
+def test_ports_by_location():
+    """2026-11-09: unit 2's CoreMIDI ports keep the old name "Dualcore Test" while its USB product is "Frodhes FM-1"
+    (as the user's unit): the ports at a location by CoreMIDI's indices into python-rtmidi's lists (mido reorders
+    its output list), the USB product there by ioreg"""
+    ins = ["IAC Driver Bus 1", "M6", "Frodhes FM-1", "Dualcore Test"]
+    outs = ["IAC Driver Bus 1", "MIDISPORT 2x4 Port 3", "M6", "Frodhes FM-1", "Dualcore Test"]
+    at = ([(3, "Dualcore Test")], [(4, "Dualcore Test")])
+    assert fp.midi_names_at(0x20130000, ins, outs, at) == (["Dualcore Test"], ["Dualcore Test"])
+    assert fp.midi_names_at(0x20130000, ins, outs[:4], at) is None          # (a port went meanwhile)
+    devs = [("Frodhes FM-1", 0x00100000), ("Frodhes FM-1", 0x20130000), ("Textura", 0x1), ("Sonic Test", 0x2),
+            ("FM-1", 0x3), ("FM-1", 0x3)]
+    assert fp.fm1_usb_at(0x20130000, devs) == "Frodhes FM-1"
+    assert fp.fm1_usb_at(0x1, devs) is None and fp.fm1_usb_at(0x2, devs) is None
+    assert fp.fm1_usb_at(0x3, devs) is None and fp.fm1_usb_at(0x4, devs) is None   # (two there / nothing there)

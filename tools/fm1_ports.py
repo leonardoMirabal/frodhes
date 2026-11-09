@@ -23,6 +23,10 @@ NEVER names are other firmware on another unit and are never matched, not even a
   midi_at(loc)       ([(index, name)] MIDI sources, [(index, name)] destinations) of the USB device at locationID loc
                      (CoreMIDI's USBLocationID on the endpoint's device; index = python-rtmidi's port index, the same
                      CoreMIDI order), None off macOS: two units of one name told apart by where they are plugged in
+  midi_names_at(loc) (input names, output names) of the unit at loc as python-rtmidi / mido name them (midi_at's
+                     indices into rtmidi's lists; None when an index is past them or there is no CoreMIDI)
+  usb_name_at(loc, devs)  the USB product name at loc (ioreg), None when nothing is there
+  fm1_usb_at(loc, devs)   that name, when it is an FM-1's (a Frodhes / FM-1 product, never NEVER), else None
 """
 import os
 import re
@@ -121,6 +125,35 @@ def midi_at(loc):
                 out.append((i, name(dev.value) or name(e)))
         return out
     return at(cm.MIDIGetNumberOfSources(), cm.MIDIGetSource), at(cm.MIDIGetNumberOfDestinations(), cm.MIDIGetDestination)
+
+
+def midi_names_at(loc, ins=None, outs=None, at=None):
+    """(input names, output names) of the unit at loc: midi_at's CoreMIDI indices looked up in python-rtmidi's lists
+    (rtmidi's port i = CoreMIDI endpoint i; mido reorders its output list, so mido's lists are never indexed);
+    None without CoreMIDI or when an index is past the list (a port came or went meanwhile)"""
+    m = midi_at(loc) if at is None else at
+    if m is None:
+        return None
+    if ins is None or outs is None:
+        import rtmidi
+        ins, outs = rtmidi.MidiIn().get_ports(), rtmidi.MidiOut().get_ports()
+    if any(i >= len(ins) for i, _ in m[0]) or any(i >= len(outs) for i, _ in m[1]):
+        return None
+    return [ins[i] for i, _ in m[0]], [outs[i] for i, _ in m[1]]
+
+
+def usb_name_at(loc, devs=None):
+    devs = usb_devices() if devs is None else devs
+    m = [n for n, l in devs or () if l == loc]
+    return m[0] if len(m) == 1 else None
+
+
+def fm1_usb_at(loc, devs=None):
+    """the USB product name at loc when it is an FM-1 (by the USB product, not CoreMIDI's cached port name)"""
+    n = usb_name_at(loc, devs)
+    if n is None or _never(n) or not any(k in n.lower() for k in PORT_KEYS):
+        return None
+    return n
 
 
 def usb_devices():

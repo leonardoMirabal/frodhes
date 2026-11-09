@@ -10,7 +10,7 @@ device asks (SysEx read requests on the logical image) and we answer. Then
 the FM-1 restarts and the installed identity is checked.
 
   fm1_install.py PACKAGE.fwsc [--port NAME] [--yes] [--force]
-  fm1_install.py --info [--port NAME]
+  fm1_install.py --info [--port NAME] [--location 0x...]
 
 If the FM-1 is still in update mode (an earlier install was cut off), the
 install finishes the write. Needs mido with python-rtmidi.
@@ -28,9 +28,12 @@ Every update loader takes the same name ("Felucca Update"), so the unit is pinne
 ioreg locationID) before it is switched: only a loader, and then a restarted firmware, at that same location is
 taken, and only when no other USB device has its name (two ports of one name cannot be told apart: refused, the
 unit left in update mode for a later run). --location 0x... asserts where the unit is, before anything is sent
-to the port; when CoreMIDI still shows the port under the unit's old USB name (it caches it after an image with
-another USB name), the port is taken as the unit at --location only by exclusion (fm1_ports.stale_match: every other
-port matched by its own name at another location, nothing else left without a port), else refused. Two installs never overlap:
+to the port. On macOS --location takes the unit's ports by CoreMIDI's USBLocationID (fm1_ports.midi_names_at),
+whatever name CoreMIDI shows for them (it caches a unit's old USB name after an image with another one): the USB
+product at that location (ioreg) must be an FM-1's and the firmware's identity reply must say FM-1 (or an update
+loader), else refused; the waits then take only ports at that location. Without CoreMIDI's locations a stale name
+is taken as the unit at --location only by exclusion (fm1_ports.stale_match: every other port matched by its own
+name at another location, nothing else left without a port), else refused. Two installs never overlap:
 the whole switch -> write -> restart holds the machine-wide INSTALL lock (tools/lock.py, the main checkout's
 build/locks/INSTALL.lockdir; separate from the DEVICE locks).
 
@@ -285,6 +288,13 @@ class MidoBackend:
     def usb_ids():
         return fm1_ports.usb_ids()
 
+    @staticmethod
+    def ports_at(loc):
+        return fm1_ports.midi_names_at(loc)
+
+    def raw_names(self):
+        return list(self.mido.get_input_names()), list(self.mido.get_output_names())   # (duplicates kept)
+
 
 def pair_output(name, outs):
     if name in outs:
@@ -341,9 +351,46 @@ class Updater:
     def say(self, msg):
         print(f"note: {msg}", file=sys.stderr)
 
+    def at_loc(self, loc):
+        """(inputs, outputs): the MIDI ports of the device at USB location loc, by CoreMIDI's USBLocationID (whatever
+        name CoreMIDI shows for them: it keeps a unit's old name); None when the backend cannot tell"""
+        f = getattr(self.backend, "ports_at", None)
+        return f(loc) if f and loc is not None else None
+
+    def unique(self, name, out=False):
+        """name, when only one MIDI port carries it (mido opens a port by name: two of one name are refused)"""
+        f = getattr(self.backend, "raw_names", None)
+        names = f()[out] if f else (self.backend.output_names() if out else self.backend.input_names())
+        if names.count(name) > 1:
+            raise InstallError("ambiguous", f"two MIDI ports are named {name!r}: they cannot be told apart by name; "
+                                            "unplug one or give it its own USB name")
+        return name
+
+    def pin_loc(self, name, ports):
+        """--location with the ports there known: the port must be one of them and the USB product there an FM-1's
+        (ioreg: the name the unit has now, not CoreMIDI's cached one)"""
+        if name not in ports[0]:
+            raise InstallError("notfound", f"--location 0x{self.location:08x}: the port {name!r} is not the unit "
+                                           f"there (its ports: {', '.join(ports[0]) or 'none'})")
+        devs = self.usb()
+        if devs is None:
+            raise InstallError("usage", "--location: no USB device list on this computer (macOS ioreg)")
+        if not fm1_ports.fm1_usb_at(self.location, devs):
+            raise InstallError("notfound", f"--location 0x{self.location:08x}: the USB device there is "
+                                           f"{fm1_ports.usb_name_at(self.location, devs)!r}, not an FM-1")
+        self.unique(name)
+        if name not in [n for n, _ in fm1_ports.usb_match(name, devs)]:
+            self.say(f"the port {name!r} is the unit at 0x{self.location:08x} (USB product "
+                     f"{fm1_ports.usb_name_at(self.location, devs)!r}; CoreMIDI keeps the old name)")
+        self.loc = self.location
+        return self.loc
+
     def pin(self, name):
         """the USB location of the device behind port `name`, kept for the waits; refuses when it cannot tell this
         unit from another one"""
+        ports = self.at_loc(self.location)
+        if ports is not None:
+            return self.pin_loc(name, ports)
         devs = self.usb()
         if devs is None:
             if self.location is not None:
@@ -376,6 +423,15 @@ class Updater:
         """a port the waits may take: the only USB device of that name, at the pinned location"""
         if self.loc is None:
             return True
+        ports = self.at_loc(self.loc) if self.location is not None else None
+        if ports is not None:                     # (--location: the ports at that location, by CoreMIDI)
+            try:
+                if name in ports[0] and self.unique(name):
+                    return True
+            except InstallError:
+                pass
+            self.skipped.add(f"{name!r} (not at 0x{self.loc:08x})")
+            return False
         devs = self.usb()
         if devs is None:
             return True
@@ -394,6 +450,16 @@ class Updater:
         names = [n for n in self.backend.input_names()
                  if not fm1_ports._never(n) or any(k and k.lower() in n.lower() for k in (self.port, self.new_port))]
         # (a named port is taken even when fm1_ports never picks it: a loaned unit)
+        if not only_port and self.location is not None and (ports := self.at_loc(self.loc)) is not None:
+            return list(ports[0])                 # (the waits with --location: whatever is at the unit's location)
+        ports = self.at_loc(self.location) if only_port else None
+        if ports is not None:                     # --location: the unit's ports there, by location, any name
+            mine = [n for n in ports[0] if not self.port or self.port.lower() in n.lower()]
+            if len(mine) > 1:
+                raise InstallError("ambiguous", f"{len(mine)} MIDI inputs at 0x{self.location:08x} "
+                                                f"({', '.join(mine)}): name the one to use with --port NAME")
+            self.others = {n for n in names if PORT_RE.search(n) and n not in ports[0]}
+            return mine
         if only_port:
             if self.port:
                 mine = [n for n in names if self.port.lower() in n.lower()]
@@ -416,7 +482,10 @@ class Updater:
         """the first matching port that answers the handshake (and want(identity))"""
         outs = self.backend.output_names()
         for name in self.candidates(only_port):
-            out = pair_output(name, outs)
+            ports = self.at_loc(self.location if only_port else self.loc) if self.location is not None else None
+            out = pair_output(name, ports[1]) if ports is not None else pair_output(name, outs)
+            if out and ports is not None:
+                self.unique(out, True)
             if not out:
                 continue
             if not only_port and not self.at_ours(name):
@@ -429,6 +498,10 @@ class Updater:
             except Exception:
                 continue
             ident = handshake(link, 2)
+            if ident and only_port and self.location is not None and not ident.loader and ident.model != "FM-1":
+                link.close()               # --location: the firmware's own reply must say FM-1 (FM-1_958)
+                raise InstallError("notfound", f"--location 0x{self.location:08x}: the unit there answers "
+                                               f"{ident.text!r}, not an FM-1")
             if ident and (want is None or want(ident)):
                 return Device(link, ident, name)
             link.close()

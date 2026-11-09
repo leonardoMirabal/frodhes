@@ -616,6 +616,67 @@ class StaleUnits(TwoUnits):
         return self._ids
 
 
+class LocUnits(StaleUnits):
+    """StaleUnits on macOS with CoreMIDI's locations: ports_at(loc) gives the ports of the unit at loc (CoreMIDI's
+    USBLocationID, whatever name the ports show), raw_names the port lists with duplicates (as mido)"""
+
+    def ports_at(self, loc):
+        n = [x for u, l in self.units if l == loc for x in u.input_names()]
+        return n, list(n)
+
+    def raw_names(self):
+        n = [x for u, _ in self.units for x in u.input_names()] + self.extra
+        return n, list(n)
+
+
+def located_ports():
+    """2026-11-09: unit 2 at 0x20130000 runs the candidate (USB product "Frodhes FM-1", as the user's unit at
+    0x00100000) while CoreMIDI keeps its port as "Dualcore Test": --location takes the ports at that location (any
+    name), checks the USB product there and the firmware's identity; the other unit is never opened"""
+    raw = package()
+    image = I.logical_image(raw)
+    p = pkgfile("loc.fwsc", raw)
+    F, D = 0x00100000, 0x20130000
+
+    def pair(t_id="FM-1_958", t_name="Dualcore Test", usb="Frodhes FM-1", **kw):
+        f = FakeFM1(image, identity="FM-1_958", name="Frodhes FM-1", after_name="Frodhes FM-1")
+        t = FakeFM1(image, identity=t_id, name=t_name, after_name=t_name)
+        return f, t, LocUnits((f, F), (t, D), alias={t_name: usb}, **kw)
+
+    f, t, b = pair()
+    rc, out, err = cli(["--info", "--location", "0x20130000"], b)
+    ok(rc == 0 and "FM-1_958" in out and "port: Dualcore Test" in out and "usb: 0x20130000" in out
+       and t.links and not f.links, f"--info --location 0x20130000, stale port name: unit 2, the other unopened ({rc})")
+    f, t, b = pair()
+    rc, out, err = cli(["--info", "--location", "0x20130000", "--port", "Dualcore Test"], b)
+    ok(rc == 0 and "usb: 0x20130000" in out and not f.links, "the same with --port Dualcore Test")
+    f, t, b = pair()
+    rc, out, err = cli(["--info", "--location", "0x00100000"], b)
+    ok(rc == 0 and "port: Frodhes FM-1" in out and "usb: 0x00100000" in out and f.links and not t.links,
+       "--info --location 0x00100000: the user's unit, unit 2 unopened")
+    f, t, b = pair()
+    rc, out, err = cli(["--info", "--location", "0x00100000", "--port", "Dualcore Test"], b)
+    ok(rc != 0 and not f.links and not t.links, f"--port of the other unit at --location: refused, nothing opened ({rc})")
+    f, t, b = pair()
+    rc, out, err = cli([p, "--yes", "--location", "0x20130000"], b)
+    ok(rc == 0 and t.upgrades == 2 and not f.links, f"install --location 0x20130000: unit 2 installed, the other unopened ({rc})")
+    f, t, b = pair(usb="Sonic Test")
+    rc, out, err = cli(["--info", "--location", "0x20130000"], b)
+    ok(rc == 3 and not t.links and not f.links and "not an FM-1" in err,
+       f"the USB product there not an FM-1's: refused before anything is opened (exit {rc})")
+    f, t, b = pair(t_id="SMK-37 Pro_958")
+    rc, out, err = cli(["--info", "--location", "0x20130000"], b)
+    ok(rc == 3 and not f.links and all(k.closed for k in t.links) and "answers 'SMK-37 Pro_958'" in err,
+       f"the firmware's identity not an FM-1's: refused, the link closed (exit {rc})")
+    f, t, b = pair(t_name="Frodhes FM-1")
+    rc, out, err = cli(["--info", "--location", "0x20130000"], b)
+    ok(rc == 7 and not t.links and not f.links, f"two ports of one name: refused, nothing opened (exit {rc})")
+    f, t, b = pair()
+    b.ports_at = lambda loc: ([], [])
+    rc, out, err = cli(["--info", "--location", "0x20130000"], b)
+    ok(rc != 0 and not t.links and not f.links, f"no ports at the location: nothing opened (exit {rc})")
+
+
 def stale_names():
     """CoreMIDI's stale name (2026-11-08: the unit at 0x20130000 runs an image whose USB product is "Sonic Test",
     CoreMIDI still lists its port as "Dualcore Test"): with --location the unit is taken by exclusion (every other
@@ -705,6 +766,7 @@ against_js()
 two_units()
 two_loaders()
 stale_names()
+located_ports()
 shutil.rmtree(TMP, ignore_errors=True)
 # the SMK-37 Pro, Elite and MKE-P37 are one keyboard: packages install across them, never across FM-1 / SMK
 ok(I.same_keyboard("SMK-37 Elite_016", "SMK-37 Pro_900") and I.same_keyboard("ota-MKE-P37_900", "SMK-37 Elite_900")

@@ -262,7 +262,8 @@ def plan(row, minutes):
 def loc_ports(loc, name=None):
     """(mido, out, inp): the MIDI ports of the unit at USB location loc, none other (CoreMIDI's USBLocationID,
     fm1_ports.midi_at), opened by python-rtmidi index and read by polling (no Python callback on CoreMIDI's thread);
-    refused unless it has exactly one source and one destination with an FM-1 name (name: and containing it)"""
+    refused unless it has exactly one source and one destination (any name: CoreMIDI keeps a unit's old USB name;
+    name: containing it), the USB product there (ioreg) is an FM-1's, and the firmware's identity reply says FM-1"""
     import mido
     import rtmidi
     import fm1_midi
@@ -274,13 +275,20 @@ def loc_ports(loc, name=None):
     src, dst = m
     if len(src) != 1 or len(dst) != 1:
         sys.exit(f"--location 0x{loc:08x}: not one FM-1 there (MIDI sources {src}, destinations {dst})")
+    import fm1_install
+    devs = fm1_ports.usb_devices()
+    usb = fm1_ports.fm1_usb_at(loc, devs)
+    if usb is None:
+        sys.exit(f"--location 0x{loc:08x}: the USB device there is {fm1_ports.usb_name_at(loc, devs)!r}, "
+                 "not a Frodhes FM-1 (install Frodhes first)")
     for _, n in src + dst:
-        if fm1_ports._never(n) or not any(k in n.lower() for k in fm1_ports.PORT_KEYS) or (name and name.lower() not in n.lower()):
-            sys.exit(f"--location 0x{loc:08x}: the unit there is {n!r}, not a Frodhes FM-1 (install Frodhes first)")
+        if fm1_ports._never(n) or (name and name.lower() not in n.lower()):
+            sys.exit(f"--location 0x{loc:08x}: its MIDI port is {n!r}" + (f", not {name!r}" if name else ""))
 
     class In:
         def __init__(self, i, n):
             self.m, self.p, self.name = rtmidi.MidiIn(), mido.Parser(), n
+            self.m.ignore_types(sysex=False)       # (the identity reply)
             if n not in self.m.get_ports()[i]:
                 sys.exit(f"--location 0x{loc:08x}: MIDI input {i} is {self.m.get_ports()[i]!r} now, not {n!r}")
             with midi_guard.watch(f"open {n!r} (input {i}, 0x{loc:08x})"):
@@ -305,8 +313,31 @@ def loc_ports(loc, name=None):
         def send(self, msg):
             self.m.send_message(msg.bytes())
 
-    inp, out = In(*src[0]), fm1_midi.ChannelOut(Out(*dst[0]))
-    print(f"{fm1_midi.say(out.ch)}; the unit at USB 0x{loc:08x}: input {src[0][0]}, output {dst[0][0]}", flush=True)
+    inp, o = In(*src[0]), Out(*dst[0])
+    ident = None
+    for _ in range(3):                                    # the firmware's own identity (as fm1_install --info)
+        while inp.m.get_message():
+            pass
+        o.m.send_message(list(fm1_install.HS_QUERY))
+        t0 = time.monotonic()
+        while ident is None:
+            e = inp.m.get_message()
+            if e is None:
+                if time.monotonic() - t0 >= 0.5:
+                    break
+                time.sleep(0.005)
+            elif e[0] and e[0][0] == 0xF0:
+                ident = fm1_install.parse_identity(bytes(e[0]))
+        if ident is not None:
+            break
+    if ident is None or ident.loader or ident.model != "FM-1":
+        inp.m.close_port()
+        o.m.close_port()
+        sys.exit(f"--location 0x{loc:08x}: the unit there answers "
+                 + (repr(ident.text) if ident else "no identity") + ", not a running FM-1 firmware")
+    out = fm1_midi.ChannelOut(o)
+    print(f"{fm1_midi.say(out.ch)}; the unit at USB 0x{loc:08x} ({usb!r}, {ident.text}): input {src[0][0]} "
+          f"{src[0][1]!r}, output {dst[0][0]}", flush=True)
     return mido, out, inp
 
 
