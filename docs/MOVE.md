@@ -296,7 +296,7 @@ as if a controller sent that CC (the CC numbers are the FM-1's, the manual's [MI
 to one of the FM-1's developer and test CCs (2-4, 8-11, 41, 42, 114, 116 and 119) does nothing.
 
 ![LFO/SETUP](manual/img/move/move-lfo-setup.png?v=ef9ddf28)
-![MAPPINGS](manual/img/move/move-mappings.png?v=c3e1bfdb)
+![MAPPINGS](manual/img/move/move-mappings.png?v=66781c3a)
 
 ## The list
 
