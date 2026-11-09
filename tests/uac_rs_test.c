@@ -15,7 +15,8 @@
  * end (the last step, Q16 of 1/2560 frame). With UAC_RS_BLOCK=1 in the environment the block goes in as the firmware's
  * tail feeds it (platform.c: the samples straight into the history, UAC_HIST, then one uac_tap_hist a block): the
  * same output, bit for bit; UAC_RS_BLOCK=2: two blocks so, then one in pieces (a MASTER ramp's block, master_ramp), and
- * so on. Exit 3 if a frame's right channel differs from its left (the history's R half misplaced).
+ * so on; UAC_RS_BLOCK=3: two blocks in pieces written to the history's start, each tapped (platform.c APP_TAIL_EARLY,
+ * tail_piece), then one as a whole block or in uac_tap's pieces in turn. Exit 3 if a frame's right channel differs from its left (the history's R half misplaced).
  *   cc -O1 -w -Ifirmware/src -o build/uac_test/uac_rs_test tests/uac_rs_test.c
  */
 #include <stdint.h>
@@ -62,7 +63,16 @@ int main(int argc, char **argv)
         uac_lock_set(q52(ppm));
         for (i = 0; i < HALF_FRAMES; i++)
             fr[2u * i] = fr[2u * i + 1u] = (int32_t)in[i];         /* (Q15: the ISR's int32 samples are Q15 here) */
-        if (mode == 1 || (mode == 2 && b % 3u != 2u)) {
+        if (mode == 3 && b % 3u != 2u) {      /* (platform.c APP_TAIL_EARLY: each piece of 32 at the history's start,
+                                                 * a tap of 32: tail_piece) */
+            for (p = 0; p < HALF_FRAMES; p += 32u) {
+                for (i = 0; i < 32u; i++) {
+                    UAC_HIST[2u * i] = (int16_t)fr[2u * (p + i)];
+                    UAC_HIST[2u * i + 1u] = (int16_t)fr[2u * (p + i) + 1u];
+                }
+                uac_tap_hist(32u);
+            }
+        } else if (mode == 1 || ((mode == 2 || mode == 3) && b % 3u != 2u) || (mode == 3 && b % 6u == 5u)) {
             for (i = 0; i < HALF_FRAMES; i++) {
                 UAC_HIST[2u * i] = (int16_t)fr[2u * i];
                 UAC_HIST[2u * i + 1u] = (int16_t)fr[2u * i + 1u];

@@ -551,6 +551,66 @@ static __attribute__((noinline)) void master_ramp(int32_t *o, int32_t m)
     master_prev = m;
 }
 #undef TAIL_PRE
+#ifndef APP_TAIL_EARLY
+#define APP_TAIL_EARLY 0
+#endif
+#if APP_TAIL_EARLY
+/* Frodhes (0.9.10, two cores: APP_TAIL_EARLY): the tail below in pieces of 32 frames, the first ones run early by the
+ * app (tail_early, still in this interrupt: frodhes.c app_audio, while core 0 waits for core 1's last effects) on
+ * the frames already final; the interrupt does the rest after app_audio. The same samples as the one pass: MASTER
+ * and the clip act frame by frame, the USB tap in pieces of 32 is the one tap (tests/uac_rs_test.c, bit for bit).
+ * Allowed (tl.on) only when nothing can tell the pieces from the pass: MASTER not moving (master_ramp: the whole
+ * pass after), the USB ring with room for the whole block (else the one tap drops it all, a piece only its part) */
+static struct { int32_t *o; int32_t m; uint32_t b, fill, on; } tl __attribute__((section(".bss.tail_tl")));
+#if FELUCCA_UAC
+#define TAIL_ROOM() (!uac.feed || UA_N - (ua_w - ua_r) >= HALF_FRAMES + HALF_FRAMES / 8u + 2u)
+#define TAIL_FILL() (uac.feed && uac.go ? ua_w - ua_r + 1u : 0u)
+#else
+#define TAIL_ROOM() 1
+#define TAIL_FILL() 0u
+#endif
+#if FELUCCA_UAC && FELUCCA_UAC_LOCK == 1
+#define TAIL_PQ() UAC_HIST                      /* (a piece: its frames at the history's start, then a tap of 32) */
+#define TAIL_PTAP(q) uac_tap_hist(32u)
+#else
+#define TAIL_PQ() tap_q
+#define TAIL_PTAP(q) TAIL_TAP(q)
+#endif
+static __attribute__((noinline)) void tail_piece(int32_t *c, int32_t m)   /* 32 frames: the loop below, one pass */
+{
+#define TAIL_PRE(x) ((x) > 32767 ? 32767 : (x) < -32767 ? -32767 : (x))
+    TAIL_Q_T *q = TAIL_PQ();
+    uint32_t i;
+    HAL_KEEP_REG(q);
+    if (usb_pre_master) {
+        for (i = 0; i < 32u; i++, c += 2, q += 2) {
+            int32_t l = TAIL_PRE(c[0]), r = TAIL_PRE(c[1]);
+            TAIL_KEEP(q);
+            q[0] = (TAIL_Q_T)l; q[1] = (TAIL_Q_T)r;
+            c[0] = (l * m) >> MASTER_JACK_SH;
+            c[1] = (r * m) >> MASTER_JACK_SH;
+        }
+    } else {
+        for (i = 0; i < 32u; i++, c += 2, q += 2) {
+            int32_t pl = c[0] * m, pr = c[1] * m, l = pl >> 12, r = pr >> 12;
+            l = TAIL_PRE(l); r = TAIL_PRE(r);
+            TAIL_KEEP(q);
+            q[0] = (TAIL_Q_T)l; q[1] = (TAIL_Q_T)r;
+            pl >>= MASTER_JACK_SH; pr >>= MASTER_JACK_SH;
+            c[0] = TAIL_JACK(pl);
+            c[1] = TAIL_JACK(pr);
+        }
+    }
+    TAIL_PTAP(q);
+#undef TAIL_PRE
+}
+static void tail_early(uint32_t frames)         /* the app: frames 0 .. frames - 1 of the block are final */
+{
+    if (!tl.on || frames > HALF_FRAMES) return;
+    if (!tl.b) tl.fill = TAIL_FILL();          /* (the ring's low point, before a tap) */
+    while (tl.b < 2u * frames) { tail_piece(tl.o + tl.b, tl.m); tl.b += 64u; }
+}
+#endif
 static volatile uint32_t wd_isr_n;              /* the watchdog's proof the audio interrupt runs */
 void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) */
 {
@@ -570,9 +630,23 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
 #endif
         uint32_t t1, fill;
         UAC_ONLY(uac_render_start());
+#if APP_TAIL_EARLY
+        tl.o = o; tl.b = 0; tl.m = master_q12;  /* (only the main loop writes MASTER: the value read after app_audio) */
+        tl.on = tl.m == master_prev && TAIL_ROOM();
+#endif
         app_audio(o, HALF_FRAMES);
         t1 = fm1_ticks();
         fill = uac.feed && uac.go ? ua_w - ua_r + 1u : 0u;   /* the ring's low point: the render ran it down */
+#if APP_TAIL_EARLY
+        if (tl.b) {                             /* pieces run early: the rest in pieces, the same samples */
+            fill = tl.fill;
+            for (b = tl.b; b < HALF_WORDS; b += 64u)
+                tail_piece(o + b, tl.m);
+            tl.on = 0;
+            goto tail_done;
+        }
+        tl.on = 0;
+#endif
         /* Frodhes: one pass per 32 frames (MASTER, the clip, the codec's shift; the USB tap's samples into tap_q) instead
          * of three over the block; the same samples. MASTER read once: only the main loop writes it */
         m = master_q12;
@@ -615,6 +689,9 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
         if (!ramp)
             TAIL_TAP_BLOCK();
 #undef TAIL_PRE
+#if APP_TAIL_EARLY
+    tail_done:
+#endif
         fm1_audio_ack_half();
         isr_stats(t0, t1, fill);
 #ifdef FM1_PROF_TICK

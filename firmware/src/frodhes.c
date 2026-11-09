@@ -104,6 +104,10 @@ static int fr_wd_c1_ok(uint32_t now)            /* the watchdog (platform.c wd_p
     return now - t < 3000000u * FM1_TICKS_PER_US;
 }
 #define APP_WD_OK(now) fr_wd_c1_ok(now)
+#ifndef FR_TAIL_EARLY
+#define FR_TAIL_EARLY 1                         /* the ISR tail's pieces while core 0 waits for core 1 (app_audio) */
+#endif
+#define APP_TAIL_EARLY FR_TAIL_EARLY
 #endif
 #include "platform.c"
 #if defined(DINGHY_HOST) && !defined(HOST_FL_CHECK)
@@ -394,14 +398,29 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
     else {
         uint32_t j, k = n / C1_SUB, solo = 0, d;
         int r;
+#if APP_TAIL_EARLY
+        /* the tail's pieces early (platform.c tail_early) only on frames no later effect touches: the silence gate
+         * (fx.c fx_out, at the block's end over all of out) stays out of this block: open, not falling, and its hold
+         * at least two blocks away (read before core 1 starts: only its block end writes them) */
+        uint32_t tail_ok = gate_g == 32768 && gate_tgt == 32768 && gate_quiet + 1u < GATE_HOLD && !fx_p[FXP_RAW];
+#endif
         c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n;
         c1_rdy = 0; c1_fxd = 0;
         fr_c1_sync();
         if (!fr_c1_run(c1_stream_job, 0)) { solo = 1; fx_pre_c(); }
+#if defined(C1PF_ON)
+        uint32_t pv = 0, pt;
+#endif
         eng_begin(n);
         for (j = 0; j < C1_SUB; j++) {
+#if defined(C1PF_ON)
+            pt = fm1_ticks();
+#endif
             eng_chunk(c1_mono, j * k, j * k + k);   /* core 0: chunk j's voices */
-            if (j + 1u == C1_SUB) eng_end(c1_mono, n);
+            if (j + 1u == C1_SUB) { eng_end(c1_mono, n); C1PF(16, fm1_ticks() - t0); }
+#if defined(C1PF_ON)
+            pv += fm1_ticks() - pt;
+#endif
 #ifndef DINGHY_HOST
             if (!solo && !fr_c1_busy()) {       /* (the job over before the block's end: refused, or core 1 held)
                                                  * core 0 does the rest */
@@ -427,10 +446,31 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         host_race_check();
 #endif
         PROF_STAMP(1);
+        C1PF(17, pv);
         if (!solo) {
 #ifndef DINGHY_HOST
             uint32_t el = (fm1_ticks() - t0) / 24u;
+#if APP_TAIL_EARLY
+            if (tail_ok) {                      /* core 0's wait: the tail of each chunk core 1 has finished */
+                uint32_t tw = fm1_ticks(), dl = (el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u) * FM1_TICKS_PER_US;
+                uint32_t done = 0, x;
+                while (fr_c1_busy() && fm1_ticks() - tw < dl) {
+                    fr_c1_sync();
+                    x = c1_fxd;
+                    fr_c1_sync();
+                    if (x == c1_fxd && x > done && x <= n && !(x & 31u)) { tail_early(x); done = x; }   /* (read twice) */
+                    else fr_c1_pause();
+                }
+                el = (fm1_ticks() - t0) / 24u;
+            }
+#endif
+#if defined(C1PF_ON)
+            pt = fm1_ticks();
+#endif
             r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+#if defined(C1PF_ON)
+            C1PF(19, fm1_ticks() - pt);
+#endif
 #else
             r = fr_c1_wait_us(C1_DEADLINE_US);
             if (!r) while (c1_fxd < n) c1_stream_step();   /* (the host twin: core 1's rest) */
