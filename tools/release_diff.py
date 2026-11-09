@@ -522,6 +522,12 @@ def proven(expected, cid, lab, m, v, b, used):
     return None
 
 
+def exact_entry(e):
+    """an entry naming one cell (no * or ?; its only class the RESPONSE pair [AB])"""
+    pat = str(e.get("match", ""))
+    return not any(ch in pat for ch in "*?") and "[" not in pat.replace("[AB]", "")
+
+
 def silent_entry(expected, cid, lab, m, v, b):
     """the entry listing a keyup / decay window that turned silent (or sounding), or None: only one naming the exact
     cell and metric, with `silent: true` (the candidate is silent) or `silent: false` (the last release was; its
@@ -587,13 +593,14 @@ def judge(cand, base, expected):
                 if d is None:
                     continue
                 hit = None
-                for i, e in enumerate(expected):
-                    if fnmatch.fnmatch(f"{cid}/{lab}", e.get("match", "")) and \
-                            any(fnmatch.fnmatch(m, pat) for pat in str(e.get("metric", "*")).split()):
-                        lo, hi = e.get("min"), e.get("max")
-                        if (lo is None or d >= lo) and (hi is None or d <= hi):
-                            hit = i
-                            break
+                named = [i for i, e in enumerate(expected) if fnmatch.fnmatch(f"{cid}/{lab}", e.get("match", "")) and
+                         any(fnmatch.fnmatch(m, pat) for pat in str(e.get("metric", "*")).split())]
+                exact = [i for i in named if exact_entry(expected[i])]
+                for i in exact or named:        # an exact-cell entry governs its cell: a wildcard never rescues a move
+                    lo, hi = expected[i].get("min"), expected[i].get("max")   # outside the exact entry's window
+                    if (lo is None or d >= lo) and (hi is None or d <= hi):
+                        hit = i
+                        break
                 moves.append((cid, lab, m, v, b, d, hit))
                 if hit is None:
                     mv = f"{d:+.0%} (tolerance {TOL['cent']:.0%})" if m == "cent" else f"{d:+.2f} (tolerance {tol_of(m)})"

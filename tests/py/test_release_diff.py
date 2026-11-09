@@ -156,3 +156,16 @@ def test_a_silent_key_up_window_is_a_state_not_a_db_value():
     assert rd.judge(cells(keyup=-12.0), base, [dict(e, min=-11.5, max=-10.5)])[0]   # outside its min / max
     assert rd.judge(cells(decay=s), cells(decay=s), [])[0] == []         # decay: the hold's end exact zeros, the same
     assert verdict(cells(decay=s))
+
+
+def test_an_exact_cell_entry_governs_over_a_wildcard():
+    """an entry naming the exact cell wins over any wildcard, whatever their order in the file; a move outside the
+    exact entry's window fails even where a wildcard's window would hold it (hq F15 k67v20: the */F15/PRESET/* entry
+    matched first)"""
+    wild = {"match": "fm1/ST77/*", "metric": "level", "min": 2.0, "max": 4.0, "reason": "the TYPE louder"}
+    ex = {"match": f"{CID}/k33v127", "metric": "level", "min": 2.8, "max": 3.2, "reason": "this cell, measured"}
+    fails, moves, stale = rd.judge(cells(level=-17.0), cells(), [wild, ex])
+    assert fails == [] and moves[0][6] == 1 and stale == [0]
+    assert rd.judge(cells(level=-16.5), cells(), [wild, ex])[0]          # +3.5: inside the wildcard, outside the exact
+    assert rd.judge(cells(level=-16.5), cells(), [wild])[0] == []
+    assert rd.exact_entry({"match": "hq/F15/PRESET/[AB]/k67v20"}) and not rd.exact_entry({"match": "*/F15/PRESET/*"})
