@@ -972,7 +972,7 @@ def bypass(r, rep):
     rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2], comp_only=lv[3])
     # the compressor as the panel switches it on (THRESH up: +2.8 dB makeup); before, it ran with no makeup and the
     # effects-on level sat 5 dB under the bypass by construction.
-    # THRESHOLD (2026-11-09): the bypass is judged against the compressor alone (its settings as the effects-on row's),
+    # THRESHOLD (2026-11-09, coordinator sign-off 2026-11-09): the bypass is judged against the compressor alone (its settings as the effects-on row's),
     # within 0.5 LU as before; no effects at all is information. Since b2c9ab1b the bypass keeps the compressor, so
     # against no effects it reads its make-up: +2.2 LU on the host (the coordinator saw +0.8 on its run), by design (the
     # user's decision 2026-11-08); bypassed re the compressor alone +0.01 LU (host)

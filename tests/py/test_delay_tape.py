@@ -130,7 +130,7 @@ def echo_rel(kind, mix, fb=0, level=None):
 # TAPE's own +4.65 sits under DIG / ANA's band (its head bump and high-frequency loss through the TONE filter): its
 # band the same +-0.5 around its value. The delay's level itself is unchanged
 E127 = {"DIG": (5.4, 6.4), "ANA": (5.4, 6.4), "TAPE": (4.15, 5.15)}
-# MIX 64's first echo re the dry: within 1.0 dB (DIG 0.0, ANA -0.1). THRESHOLD (2026-11-09): TAPE 1.5. Its echo
+# MIX 64's first echo re the dry: within 1.0 dB (DIG 0.0, ANA -0.1). THRESHOLD (2026-11-09, coordinator sign-off 2026-11-09): TAPE 1.5. Its echo
 # depends on the tape's input level (its saturation) by about 1 dB with the delay's law unchanged (0.9.9's, TP_WET
 # 3867, WET_DB -0.5): 0.9.9 itself reads -0.52 at the default LEVEL and -1.60 at LEVEL 40; this tree -1.24 at both
 # (742a2537's LEVEL -19 feeds the tape lower). Raising TAPE's wet to pass 1.0 changed 0.9.9's law (the coordinator:

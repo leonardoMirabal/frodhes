@@ -18,7 +18,8 @@ import dry_dist  # noqa: E402
 
 ABS_LIM = -62.0          # dB (dry_dist's floor "never heard" is -60)
 DRY_TOL = 14.0           # dB over the dry engine's own (measured: at most +12.2, SUIT's mid chord, -68.9 against -81.1, at
-                         # CMP_HOLD 512; 256 read +14.6, fx.c's CMP_HOLD comment)
+                         # CMP_HOLD 512; 256 read +14.6, fx.c's CMP_HOLD comment). THRESHOLD: 14 kept with CMP_HOLD 512,
+                         # coordinator sign-off 2026-11-09
 
 
 def chords(binary, type_cc, comp, outdir):
