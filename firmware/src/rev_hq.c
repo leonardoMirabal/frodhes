@@ -242,9 +242,12 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
             else if (cur == RV_PLATE) rev_plate_run(&rev_u.p, rv_x, rv_m, rv_s, &c);
             else FR_FAR(rev_inf_run)(&rev_u.i, rv_x, rv_m, rv_s, &c);
         }
-        if (cur && (rv_fade || !send)) {
+        if (cur && (rv_fade || !send)) {               /* (the step before each sample: the fade ends at 0, as
+                                                        * rev_types.c's; it ended at 1/256, then a step to the new
+                                                        * TYPE's empty start) */
             int32_t g = (int32_t)rv_fade << 12;
-            for (i = 0; i < RQ_NC; i++, g -= 4096 / (int32_t)RQ_NC) {
+            for (i = 0; i < RQ_NC; i++) {
+                g -= 4096 / (int32_t)RQ_NC;
                 act |= rv_m[i] | rv_s[i];
                 if (rv_fade) { rv_m[i] = mul15(rv_m[i], g); rv_s[i] = mul15(rv_s[i], g); }
             }

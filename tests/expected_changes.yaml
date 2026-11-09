@@ -3916,3 +3916,331 @@ changes:
       v0.9.9 silent 80..280 ms after the key-up; the median of the 2 shifts with a tail, -42.9 / -42.8, the other 2
       silent; no gate: GATE_LO_BARS 0 renders within 2 LSB; build/sonic/resp-ab/mar/tails_lsb.txt,
       mar/nogate_cmp.py). Coordinator sign-off 2026-11-09"
+
+# ---- 14. zipper (2026-11-09): PLATE's modulated reads mended (f529faa2 / this branch), per cell, the move against
+#  v0.9.9 measured on the full grid +-0.5 dB: the cells the change takes past their tolerance or an entry's range. Only
+#  the PLATE presets move (F04-F09, F14, F17; FM-1 and HQ, level within 0.13 dB); against rc-0910 5bef323f every
+#  other cell is unchanged. Two hq F05 k28v96 H5 cells: over the ceiling by 0.18 dB, proven linear reverb content.
+#  Signed off: coordinator 2026-11-09.
+  - match: "fm1/F05/PRESET/A/k57v40"
+    metric: "keyup"
+    min: -14.259
+    max: -13.259
+    reason: "the reverb tail after the key-up without the noise (-13.76 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/A/k69v96"
+    metric: "cb"
+    min: -2.124
+    max: -1.124
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.62 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/A/k81v110"
+    metric: "cb"
+    min: -2.861
+    max: -1.861
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-2.36 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/A/k81v96"
+    metric: "cb"
+    min: -2.335
+    max: -1.335
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.84 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/A/k93v110"
+    metric: "decay"
+    min: -10.272
+    max: -9.272
+    reason: "the tail without the noise decays as a clean plate's (-9.77 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/A/k93v127"
+    metric: "decay"
+    min: -9.809
+    max: -8.809
+    reason: "the tail without the noise decays as a clean plate's (-9.31 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/A/k93v20"
+    metric: "decay"
+    min: -9.613
+    max: -8.613
+    reason: "the tail without the noise decays as a clean plate's (-9.11 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/A/k93v40"
+    metric: "decay"
+    min: -9.917
+    max: -8.917
+    reason: "the tail without the noise decays as a clean plate's (-9.42 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/A/k93v64"
+    metric: "decay"
+    min: -9.959
+    max: -8.959
+    reason: "the tail without the noise decays as a clean plate's (-9.46 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/A/k93v96"
+    metric: "decay"
+    min: -10.088
+    max: -9.088
+    reason: "the tail without the noise decays as a clean plate's (-9.59 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/B/k57v40"
+    metric: "keyup"
+    min: -14.497
+    max: -13.497
+    reason: "the reverb tail after the key-up without the noise (-14.00 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/B/k69v96"
+    metric: "cb"
+    min: -2.124
+    max: -1.124
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.62 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/B/k81v110"
+    metric: "cb"
+    min: -2.861
+    max: -1.861
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-2.36 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/B/k81v96"
+    metric: "cb"
+    min: -2.335
+    max: -1.335
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.84 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/B/k93v110"
+    metric: "decay"
+    min: -10.272
+    max: -9.272
+    reason: "the tail without the noise decays as a clean plate's (-9.77 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/B/k93v127"
+    metric: "decay"
+    min: -9.809
+    max: -8.809
+    reason: "the tail without the noise decays as a clean plate's (-9.31 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/B/k93v20"
+    metric: "decay"
+    min: -10.010
+    max: -9.010
+    reason: "the tail without the noise decays as a clean plate's (-9.51 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/B/k93v40"
+    metric: "decay"
+    min: -9.987
+    max: -8.987
+    reason: "the tail without the noise decays as a clean plate's (-9.49 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/B/k93v64"
+    metric: "decay"
+    min: -9.959
+    max: -8.959
+    reason: "the tail without the noise decays as a clean plate's (-9.46 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F05/PRESET/B/k93v96"
+    metric: "decay"
+    min: -10.088
+    max: -9.088
+    reason: "the tail without the noise decays as a clean plate's (-9.59 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F06/PRESET/A/k69v20"
+    metric: "clk_off"
+    min: -12.052
+    max: -11.052
+    reason: "the key-up's second-difference peak without the plate's 2-sample steps (-11.55 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F06/PRESET/A/k81v20"
+    metric: "clk_off"
+    min: -12.110
+    max: -11.110
+    reason: "the key-up's second-difference peak without the plate's 2-sample steps (-11.61 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F06/PRESET/A/k93v20"
+    metric: "clk_off"
+    min: -10.397
+    max: -9.397
+    reason: "the key-up's second-difference peak without the plate's 2-sample steps (-9.90 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F07/PRESET/A/chord-mid"
+    metric: "clk_off"
+    min: -6.927
+    max: -5.927
+    reason: "the key-up's second-difference peak without the plate's 2-sample steps (-6.43 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F07/PRESET/A/k81v127"
+    metric: "decay"
+    min: -3.542
+    max: -2.542
+    reason: "the tail without the noise decays as a clean plate's (-3.04 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F07/PRESET/B/chord-mid"
+    metric: "clk_off"
+    min: -6.927
+    max: -5.927
+    reason: "the key-up's second-difference peak without the plate's 2-sample steps (-6.43 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F07/PRESET/B/k81v127"
+    metric: "decay"
+    min: -3.542
+    max: -2.542
+    reason: "the tail without the noise decays as a clean plate's (-3.04 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F08/PRESET/A/k69v110"
+    metric: "H4"
+    min: -23.819
+    max: -22.819
+    reason: "the harmonic band without the reverb's noise in it (-23.32 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F08/PRESET/B/k69v110"
+    metric: "H4"
+    min: -23.819
+    max: -22.819
+    reason: "the harmonic band without the reverb's noise in it (-23.32 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F09/PRESET/A/k57v96"
+    metric: "decay"
+    min: -3.560
+    max: -2.560
+    reason: "the tail without the noise decays as a clean plate's (-3.06 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F09/PRESET/B/k57v96"
+    metric: "decay"
+    min: -3.560
+    max: -2.560
+    reason: "the tail without the noise decays as a clean plate's (-3.06 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F14/PRESET/A/k89v110"
+    metric: "cb"
+    min: -2.307
+    max: -1.307
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.81 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F14/PRESET/A/k89v127"
+    metric: "cb"
+    min: -2.334
+    max: -1.334
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.83 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F14/PRESET/A/k89v64"
+    metric: "cb"
+    min: -2.062
+    max: -1.062
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.56 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F14/PRESET/A/k89v96"
+    metric: "cb"
+    min: -2.310
+    max: -1.310
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.81 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F14/PRESET/B/k89v110"
+    metric: "cb"
+    min: -2.307
+    max: -1.307
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.81 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F14/PRESET/B/k89v127"
+    metric: "cb"
+    min: -2.334
+    max: -1.334
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.83 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F14/PRESET/B/k89v64"
+    metric: "cb"
+    min: -2.062
+    max: -1.062
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.56 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "fm1/F14/PRESET/B/k89v96"
+    metric: "cb"
+    min: -2.310
+    max: -1.310
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.81 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F05/PRESET/A/k28v96"
+    metric: "H5"
+    min: 2.684
+    max: 3.684
+    ceiling_proof: "tests/baselines/plate_mod_linear_proof.json"
+    reason: "linear reverb content (tools/rev_lin_proof.py: the reverb's non-linear residual 51.363 against v0.9.9's 56.516, no clamps): the harmonic band without the reverb's noise in it; PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F05/PRESET/A/k81v110"
+    metric: "cb"
+    min: -2.759
+    max: -1.759
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-2.26 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F05/PRESET/A/k81v96"
+    metric: "cb"
+    min: -2.252
+    max: -1.252
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.75 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F05/PRESET/B/k28v96"
+    metric: "H5"
+    min: 2.684
+    max: 3.684
+    ceiling_proof: "tests/baselines/plate_mod_linear_proof.json"
+    reason: "linear reverb content (tools/rev_lin_proof.py: the reverb's non-linear residual 51.363 against v0.9.9's 56.516, no clamps): the harmonic band without the reverb's noise in it; PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F05/PRESET/B/k81v110"
+    metric: "cb"
+    min: -2.759
+    max: -1.759
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-2.26 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F05/PRESET/B/k81v96"
+    metric: "cb"
+    min: -2.252
+    max: -1.252
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.75 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F06/PRESET/A/k57v127"
+    metric: "peak"
+    min: -2.500
+    max: -1.500
+    reason: "the attack window's peak without the noise (-2.00 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F06/PRESET/A/k81v20"
+    metric: "clk_off"
+    min: -8.863
+    max: -7.863
+    reason: "the key-up's second-difference peak without the plate's 2-sample steps (-8.36 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F06/PRESET/B/k57v127"
+    metric: "peak"
+    min: -2.500
+    max: -1.500
+    reason: "the attack window's peak without the noise (-2.00 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F07/PRESET/A/chord-mid"
+    metric: "clk_off"
+    min: -7.043
+    max: -6.043
+    reason: "the key-up's second-difference peak without the plate's 2-sample steps (-6.54 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F07/PRESET/B/chord-mid"
+    metric: "clk_off"
+    min: -7.043
+    max: -6.043
+    reason: "the key-up's second-difference peak without the plate's 2-sample steps (-6.54 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F08/PRESET/A/k93v127"
+    metric: "decay"
+    min: -7.458
+    max: -6.458
+    reason: "the tail without the noise decays as a clean plate's (-6.96 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F08/PRESET/B/k93v127"
+    metric: "decay"
+    min: -7.458
+    max: -6.458
+    reason: "the tail without the noise decays as a clean plate's (-6.96 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F09/PRESET/A/k57v96"
+    metric: "decay"
+    min: -3.503
+    max: -2.503
+    reason: "the tail without the noise decays as a clean plate's (-3.00 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F09/PRESET/B/k57v96"
+    metric: "decay"
+    min: -3.503
+    max: -2.503
+    reason: "the tail without the noise decays as a clean plate's (-3.00 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F14/PRESET/A/k81v40"
+    metric: "H3"
+    min: -7.258
+    max: -6.258
+    reason: "the harmonic band without the reverb's noise in it (-6.76 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F14/PRESET/A/k89v110"
+    metric: "cb"
+    min: -2.477
+    max: -1.477
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.98 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F14/PRESET/A/k89v127"
+    metric: "cb"
+    min: -2.496
+    max: -1.496
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-2.00 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F14/PRESET/A/k89v40"
+    metric: "cb"
+    min: -2.047
+    max: -1.047
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.55 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F14/PRESET/A/k89v64"
+    metric: "cb"
+    min: -2.247
+    max: -1.247
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.75 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F14/PRESET/A/k89v96"
+    metric: "cb"
+    min: -2.479
+    max: -1.479
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.98 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F14/PRESET/B/k89v110"
+    metric: "cb"
+    min: -2.477
+    max: -1.477
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.98 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F14/PRESET/B/k89v127"
+    metric: "cb"
+    min: -2.496
+    max: -1.496
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-2.00 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F14/PRESET/B/k89v64"
+    metric: "cb"
+    min: -2.247
+    max: -1.247
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.75 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"
+  - match: "hq/F14/PRESET/B/k89v96"
+    metric: "cb"
+    min: -2.479
+    max: -1.479
+    reason: "less noise in the reverb's share: the critical-band loudness falls (-1.98 against v0.9.9). PLATE's modulated reads mended (rev_plate.c / rev_hq_plate.c, hi = ceil, fm = hi x 256 - dm: the delay jumped 2 samples at each whole sample of the excursion, ~20 a second): the 2-12 kHz noise it added is gone, the wet's spectrum at any MOD now MOD 0's (within 1 dB a band), its level put back by PL_MKG (+0.16 dB FM-1, +0.11 HQ: the chord's wet -30.68 / -30.88 dB as before). Coordinator sign-off 2026-11-09"

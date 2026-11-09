@@ -91,10 +91,38 @@ def test_reverb_type_starts_without_a_step(binary):
     assert zw <= 2.0, zw
 
 
+
+def _type_run(binary, evs):
+    """rev TYPE's material (the chord struck every second, MIX 64), TYPE off, then these events; the wet"""
+    c = cs.BY_NAME["rev TYPE"]
+    off = cs.render(cs.script(c, off=True), binary)
+    base = [l for l in cs.script(c, value=0).splitlines() if not l.endswith("end")]
+    ls = base + evs + [f"{cs.T_END} end"]
+    return cs.render("\n".join(sorted(ls, key=lambda s: int(s.split()[0]))) + "\n", binary) - off
+
+
+def test_plate_modulation_has_no_grain(binary):
+    """PLATE's modulated reads move smoothly: a held plate at the default MOD has no more d2 than one at MOD 0 (rc-0910:
+    4.0x; the reads stepped 2 samples at each whole sample of the excursion, which brightened the wet 2-12 kHz by
+    8-10 dB of noise and made a plate started late read 2.3x a held one in rev TYPE's sweep)"""
+    a, e = cs.ms(cs.T_SW0) // 1024, cs.ms(cs.T_SW1) // 1024
+    m = cs.d2_max(_type_run(binary, ["250 midi 0xB0 95 80"]))[a:e].max()
+    m0 = cs.d2_max(_type_run(binary, ["160 midi 0xB0 68 0", "250 midi 0xB0 95 80"]))[a:e].max()
+    assert m <= 1.3 * m0, (m, m0)
+
+
+def test_type_change_fades_to_zero(binary):
+    """HALL -> PLATE under a ringing tail: the old TYPE fades to exactly 0 and the upsampler keeps its history, so the
+    switch has no more d2 than a held HALL there (rc-0910: 4.6x; the fade ended at 1/128 and the history was cleared)"""
+    w = int(2260 * 44.1) // 1024
+    hp = cs.d2_max(_type_run(binary, ["1640 midi 0xB0 95 48", "2260 midi 0xB0 95 80"]))[w - 1:w + 2].max()
+    hh = cs.d2_max(_type_run(binary, ["250 midi 0xB0 95 48"]))[w - 1:w + 2].max()
+    assert hp <= 1.5 * hh, (hp, hh)
+
 # the reverb's SIZE and TYPE cases on the other reverb kernels: the HQ build (rev_hq.c, rev_hq_plate.c, full rate) and
 # the two-core one (FR_C1: the effects on core 1, the same HQ reverb), each check at the sweep's general LIMITS (or
 # test_control_sweep.py's BASE bound for the case). 0.9.10: PLATE SIZE's wet bent 6.3 cents p90 there, its jump 3.3
-# (PL_XS 32), now -0.1 / 1.6
+# (PL_XS 32); with the modulated reads mended and the 1 s fade (PL_XS 8) 1.3 cents, 0.7
 BUILDS = {
     "hq": ("build/host-hq/frodhes", ["make", "-C", hostrun.ROOT, "build/host-hq/frodhes"]),
     "c1": ("build/host-c1/frodhes", ["make", "-C", hostrun.ROOT, "build/host-c1/frodhes",
@@ -113,7 +141,7 @@ def other(request):
 @pytest.mark.parametrize("name", REV_CASES)
 def test_reverb_size_type_hq_c1(name, other):
     c = cs.BY_NAME[name]
-    base = BASE.get(name, {})                          # (test_control_sweep.py's bounds: PLATE SIZE's jump 2.4)
+    base = BASE.get(name, {})                          # (test_control_sweep.py's bounds, if the case has one)
     bad = {k: v for k, v in cs.checks(c, cs.measure(c, other)).items()
            if not v[2] and not (k in base and v[0] <= base[k][0])}
     assert not bad, f"{name} ({other}): " + ", ".join(f"{k} {v[0]} (limit {v[1]})" for k, v in bad.items())

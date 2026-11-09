@@ -43,7 +43,7 @@
  *   rev_plate_run: the pointers 25 x 4 + 10 x 22 + 11 x 8, the guard copies 2 x 27, the rest 317     779
  *   = 4981 at rest; at worst + a SIZE step's 3 delays 87 + the decay gain 40 + the warm-up's checked reads (the
  *   first 0.15 s after a start) 132 + a wrapped write's copy 81 = 5321.
- * A SIZE fade (0.9.6, BUGHUNT #19; 128 ms after a turn under a ringing tail), on top: one site's blend (pl_xblend,
+ * A SIZE fade (0.9.6, BUGHUNT #19; 1 s after a turn under a ringing tail, PL_XS), on top: one site's blend (pl_xblend,
  *   11 a sample, ~190) + its pointers ~40 + the gains anew ~140: ~+370. (All 22 sites at once cost ~+3190 from flash,
  *   measured +210 us on the FM-1 under the VIBES worst case, 4296 us; ~+2780 from RAM still 4272 us.)
  * HALL (fx.c rev_hall, its own decimator and DC blocker included), counted the same way: 5644 at rest, 5864 with its
@@ -101,6 +101,7 @@ _Static_assert(PL_IO3 + PL_GAP <= PL_IN && PL_IL1 >= HL_NC, "the input allpasses
  * SIZE step to +5 dB at 115 (pl_ctl): HALL's level at the same MIX (HALL grows with MIX's size, a plate thins out as its
  * tank grows) */
 #define PL_OUT 2340
+#define PL_MKG 1043u                                  /* the output gain's make-up (Q10): pl_ctl */
 #define PL_LIM 262143                                  /* |mid|, |side| <= 2^18 (the framework's exact return) */
 _Static_assert(14 * 32768 * 2 * PL_OUT <= 2147483647, "the output product");
 /* the read sites: 0..7 the segments' own delays (0 / 4: the modulated ones, without the excursion), 8..21 the taps */
@@ -160,13 +161,15 @@ static int rev_plate_active(const rev_plate_t *s) { return s->quiet < PL_N; }
 
 /* the gains and lengths for these settings. A new SIZE (0.9.6, BUGHUNT #19: it glided one step at a time, 13 samples
  * a delay, a bend and a click per step under a ringing tail): all 22 delays at once, the reads cross-fading from the
- * old ones one site after the other, 128 samples each (22 x 5.8 ms = 128 ms; one site at a time: the cost of one
+ * old ones one site after the other, 1024 samples each (22 x 46 ms = 1.0 s, PL_XS; one site at a time: the cost of one
  * blend, not 22; one fade at a time: a SIZE turned on during it waits for its end); the decay and output gains follow
  * the lengths and the size between as it fades. From silence, at once */
-#define PL_XS 128                                       /* a site's fade's step a sample (Q14): 128 samples a site
-                                                         * (0.9.10, the sweep's wet: 5.0 cents p90, zipper 1.87; at 64
-                                                         * 0.3 cents but zipper 4.2; equal power at 128 5.1 cents; a
-                                                         * step must divide 16384 / HL_NC: the site ends on a block) */
+#define PL_XS 16                                        /* a site's fade's step a sample (Q14): 1024 samples a site,
+                                                         * 22 x 46 ms = 1.0 s (0.9.10, the modulated reads mended: at
+                                                         * 128 the sweep's wet bent 6.3 cents p90, its level stepped
+                                                         * 2.6 dB; at 32 2.0 / 1.6, at 16 1.3 / 0.9; equal power at
+                                                         * 128 6.5 cents. A step must divide 16384 / HL_NC: the site
+                                                         * ends on a block) */
 _Static_assert(16384 % (HL_NC * PL_XS) == 0, "a site's fade ends on a block (pl_xw past 16384 would go negative)");
 static void pl_dset(rev_plate_t *s, uint32_t k, int32_t sz)
 {
@@ -213,7 +216,10 @@ static void pl_ctl(rev_plate_t *s, const rev_ctl_t *c)
         e = e * (1270u + (uint32_t)sz) / 1270u;         /* (a bigger tank damps less a second: + 10 % at 127) */
         s->g = (int32_t)exp2_neg(e);
         s->g2 = clampi(s->g + 4915, 8192, 16384);
-        s->ko = (int32_t)((4u * PL_OUT / 3u * exp2_neg(65536u - (uint32_t)clampi((sz - 40) * 729, 0, 54427))) >> 15);
+        /* (x PL_MKG / 1024: +0.16 dB, 0.9.10, the wet's level as before the modulated reads were mended: their
+         * 2-sample jumps had added that much noise power, so the chord's wet fell 0.16 dB without it) */
+        s->ko = (int32_t)((4u * PL_OUT / 3u * PL_MKG / 1024u
+                           * exp2_neg(65536u - (uint32_t)clampi((sz - 40) * 729, 0, 54427))) >> 15);
         s->cdec = c->decay;
     }
     if (c->damp != s->cdamp) {
@@ -393,6 +399,11 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
     else
         for (k = 0; k < PL_S_N; k++)
             t[k] = pl_ptr(s, PL_TOP[PL_SEG[k]], s->d[k], s->d[k]);
+    /* the modulated reads at dm / 256 samples: a site reads delay hi (P[i]) blended toward hi - 1 (P[i + 1]) by
+     * fm / 256, so hi = ceil(dm / 256) and fm = hi x 256 - dm, below as (dm + 255) >> 8 and 255 - ((dm + 255) & 255)
+     * (0.9.10: hi = floor, fm = dm & 255 read hi - frac, the delay jumping 2 samples at each whole sample of the
+     * excursion: the MOD's sweep crossed one ~20 times a second, d2 bursts 3x a still plate's, a grain) */
+    dm0 += 255u, dm1 += 255u;
     t[0] = pl_ptr(s, PL_O0, dm0 >> 8, (dm0 >> 8) - 1u);
     t[4] = pl_ptr(s, PL_O4, dm1 >> 8, (dm1 >> 8) - 1u);
     pl_cpy(b + PL_N, b);
@@ -416,8 +427,8 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
     {
         /* (volatile: read once; as a constant the compiler rebuilt the address in the loop, 4 instructions a sample) */
         const int32_t *volatile xv = s->x;
-        act |= FR_FAR(pl_half)(xv, t[7], t, (int32_t)(dm0 & 255u), o, &s->dl, &s->g);
-        act |= FR_FAR(pl_half)(xv, t[3], t + 4, (int32_t)(dm1 & 255u), o + 4, &s->dr, &s->g);
+        act |= FR_FAR(pl_half)(xv, t[7], t, (int32_t)(255u - (dm0 & 255u)), o, &s->dl, &s->g);
+        act |= FR_FAR(pl_half)(xv, t[3], t + 4, (int32_t)(255u - (dm1 & 255u)), o + 4, &s->dr, &s->g);
     }
     FR_FAR(pl_taps)(t + 8, mid);
     FR_FAR(pl_taps_ms)(t + 15, mid, side, s->ko);

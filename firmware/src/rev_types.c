@@ -140,7 +140,10 @@ static __attribute__((noinline)) void rev_begin(uint32_t t)
 {
     rv_xin = 0;
     if (rv_cur == RV_HALL) rv_hall_dirty = 1;
-    memset(rv_m, 0, sizeof rv_m); memset(rv_s, 0, sizeof rv_s); rv_hp = rv_he = 0;
+    rv_hp = rv_he = 0;                                  /* (rv_m / rv_s kept: the upsampler's history is the old
+                                                         * TYPE's faded end, 0 .. 3 %, still to pass out; 0.9.10:
+                                                         * cleared, its last 1.5 % stepped to 0: HALL -> PLATE d2
+                                                         * 3x) */
     if (t == RV_HALL && rv_hall_dirty) { rv_cur = 0; return; }
     rv_cur = (uint8_t)t;
     if (t == RV_PLATE) rev_plate_start(&rev_u.p), rv_pz = -1;
@@ -281,9 +284,14 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
          * At MIX 0 or OFF (a tail ringing out) only the tail's end matters (act: the last RV_QZ samples, which the
          * next block's output still reads, all 0) */
         if (cur && (rv_fade || !send)) {               /* a TYPE change: the TYPE's out x (fade / 8) .. ((fade - 1) / 8),
-                                                        * in place; OFF or MIX 0: the tail's end watched (act) */
+                                                        * in place, the step taken before each sample, so the last
+                                                        * block ends at 0 (0.9.10: it ended at 1/128, the tail's last
+                                                        * sample then stepped to the new TYPE's empty start: HALL ->
+                                                        * PLATE d2 4x a held one's); OFF or MIX 0: the tail's end
+                                                        * watched (act) */
             int32_t g = (int32_t)rv_fade << 12;
-            for (i = 0; i < HL_NC; i++, g -= 256) {
+            for (i = 0; i < HL_NC; i++) {
+                g -= 256;
                 act |= om[i] | os[i];
                 if (rv_fade) { om[i] = mul15(om[i], g); os[i] = mul15(os[i], g); }
             }
