@@ -86,8 +86,12 @@ static FX_RAM __attribute__((noinline)) void rq_in(const int32_t *in, int32_t *o
     }
     rv_hp = hp, rv_he = he;
 }
+/* a new TYPE's input fades in (Q15, +128 a sample: 5.8 ms; 32768 none), as rev_types.c's rv_xin (0.9.10: it started
+ * at the send's full level, a step into empty lines under a ringing chord) */
+static int32_t rv_xin RH_SP_SEC(".data.fx_rvxin") = 32768;
 static __attribute__((noinline)) void rev_begin(uint32_t t)
 {
+    rv_xin = 0;
     memset(rv_m, 0, sizeof rv_m); memset(rv_s, 0, sizeof rv_s); rv_hp = rv_he = 0;
     rv_cur = (uint8_t)t;
     if (t == RV_HALL) rev_hqh_start(&rev_u.h);
@@ -110,7 +114,7 @@ static void rev_reset_state(void)
     memset(rv_m, 0, sizeof rv_m); memset(rv_s, 0, sizeof rv_s); memset(rv_inb, 0, sizeof rv_inb); rv_hp = rv_he = 0;
     rv_lc = 0; rv_fade = 0;
     if (!rv_cur) rv_cur = RV_HALL;
-    rev_begin(rv_cur);
+    rev_begin(rv_cur); rv_xin = 32768;           /* (CC 10: the boot state, no fade) */
 }
 
 #define RV_RET(w) ((int32_t)(((int64_t)(w) * rk) >> 30) + (int32_t)((uint32_t)(w) >> 31))
@@ -207,6 +211,11 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
             rv_in[j] = clampi(FX_HC(1, (int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15), -131071, 131071), -131071, 131071);
         if (lcv || rv_lc) rev_locut(rv_in, lcv);
         if (pd || pd_on) fx_predelay(rv_in, pd);
+        if (rv_xin < 32768)                            /* (a TYPE just started: its input fades in) */
+            for (j = 0; j < CTL; j++) {
+                rv_xin = rv_xin + 128 < 32768 ? rv_xin + 128 : 32768;
+                rv_in[j] = (int32_t)(((int64_t)rv_in[j] * rv_xin) >> 15);
+            }
         if (rv_off != off) rv_off += rv_off < off ? 1 : -1;
         if (rv_damp != damp) rv_damp += rv_damp < damp ? (damp - rv_damp > 2 ? 2 : damp - rv_damp)
                                                       : -(rv_damp - damp > 2 ? 2 : rv_damp - damp);

@@ -46,10 +46,10 @@ BASE = {
     "vibes WEIGHT": {"stuck": (2.3, 2.25, "the bar engine's tail after the sweep (VIBES frozen)")},
     "rhodes TYPE": {"jump": (1.9, 1.83, "a TYPE step under a ringing chord")},
     "rhodes TYPE SPREAD": {"jump": (1.9, 1.83, "the same, TYPE with SPREAD")},
-    "delay TAPE TIME": {"zipper": (2.3, 3.40, "the tape's varispeed of fresh strikes"),
-                        "zipper_wet": (3.5, 5.27, "the same, the echoes alone")},
-    "rev PLATE SIZE": {"jump": (2.4, 2.10, "the size cross-fade under fresh strikes"),
-                       "zipper_wet": (2.8, 2.78, "the same, the wet alone")},
+    # (0.9.10 zipper fixes, tests/py/test_ctl_zipper.py: TAPE TIME's zipper 2.53 -> 1.9 and PLATE SIZE's wet 3.35 -> 1.87
+    # are under LIMITS, their lines out; TAPE TIME's wet 2.83 -> 2.02 bounded tighter: the echoes' own varispeed)
+    "delay TAPE TIME": {"zipper_wet": (2.3, 5.27, "the tape's varispeed of fresh strikes, the echoes alone")},
+    "rev PLATE SIZE": {"jump": (2.4, 2.10, "the size cross-fade under fresh strikes")},
     # THRESHOLD (2026-11-08, the clean Rhodes 61baedac; the effects' code unchanged from 568fe9d6, which passed): the
     # same checks peak at the same instant on 0.9.9, 568fe9d6 and 61baedac (lfo RATE jump at 3.251 s: 1.86 / 1.48 /
     # 1.84; wah RATE zipper at 3.878 s: 2.04 / 1.82 / 2.10; PLATE SIZE jump at 2.740 s: 2.10 / 1.76 / 2.35, zipper_wet
@@ -58,7 +58,6 @@ BASE = {
     # 6.1 (wet 11.7) / 7.6 (wet 20.9); a 2.5 dB step under 1 ms reads zipper 9.1 / 2.0 / 7.6 / 8.1.
     "lfo RATE": {"jump": (1.9, 1.86, "the filter LFO's rate swept under fresh strikes")},
     "wah RATE": {"zipper": (2.2, 2.04, "the wah's rate swept under fresh strikes")},
-    "rev TYPE": {"zipper_wet": (2.1, 1.68, "the type cross-fade, the wet alone")},
 }
 
 
