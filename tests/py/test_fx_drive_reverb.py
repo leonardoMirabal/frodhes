@@ -90,9 +90,17 @@ def test_drive_mix_and_switch():
 
 
 def test_drive_tone_tilts():
-    t0, _ = run("tone0", DRV + [(82, 0)], CHORD, 1300)
-    t64, _ = run("full", DRV, CHORD, 1300)
-    t127, _ = run("tone127", DRV + [(82, 127)], CHORD, 1300)
+    """TONE's own range, the compressor off (THRESH 0, CC 107). THRESHOLD (2026-11-09, coordinator sign-off
+    2026-11-09): the limits are kept and the condition changed. The boot sound's compressor (-16 dB 4:1) sits
+    before the drive, and this chord drives it at its knee: there the 8 kHz band follows the input level, not TONE
+    (AMOUNT 110 -> 114 alone moved the low half 2.58 -> 4.11 dB). The compressor's peak hold (2eba440e) feeds the
+    drive ~0.5 dB less, and the low half fell 4.45 -> 2.29 dB with the TONE filter unchanged. Compressor off, the
+    halves (low / high, dB): 0.9.9 9.82 / 4.58, before 2eba440e 9.38 / 4.53, at 2eba440e 9.34 / 4.52, rc-0910
+    fec57d41 9.46 / 4.53 (build/fxp/tone.py)"""
+    nc = DRV + [(107, 0)]
+    t0, _ = run("tone0", nc + [(82, 0)], CHORD, 1300)
+    t64, _ = run("tone64", nc, CHORD, 1300)
+    t127, _ = run("tone127", nc + [(82, 127)], CHORD, 1300)
     d0, d64, d127 = (tilt_db(seg(x, 0.15, 0.95)) for x in (t0, t64, t127))
     assert d0 < d64 < d127, (d0, d64, d127)
     assert d127 - d0 >= 6, (d0, d127)                # dark .. bright: >= 6 dB at 8 kHz
@@ -100,6 +108,19 @@ def test_drive_tone_tilts():
     for x in (t0, t127):
         assert np.all(np.isfinite(x)) and np.max(np.abs(x)) < 32767
 
+
+def test_drive_tone_with_compressor_report(capsys):
+    """report only: TONE's halves with the boot sound's compressor on (-16 dB 4:1, before the drive), so its
+    interaction stays visible (fec57d41: 2.58 / 3.50 dB, 0.9.9 5.71 / 4.15; test_drive_tone_tilts has the limits)"""
+    t0, _ = run("ctone0", DRV + [(82, 0)], CHORD, 1300)
+    t64, _ = run("ctone64", DRV, CHORD, 1300)
+    t127, _ = run("ctone127", DRV + [(82, 127)], CHORD, 1300)
+    d0, d64, d127 = (tilt_db(seg(x, 0.15, 0.95)) for x in (t0, t64, t127))
+    with capsys.disabled():
+        print(f"\nDRIVE TONE, compressor on (report only): {d0:.2f} {d64:.2f} {d127:.2f} dB at 8 kHz; "
+              f"low half {d64 - d0:.2f}, high half {d127 - d64:.2f}")
+    for x in (t0, t127):
+        assert np.all(np.isfinite(x))
 
 # ---- REVERB
 
