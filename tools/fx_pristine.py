@@ -27,7 +27,10 @@ import re
 import subprocess
 import sys
 import wave
-from multiprocessing import Pool
+import multiprocessing
+Pool = multiprocessing.get_context("spawn").Pool   # (spawn on every OS, as macOS already: a fork from a threaded caller,
+                                                   # tools/quick.py's checks, left workers on a copied lock: Linux
+                                                   # amd64 CI make quick hung 40 min, rc2-0910 8ef1e0c5)
 
 import numpy as np
 
