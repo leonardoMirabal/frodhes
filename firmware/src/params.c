@@ -233,7 +233,7 @@ static settings_t set;
  * not built yet: VRESP_N 3 when it is; CC 40's bands follow, v * VRESP_N / 128). One table for the names (the card's
  * label, RESPONSE, is ui.c PAGE_LAB's): placeholders until the user picks them */
 #define VRESP_N 2u
-static const char *const N_VRESP[] = {"DEEP", "EVEN", "BLEND"};   /* A, B, C */
+static const char *const N_VRESP[] = {"FULL", "LIGHT", "BLEND"};   /* A, B, C */
 _Static_assert(VRESP_N >= 1u && VRESP_N <= sizeof N_VRESP / sizeof N_VRESP[0], "one name per response");
 FR_COLD static void vresp_apply(void) { rh_touch_mode = set.vel_resp < VRESP_N ? set.vel_resp : 0u; }
 static uint8_t set_pr_from_rc;    /* params_sanitize converted an index of 16 factory presets that named U10..U12 */

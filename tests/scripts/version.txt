@@ -1,0 +1,22 @@
+# VERSION (ui.c S_VERSION, the MIDI page's K4): the version installed, read only. A release build shows its X.Y.Z
+# (./build.sh --release), a dev build DEV and the first 4 digits of its commit (tools/build.py app_git); the host has
+# neither ("dev", no APP_GIT): DEV. A turn of K4, either way and fast, changes nothing: no setting, no save pending,
+# the card the same, and the other cards keep their values.
+100 btn 7
+150 btn 7
+200 btn 7
+250 expect state page MIDI
+250 expect state label3 VERSION
+250 expect state card3 DEV
+250 expect state card0 ALL
+250 expect state dirty 0
+300 turn 5 1
+310 turn 5 1
+320 turn 5 8
+400 turn 5 -1
+410 turn 5 -20
+500 expect state card3 DEV
+500 expect state label3 VERSION
+500 expect state card0 ALL
+500 expect state dirty 0
+600 end

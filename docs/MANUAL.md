@@ -17,7 +17,7 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 the Rhodes or Fender trademark owners or any instrument maker. It comes with no warranty: install it at your own risk. The original
 firmware can always be put back ([how](#going-back-to-the-original-firmware)). See [LICENSING.md](../LICENSING.md).
 
-![The FRODHES page: TYPE (here BELL DYNO), TONE, BELL and KEY VEL](manual/img/piano.png?v=3461073e)
+![The FRODHES page: TYPE (here BELL DYNO), TONE and BELL](manual/img/piano.png?v=e7871ac2)
 
 ## Contents
 
@@ -113,8 +113,8 @@ switch it off.
 
 ### How do I ...
 
-- Play softer or harder: KEY VEL ([FRODHES page](#frodhes-the-main-page)) and TOUCH ([SETUP page](#setup)).
-- Change the instrument's character: the [VOICE pages](#voice-12-and-22), right after the FRODHES page.
+- Play softer or harder: KEY VEL and TOUCH for the FM-1's keys, RESPONSE for the sound ([the velocity page](#voice-33-velocity)).
+- Change the instrument's character: the [VOICE pages](#voice-13-and-23), right after the FRODHES page.
 - Shape the tone: the [EQ](#eq) page. Add grit: the [DRIVE](#drive) page.
 - Make a pattern vary from pass to pass: CHANCE on the [SEQUENCER 2](#sequencer-2) page.
 - Sync to a computer or a drum machine: MIDI clock, [section 8](#8-tempo-and-sync).
@@ -150,15 +150,16 @@ at the bottom: **K1–K4 always turn the four cards you see**. Under the top lin
 amber and its place in the SELECT order on the right (3/26). Turn **SELECT** to move between pages, or press a
 page's button to jump straight there. The pages, in SELECT order:
 
-PERFORM · FRODHES (main) · VOICE 1/2 · VOICE 2/2 · COMPRESSOR · EQ · DRIVE · FILTER · TREM/WAH · PHASER · CHORUS ·
-DELAY · REVERB · REVERB 2 · TEMPO · SCALE · CHORD · ARPEGGIO · LFO · SEQUENCER · SEQUENCER 2 · ASSIGN · SETUP · MIDI · DISPLAY ·
-DISPLAY 2
+PERFORM · FRODHES (main) · VOICE 1/3 · VOICE 2/3 · VOICE 3/3 · COMPRESSOR · EQ · DRIVE · FILTER · TREM/WAH · PHASER · CHORUS ·
+DELAY · REVERB · REVERB 2 · TEMPO · SCALE · CHORD · ARPEGGIO · LFO · SEQUENCER · SEQUENCER 2 · ASSIGN · SETUP · MIDI ·
+DISPLAY · DISPLAY 2
 
 **The VOICE pages belong to the instrument.** Each TYPE brings its own controls, four to a page: the electric piano
-types have two VOICE pages (VOICE 1/2: TONE, BARK, BELL, HAMMER; VOICE 2/2: DECAY, RELEASE, NOISE, TUNE), VIBES has three
-(VOICE 1/3: STRIKE, MALLET, TUBE, WEIGHT; 2/3: RING, DAMPER, NOISE, TUNE; 3/3: the motor), MARIMBA two (VOICE 1/2:
-STRIKE, MALLET, TUBE, WEIGHT; 2/2: RING, MUTE, NOISE, TUNE). SELECT walks them in order; changing the TYPE changes
-the pages with it.
+types have two (VOICE 1/3: TONE, BARK, BELL, HAMMER; VOICE 2/3: DECAY, RELEASE, NOISE, TUNE), VIBES three
+(VOICE 1/4: STRIKE, MALLET, TUBE, WEIGHT; 2/4: RING, DAMPER, NOISE, TUNE; 3/4: the motor), MARIMBA two (VOICE 1/3:
+STRIKE, MALLET, TUBE, WEIGHT; 2/3: RING, MUTE, NOISE, TUNE). The last VOICE page is the same on every TYPE: the
+[velocity page](#voice-33-velocity) (RESPONSE, TOUCH, KEY VEL). SELECT walks them in order; changing the TYPE
+changes the pages with it.
 
 **Reading a card.** Each card shows its knob (K1–K4, small), the control's name, and its value on the right in large
 figures, every value the same size and ending at the same place. Most values have their unit beside them in small
@@ -260,17 +261,16 @@ The page after PERFORM (press **HOME** twice) carries the instrument's name as i
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **TYPE** | The instrument: **STAGE 77** (the classic stage piano), **SUITCASE** (with its own amp and four 12-inch speakers in a closed cabinet: warm lows, a gently rolled-off treble), **EARLY FELT** (early felt hammers: rounder, darker), **BELL DYNO** (a modified, bell-like voicing: glassy), **VIBES**, the vibraphone (see [VIBES](#vibes-the-vibraphone)), or **MARIMBA** (see [MARIMBA](#marimba)). Applies to the next notes. |
-| K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE 1/2's TONE). On VIBES and MARIMBA: **MALLET** |
-| K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE 1/2's BELL). On VIBES: **MOTOR** on / off; on MARIMBA: **TUBE** |
-| K4 | **KEY VEL** | How hard the FM-1's own keys strike: the velocity of a medium press (TOUCH on [SETUP](#setup); harder presses play louder, softer ones quieter), and with TOUCH at **FIXED** the velocity of every press. Around 60–80 soft and round, 96 medium (the default). With velocity on, a medium press plays at most 107, so a harder press always has room to play louder: KEY VEL from 108 to 127 lifts the soft presses instead (at 127 the lightest press plays 21). With TOUCH at FIXED, 108–127 is hard with bark. MIDI notes keep their own velocity. |
+| K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE 1/3's TONE). On VIBES and MARIMBA: **MALLET** |
+| K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE 1/3's BELL). On VIBES: **MOTOR** on / off; on MARIMBA: **TUBE** |
 
-### VOICE 1/2 and 2/2
+### VOICE 1/3 and 2/3
 
-The instrument's own pages: on an electric piano type there are two, right after the main page. On **VIBES** there are three,
-with the vibraphone's controls: see [VIBES](#vibes-the-vibraphone). On **MARIMBA** there are two, with the marimba's
-controls: see [MARIMBA](#marimba).
+The instrument's own pages: on an electric piano type there are two, right after the main page, then the
+[velocity page](#voice-33-velocity) (VOICE 3/3). On **VIBES** there are three, with the vibraphone's controls: see
+[VIBES](#vibes-the-vibraphone). On **MARIMBA** there are two, with the marimba's controls: see [MARIMBA](#marimba).
 
-![VOICE 1/2](manual/img/voice1.png?v=2e842aec)
+![VOICE 1/3](manual/img/voice1.png?v=c22aec77)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -279,7 +279,7 @@ controls: see [MARIMBA](#marimba).
 | K3 | **BELL** | The bright metallic overtone at the start of each note |
 | K4 | **HAMMER** | Hammer hardness: softer is darker, harder is brighter |
 
-![VOICE 2/2](manual/img/voice2.png?v=601dbb24)
+![VOICE 2/3](manual/img/voice2.png?v=b6e990d8)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -287,6 +287,38 @@ controls: see [MARIMBA](#marimba).
 | K2 | **RELEASE** | How fast the damper stops a note when you let go |
 | K3 | **NOISE** | The instrument's mechanical sounds: the damper's soft knock and the felt's sound when you let go, a soft thud when the sustain pedal (or REC's latch) goes down or up, and (on SUITCASE, EARLY FELT and BELL DYNO, not on STAGE 77) the hammer's thunk as a key is struck. The key-up and pedal sounds follow the note: they are always under it, quieter after a soft or a faded note, so letting go never makes the sound louder. 0 is none |
 | K4 | **TUNE** | Fine tuning, ±50 cents |
+
+### VOICE 3/3: velocity
+
+The last VOICE page of every TYPE (VOICE 3/3 on the electric piano types and MARIMBA, VOICE 4/4 on VIBES) holds the
+velocity settings. They work in two separate layers:
+
+- **TOUCH and KEY VEL** turn a press of the FM-1's own keys into a velocity. They act on those keys only: a MIDI
+  note's velocity (USB or TRS) reaches the instrument exactly as it was sent, because the keyboard that sent it has
+  its own sensitivity.
+- **RESPONSE** is how the electric piano sounds at each velocity, the same for every note: the keys, MIDI, the
+  arpeggiator, the sequencer. It changes the sound only, never the velocity: the notes sent out over USB-MIDI, the
+  sequencer's recording and the arpeggiator keep the velocity played.
+
+![VOICE 3/3: RESPONSE, TOUCH, KEY VEL](manual/img/voice3.png?v=45e3d323)
+
+| Knob | Card | What it does |
+| --- | --- | --- |
+| K1 | **RESPONSE** | How the instrument answers velocity, for every note (taken at each new note, so a change never jumps a ringing one). **FULL** (the default): the full dynamic range, soft notes very soft (about 34.5 dB from velocity 20 to 127). **LIGHT**: a light touch, soft notes come out louder (about 25.5 dB from 20 to 127, as 0.9.9), so even playing is easier. The tone is the same in both at every key and velocity, and both play at the same loudness from medium velocities up. On VIBES and MARIMBA, FULL is their own response and LIGHT lifts the soft notes by the same amount as on the electric piano (up to 9 dB, the same tone). Not part of a preset (CC 40) |
+| K2 | **TOUCH** | How the FM-1's keys turn a press into a velocity. **MEDIUM** (the default): a medium press plays KEY VEL, a harder one louder, a softer one quieter. **LIGHT**: the same press plays louder, for a light hand. **HEAVY**: you have to press harder for the same velocity. **FIXED**: every press plays KEY VEL, however hard (no key velocity) |
+| K3 | **KEY VEL** | How hard the FM-1's own keys strike: the velocity of a medium press (harder presses play louder, softer ones quieter), and with TOUCH at **FIXED** the velocity of every press. Around 60–80 soft and round, 96 medium (the default). With velocity on, a medium press plays at most 107, so a harder press always has room to play louder: KEY VEL from 108 to 127 lifts the soft presses instead (at 127 the lightest press plays 21). With TOUCH at FIXED, 108–127 is hard with bark. MIDI notes keep their own velocity. |
+
+The same page on VIBES (VOICE 4/4, after the motor) and on MARIMBA (VOICE 3/3):
+
+![VOICE 4/4 on VIBES: the velocity page](manual/img/voice4-vibes.png?v=60f7ef19)
+![VOICE 3/3 on MARIMBA: the velocity page](manual/img/voice3-marimba.png?v=8527968e)
+
+**Which keys sense velocity.** The keys are rubber domes; the FM-1 reads how firmly each one lands. The 20 keys **F3
+to C5** do this. The top 7 keys (**C#5 to G5**) have no way to measure it: they play the average of your recent
+presses, so they follow how you are playing (after 5 s without a press, KEY VEL again). A note starts a few
+milliseconds after the key closes, while the reading comes in. The notes the keys send over USB-MIDI carry the same
+velocity. Each key learns how firmly you can press it: a press as firm as your firmest so far plays a little under 127 (119 at KEY VEL 96, 122 from KEY VEL 107 up), and only a clearly firmer one reaches 127, so velocity 127 stays for the hardest hits. TOUCH and KEY VEL belong to the FM-1, not to a preset (a preset does not change them). The browser
+emulator has no velocity: its keys play at KEY VEL.
 
 ### COMPRESSOR
 
@@ -402,7 +434,7 @@ sound the FM-1 was left on. Over MIDI: CC 70 TYPE, 74 cutoff, 71 resonance, 72 L
 | K4 | **SHAPE** | Two halves. Up to the middle (0–64): from a smooth sine to a square, choppy pulse. Above it (65–127): an amp's tremolo, the square easing back into a sine: the level falls more slowly than it comes back (at the top the dip takes about two thirds of each cycle), it moves evenly in loudness so a deep setting breathes rather than chopping to silence (the deepest dip stays at −30 dB), and loud playing makes it a little shallower (up to a quarter less depth at full level). On PAN the upper half gives the same slower swing. On WAH the card shows **-**: SHAPE does nothing there and keeps its value for TREM and PAN |
 
 
-On **VIBES** the vibraphone's motor is not here but on its last VOICE page, VOICE 3/3 (see [the motor: on and off](#the-motor-on-and-off)); TREM/WAH can run on top of it.
+On **VIBES** the vibraphone's motor is not here but on its last VOICE page, VOICE 3/4 (see [the motor: on and off](#the-motor-on-and-off)); TREM/WAH can run on top of it.
 ### PHASER
 
 ![PHASER](manual/img/phaser.png?v=eac8ba36)
@@ -674,14 +706,6 @@ DRIVE, FILTER, DELAY and REVERB.
 | K1 | **DLY TONE** | The delay's echo colour |
 | K2 | **LEVEL** | This preset's volume, −12 to +11.8 dB, saved with the preset |
 | K3 | **USB VOL** | **KNOB**: the USB audio follows the MASTER knob, as the headphones do. **FIXED**: the USB audio always comes at full level, whatever the knob (and headphones plugged in) do; the headphone jack still follows MASTER |
-| K4 | **TOUCH** | How the FM-1's keys turn a press into a velocity. **MEDIUM** (the default): a medium press plays KEY VEL, a harder one louder, a softer one quieter. **LIGHT**: the same press plays louder, for a light hand. **HEAVY**: you have to press harder for the same velocity. **FIXED**: every press plays KEY VEL, however hard (no key velocity) |
-
-**Which keys sense velocity.** The keys are rubber domes; the FM-1 reads how firmly each one lands. The 20 keys **F3
-to C5** do this. The top 7 keys (**C#5 to G5**) have no way to measure it: they play the average of your recent
-presses, so they follow how you are playing (after 5 s without a press, KEY VEL again). A note starts a few
-milliseconds after the key closes, while the reading comes in. The notes the keys send over USB-MIDI carry the same
-velocity. Each key learns how firmly you can press it: a press as firm as your firmest so far plays a little under 127 (119 at KEY VEL 96, 122 from KEY VEL 107 up), and only a clearly firmer one reaches 127, so velocity 127 stays for the hardest hits. TOUCH and KEY VEL belong to the FM-1, not to a preset (a preset does not change them). The browser
-emulator has no velocity: its keys play at KEY VEL.
 
 The bottom line shows the name and the version installed, the battery's reading (BAT, the raw value the battery
 segments are worked out from), and how busy the audio engine is (its time per block, in µs; useful in a bug
@@ -696,7 +720,7 @@ report).
 | K1 | **CHANNEL** | **ALL** (the default: every channel is played) or **1–16**: only that channel is heard (notes, CCs and program changes; clock, Start and Stop always are), from USB-MIDI and from the TRS jack alike, and the FM-1 sends its notes on it (on ALL it sends on 1) |
 | K2 | **TRS IN** | **ON** / **OFF**: MIDI from the 3.5 mm TRS MIDI input (for a DAWless setup: a keyboard, a sequencer, a drum machine's clock) |
 | K3 | **CLOCK** | **INT**: its own tempo. **EXT** (the default): follows MIDI clock from USB or the TRS jack when it comes (the tempo and the beats: section 8), and a MIDI **Start** / **Continue** starts the sequencer, **Stop** stops it |
-| K4 | **RESPONSE** | How the electric piano answers velocity (MIDI notes and the FM-1's keys alike; taken at each new note, so a change never jumps a ringing one). **DEEP** (the default): the strike drives the tine harder through the pickup, so the tone opens up steadily from soft to hard. **EVEN**: the tone stays round and level up to a knee that rises with the register, then the bark comes in quickly; the bass's fundamental saturates. Both play at the same loudness at medium and hard velocities. VIBES and MARIMBA ignore it. Not part of a preset (CC 40) |
+| K4 | **VERSION** | The Frodhes version installed (a release's number, such as 0.9.10; a development build shows **DEV** and the first digits of its commit). Read only: turning K4 does nothing |
 
 Press **GLO** three times to come here (TEMPO, SETUP, MIDI). Everything MIDI does, it does the same from USB and from
 the TRS jack: notes, every CC in the table below, program changes, clock, start and stop.
@@ -732,7 +756,7 @@ K2-K4 are empty. SUSTAIN LEDS is kept with the settings, not with a preset.
 
 Two of the TYPEs are struck bars instead of an electric piano: **VIBES**, the vibraphone, and **MARIMBA**. They share one
 engine and the same VOICE cards, each with its own bars, tubes and mallets; VIBES has a damper and a motor, MARIMBA
-neither (its VOICE 2/2's second card is **MUTE**, the player's hand). Over MIDI, CC 79 picks between them.
+neither (its VOICE 2/3's second card is **MUTE**, the player's hand). Over MIDI, CC 79 picks between them.
 
 ### VIBES: the vibraphone
 
@@ -745,8 +769,8 @@ the next time it is struck (a MIDI note-on, or a key on the same note).
 
 ![The main page on VIBES](manual/img/piano-vibes.png?v=42229292)
 
-The main page's middle cards belong to the engine: on VIBES they are **MALLET** (the same as VOICE 1/3's MALLET)
-and **MOTOR** (on / off, the same as VOICE 3/3's first card); on an electric piano type they are **TONE** and **BELL** (DRIVE
+The main page's middle cards belong to the engine: on VIBES they are **MALLET** (the same as VOICE 1/4's MALLET)
+and **MOTOR** (on / off, the same as VOICE 3/4's first card); on an electric piano type they are **TONE** and **BELL** (DRIVE
 and REVERB have their own pages).
 
 VIBES was set about **2.5 dB louder** than the electric piano types: a struck bar is peakier than an electric piano note, so at the same
@@ -762,11 +786,11 @@ keyboard, so the balance now depends on the register. VIBES minus the default el
 | E5 + A5 | -2.0 LU | +2.5 LU |
 | E6 + C7 | +1.9 LU | +2.4 LU |
 
-VIBES has its own VOICE pages, three of them: **VOICE 1/3** (the strike), **VOICE 2/3** (how the bars ring and stop)
-and **VOICE 3/3** (the motor). VOICE 1/3 acts on the next strike (a ringing bar keeps the strike that started it, as
+VIBES has its own VOICE pages, three of them: **VOICE 1/4** (the strike), **VOICE 2/4** (how the bars ring and stop)
+and **VOICE 3/4** (the motor), then the [velocity page](#voice-33-velocity), VOICE 4/4. VOICE 1/4 acts on the next strike (a ringing bar keeps the strike that started it, as
 a real one does).
 
-![VOICE 1/3 on VIBES](manual/img/voice1-vibes.png?v=ee070ab1)
+![VOICE 1/4 on VIBES](manual/img/voice1-vibes.png?v=1b0cfb22)
 
 | Knob | Card | What it does on VIBES |
 | --- | --- | --- |
@@ -775,7 +799,7 @@ a real one does).
 | K3 | **TUBE** | How much the tube rings with the bar: 0 is a bare bar (about 6-7 dB quieter than the middle, thin, rings longer, no bloom); up is a fuller, warmer, louder note that blooms just after the strike and dies sooner, as on a real vibraphone (the right end about 3-4 dB over the middle) |
 | K4 | **WEIGHT** | The mallet's weight: light is brighter, quicker and quieter; heavy is darker, with more body (about 6 dB louder at the top than at the bottom). How hard you play (KEY VEL, MIDI velocity) stays the strike's speed: a harder strike is louder and brighter (the overtones come up), a soft one round |
 
-![VOICE 2/3 on VIBES](manual/img/voice2-vibes.png?v=682f1f02)
+![VOICE 2/4 on VIBES](manual/img/voice2-vibes.png?v=ada00f26)
 
 | Knob | Card | What it does on VIBES |
 | --- | --- | --- |
@@ -790,12 +814,12 @@ half-pedal too). Without it the damper stops each note when you let go.
 ### The motor: on and off
 
 The motor (the vibrato's pulse) is part of the vibraphone, not an effect: it has VIBES' last VOICE page,
-**VOICE 3/3**, right after VOICE 2/3 in the SELECT order. The page is there only while the TYPE is VIBES (the electric
-piano types have two VOICE pages: SELECT goes from VOICE 2/2 straight to COMPRESSOR).
+**VOICE 3/4**, right after VOICE 2/4 in the SELECT order. The page is there only while the TYPE is VIBES (on the other
+types SELECT goes from VOICE 2/3 to the velocity page, VOICE 3/3).
 
 - **On by itself:** turning the TYPE to VIBES (ALGORITHM, the TYPE card or CC 79) starts the motor at its default:
   DEPTH 8.7, 3.5 Hz, a clear, regular pulse.
-- **Off and on:** on VOICE 3/3, **K1** turns it **OFF** or **ON**. Switched off there, it stays off: changing the
+- **Off and on:** on VOICE 3/4, **K1** turns it **OFF** or **ON**. Switched off there, it stays off: changing the
   TYPE to an electric piano and back to VIBES does not start it again (and the choice is saved), until K1 turns it on.
 - **Presets keep theirs:** loading a preset is not a TYPE change: **F13 VIBES** has the motor on, **F14 VIBES
   ECHO** has it off, and a user preset saved with the motor off stays off.
@@ -807,7 +831,7 @@ piano types have two VOICE pages: SELECT goes from VOICE 2/2 straight to COMPRES
 - **TREM/WAH** (the LFO button) is the same effect on VIBES as on the electric pianos and can run on top of the motor.
 - **Over MIDI:** CC 47 ON (≥ 64), 48 DEPTH, 49 SPEED, 50 SHAPE, 51 SYNC.
 
-![VOICE 3/3 on VIBES: the motor](manual/img/voice3-vibes.png?v=4e7cd3fd)
+![VOICE 3/4 on VIBES: the motor](manual/img/voice3-vibes.png?v=ebc3a5d7)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -845,11 +869,11 @@ held notes too; a note still held plays again on the new type the next time it i
 
 ![The main page on MARIMBA](manual/img/piano-marimba.png?v=a9866e63)
 
-The main page's middle cards on MARIMBA are **MALLET** (the same as VOICE 1/2's MALLET) and **TUBE** (VOICE 1/2's
-TUBE). MARIMBA has two VOICE pages, **VOICE 1/2** (the strike) and **VOICE 2/2** (how the bars ring and stop), and no
-motor page: SELECT goes from VOICE 2/2 straight to COMPRESSOR. VOICE 1/2 acts on the next strike.
+The main page's middle cards on MARIMBA are **MALLET** (the same as VOICE 1/3's MALLET) and **TUBE** (VOICE 1/3's
+TUBE). MARIMBA has two VOICE pages, **VOICE 1/3** (the strike) and **VOICE 2/3** (how the bars ring and stop), and no
+motor page: SELECT goes from VOICE 2/3 to the [velocity page](#voice-33-velocity), VOICE 3/3. VOICE 1/3 acts on the next strike.
 
-![VOICE 1/2 on MARIMBA](manual/img/voice1-marimba.png?v=845e190f)
+![VOICE 1/3 on MARIMBA](manual/img/voice1-marimba.png?v=fa86e6ad)
 
 | Knob | Card | What it does on MARIMBA |
 | --- | --- | --- |
@@ -858,7 +882,7 @@ motor page: SELECT goes from VOICE 2/2 straight to COMPRESSOR. VOICE 1/2 acts on
 | K3 | **TUBE** | How much the tube rings with the bar: 0 is a bare bar (quieter and thinner, no bloom); up is a fuller, louder note. Below C4 the tube also makes the note ring longer and bloom just after the strike; higher up, as on a vibraphone, it makes the note louder and shorter (at the top about a third shorter) |
 | K4 | **WEIGHT** | The mallet's weight: light is quieter, heavy louder, with more body. How hard you play (KEY VEL, MIDI velocity) stays the strike's speed: a harder strike is louder and brings the overtones up |
 
-![VOICE 2/2 on MARIMBA](manual/img/voice2-marimba.png?v=69ee4d64)
+![VOICE 2/3 on MARIMBA](manual/img/voice2-marimba.png?v=9a201165)
 
 | Knob | Card | What it does on MARIMBA |
 | --- | --- | --- |
@@ -867,7 +891,7 @@ motor page: SELECT goes from VOICE 2/2 straight to COMPRESSOR. VOICE 1/2 acts on
 | K3 | **NOISE** | The mallet's contact: a soft tick at the start of the note (no damper, so nothing at the key-up) |
 | K4 | **TUNE** | Fine tuning, ±50 cents (many marimbas are tuned to A = 442 Hz: +8) |
 
-**MUTE, not DAMPER.** On VIBES the second card of VOICE 2/3 is the DAMPER, the felt bar that stops the notes when you
+**MUTE, not DAMPER.** On VIBES the second card of VOICE 2/4 is the DAMPER, the felt bar that stops the notes when you
 let go. A marimba has no damper, so on MARIMBA the same card is **MUTE**: how firmly your hand stops a note at the
 key-up. MUTE 0 means no hand: every note rings out. It is the same setting underneath (MIDI CC 103, saved with the
 preset), shown and heard for the instrument you play. Turning the TYPE to MARIMBA keeps the card where it was (the
@@ -1079,7 +1103,7 @@ letting the sound break up. In testing, with every voice struck and every effect
 
 ## 11. Sound and volume tips
 
-- **KEY VEL** on the main page sets the velocity of a medium press (with TOUCH FIXED, of every press). 96–108 is a
+- **KEY VEL** ([VOICE 3/3](#voice-33-velocity)) sets the velocity of a medium press (with TOUCH FIXED, of every press). 96–108 is a
   good start; the bark comes in above about 100. If you play softly and the sound stays thin, try TOUCH **LIGHT**
   (SETUP); if your normal playing already barks, **HEAVY**.
 - **MASTER is digital.** For the least hiss on the headphone jack, keep MASTER high and turn your speakers or
@@ -1148,7 +1172,7 @@ MARIMBA ignore it.
 | 60 / 61 | SEQUENCER play (≥ 64) or stop (< 64) / BARS (1–16) | 62 / 63 | SEQUENCER QUANT (0–5) / recording (≥ 64) |
 | 43 / 44 | SEQUENCER CLEAR / UNDO (≥ 64) | 45 / 46 | SEQUENCER ERASE (≥ 64 on) / SWING (50–75) |
 | 110 | LEVEL (64 = 0 dB) | 111 | All effects but the compressor off (≥ 64) / on |
-| 114 | USB VOL: knob (< 64) / fixed | 40 | RESPONSE: 0–63 DEEP, 64–127 EVEN (the electric piano's velocity response) |
+| 114 | USB VOL: knob (< 64) / fixed | 40 | RESPONSE: 0–63 FULL, 64–127 LIGHT (the velocity response, every TYPE) |
 
 **For developers and testing.** These CCs are for test tools, not for playing; [BUILD.md](BUILD.md#developer-midi-ccs) says
 what each one does.
@@ -1186,7 +1210,7 @@ an uneven stream record it cleanly.
   and on the MIDI page that CHANNEL is ALL or the channel your keyboard sends on.
 - **Keys play odd notes or keep playing:** chord mode (CHORD page), the arpeggiator with HOLD (ARPEGGIO) or the
   sequencer may be on; the EDIT, ARP and SEQ lights show it.
-- **The sound is thin or quiet:** raise KEY VEL on the main page, or try TOUCH **LIGHT** on SETUP.
+- **The sound is thin or quiet:** raise KEY VEL, or try TOUCH **LIGHT** or RESPONSE **LIGHT** ([VOICE 3/3](#voice-33-velocity)).
 - **A crash** shows FRODHES CRASH and three numbers for 8 s, then the FM-1 restarts. Please report all three.
 - **At power-on** Frodhes comes back as you left it, on the PERFORM page: the sound, octave, tempo, scale, chord mode,
   arpeggiator (HOLD too) and MIDI settings, with the effects on and the sustain off. So if keys play chords or an
@@ -1240,7 +1264,7 @@ sound and the pages; the SMK-37 reaches them with its own buttons, its eight kno
 pads, faders and wheels. Its manual has the files, the flash backup to make first, the install, the way back to stock,
 the controls and what differs: **[SMK37.md](SMK37.md)**.
 
-![The FRODHES page on the SMK-37: the cards on K5..K8](manual/img/smk/smk-frodhes.png?v=81dc0c48)
+![The FRODHES page on the SMK-37: the cards on K5..K8](manual/img/smk/smk-frodhes.png?v=6a45f016)
 
 ## 16. Appendix: the Ableton Move
 
@@ -1251,7 +1275,7 @@ installs and updates through Schwung Manager. Everything in this manual applies 
 screen on the Move, the eight knobs as eight cards a page at a time. Its manual has the install, the screen, every
 page and what differs: **[MOVE.md](MOVE.md)**.
 
-![Frodhes' screen on the Move: the DRIVE/FILTER page, eight knobs as eight cards](manual/img/move/move-drive-filter.png?v=5388b9c5)
+![Frodhes' screen on the Move: the DRIVE/FILTER page, eight knobs as eight cards](manual/img/move/move-drive-filter.png?v=18fa53cf)
 
 ---
 

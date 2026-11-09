@@ -2210,10 +2210,15 @@ static inline __attribute__((always_inline)) int32_t dc_block(int32_t x, int32_t
     return x - ((*dc + 32) >> 6);
 }
 static int32_t fx_L[256], fx_R[256];
-#define GATE_LO 32                                      /* -60 dBFS (Q15; 16 before 0.9.8): under it the integers'
-                                                         * grain (the reverbs' int16 tanks, the 16-bit floor) is the larger
-                                                         * part of a tail's highs (the tail report) */
-#define GATE_HI 32
+#define GATE_LO 16                                      /* -66 dBFS (Q15; 32 in 0.9.8 .. 0.9.9, 16 before): 0.9.10, the user:
+                                                         * RESPONSE FULL's soft end 3 dB deeper (rhodes.c rh_dyn) with no
+                                                         * soft note faded sooner than 0.9.9's at 32; the reverbs' grain
+                                                         * that 32 hid (the int16 tanks, the tail report) is the reverb's
+                                                         * own fix (the MIX-tied tank gain). The electric piano only: */
+#define GATE_LO_BARS 32                                 /* the bar engines (VIBES, MARIMBA: eng_cur 1) keep 0.9.9's -60 dBFS,
+                                                         * byte-identical (their soft end did not go deeper) */
+#define GATE_HI GATE_LO                                 /* (= GATE_LO: a note peaking between the two after the gate shut
+                                                         * would not open it; the bars' likewise) */
 #ifndef GATE_HOLD
 #define GATE_HOLD 70u                                    /* blocks under GATE_LO before the fall: 406 ms (200 ms before
                                                          * 0.9.8: at 32 LSB VIBES' motor dipped under it for longer and the
@@ -2491,10 +2496,13 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
     if (!FXC_Z) return;                                /* (the gate: once the block's peak is in, over all of out) */
 #endif
     /* silence gate: the codec mutes itself on digital zero, but while anything at all comes out its analog hiss
-     * is there; a held note's last -60 dBFS lie under that hiss anyway. So after 406 ms under GATE_LO the output
+     * is there; a held note's last -66 dBFS lie under that hiss anyway. So after 406 ms under GATE_LO the output
      * fades (~0.45 s: GATE_FALL) to exact zero, and it opens within 1.5 ms of the first block above GATE_HI (0.4) */
-    if (pk >= GATE_HI) { gate_quiet = 0; gate_tgt = 32768; }
-    else if (pk < GATE_LO && ++gate_quiet >= GATE_HOLD) { gate_quiet = GATE_HOLD; gate_tgt = 0; }
+    {
+        int32_t glo = eng_cur ? GATE_LO_BARS : GATE_LO;  /* (the running engine: engine.c, ISR) */
+        if (pk >= glo) { gate_quiet = 0; gate_tgt = 32768; }
+        else if (++gate_quiet >= GATE_HOLD) { gate_quiet = GATE_HOLD; gate_tgt = 0; }
+    }
     /* (every sample of out written with "=" by the limiter above: platform.c does not clear it, APP_OUT_WRITTEN in
      * frodhes.c); 0.9.5: open and staying open this block, there is nothing left to do; it was a copy from fx_L /
      * fx_R, 7 instructions a sample */

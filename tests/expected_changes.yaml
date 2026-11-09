@@ -20,6 +20,10 @@
 # 0.9.10 (the sonic fix): grouped by cause. Each entry's range is the measured move (fast + full grid, FM-1 and HQ
 # builds, RESPONSE A and B) +-0.5 dB (centroid +-0.05), clamped to the cause's own direction; a move outside every
 # entry fails, so a new fault in the same cells still shows.
+#
+# RESPONSE B (resp-ab, 2026-11-08): B is A's sound times a soft-end gain (0.9.9's velocity law; rhodes.c rh_dyn), so
+# every B cell moves as its A cell does (the same entries cover both; no B-only entry): on the fast grid B differs
+# from A only at v40 by +2.6 dB level, the rest inside the 16-bit floor (tests/py/test_vel_resp_curves.py).
 against: v0.9.9
 changes:
 

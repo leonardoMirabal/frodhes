@@ -72,8 +72,8 @@ Schwung's module catalog, you can also install and update it from there. The ste
 [docs/MOVE.md](docs/MOVE.md).
 
 <p align="center">
-  <img src="docs/manual/img/move/move-drive-filter.png?v=5388b9c5" width="384" alt="The DRIVE/FILTER page on the Move: eight cards, each with its name, its value and a bar">
-  <img src="docs/manual/img/move/move-pages.png?v=fcd9ce1d" width="384" alt="The list of pages on the Move">
+  <img src="docs/manual/img/move/move-drive-filter.png?v=18fa53cf" width="384" alt="The DRIVE/FILTER page on the Move: eight cards, each with its name, its value and a bar">
+  <img src="docs/manual/img/move/move-pages.png?v=7f4bde0a" width="384" alt="The list of pages on the Move">
 </p>
 
 ## Manual

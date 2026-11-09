@@ -72,6 +72,11 @@ METER = {
     "r_cmp_pk": {"key": "r_cmp_pk", "name": "REDUCT", "type": "string", "access": "read",
                  "viz": {"group": "gr", "role": "pk"}},
 }
+# the app's version, read only (the FM-1's MIDI page K4, VERSION; the user, 2026-11-09: on the last page of every
+# version): a release's X.Y.Z, else DEV and the commit (ui.c ui_version_long, move_bridge.h mb_get serves it). No
+# knob action, no C row; on Frodhes' own screen a card of text (screen_core.js type "text"), on the grid a read cell
+VERSION_KEY = {"r_version": {"key": "r_version", "name": "VER", "type": "string", "access": "read"}}
+READ_KEYS = {**METER, **VERSION_KEY}
 SCREEN_CONF = {"hold_ms": 500,     # the large card stays this long after the knob is let go (tune on the device)
                "fast_ms": 40,      # two detents closer than this: a fast turn ...
                "fast_mul": 4,      # ... moves a wide range (> 24 steps) this many steps a detent
@@ -199,6 +204,9 @@ HOLE = None
 MOVE_LEVELS = [
     ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_fx", "s_screen", HOLE, HOLE, "p_delay"]),
     ("voice", "VOICE", ["VOICE"], []),
+    # (the user, 2026-11-08: the velocity page right after the VOICE pages, as the FM-1's last VOICE page; RESPONSE
+    # only: the pads' velocity reaches the engine as played, the Move's own settings set its pads' sensitivity)
+    ("vel", "VELOCITY", ["VELOCITY"], []),
     ("comp", "COMPRESSOR", ["COMPRESSOR"], ["p_cmp_sw", "p_cmp_rel", "r_cmp_gr", "r_cmp_pk"]),
     # the EQ before the drive, as on the FM-1 (COMPRESSOR, EQ, DRIVE): its own level of four, the FM-1's page
     ("eq", "EQ", ["EQ"], []),
@@ -217,7 +225,7 @@ MOVE_LEVELS = [
     ("tmp", "TEMPO", ["TEMPO"], []),
     ("arp", "ARPEGGIO", ["ARPEGGIO"], ["s_arphold"]),
     ("lfo_set", "LFO/SETUP", ["LFO", "SETUP", "MIDI"], []),
-    ("maps", "MAPPINGS", [], MAP_KEYS),
+    ("maps", "MAPPINGS", [], MAP_KEYS + ["r_version"]),   # (the last page: VERSION, VERSION_KEY)
 ]
 # extra keys that are parameters with no FM-1 card (they keep their CC on the FM-1)
 MOTOR_EXTRA = ["p_mot_sync"]       # VIBES' MOTOR level: the motor's sync (CC 51, no card on the FM-1)
@@ -326,6 +334,11 @@ def model():
         for t in re.findall(r'"[^"]*"|\w+', rows_l[i]):
             labs.append(t[1:-1] if t.startswith('"') else lab_tok[t])
         pages[pg] = {"title": titles[i], "cards": cards, "labs": labs}
+    # the velocity page (0.9.10): every engine's last VOICE page on the FM-1 (ui.c VEL_S / VEL_LAB); the Move keeps
+    # RESPONSE of it (TOUCH and KEY VEL are the FM-1's own keys: FM1_ONLY_SLOTS)
+    vel_s = [t.strip() for t in re.search(r"VEL_S\[4\] = \{([^}]*)\};", ui).group(1).split(",")]
+    vel_l = re.findall(r'"([^"]*)"', re.search(r"VEL_LAB\[4\] = \{([^}]*)\};", ui).group(1))
+    pages["PG_VEL"] = {"title": "VELOCITY", "cards": vel_s, "labs": vel_l}
     sv = re.search(r"static int32_t slot_val\(uint32_t s, int32_t \*hi\)\n\{(.*?)\n\}", ui, re.S).group(1)
     slot_hi = {}
     for m in re.finditer(r"case (S_\w+): \*hi = ([^;]+);", sv):
@@ -522,7 +535,7 @@ def build(m):
     def page_cards(lvl, title):
         pg = page_of[title]
         for k, slot in enumerate(m["pages"][pg]["cards"]):
-            if slot == "S_NONE" or slot in FM1_ONLY_SLOTS or slot in MOVE_OWNS_SLOTS:
+            if slot in ("S_NONE", "S_VERSION") or slot in FM1_ONLY_SLOTS or slot in MOVE_OWNS_SLOTS:   # (VERSION: MAPPINGS)
                 continue
             item, row = key_def(m, slot, card_label(m, pg, k))
             add(lvl, item, row, lvl["name"])
@@ -536,10 +549,10 @@ def build(m):
                 lvl["params"].append(dict(SCREEN))
                 lvl["knobs"].append(k)
                 continue
-            if k in METER:                         # the GR meter's cells: a hierarchy item + chain_params (no C row)
-                lvl["params"].append(dict(METER[k]))
+            if k in READ_KEYS:                     # the GR meter's cells, VERSION: a hierarchy item + chain_params (no C row)
+                lvl["params"].append(dict(READ_KEYS[k]))
                 lvl["knobs"].append(k)
-                chain.append(dict(METER[k]))
+                chain.append(dict(READ_KEYS[k]))
                 continue
             if k in EXTRA:
                 item, row = extra_def(k)
@@ -800,6 +813,9 @@ def screen_pages(levels):
             if it["type"] == "canvas" and lk == "root":   # (the preset in the PAGES cell's place: knob 5 on both)
                 ks.append({"key": "preset", "name": "PRESET", "type": "preset"})
                 continue
+            if key in VERSION_KEY:                   # (VERSION: a card of text, no bar, a turn does nothing)
+                ks.append({"key": key, "name": it["name"], "type": "text"})
+                continue
             if it["type"] == "canvas" or it.get("access") == "read":   # (the GR cells: the screen draws its own meter)
                 continue
             k = {"key": key, "name": it["name"], "type": it["type"]}
@@ -882,7 +898,7 @@ SCREEN_READER_MJS = "/data/UserData/schwung/shared/screen_reader.mjs"        # i
 # A new control on a page fails the generator until it is named here.
 SAY_NAMES = {
     "p_type": "Type", "p_spread": "Spread", "s_sustain": "Sustain", "s_fx": "Effects", "preset": "Preset",
-    "p_delay": "Delay mix",
+    "p_delay": "Delay mix", "r_version": "Version",
     "p_tone": "Tone", "p_bark": "Bark", "p_bell": "Bell", "p_hammer": "Hammer", "p_decay": "Decay",
     "p_release": "Release", "p_noise": "Noise", "s_tune": "Tune",
     "p_strike": "Strike", "p_mallet": "Mallet", "p_tube": "Tube", "p_weight": "Weight", "p_ring": "Ring",

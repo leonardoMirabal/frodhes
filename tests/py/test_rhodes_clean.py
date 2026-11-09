@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """A clean Rhodes at every velocity (0.9.10, the user: "I should get a pristine Rhodes sound but it is completely
-distorted"): with EFFECTS OFF (CC 111), on both velocity methods (RESPONSE DEEP and EVEN), a single note's bark
+distorted"): with EFFECTS OFF (CC 111), on both velocity methods (RESPONSE FULL and LIGHT), a single note's bark
 (H2..H5 re H1, 30..150 ms after the strike, gen_rhodes.bark_h1's window) is never over 0.9.9's at v110 and v127,
 and H3 stays as far under H1 as 0.9.9's. 0.9.10's first pickup drive took A1 v127 to H2 +19 / H3 +14 dB over H1
 (0.9.9: -12 / -42); the swing is now the physical force law's again, 0.9.9's, on every key (params.json
@@ -36,7 +36,7 @@ def harm(x, f0):
     return 10 * np.log10(sum(h[1:]) / h[0]), 10 * np.log10(h[2] / h[0])
 
 
-@pytest.mark.parametrize("resp", [0, 127], ids=["DEEP", "EVEN"])
+@pytest.mark.parametrize("resp", [0, 127], ids=["FULL", "LIGHT"])
 @pytest.mark.parametrize("kv", sorted(CEIL), ids=[f"{k}v{v}" for k, v in sorted(CEIL)])
 def test_hard_notes_stay_clean(kv, resp, binary):
     k, v = kv
@@ -47,7 +47,7 @@ def test_hard_notes_stay_clean(kv, resp, binary):
     assert bark <= cb + 0.5 and h3 <= c3 + 1.0, (bark, h3, CEIL[kv])
 
 
-@pytest.mark.parametrize("resp", [0, 127], ids=["DEEP", "EVEN"])
+@pytest.mark.parametrize("resp", [0, 127], ids=["FULL", "LIGHT"])
 @pytest.mark.parametrize("k", [69, 81, 93])
 def test_velocity_still_brightens_the_top(k, resp, binary):
     """keys 69 and up: the bark at v127 at least 6 dB over v40's, as 0.9.9's swing gives (the first 0.9.10 fix left

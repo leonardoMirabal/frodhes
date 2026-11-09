@@ -41,7 +41,7 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #include "rhodes_tables.h"
 #ifndef RH_NO_TONE_G                           /* (-DRH_NO_TONE_G: without it, as tools/tone_level.py measures) */
 #include "rh_tone_g.h"                         /* TONE's level compensation (tools/tone_level.py --write) */
-#if defined(RH_DRIVE) && !defined(RH_NO_VM)
+#if defined(RH_DRIVE) && defined(RH_VM_ON)
 #include "rh_tone_b.h"                         /* ... and the velocity method MAP's (rh_tone_gain, map 1) */
 #endif
 #endif
@@ -54,7 +54,10 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
                                                 * measures) */
 #include "rh_top.h"                            /* the clean top's swing cut per TYPE and key (tools/rh_top.py --write) */
 #endif
-#if defined(RH_DRIVE) && !defined(RH_NO_VM)
+#if defined(RH_DRIVE) && defined(RH_VM_ON)       /* the velocity map MAP (0.9.10 S1b, RESPONSE B until the dry
+                                                * distortion fix put the tine back on the physical force law, after
+                                                * which it played the pickup drive's sound): retired, RESPONSE B is
+                                                * the dynamics stage's light curve (rh_dyn); -DRH_VM_ON builds it */
 #define RH_VMAP 1                              /* the second velocity method, MAP (rh_touch_mode 1): rh_velmap.h */
 #endif
 
@@ -150,6 +153,7 @@ typedef struct {
     int32_t pphys;                             /* Q15: the physical force of the strike (rh_left) */
     int32_t kl;                                /* the kill level, sum units (k->kill >> 3 over the gain law) */
     uint16_t gq;                               /* Q16: the gain law's value at the note-on */
+    uint8_t lt;                                /* RESPONSE at the strike (rh_touch_mode): 0 A, 1 B (rh_dyn) */
     uint32_t pq;                               /* Q12: the tine's physical swing over the modes' (the note-on's
                                                 * strike: RH_PAMP / (RH_PDRV x the force gains' scale)) */
     uint32_t mk;                               /* Q12: the level make-up at the note-on (rh_drv_mkt, 4096 = none;
@@ -170,6 +174,9 @@ typedef struct {
 #endif
 
 static rh_voice_t rv[RH_NV];
+#ifdef DINGHY_HOST
+static uint8_t rh_host_vel;                          /* (host: rh_strike's last velocity) */
+#endif
 #ifdef RH_DRIVE
 #define RH_KILL(v, k) ((v)->kl)                /* the kill level in the voice's own gain (rh_init) */
 #define RH_OUT_SUM(v, s) rh_phys_sum(v, s)      /* a steal / shed score: the mode peaks as the tine's physical
@@ -292,8 +299,9 @@ static uint32_t rh_drv_mkt(uint32_t key, uint32_t vel)      /* the make-up x the
 #endif
 /* voicing, written by the main loop (params.c), applied at each note-on (IMPLEMENTATION-v3 §4.4, §10.1) */
 static volatile int32_t rh_tone_off;           /* Q25: added to the pickup offset (TONE) */
-static volatile uint8_t rh_touch_mode;               /* the velocity method, taken at each note-on (params.c, the settings'
-                                                * VELOCITY): 0 DRIVE (the pickup excursion law), 1 MAP (the knee map) */
+static volatile uint8_t rh_touch_mode;         /* RESPONSE, taken at each note-on (params.c vresp_apply): 0 A (FULL,
+                                                * dynamic), 1 B (LIGHT, the light touch): the dynamics stage's soft end
+                                                * (rh_dyn); with -DRH_VM_ON, 1 is the retired velocity map MAP */
 static volatile int32_t rh_bark_s = 65536;     /* Q16: tip scale (BARK) */
 static volatile int32_t rh_bark_g = 65536;     /* Q16: its gain compensation (1/scale) */
 static volatile int32_t rh_bell = 65536;       /* Q16: O1/O2 scale (BELL) */
@@ -518,32 +526,39 @@ static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /
 }
 
 /* The dynamics stage (0.9.10): a key x velocity gain on the voice, set at the strike (no per-sample cost), relative
- * to 0.9.9's loudness. mf and f (v >= 60) keep 0.9.9's level exactly; the soft end goes quieter on a smoothstep, 0 dB
- * at v60 to -6 dB at v16 and below (no step, no corner: the v20 -> v127 range ~25.5 -> ~31 dB); the top keys taper,
- * 0 dB at key 82 to -5 dB at key 98 and above (smoothstep: the upper octave thinner, keys 90-100 at v64 ~-6 dB re
- * key 60). Only ever a cut, so no chord gets louder than 0.9.9's. It multiplies each velocity method's own gain:
- * DRIVE's output gain law (rh_drive_g: the note-on's gain, the kill, a re-strike's force ratio), MAP's G (rh_vm_g:
- * the level, the kill, the noises' scale, a re-strike's rescale). The tables:
- * round(32768 x 10^(-6 s((60 - v) / 44) / 20)), round(32768 x 10^(-5 s((k - 82) / 16) / 20)), s(t) = 3t^2 - 2t^3 on
+ * to 0.9.9's loudness. mf and f (v >= 60) keep 0.9.9's level exactly; below, RESPONSE (rh_touch_mode, taken at the
+ * strike) picks the soft end: A (FULL, dynamic) goes quieter on a smoothstep, 0 dB at v60 to -9 dB at v20 and below
+ * (no step, no corner, at most 0.65 dB a velocity step: v20 -> v127 ~34.5 dB, v1 -> v127 ~39.4 dB); B (LIGHT, the
+ * light touch) keeps 0.9.9's velocity law (v20 -> v127 ~25.5 dB). The same sound at every velocity in both, only the
+ * soft end's level differs (the same drive, swing and harmonics: B is A x a gain, to the integers' rounding; A = B
+ * from v60). A's depth is held by the output gate (fx.c GATE_LO, 16 LSB peak, -66 dBFS, 406 ms): a soft note that
+ * drops under it is faded 0.4 s later; at -9 dB no velocity has more notes under it within 1 s than 0.9.9 at its
+ * 32 LSB (keys 21..96 x the TYPEs, LEVEL 64: v1 20, v10 17, v20 10, v30 4 of 104; 0.9.9 20 / 17 / 13 / 8; -12 dB
+ * at v1 gave 24 / 19 / 10 / 4), and a v1 note on keys up to ~96 stays ~20 dB over the FM-1 jack's -92.5 dBFS floor.
+ * The top keys taper in both, 0 dB at key 82 to -5 dB at key 98 and above (smoothstep: the upper octave thinner,
+ * keys 90-100 at v64 ~-6 dB re key 60). Only ever a cut, so no chord gets louder than 0.9.9's. It multiplies the drive's output gain law (rh_drive_g: the note-on's
+ * gain, the kill, a re-strike's force ratio) and the noises' scale (the knock, the felt). The tables:
+ * round(32768 x 10^(-9 s((60 - v) / 40) / 20)), round(32768 x 10^(-5 s((k - 82) / 16) / 20)), s(t) = 3t^2 - 2t^3 on
  * [0, 1] */
 #define RH_DYN_V_HI 60u
 #define RH_DYN_K_LO 82u
-static const uint16_t RH_DYN_V[RH_DYN_V_HI] = {             /* Q15, v 0..59 (60..127: 32768) */
-    16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423,
-    16423, 16440, 16491, 16575, 16689, 16834, 17008, 17211, 17442, 17700, 17984, 18295, 18630, 18991, 19375, 19782,
-    20212, 20663, 21134, 21625, 22134, 22658, 23198, 23750, 24314, 24885, 25463, 26044, 26625, 27204, 27775, 28337,
-    28885, 29415, 29923, 30404, 30853, 31267, 31640, 31967, 32245, 32468, 32632, 32733};
+static const uint16_t RH_DYN_V[RH_DYN_V_HI] = {             /* Q15, v 0..59 (60..127: 32768): RESPONSE A */
+    11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627,
+    11627, 11627, 11627, 11627, 11627, 11649, 11714, 11821, 11969, 12156, 12382, 12646, 12949, 13291, 13670, 14087,
+    14543, 15037, 15568, 16137, 16744, 17386, 18064, 18775, 19519, 20291, 21091, 21913, 22754, 23608, 24472, 25337,
+    26197, 27044, 27870, 28665, 29420, 30125, 30769, 31341, 31831, 32228, 32523, 32705};
 static const uint16_t RH_DYN_K[RH_KEY_LO + RH_NKEY - RH_DYN_K_LO] = {   /* Q15, keys 82..108 (below: 32768) */
     32768, 32557, 31967, 31073, 29949, 28673, 27312, 25928, 24573, 23288, 22108, 21059, 20161, 19432, 18888, 18546,
     18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427};
-static uint32_t rh_dyn(uint32_t n, uint32_t vel)            /* Q15 (<= 32768): the key n (clamped), velocity vel */
+static uint32_t rh_dyn(uint32_t n, uint32_t vel, uint32_t lt)   /* Q15 (<= 32768): the key n (clamped), velocity vel;
+                                                * lt: RESPONSE B (light: 0.9.9's velocity law, the key taper only) */
 {   /* (-DRH_NO_DYN: without it, as tests/py/test_rhodes_dyn.py compares; off in the velocity map's probe builds:
      * gen_velmap.py measures the map without it) */
 #if defined(RH_NO_DYN) || defined(RH_VM_PROBE)
-    (void)n; (void)vel;
+    (void)n; (void)vel; (void)lt;
     return 32768u;
 #else
-    uint32_t g = vel < RH_DYN_V_HI ? RH_DYN_V[vel] : 32768u;
+    uint32_t g = vel < RH_DYN_V_HI && !lt ? RH_DYN_V[vel] : 32768u;
     if (n > RH_KEY_LO + RH_NKEY - 1u) n = RH_KEY_LO + RH_NKEY - 1u;   /* (a MIDI note over 108 plays the top key's
                                                 * values: the table ended there, read past its end: the sanitizer) */
     if (n >= RH_DYN_K_LO) g = (g * RH_DYN_K[n - RH_DYN_K_LO]) >> 15;
@@ -558,7 +573,7 @@ static int32_t rh_dyn_gain(int32_t gain, uint32_t gd)       /* gain x gd (32768:
 /* the pickup drive's output gain law at a velocity (Q16, 1 .. 65535): RH_PGF (gain x force) and RH_PDRV (the force)
  * interpolated between the anchors as rh_load_pulse does, then divided, so the output (their product while the swing
  * is small) is linear between anchors (tools/rhodes_model.py vgain: the same integers). Note-on / re-strike only */
-static int32_t rh_drive_g(uint32_t key, uint32_t vel)
+static int32_t rh_drive_g(uint32_t key, uint32_t vel, uint32_t lt)
 {
     uint32_t i = RH_VPOS_I[vel], f = RH_VPOS_F[vel];
     const uint16_t *pg = RH_PGF[key], *pd = RH_PDRV[key];
@@ -566,7 +581,7 @@ static int32_t rh_drive_g(uint32_t key, uint32_t vel)
     int32_t d = (int32_t)pd[i] + ((((int32_t)pd[i + 1] - (int32_t)pd[i]) * (int32_t)f) >> 8);
     uint32_t g = ((uint32_t)q << 15) / (uint32_t)(d < 1 ? 1 : d);   /* q < 2^16: 32-bit */
     if (g > 65535u) g = 65535u;
-    g = (g * rh_dyn(key + RH_KEY_LO, vel)) >> 15;                     /* x the dynamics stage (rh_dyn, <= 2^15) */
+    g = (g * rh_dyn(key + RH_KEY_LO, vel, lt)) >> 15;                     /* x the dynamics stage (rh_dyn, <= 2^15) */
     return g < 1u ? 1 : (int32_t)g;
 }
 #endif
@@ -592,8 +607,11 @@ static void rh_drv_level(rh_voice_t *v, uint32_t ki, uint32_t vel)
 {
     const rh_key_t *k = v->k;
     uint32_t kk = (uint32_t)(k->kill >> 3), q;
-    int32_t g = rh_drive_g(ki, vel);
+    int32_t g = rh_drive_g(ki, vel, v->lt);
     v->gq = (uint16_t)g;
+#ifdef FR_HQ
+    hq_v[v - rv].dq = rh_dyn(ki + RH_KEY_LO, vel, v->lt);   /* (the live contact keeps the level map: hq_pulse_gain) */
+#endif
     {
         uint32_t i = RH_VPOS_I[vel], f = RH_VPOS_F[vel];
         int32_t pa = (int32_t)RH_PAMP[ki][i] + ((((int32_t)RH_PAMP[ki][i + 1] - (int32_t)RH_PAMP[ki][i]) * (int32_t)f) >> 8);
@@ -693,7 +711,7 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
          * past a fresh strike's, a burst of bark (+25 dB > 5 kHz, the pedal down); capped, it plays at its own swing,
          * under the ringing note's gain. At the note-on the ratio is 1, exactly. num / den: Q16 x Q12, under 2^36
          * (the make-up < 2^20 with the clean top's gain back), scaled down to 15 bits for the 32-bit divide */
-        uint64_t num = (uint64_t)rh_drive_g(key, vel) * rh_drv_mkt(key, vel), den = (uint64_t)v->gq * v->mk;
+        uint64_t num = (uint64_t)rh_drive_g(key, vel, v->lt) * rh_drv_mkt(key, vel), den = (uint64_t)v->gq * v->mk;
         uint32_t sh;
         int32_t a = (int32_t)v->pamp;
         if (num != den && vel > rh_vel_old) rh_drv_restrike(v, key, vel);
@@ -1114,7 +1132,7 @@ static int32_t rh_vm(uint32_t t, uint32_t key, uint32_t vel)     /* t 0: X, 1: G
 }
 static int32_t rh_vm_g(uint32_t key, uint32_t vel)          /* MAP: G x the dynamics stage (rh_dyn), Q11 */
 {
-    uint32_t d = rh_dyn(key + RH_KEY_LO, vel);
+    uint32_t d = rh_dyn(key + RH_KEY_LO, vel, 0u);
     int32_t g = rh_vm(1u, key, vel);
     return d >= 32768u ? g : (int32_t)(((uint32_t)g * d) >> 15);   /* (G < 2^16, d <= 2^15: fits) */
 }
@@ -1273,7 +1291,7 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
     else
 #endif
 #ifdef RH_DRIVE
-    { v->gain0 = v->gain; rh_drv_level(v, n - RH_KEY_LO, vel); }   /* the drive: the gain law, the make-up, the kill */
+    { v->gain0 = v->gain; v->lt = (uint8_t)(rh_touch_mode != 0); rh_drv_level(v, n - RH_KEY_LO, vel); }   /* the drive: the gain law, the make-up, the kill */
 #endif
     u = v->off;
     v->Hprev = rh_hermite(RH_PU_PHIM(k->fam), (int64_t)u * u);
@@ -1378,8 +1396,11 @@ static void __attribute__((noinline)) rh_knock_strike(uint32_t note, uint32_t ve
     if (pamp > 32767) pamp = 32767;
     a = (int32_t)(((int64_t)pamp * rh_knock) >> 10);   /* <= 32767 x 653 >> 10 = 20896 */
 #ifdef RH_DRIVE
-    if (!rh_touch_mode) a = (int32_t)RH_NZ_S(a);   /* (the notes' level; MAP plays at the noises' own) */
-    a = rh_dyn_gain(a, rh_dyn(n, vel));                 /* the dynamics stage, as the note's own */
+#ifdef RH_VMAP
+    if (!rh_touch_mode)
+#endif
+    a = (int32_t)RH_NZ_S(a);                            /* (the notes' level; MAP played at the noises' own) */
+    a = rh_dyn_gain(a, rh_dyn(n, vel, rh_touch_mode != 0));   /* the dynamics stage, as the note's own */
 #endif
     l = RH_VLAY_I[vel];
     if (RH_VLAY_W[vel] >= 16384 && l + 1u < RH_NLAYER) l++;
@@ -1410,6 +1431,10 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
     uint32_t i, pick = RH_NV, best = 0xFFFFFFFFu;
     for (i = 0; i < RH_NA && rv[i].pend; i++) ;
     if (i == RH_NA) return 0;                           /* (more than RH_NV steals in one block: BUGHUNT #21) */
+#ifdef DINGHY_HOST
+    rh_host_vel = (uint8_t)vel;                         /* (host: the velocity that reached the engine, frodhes.c
+                                                         * "engvel"; RESPONSE never rewrites it, tests/py/test_vel_layers.py) */
+#endif
     rh_knock_strike(note, vel);
     for (i = 0; i < RH_NV; i++)                         /* the same note still sounding: re-strike, superpose */
         if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) {
@@ -1423,6 +1448,8 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
                                                          * force swung them: a click, +16 dB > 5 kHz with the map) */
 #ifdef RH_DRIVE
             rh_vel_old = vo;                            /* (unused at a note-on: the ratio is 1) */
+            v->lt = (uint8_t)(rh_touch_mode != 0);      /* RESPONSE at this strike (a change: the re-strike's rescale
+                                                         * of the ringing modes takes the level step, rh_drv_restrike) */
 #endif
             rh_load_pulse(v, vel);                      /* (with the pickup drive: the level of its own, rh_drv_restrike) */
 #ifdef RH_VMAP
@@ -1496,7 +1523,7 @@ static void rh_events(void)
                         {
                             g = (int32_t)RH_NZ_S(g > 32768 ? 32768 : g);   /* (the notes' level) */
                             if (g > 32768) g = 32768;
-                            g = rh_dyn_gain(g, rh_dyn(v->note, v->vel));   /* x the dynamics stage (MAP: in vn) */
+                            g = rh_dyn_gain(g, rh_dyn(v->note, v->vel, v->lt));   /* x the dynamics stage (MAP: in vn) */
                         }
 #endif
                         v->felt_n = 353; v->felt_g = (uint16_t)(g > 32768 ? 32768 : g);
@@ -1523,7 +1550,16 @@ static void rh_events(void)
                     if (lmb >= 0) { g = lmb >> 2; eb = g >= 32768 ? rh_pnz : (int32_t)(((uint32_t)rh_pnz * (uint32_t)g) >> 15); }
 #endif
                     for (i = 0; i < RH_NV; i++)
-                        if (rv[i].alive && !RH_IS_MAP(&rv[i])) { g = rh_left(&rv[i]); if (g > lm) lm = g; }
+                        if (rv[i].alive && !RH_IS_MAP(&rv[i])) {
+                            g = rh_left(&rv[i]);
+#ifdef RH_DRIVE
+                            g = rh_dyn_gain(g, rh_dyn(rv[i].note, rv[i].vel, rv[i].lt));   /* the note as heard, x the
+                                                         * dynamics stage as its knock and felt (0.9.10: under FULL's
+                                                         * -9 dB soft end a v1 note's pedal-up thud peaked +0.5 dB over
+                                                         * it, test_release_never_louder) */
+#endif
+                            if (g > lm) lm = g;
+                        }
                     g = lm < 0 ? 32768 : lm >> 2;
                     rh_pn_n = RH_PN_LEN; rh_pn_env = g >= 32768 ? rh_pnz : (int32_t)(((uint32_t)rh_pnz * (uint32_t)g) >> 15);
 #ifdef RH_DRIVE

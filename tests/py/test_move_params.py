@@ -95,10 +95,14 @@ def test_cc_path_traps_are_as_documented():
 
 
 def card_of(slot):
-    order = list(M["pages"])                                       # (the PG_ enum's order: host_state card.<pg>.<k>)
+    """the host dump's key of a settings card: card.<pg>.<k> (the PG_ enum's order), or vcard.2.<k> for the velocity
+    page (PG_VEL: the Rhodes' last VOICE page, VOICE 3/3, 0.9.10)"""
+    order = [p for p in M["pages"] if p != "PG_VEL"]
     for i, pg in enumerate(order):
         if slot in M["pages"][pg]["cards"]:
-            return i, M["pages"][pg]["cards"].index(slot)
+            return f"card.{i}.{M['pages'][pg]['cards'].index(slot)}"
+    if slot in M["pages"]["PG_VEL"]["cards"]:
+        return f"vcard.2.{M['pages']['PG_VEL']['cards'].index(slot)}"
     raise KeyError(slot)
 
 
@@ -128,8 +132,7 @@ def test_settings_options_match_the_cards():
     r = run("move-slots", lines, t + 50)
     bad = []
     for tt, slot, o in want:
-        pg, k = card_of(slot)
-        got = r.state(tt)[f"card.{pg}.{k}"]
+        got = r.state(tt)[card_of(slot)]
         if gen.short_value(got) != o:                   # (the FM-1's name, the Move's abbreviation of it)
             bad.append((slot, o, got))
     assert not bad, bad
@@ -165,8 +168,8 @@ def test_saved_setup_survives_a_power_cycle():
              flash=fl)
     assert r1.saves, "the setup change was not saved"
     r2 = tp.boot("move-state-2", fl, end=400)
-    pg, k = card_of("S_MCH")
-    assert r2.state(100)[f"card.{pg}.{k}"] == r1.state(4000)[f"card.{pg}.{k}"] == "2"
+    c = card_of("S_MCH")
+    assert r2.state(100)[c] == r1.state(4000)[c] == "2"
 
 
 def _bridge(*args, stdin=None):

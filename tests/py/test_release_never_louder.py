@@ -39,7 +39,7 @@ from hostrun import FS, run  # noqa: E402
 VELS = (1, 15, 30, 60, 100, 127)
 TYPES = [("STAGE77", "80", 0), ("SUITCASE", "80", 32), ("FELT", "80", 64), ("DYNO", "80", 96),
          ("VIBES", "79", 0), ("MARIMBA", "79", 96)]
-TYPES += [(n + "-EVEN", c, v) for n, c, v in TYPES[:4]]   # 0.9.10: the Rhodes' second velocity response (CC 40 EVEN)
+TYPES += [(n + "-LIGHT", c, v) for n, c, v in TYPES[:4]]   # 0.9.10: the Rhodes' second velocity response (CC 40 LIGHT)
 KEYS = {"rhodes": (31, 60, 96), "bars": (55, 72, 88)}
 NOISES = (0, 48, 127)
 TOL_DB = 0.5
@@ -64,8 +64,8 @@ def render(ty, noise, pedal, hold_ms):
     name, ccn, ccv = ty
     keys = KEYS["bars" if ccn == "79" else "rhodes"]
     ev = ["40 midi 0xB0 119 127", f"42 midi 0xB0 {ccn} {ccv}", f"44 midi 0xB0 104 {noise}"]
-    if name.endswith("-EVEN"):
-        ev.append("43 midi 0xB0 40 127")        # RESPONSE EVEN (the velocity map; DEEP, the default, otherwise)
+    if name.endswith("-LIGHT"):
+        ev.append("43 midi 0xB0 40 127")        # RESPONSE LIGHT (the light touch; FULL, the default, otherwise)
     if ccn == "79":
         ev.append("46 midi 0xB0 47 0")          # VIBES's motor off (its AM pulse is no key-up; MARIMBA has none)
     sl = slots(hold_ms, pedal)

@@ -187,7 +187,7 @@ def check_level(b, key="fm1", area="level"):
 
 # ---------------------------------------------------------------- midi: velocity untouched by TOUCH / KEY VEL
 TOUCHES = (("LIGHT", -1), ("MEDIUM", 0), ("HEAVY", 1), ("FIXED", 2))
-KEYVELS = ((1, -95), (96, 0), (127, 11))
+KEYVELS = ((1, -200), (96, 0), (127, 200))   # (a large turn: to the end, whatever the acceleration)
 
 
 def check_midi(b):
@@ -204,11 +204,14 @@ def check_midi(b):
 
     def one(arg):
         (tn, td), (kv, kd) = arg
-        ls = ["60 btn 7", "80 btn 7"] + [f"{100 + 10 * i} turn 5 {1 if td > 0 else -1}" for i in range(abs(td))]
-        ls += ["160 dump", "200 btn 8", "250 btn 8"] + ([f"300 turn 5 {kd}"] if kd else []) + ["700 dump"] + notes
+        # the velocity page (the last VOICE page, VOICE 3/3 on the electric piano): HOME to FRODHES, SELECT three
+        # times; TOUCH is K2 (encoder 3), KEY VEL K3 (encoder 4)
+        ls = ["60 btn 8", "80 turn 0 1", "90 turn 0 1", "100 turn 0 1"]
+        ls += [f"{120 + 10 * i} turn 3 {1 if td > 0 else -1}" for i in range(abs(td))]
+        ls += ["200 dump"] + ([f"300 turn 4 {kd}"] if kd else []) + ["700 dump"] + notes
         r = hostrun.run(f"midi-{tn}-{kv}", ls, end + 600, binary=b["fm1"], check=False)
         a = np.stack([r.L, r.R])[:, int(0.9 * FS):int(end / 1000 * FS)]
-        return tn, kv, r.state(160).get("card3"), r.state(700).get("card3"), hashlib.sha1(a.tobytes()).hexdigest()
+        return tn, kv, r.state(200).get("card1"), r.state(700).get("card2"), hashlib.sha1(a.tobytes()).hexdigest()
     combos = [(t_, k_) for t_ in TOUCHES for k_ in KEYVELS]
     with ThreadPoolExecutor(4) as ex:
         res = list(ex.map(one, combos))

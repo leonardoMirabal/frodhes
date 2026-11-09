@@ -36,7 +36,8 @@ def loud(seg):
     return lufs(seg[int(0.05 * FS):int(0.6 * FS)])
 
 
-# RESPONSE (CC 40) A, the pickup drive (rh_tone_g.h), and B, the velocity map (rh_tone_b.h; tone_level.py --map)
+# RESPONSE (CC 40): A and B play the same sound (B is A x a soft-end gain, rhodes.c rh_dyn), so one compensation
+# (rh_tone_g.h) holds for both; both are checked
 @pytest.mark.parametrize("resp", [0, 127], ids=["A", "B"])
 @pytest.mark.parametrize("ty", range(4))
 def test_tone_keeps_the_loudness(ty, resp):

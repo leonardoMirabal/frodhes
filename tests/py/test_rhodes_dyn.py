@@ -46,7 +46,7 @@ def test_mf_f_kept_soft_cut():
     for key in (40, 60):
         for v in (64, 96, 127):                                  # mf, f: exactly the levels without the stage
             assert abs(note("v", key, v) - note("v", key, v, NODYN)) < 0.05, (key, v)
-        for v, lo, hi in ((20, -6.5, -5.0), (40, -3.2, -2.0)):   # the soft end's cut
+        for v, lo, hi in ((20, -9.5, -8.0), (40, -5.2, -3.8)):   # the soft end's cut (0.9.10 FULL: -9 dB at v20, -4.5 at v40)
             d = note("v", key, v) - note("v", key, v, NODYN)
             assert lo <= d <= hi, (key, v, d)
 

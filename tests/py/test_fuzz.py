@@ -176,7 +176,8 @@ def one(seed, eng, sanitized):
         bad.append(f"{clicks(r.L[p])} clicks in the probe note")
     if x[p].max() > LIM_T:
         bad.append(f"the probe note near clipping: {x[p].max():.0f}")
-    kv = int(r.state(mk["dump"])["card.2.3"])                       # KEY VEL
+    st = r.state(mk["dump"])
+    kv = int(next(v for k, v in st.items() if k.startswith("vcard.") and st.get("v" + k[1:].replace("card", "label", 1)) == "KEY VEL"))   # KEY VEL (the velocity page)
     kq = slice(int(mk["key"][0] / 1000 * FS), int(mk["key"][1] / 1000 * FS))
     if kv >= 20 and rms_db(r.L[kq]) < -55:
         bad.append(f"the C4 key (KEY VEL {kv}): {rms_db(r.L[kq]):.1f} dBFS")

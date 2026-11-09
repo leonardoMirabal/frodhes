@@ -22,7 +22,7 @@
 1750 turn 0 1
 1800 turn 0 1
 1900 turn 0 1
-2000 expect state vpage 3/3
+2000 expect state vpage 3/4
 2000 expect state hint THE_VIBRAPHONE'S_MOTOR
 2000 expect state card0 OFF
 2010 turn 2 1
@@ -38,7 +38,7 @@
 2400 expect preset
 2500 midi 0xC0 0 0
 2600 expect state bars 0
-2600 expect state vpage 2/2
+2600 expect state vpage 2/3
 2600 expect preset
 2700 midi 0xC0 16 0
 2800 expect preset
@@ -76,13 +76,15 @@
 4815 turn 0 1
 4820 turn 0 1
 4830 turn 0 1
+4832 turn 0 1
 4900 expect state page COMPRESSOR
 4910 turn 1 1
 5000 expect state bars 1
 5000 expect state vcard.2.0 ON
 5000 expect sound
 5010 turn 0 -1
-5050 expect state vpage 3/3
+5012 turn 0 -1
+5050 expect state vpage 3/4
 # ---- F13 by program change while a note rings: the swap and the load agree
 5100 midi 0x90 60 100
 5200 midi 0xC0 12 0

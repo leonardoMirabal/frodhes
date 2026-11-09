@@ -1086,7 +1086,7 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "vpage")) { if (ui_page == PG_VOICE) snprintf(v, n, "%u/%u", ui_vp_ok() + 1u, vp_count()); }   /* VOICE n/m */
     else if (sscanf(key, "vcard.%u.%u", &a, &b) == 2 && a < ENG_VP_MAX && b < 4u) { slot_text(slot_at_v(PG_VOICE, a, b), t); snprintf(v, n, "%s", t); }
     else if (sscanf(key, "vlabel.%u.%u", &a, &b) == 2 && a < ENG_VP_MAX && b < 4u) snprintf(v, n, "%s", slot_label_v(PG_VOICE, a, b));
-    else if (sscanf(key, "vhint.%u", &a) == 1) snprintf(v, n, "%s", a < vp_count() ? eng_ui()->hint[a] : "");
+    else if (sscanf(key, "vhint.%u", &a) == 1) snprintf(v, n, "%s", a < vp_eng() ? eng_ui()->hint[a] : a < vp_count() ? ui_text(VEL_HINT) : "");
     else if (!strcmp(key, "vpages")) snprintf(v, n, "%u", vp_count());
     else if (!strcmp(key, "cards")) snprintf(v, n, "%u", ui_cards);   /* the rows' design variant (CC 11) */
     else if (sscanf(key, "rowbox%u", &a) == 1 && a < 4u)   /* the variants' row a: FIT SHORT FW VX0 VX1 UX0 UX1 LX1 BASE
@@ -1177,6 +1177,11 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "quiet")) snprintf(v, n, "%d", eng_quiet() && fx_quiet());
     else if (!strcmp(key, "batt")) snprintf(v, n, "%u", batt_shown());
     else if (!strcmp(key, "battraw")) snprintf(v, n, "%d", batt_raw());
+    else if (!strcmp(key, "engvel")) snprintf(v, n, "%u", (unsigned)rh_host_vel);   /* the velocity of the Rhodes's
+                                                         * last strike: what reached the engine (RESPONSE is a gain,
+                                                         * rhodes.c rh_dyn, never a new velocity) */
+    else if (!strcmp(key, "sqvel")) snprintf(v, n, "%u", sq_n ? (unsigned)sq_ev[sq_n - 1u].vel : 0u);   /* the velocity
+                                                         * the sequencer recorded last */
     else if (!strcmp(key, "lastvel")) snprintf(v, n, "%u", (unsigned)kv_last_vel());   /* the last FM-1 key's velocity */
     else if (!strcmp(key, "touch")) snprintf(v, n, "%s", KV_TOUCH_NAME[kv_touch()]);   /* SETUP TOUCH */
     else if (!strcmp(key, "drops")) snprintf(v, n, "%u", (unsigned)(eq_drop + ev_drop + engq_drop));   /* events lost */

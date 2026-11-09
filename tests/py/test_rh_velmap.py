@@ -53,7 +53,7 @@ def note_deep(tag, key, vel):
 @pytest.mark.parametrize("key", [33, 45, 57, 64, 69, 76, 88])
 def test_bark_knee(key):
     """0.9.10 (the user: a clean Rhodes at every velocity; velmap.json bark_physical): the map's swing is the
-    engine's own on every key (0.9.9's), so its bark is DEEP's within 1.5 dB at v32, v64, v96 and v127, and it never
+    engine's own on every key (0.9.9's), so its bark is FULL's within 1.5 dB at v32, v64, v96 and v127, and it never
     falls as the velocity rises (tests/py/test_rhodes_clean.py: never over 0.9.9's at v110 / v127)"""
     vs = (32, 64, 96, 127)
     b = {v: note(f"vm_{key}_{v}", key, v)[0] for v in vs}

@@ -330,9 +330,11 @@ int main(void)
         if (lat_ms(e) > worst) worst = lat_ms(e);
         clean("soft / hard");
     }
-    CHECK(v[0] == 127 && v[1] == 127 && v[5] <= 10 && v[2] > v[3] && v[3] > v[4] && v[4] > v[5],
-          "soft / hard: firm 127 (%u %u), descending %u > %u > %u > %u, the lightest <= 10", v[0], v[1], v[2], v[3],
-          v[4], v[5]);
+    /* (the floor landing, 450 = KV_FLOOR0, plays KV_TOPQ's share under 127 since 0.9.10's 782861ca: 127 only for a
+     * press clearly firmer than the key's firmest, as 250 is) */
+    CHECK(v[0] == 127 && v[1] < 127 && v[1] > v[2] && v[5] <= 10 && v[2] > v[3] && v[3] > v[4] && v[4] > v[5],
+          "soft / hard: firmer than the floor 127 (%u), at the floor under it (%u), descending %u > %u > %u > %u, the "
+          "lightest <= 10", v[0], v[1], v[2], v[3], v[4], v[5]);
     CHECK(worst <= 4u, "soft / hard: the note-on within 4 ms of the contact (worst %u ms; the debounce is 2 frames)",
           worst);
     printf("stat latency_ms %u\n", worst);
