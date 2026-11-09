@@ -351,6 +351,12 @@ def c1_check(rt_names):
     for need in ("fr_c1_main", "fr_c1_entry"):
         if need not in rt_names:
             errors.append(f"--c1: {need} not in .ram_text (core 1 idles in RAM)")
+    # core 0's hot loops run from flash too (frodhes.c FR_RAM empty in FR_C1 builds): with both cores busy, code read
+    # from RAM glitches on this chip (single high-bit flips, the stored code intact; the 0.9.10 RC soak's core-0 faults
+    # in rh_hd_step). .ram_text keeps core 1's idle loop, its entry and ping, and the flash driver only
+    other = sorted(n for n in rt_names if not re.match(r"(_rt_|fr_c1_|c1_|fl_\w*_ram$)", n))
+    if other:
+        errors.append(f"--c1: core 0 code in .ram_text (it must run from flash with two cores): {other[:6]}")
     if len(fx) < 30:
         errors.append(f"--c1: only {len(fx)} FX_RAM functions found in the sources (the check's pattern is stale)")
     if not errors:

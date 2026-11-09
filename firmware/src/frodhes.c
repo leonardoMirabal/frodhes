@@ -22,7 +22,13 @@
 #define FR_RAM
 #define FR_FAR(fn) fn
 #else
+#if defined(FR_C1) && FR_C1
+#define FR_RAM                  /* two cores: core 0's hot loops run from flash too (with both cores busy, code read from
+                                 * RAM glitches on this chip: single high-bit flips, the stored code intact; the 0.9.10
+                                 * RC soak's core-0 faults in rh_hd_step). tools/build.py --c1 checks .ram_text */
+#else
 #define FR_RAM __attribute__((section(".ram_text.fr")))
+#endif
 #include "fm1_keep.h"   /* hal/: the empty asm */
 /* XIP (0x02xxxxxx) -> RAM (0x01C0xxxx) is beyond the 23-bit call range (as fm1_flash.h FL_FAR): an FR_RAM function is
  * called through its address in a register the compiler cannot fold back (one instruction more a call) */
