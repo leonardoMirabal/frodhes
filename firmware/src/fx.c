@@ -1356,6 +1356,10 @@ static int32_t cmp_gsh_of(int32_t kr)
                             if (d_ >= 0) { cmp_env += (int32_t)(((int64_t)d_ * ka) >> 16); hd = CMP_HOLD; }        \
                             else if (hd) hd--;                                                                     \
                             else cmp_env += (int32_t)(((int64_t)d_ * kr) >> 16); } while (0)
+static int32_t cmp_mk;                                   /* MAKEUP (log2 Q12) as the gain uses it: it glides to the
+                                                          * knob's value, 1/16 of the way every 16 samples (5.8 ms),
+                                                          * then exactly there; a step of the knob was a gain ramp of
+                                                          * 16 samples (0 -> 127: +24 dB, the click 17x) */
 static int32_t ilog2_q12(uint32_t x)                     /* log2(x), Q12; x > 0 (no clz: a binary search) */
 {
     int32_t e = 0;
@@ -1408,8 +1412,15 @@ __attribute__((noinline)) static void cmp_from(const int32_t *m, uint32_t n, int
     uint32_t j;
     for (j = 0; j < n; j++) if (iabs(m[j]) > pk) pk = iabs(m[j]);
     cmp_env = pk << 8; cmp_hd = CMP_HOLD;
+    cmp_mk = mk;
     cmp_gs = cmp_gr_at(cmp_env, thr, slope) << 4;
     cmp_g = cmp_exp2(mk - (cmp_gs >> 4));
+}
+static inline int32_t cmp_glide(int32_t mk)              /* cmp_mk one sub-block closer to mk */
+{
+    int32_t d = mk - cmp_mk;
+    cmp_mk += (d > 15 || d < -15) ? d >> 4 : d;
+    return cmp_mk;
 }
 #if FR_C1
 static int32_t cmp_pkc;                                  /* (fx_comp: a switch-on block's input peak so far) */
@@ -1444,6 +1455,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         for (j = fxc_o; j < fxc_e; j++) if (iabs(m[j]) > cmp_pkc) cmp_pkc = iabs(m[j]);
         if (FXC_1) {
             cmp_env = cmp_pkc << 8; cmp_hd = CMP_HOLD;
+            cmp_mk = mk;
             cmp_gs = cmp_gr_at(cmp_env, thr, slope) << 4;
             cmp_g = cmp_exp2(mk - (cmp_gs >> 4));
         } else if (cmp_pkc > p0) {                    /* a higher peak in a later chunk: the detector run again from
@@ -1462,7 +1474,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         cmp_hd = hd;
         gr = cmp_gsm(cmp_gr_at(cmp_env, thr, slope));
         fx_cmp_gr = gr;
-        g1 = cmp_exp2(mk - gr);
+        g1 = cmp_exp2(cmp_glide(mk) - gr);
         step = (g1 - g0) / 16;
         for (j = sb; j < sb + 16u; j++) {
             g0 += step;
@@ -1504,7 +1516,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         cmp_hd = hd;
         gr = cmp_gsm(cmp_gr_at(cmp_env, thr, slope));
         fx_cmp_gr = gr;
-        g1 = cmp_exp2(mk - gr);
+        g1 = cmp_exp2(cmp_glide(mk) - gr);
         step = (g1 - g0) / 16;
         for (j = sb; j < sb + 16u && j < n; j++) {
             g0 += step;

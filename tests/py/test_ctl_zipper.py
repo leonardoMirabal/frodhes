@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: GPL-3.0-only
+"""The control zippers and clicks fixed in 0.9.10 (tools/control_sweep.py's material: the pedalled chord struck again
+every second, every other effect off), each with its own bound, tighter than the sweep's general limits; each fails
+on rc-0910 before its fix (the numbers: before -> after). The renders are shared with test_control_sweep.py
+(build/host/ctl_sweep, cached by the binary's hash)."""
+import os
+import sys
+
+import numpy as np
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
+import control_sweep as cs  # noqa: E402
+
+import hostrun  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def binary():
+    return hostrun.build()
+
+
+def flip_click(name, a, b, binary, wet=False):
+    c = cs.BY_NAME[name]
+    mv = cs.render(cs.script(c, value=a, flip=b), binary)
+    n = len(mv)
+    sa, sb = cs.render(cs.script(c, value=a), binary)[:n], cs.render(cs.script(c, value=b), binary)[:n]
+    if wet:
+        o = cs.render(cs.script(c, off=True), binary)[:n]
+        mv, sa, sb = mv - o, sa - o, sb - o
+    return cs.click_ratio(mv, sa, sb)
+
+
+def sweep_zipper(name, binary):
+    c = cs.BY_NAME[name]
+    off = cs.render(cs.script(c, off=True), binary)
+    st = [cs.render(cs.script(c, value=v), binary) for v in c.statics]
+    sw = cs.render(cs.script(c, sweep=True), binary)
+    return cs.zipper_ratio(sw, st), cs.zipper_ratio(sw - off, [s - off for s in st])
+
+
+def test_comp_makeup_glides(binary):
+    """MAKEUP 0 <-> 127 in one CC under the ringing chord: no click (17.3x before the glide)"""
+    for a, b in ((0, 127), (127, 0)):
+        assert flip_click("comp MAKEUP", a, b, binary) <= 3.0, (a, b)
