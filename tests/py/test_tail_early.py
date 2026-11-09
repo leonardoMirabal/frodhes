@@ -105,3 +105,12 @@ def test_static_rules():
     body += re.search(r"static __attribute__\(\(noinline\)\) void tail_piece\(.*?\n\}", SRC, re.S).group(0)
     for bad in ("fl_", "lcd_", "draw_", "usb_poll", "platform_poll", "fm1_wdt_feed", "midi_send"):
         assert bad not in body, bad
+
+
+def test_late_at_the_same_time():
+    # the early pieces spend part of core 0's wait: the wait after them gets only the rest (a late job is called late
+    # at C1_DEADLINE_US after the block's start, as without the pieces); the deadline the user set, 5200 us
+    assert "#define C1_DEADLINE_US 5200u" in FRO
+    assert re.search(r"wu = el \+ 200u < C1_DEADLINE_US \? C1_DEADLINE_US - el : 200u;.*?dl = wu \* FM1_TICKS_PER_US.*?"
+                     r"sp = \(fm1_ticks\(\) - tw\) / FM1_TICKS_PER_US;\s*wu = sp < wu \? wu - sp : 1u;.*?r = fr_c1_wait_us\(wu\);",
+                     FRO, re.S)

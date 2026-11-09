@@ -345,7 +345,9 @@ static void c1_one_core(void)
     for (i = FR_C1_NV1; i < BAR_NV; i++)
         if (bv[i].alive) { if (bv[i].fade == 32768) bv[i].fade = 32767; bv[i].pend = 0; }
 }
-#define C1_DEADLINE_US 4600u                    /* a job not done this long after the block's start is late */
+#define C1_DEADLINE_US 5200u                    /* a job not done this long after the block's start is late (the user
+                                                 * 2026-11-09: 5200, it was 4600; the block 5805: a late job's rest on
+                                                 * core 0 fits only if under ~1 chunk of effects is left) */
 #else
 static int32_t voice_mono[256];
 #endif
@@ -449,10 +451,10 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         C1PF(17, pv);
         if (!solo) {
 #ifndef DINGHY_HOST
-            uint32_t el = (fm1_ticks() - t0) / 24u;
+            uint32_t el = (fm1_ticks() - t0) / 24u, wu = el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u;
 #if APP_TAIL_EARLY
             if (tail_ok) {                      /* core 0's wait: the tail of each chunk core 1 has finished */
-                uint32_t tw = fm1_ticks(), dl = (el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u) * FM1_TICKS_PER_US;
+                uint32_t tw = fm1_ticks(), dl = wu * FM1_TICKS_PER_US, sp;
                 uint32_t done = 0, x;
                 while (fr_c1_busy() && fm1_ticks() - tw < dl) {
                     fr_c1_sync();
@@ -461,13 +463,14 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
                     if (x == c1_fxd && x > done && x <= n && !(x & 31u)) { tail_early(x); done = x; }   /* (read twice) */
                     else fr_c1_pause();
                 }
-                el = (fm1_ticks() - t0) / 24u;
+                sp = (fm1_ticks() - tw) / FM1_TICKS_PER_US;
+                wu = sp < wu ? wu - sp : 1u;    /* (the wait's rest: late at the same time as without the pieces) */
             }
 #endif
 #if defined(C1PF_ON)
             pt = fm1_ticks();
 #endif
-            r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+            r = fr_c1_wait_us(wu);
 #if defined(C1PF_ON)
             C1PF(19, fm1_ticks() - pt);
 #endif
