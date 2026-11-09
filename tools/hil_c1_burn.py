@@ -9,8 +9,10 @@
 The row's stimulus is tools/hil_c1_soak.py's, unchanged (its run(): row 277 = every effect at its heaviest, the
 REVERB TYPE storm, Program Change bursts, 14-voice chords every 0.25 s, a read every 5 s). On top, extra load on
 core 0 (CC 117) and / or core 1 (CC 118) of an FR_FAULT image (frodhes.c flt_burn), stepped up every --step-min
-minutes by 100 us from --steps' first value to its last (in 100 us units: 0:15 = 0 ... 1500 us). The burn is sent
-again every 2 s, so a reset (which clears it) is back under the same load at once.
+minutes by 100 us from --steps' first value to its last (in 100 us units: 0:15 = 0 ... 1500 us), sent at each step.
+After a reset or no reply: burn 0 at once and no burn CC while the unit boots and settles (a crash before 30 s up
+counts as a failed boot and escalates to USB RESCUE); the burn is re-armed when the soak resumes its stimulus
+(--settle-s after the unit answers again).
 
 Stops after the first step with a late job, a hold for good or core 1 not live (the core is out until a reset: the
 steps above would not test two cores); a step with a crash (a reset, or no reply) runs to its end (its crash rate),
@@ -33,7 +35,6 @@ import hil_c1_soak as S  # noqa: E402
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build", "hil", "c1burn")
 CC_C0, CC_C1, FLASH = 117, 118, 64
-RESEND_S = 2.0
 
 
 def parse_steps(s):
@@ -145,13 +146,17 @@ def write(out, meta, rows, sweep):
 
 
 class BurnOut:
-    """the soak's MIDI output with the burn on top: before each message, the step's CCs when the step changed or
-    RESEND_S passed; KeyboardInterrupt (the soak's own way to end a run: it writes its report) when the sweep stops"""
+    """the soak's MIDI output with the burn on top: the step's CCs before a message when the step changed (or the
+    burn is re-armed); KeyboardInterrupt (the soak's own way to end a run: it writes its report) when the sweep stops.
+    After a reset (reset_seen: a crash or no reply) burn 0 at once and no burn CC at all while the unit boots and
+    settles (a crash before 30 s up counts as a failed boot: RESCUE): re-armed only when the soak resumes its
+    stimulus, a message other than its CC 116 queries, settle_s after the unit's first answer (answered)"""
 
-    def __init__(self, out, sweep, core, kind, mido, clock=None):
+    def __init__(self, out, sweep, core, kind, mido, clock=None, settle_s=35.0):
         self.o, self.sw, self.core, self.kind, self.mido = out, sweep, core, kind, mido
         self.clock = clock or (lambda: time.monotonic())
-        self.t0, self.sent_step, self.sent_t, self.ended = None, None, 0.0, False
+        self.t0, self.sent_step, self.ended = None, None, False
+        self.settle_s, self.paused, self.up_t, self.resets = settle_s, False, None, 0
 
     def __getattr__(self, k):
         return getattr(self.o, k)
@@ -165,6 +170,17 @@ class BurnOut:
         for c, v in cc_values(step, self.core, self.kind):
             self.o.send(self.mido.Message("control_change", control=c, value=v))
 
+    def reset_seen(self):
+        if self.paused:
+            return
+        self.paused, self.up_t, self.resets = True, None, self.resets + 1
+        print(f"{self.t():7.0f} s  a reset / no reply: burn 0, no burn until the soak resumes", flush=True)
+        self.burn(0)
+
+    def answered(self):
+        if self.paused and self.up_t is None:
+            self.up_t = self.t()
+
     def send(self, msg):
         t = self.t()
         if not self.ended:
@@ -172,13 +188,16 @@ class BurnOut:
                 self.ended = self.sw.done = True
                 self.burn(0)
                 raise KeyboardInterrupt
+            query = getattr(msg, "type", None) == "control_change" and getattr(msg, "control", None) == 116
+            if self.paused and self.up_t is not None and not query and t - self.up_t >= self.settle_s - 0.5:
+                self.paused, self.sent_step = False, None
+                print(f"{t:7.0f} s  the soak resumed: burn re-armed", flush=True)
             i = self.sw.step(t)
-            if i != self.sent_step or t - self.sent_t >= RESEND_S:
-                if i != self.sent_step:
-                    print(f"{t:7.0f} s  burn step {i}: {self.sw.steps[i] * 100} us extra on core {self.core} "
-                          f"({self.kind})", flush=True)
+            if not self.paused and i != self.sent_step:
+                print(f"{t:7.0f} s  burn step {i}: {self.sw.steps[i] * 100} us extra on core {self.core} "
+                      f"({self.kind})", flush=True)
                 self.burn(self.sw.steps[i])
-                self.sent_step, self.sent_t = i, t
+                self.sent_step = i
         self.o.send(msg)
 
 
@@ -189,7 +208,7 @@ def run(a):
 
     def ports(sa):
         mido, out, inp = orig_ports(sa)
-        box["out"] = BurnOut(out, sw, a.core, a.kind, mido)
+        box["out"] = BurnOut(out, sw, a.core, a.kind, mido, settle_s=a.settle_s)
         box["mido"] = mido
         return mido, box["out"], inp
 
@@ -197,7 +216,12 @@ def run(a):
         r = orig_decode(msgs)
         o = box.get("out")
         if o is not None and o.t0 is not None:
+            empty = not r
             sw.see(r, o.t())
+            if sw.seen and not sw.done and ((r.get("boot") and "state" not in r) or empty):
+                o.reset_seen()                          # (a crash or no reply: burn 0, no burn while it boots)
+            elif r.get("state") is not None:
+                o.answered()
         return r
 
     S.ports, S.decode = ports, decode
@@ -267,14 +291,11 @@ def selftest():
     o, sw5 = O(), Sweep([0, 4], 10.0)
     b = BurnOut(o, sw5, "c1", "spin", M, clock=lambda: clk[0])
     b.send("x")
-    clk[0] = 1.0
-    b.send("y")
     clk[0] = 2.5
     b.send("z")
     clk[0] = 11.0
     b.send("w")
-    assert o.m == [("control_change", 118, 0), "x", "y", ("control_change", 118, 0), "z", ("control_change", 118, 4),
-                   "w"], o.m
+    assert o.m == [("control_change", 118, 0), "x", "z", ("control_change", 118, 4), "w"], o.m
     clk[0] = 21.0
     try:
         b.send("v")
