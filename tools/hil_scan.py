@@ -1250,13 +1250,14 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 # 4-note v127 pedalled chords already peak at -1.2 .. -1.4 dBFS before the limiter (-1.0), so it cannot come up to
 # its usual target without hard playing reaching the limiter; the global level stays as loud as fits. F06 / F09 /
 # F11 / F19 came down to the target (LEVEL 54 / 62 / 23 / 80: -0.1, -0.0, +0.2, +0.1)
-PRESET_TARGET = {9: (2.0, 1.5), 12: (0.0, 2.0), 13: (3.1, 1.0), 14: (3.2, 1.0), 15: (0.2, 1.0),
-                 16: (-1.8, 1.0), 17: (0.0, 1.0), 18: (1.1, 1.0), 19: (0.0, 1.0),
+PRESET_TARGET = {9: (2.0, 1.5), 12: (2.8, 2.0), 13: (3.1, 1.0), 14: (3.2, 1.0), 15: (0.2, 1.0),
+                 16: (-1.8, 1.0), 17: (0.0, 1.0), 18: (1.1, 1.0), 19: (1.3, 1.0),
                  21: (0.9, 1.0), 23: (1.2, 1.0)}
 # (2026-11-09, fx-level: 0.9.9's absolute level and balance again (742a2537: every LEVEL -19, then the presets the
 # effects had made quieter back to 0.9.9's loudness): the host reads F09 +2.0, F13 +3.1, F14 +3.2, F15 +0.2, F16 -1.8,
 # F18 +1.1, U02 +0.9, U04 +1.2 re F01 (the 0.9.10 headroom trims below are superseded: F04 -0.1, F08 +1.3, U07 -0.2
-# now within the defaults))
+# now within the defaults); then F10 +5, F12 +9, F19 +8 steps to quick.py's v127 chord / note against 0.9.9: F12 +2.8,
+# F19 +1.3 re F01 on this suite's chord)
 # (F14, 0.9.10's clean Rhodes: F01 came up 0.75 dB on the chord, F14 VIBES ECHO cannot follow (its 4-note v127
 # chords at -1.28 dBFS before the limiter): +1.2 instead of +2.5, a headroom exception (MANUAL))
 # (the starters, 2026-11-08: U01..U09 each +8..+14 to F01's level, except two headroom exceptions (MANUAL): U02's hard

@@ -1324,12 +1324,17 @@ static int32_t cmp_env, cmp_g = 65536;
 /* the detector's peak hold (2026-11-08): RELEASE starts CMP_HOLD samples after the last peak that reached the detector.
  * Released between a note's waveform peaks, the detector rippled at twice its f0 and the gain with it: an
  * intermodulation of v127 chords at -46 .. -56 dB under F01's compressor (the dry engine -76 .. -86; tools/dry_dist.py's
- * chords, tests/py/test_comp_clean.py); held across a cycle (23 ms: down to 43 Hz), the detector only rises within a
- * note's cycle and the gain moves at the hold's pace */
+ * chords, tests/py/test_comp_clean.py); held 5.8 ms (a cycle down to 172 Hz; with the smoothing below the worst chord
+ * -66.4 dB), the detector only rises within a note's cycle and the gain moves at the hold's pace. 1024 (23 ms) read
+ * -67.9 but held a loud chord's reduction longer: tools/quick.py's v127 chords 0.45 dB lower than at 256. A faster
+ * RELEASE in its place (x2: the level back) lost the cleanliness (-57.5) */
 #ifndef CMP_HOLD
-#define CMP_HOLD 1024
+#define CMP_HOLD 256
 #endif
 static int32_t cmp_hd, cmp_gs;                         /* (cmp_gs: the reduction, its release smoothed, log2 Q12 x 16) */
+#ifndef CMP_KRM
+#define CMP_KRM 1
+#endif
 #ifndef CMP_GSH
 #define CMP_GSH 8                                       /* the reduction's release: 2^-8 a 16-sample step (~93 ms) */
 #endif
@@ -1430,7 +1435,7 @@ static void fx_comp(int32_t *m, uint32_t n)
 {
     /* the four knobs (0.8): THRESHOLD 0 .. -40 dBFS, RATIO 1.5:1 .. 20:1, ATTACK, MAKEUP 0 .. +24 dB; RELEASE CC 109 */
     static const int16_t SLOPE[8] = {1365, 2048, 2731, 3072, 3413, 3584, 3686, 3891};   /* 1 - 1/R, Q12 */
-    int32_t ka = (int32_t)FX_CMP_ATK[fx_p[FXP_CMP_ATK]], kr = (int32_t)FX_CMP_REL[fx_p[FXP_CMP_REL]];
+    int32_t ka = (int32_t)FX_CMP_ATK[fx_p[FXP_CMP_ATK]], kr = (int32_t)FX_CMP_REL[fx_p[FXP_CMP_REL]] * CMP_KRM;
     int32_t thr = -((fx_p[FXP_CMP_AMT] * 27434) >> 7);              /* log2 Q12 re full scale: 0 .. -6.64 (-40 dB) */
     int32_t slope = SLOPE[fx_p[FXP_CMP_RATIO] & 7];
     int32_t mk = (fx_p[FXP_CMP_GAIN] * 16461) >> 7;                /* make-up, log2 Q12: 0 .. 3.99 (+24 dB) */
