@@ -290,7 +290,7 @@ controls: see [MARIMBA](#marimba).
 
 ### COMPRESSOR
 
-![COMPRESSOR](manual/img/comp.png?v=cc1a4bd5)
+![COMPRESSOR](manual/img/comp.png?v=2efede23)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -305,7 +305,9 @@ any compressor; back to OFF switches it off). Switching it on or off fades
 over about 46 ms, so it never clicks. The bottom of the page is a gain-reduction meter, as on a hardware compressor: its segments light from 1 dB
 to 30 dB of reduction (scale 3, 6, 10, 20, 30), a bright segment holds the peak for a second, and the number on the
 right is the reduction now in dB. The compressor
-comes first in the chain, right after the piano.
+comes first in the chain, right after the piano. It stays clean on chords: it holds its reduction across a note's
+waveform and lets it go smoothly (about 0.1 s), so it adds no roughness of its own; after a loud chord a soft note
+comes back to full level within about 0.3 s.
 
 ### EQ
 
@@ -383,7 +385,9 @@ clipping.
 | K4 | **LFO** | How far the LFO moves the cutoff (up to ±4 octaves); the LFO itself is set on the LFO page |
 
 On PERFORM, K2 is the filter's cutoff by default. Fully open (LP12 or LP18 at 16 kHz, no resonance, no LFO) the
-sound passes untouched, exactly as with the filter off; turning FREQ down glides into the filter, without a click. The factory presets use the default; your own presets keep what you saved, and so does the
+sound passes untouched, exactly as with the filter off; turning FREQ down glides into the filter, without a click.
+On the low-pass types the input is turned down as the cutoff falls, so a resonant sweep stays near the level of the
+unfiltered sound instead of jumping out on the resonant peak. The factory presets use the default; your own presets keep what you saved, and so does the
 sound the FM-1 was left on. Over MIDI: CC 70 TYPE, 74 cutoff, 71 resonance, 72 LFO amount.
 
 ### TREM/WAH
@@ -392,7 +396,7 @@ sound the FM-1 was left on. Over MIDI: CC 70 TYPE, 74 cutoff, 71 resonance, 72 L
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **EFFECT** | **OFF**, **PAN** (the suitcase piano's stereo vibrato), **TREM** (volume tremolo), **WAH** (touch wah: harder playing opens it; it keeps the sound's level at every DEPTH and RATE, so a closed wah on a high chord or a soft high note is not quieter and a low one not louder; MARIMBA's top octave, whose notes are very short, still comes out a little quieter) |
+| K1 | **EFFECT** | **OFF**, **PAN** (the suitcase piano's stereo vibrato; neither side ever gets louder than the dry sound, even at DEPTH 127), **TREM** (volume tremolo), **WAH** (touch wah: harder playing opens it; it keeps the sound's level at every DEPTH and RATE, so a closed wah on a high chord or a soft high note is not quieter and a low one not louder, and its level make-up keeps a note's attack within 2 dB of its dry peak; MARIMBA's top octave, whose notes are very short, still comes out a little quieter) |
 | K2 | **DEPTH** | How deep |
 | K3 | **RATE** | How fast; on WAH, the resonance (it glides as you turn it, without a click). When synced it shows a note value |
 | K4 | **SHAPE** | Two halves. Up to the middle (0–64): from a smooth sine to a square, choppy pulse. Above it (65–127): an amp's tremolo, the square easing back into a sine: the level falls more slowly than it comes back (at the top the dip takes about two thirds of each cycle), it moves evenly in loudness so a deep setting breathes rather than chopping to silence (the deepest dip stays at −30 dB), and loud playing makes it a little shallower (up to a quarter less depth at full level). On PAN the upper half gives the same slower swing. On WAH the card shows **-**: SHAPE does nothing there and keeps its value for TREM and PAN |
@@ -421,9 +425,11 @@ On **VIBES** the vibraphone's motor is not here but on its last VOICE page, VOIC
 | K3 | **SPEED** | How fast: 0.25–6 Hz (a note value when synced) |
 | K4 | **SYNC** | Free, or locked to the tempo as a note value |
 
-Phaser and chorus are two separate effects and can run together (the phaser feeds the chorus). The phaser keeps the
-level at every DEPTH (a chord's loudness matches the phaser switched off; its notches sweep through the sound, so a
-single note still dips and swells as they pass it; the bass is not lifted) and keeps the sound close to the middle
+Phaser and chorus are two separate effects and can run together (the phaser feeds the chorus). The phaser never
+adds peak: a chord's loudest moments stay within 0.5 dB of the phaser switched off at every DEPTH, so the
+deeper settings (DEPTH from about 48, where the notches cut most) sound 2-3 dB quieter on average rather than louder
+on the peaks; its notches sweep through the sound, so a single note still dips and swells as they pass it; the bass is
+not lifted and keeps the sound close to the middle
 (its two sides 30° apart). The chorus makes the sound wider in stereo, which on headphones sounds bigger; its level is
 set so that it does not also sound louder, and it leaves the bass (below about 200 Hz) as it is, so low notes keep
 their weight.
@@ -1080,8 +1086,9 @@ letting the sound break up. In testing, with every voice struck and every effect
   headphones down instead. Between notes the output is exact silence, so the jack is silent too.
 - **TYPE** changes the whole instrument: try BELL DYNO for glassy ballads and SUITCASE for the classic vibrato with
   the tremolo on PAN.
-- Every effect is set to keep about the same volume when you switch it on; the compressor's MAKEUP and each preset's
-  LEVEL (SETUP) let you fine-tune it.
+- Every effect is set to keep about the same volume when you switch it on, and none adds peak level: switched on,
+  an effect keeps the sound's loudest moments within 2 dB of the dry sound's (the deep phaser settings are quieter
+  instead; an EQ boost or a resonant filter peak you dial in is yours). The compressor's MAKEUP and each preset's LEVEL (SETUP) let you fine-tune it.
 
 ## 12. MIDI
 

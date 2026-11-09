@@ -50,6 +50,9 @@ _Static_assert(sizeof pr_user == ST_TAIL_N, "the user presets are the store reco
  * 2026-11-08 (the user: "the effects super loud", headphones clipping): 0.9.9's absolute output level again, every
  * LEVEL here -19 (-3.6 dB: the +14 and the engine's +0.9 dB since 0.9.9; F01 within 0.5 dB of 0.9.9's on host) under
  * the -2.7 dBFS ceiling (fx.c LIM_T 24000); the balance between the presets as 0.9.10 set it.
+ * 2026-11-08 (later): the effects no longer add peak (fx.c: the phaser's peak trim, the pan's sides capped at unity, the
+ * wah's make-up capped by the peaks, LP / HP RESO compensated, ANA's TIME over a silent line at once): the presets they
+ * made quieter back to 0.9.9's loudness, F05 +7, F09 +14, F10 +2, F11 +21, F18 +4, U04 +3, U05 +9, U07 +10 steps.
  *
  * The drive TYPEs (P_DRV_SW, drive.c: 1 FDRV, 2 KHLON, 3 TSH8, 4 OHCD, 5 BHLUE) in six of them, their LEVELs
  * re-run with the TYPE in (the chord's level moves with it), each one's CPU predicted with its TYPE's own cost in
@@ -86,7 +89,7 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     /* F05 SUIT TREM: the suitcase amp, its stereo PAN vibrato at 4.5 Hz, a little warmth, a vintage plate */
     P_TYPE, 1, P_NOISE, 44, P_DRIVE, 20, P_TW_SW, 1, P_TW_MODE, 0, P_TW_DEPTH, 72, P_TW_RATE, 88, P_CMP_SW, 1,
     P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8, P_RV_DEPTH, 24, P_RV_TYPE, 2,
-    P_RV_LOCUT, 70, P_LEVEL, 41, 0xFF,
+    P_RV_LOCUT, 70, P_LEVEL, 48, 0xFF,
     /* F06 DRIVEN 77: a gentle compressor that lets the hammer through, then the drive (soft playing clean, hard barks),
      * a tape slap on the dotted 1/8, a short plate */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 40, P_CMP_RATIO, 2, P_CMP_ATK, 70, P_CMP_GAIN, 16, P_DRIVE, 64,
@@ -105,17 +108,17 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     P_TYPE, 0, P_NOISE, 48, P_DRIVE, 34, P_DRV_SW, 5, P_BARK, 76, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1,
     P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8, P_PH_SW, 1, P_PH_DEPTH, 85, P_PH_SPEED, 30, P_PH_FDBK, 64,
     P_DL_SW, 2, P_DL_DEPTH, 12, P_DL_SYNC, 9, P_DL_FDBK, 30, P_DL_TONE, 50, P_RV_DEPTH, 22, P_RV_TYPE, 2,
-    P_RV_LOCUT, 70, P_LEVEL, 56, 0xFF,
+    P_RV_LOCUT, 70, P_LEVEL, 70, 0xFF,
     /* F10 FUNK WAH: a fast compressor, drive, the touch wah (harder playing opens it), a small dry room */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 56, P_CMP_RATIO, 3, P_CMP_ATK, 20, P_CMP_REL, 40, P_CMP_GAIN, 26,
     P_DRIVE, 44, P_DRV_SW, 3, P_TW_SW, 2, P_TW_DEPTH, 92, P_TW_RATE, 72, P_BARK, 84, P_RV_DEPTH, 14, P_RV_TYPE, 1,
-    P_RV_LOCUT, 80, P_LEVEL, 37, 0xFF,
+    P_RV_LOCUT, 80, P_LEVEL, 39, 0xFF,
     /* F11 RESO SWEEP: a driven tone into the resonant LP12, the LFO's triangle sweeping it over 2 bars, a clean
      * quarter-note digital echo, a hall */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_DRIVE, 53, P_DRV_SW, 4, P_DRV_TONE, 60, P_FL_TYPE, 1, P_FL_FREQ, 76, P_FL_RESO, 88, P_FL_LFO, 64,
     P_LFO_SHAPE, 1, P_LFO_SYNC, 13, P_DL_SW, 1, P_DL_DEPTH, 14, P_DL_SYNC, 9, P_DL_FDBK, 40, P_DL_TONE, 60,
-    P_RV_DEPTH, 22, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 15, 0xFF,
+    P_RV_DEPTH, 22, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 36, 0xFF,
     /* F12 AUTO WAH: the wah: a resonant band-pass swept deep by the LFO, a sine at 1/4 on the tempo, restarted by every
      * note (the compressor's make-up carries the level LEVEL 127 cannot) */
     P_TYPE, 0, P_BARK, 80, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
@@ -154,7 +157,7 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     P_TYPE, 2, P_DECAY, 84, P_NOISE, 30, P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 1, P_CMP_ATK, 90, P_CMP_REL, 80,
     P_CMP_GAIN, 8, P_TW_SW, 1, P_TW_MODE, 0, P_TW_DEPTH, 36, P_TW_RATE, 30, P_CP_SW, 1, P_CP_DEPTH, 60,
     P_CP_SPEED, 30, P_DL_SW, 2, P_DL_DEPTH, 21, P_DL_SYNC, 9, P_DL_FDBK, 30, P_RV_DEPTH, 76, P_RV_TYPE, 1,
-    P_RV_DECAY, 104, P_RV_PREDLY, 60, P_RV_TONE, 56, P_RV_MOD, 84, P_RV_LOCUT, 80, P_LEVEL, 52, 0xFF,
+    P_RV_DECAY, 104, P_RV_PREDLY, 60, P_RV_TONE, 56, P_RV_MOD, 84, P_RV_LOCUT, 80, P_LEVEL, 56, 0xFF,
     /* F19 RADIO: a hard drive through a band-pass (a small speaker's band), a short tape slap, a small room */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_DRIVE, 55, P_DRV_SW, 4, P_DRV_TONE, 76, P_FL_TYPE, 5, P_FL_FREQ, 66, P_FL_RESO, 0, P_DL_SW, 3, P_DL_DEPTH, 15,
@@ -201,13 +204,13 @@ static const uint8_t PR_SDATA[] = {
     P_CMP_AMT, 46, P_CMP_RATIO, 1, P_CMP_ATK, 90, P_CMP_REL, 80, P_CMP_GAIN, 8, P_TW_SW, 1, P_TW_MODE, 0,
     P_TW_DEPTH, 30, P_TW_RATE, 24, P_CP_SW, 1, P_CP_DEPTH, 56, P_CP_SPEED, 26, P_DL_SW, 3, P_DL_DEPTH, 24,
     P_DL_SYNC, 10, P_DL_FDBK, 70, P_DL_TONE, 46, P_RV_DEPTH, 70, P_RV_TYPE, 3, P_RV_DECAY, 40, P_RV_PREDLY, 60,
-    P_RV_TONE, 50, P_RV_LOCUT, 80, P_LEVEL, 45, 0xFF,
+    P_RV_TONE, 50, P_RV_LOCUT, 80, P_LEVEL, 48, 0xFF,
     /* U05 LO-FI: worn tape, a small amp: a mellow MOSFET drive (OHCD), a closed low-pass, a dark analog slap, a little
      * AM wobble at 1.7 Hz */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_DRV_SW, 4, P_DRIVE, 46, P_DRV_TONE, 40, P_FL_TYPE, 1, P_FL_FREQ, 72, P_FL_RESO, 24, P_DL_SW, 2, P_DL_DEPTH, 16,
     P_DL_SYNC, 3, P_DL_FDBK, 9, P_DL_TONE, 36, P_TW_SW, 1, P_TW_MODE, 1, P_TW_DEPTH, 36, P_TW_RATE, 44,
-    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_TONE, 44, P_RV_LOCUT, 80, P_LEVEL, 43, 0xFF,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_TONE, 44, P_RV_LOCUT, 80, P_LEVEL, 52, 0xFF,
     /* U06 HARD TREM: the amp tremolo, a near-square chop at 6 Hz over a soft two-stage breakup (BHLUE), a plate */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_DRV_SW, 5, P_DRIVE, 30, P_TW_SW, 1, P_TW_MODE, 1, P_TW_DEPTH, 100, P_TW_RATE, 100, P_TW_SHAPE, 56, P_BARK, 72,
@@ -216,7 +219,7 @@ static const uint8_t PR_SDATA[] = {
     P_TYPE, 1, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_TW_SW, 1, P_TW_MODE, 0, P_TW_DEPTH, 96, P_TW_RATE, 58, P_CP_SW, 1, P_CP_DEPTH, 30, P_CP_SPEED, 30, P_DL_SW, 2,
     P_DL_DEPTH, 10, P_DL_SYNC, 9, P_DL_FDBK, 26, P_DL_TONE, 54, P_RV_DEPTH, 30, P_RV_TYPE, 1, P_RV_PREDLY, 24,
-    P_RV_LOCUT, 70, P_LEVEL, 45, 0xFF,
+    P_RV_LOCUT, 70, P_LEVEL, 55, 0xFF,
     /* U08 REEDY: a reedy electric piano: the tine near the pickup's axis (a strong second harmonic), a hard hammer, a
      * short decay, a mid drive (TSH8), an AM tremolo at 3.9 Hz, a tape slap, a short plate */
     P_TYPE, 0, P_TONE, 94, P_BARK, 72, P_BELL, 40, P_HAMMER, 100, P_DECAY, 40, P_RELEASE, 44, P_NOISE, 36, P_CMP_SW, 1,

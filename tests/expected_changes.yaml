@@ -1123,6 +1123,31 @@ changes:
     max: -3.0
     reason: "DYNO high chord at BARK 127: the upper register holds longer (t60_v1, 89e4ab30), just past the tolerance"
 
+# ---- 12. fx-level (2026-11-08/09): 0.9.9's absolute output level again (742a2537, the user's sign-off 2026-11-08 23:20:
+# LEVEL -19, LIM_T 24000; section 1's level entries match nothing on the fast grid since) and the effects made clean
+# (the coordinator's fx-level brief): the compressor's detector held across a cycle, its reduction's release smoothed
+# and its log2 / exp2 interpolated (FX off keeps the compressor, so the FM-1's FX cells and every HQ cell carry it)
+  - match: "*/[SFDV][TUEYI]??*/[!R]*/*/chord-*"
+    metric: "level"
+    min: -2.4
+    max: -1.0
+    reason: "loud v127 chords under F01's compressor: its reduction's release now smoothed (fx.c CMP_GSH, ~93 ms; the chords' intermodulation -46..-56 dB before, -68..-79 now, tests/py/test_comp_clean.py) holds ~0.8 dB more reduction over a sustained loud chord, on 0.9.9's absolute level (742a2537: -0.7 before this); v64 / v96 chords -0.15 dB"
+  - match: "*/[SFDV][TUEYI]??*/[!R]*/*/pedal"
+    metric: "level peak"
+    min: -2.6
+    max: -1.0
+    reason: "the pedal take (loud, sustained) under F01's compressor: the smoothed release holds ~0.8 dB more reduction (fx.c CMP_GSH), on 0.9.9's absolute level (742a2537); the HQ FXOFF cells keep the compressor (FR_BYP_KEEP_CMP)"
+  - match: "*/DYNO/[!R]*/*/k57v127"
+    metric: "level"
+    min: -2.7
+    max: -1.4
+    reason: "DYNO k57 v127 under F01's compressor (FX, and HQ FXOFF which keeps it): -1.4 .. -2.2 at 742a2537 already (the 0.9.10 strike on 0.9.9's absolute level), the smoothed release -0.2 more"
+  - match: "hq/MARIMBA/[!R]*/*/k84v*"
+    metric: "H3"
+    min: -7.5
+    max: -3.0
+    reason: "MARIMBA's top key under the compressor (HQ: FX and FXOFF keep it): H3 4..7 dB lower, the compressor's gain no longer moving in 0.023 dB table steps nor rippling with the detector (fx.c cmp_log2 / cmp_exp2, CMP_HOLD); decreases only"
+
 # ---- 11. RESPONSE B ("light touch", being redesigned: soft notes louder, the same tone, range ~25.5 dB). Its moves are
 # not listed yet: add a group matching "*/*/*/B/*" (RESPONSE B cells only) once the redesign lands. Until then the
 # entries above cover B where it moves with A.

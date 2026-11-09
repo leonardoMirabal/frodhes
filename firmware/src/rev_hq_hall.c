@@ -50,8 +50,12 @@ _Static_assert(RQH_R >= RQH_LMAX + RQH_SW + 1u + 32u && RQH_R % 32u == 0u, "rev_
 #define RQH_KP 340                                      /* TONE's pole per damp step (Q15) */
 #define RQH_SGN 0x96u                                   /* the input's sign per line (bit k: - for line k) */
 #define RQH_OUT 13800                                   /* the taps (Q13 of the row / 4: the half-rate HALL's Bark loudness) */
-#define RQH_LOUD 1024                                   /* a line end this quiet (4x the line's scale, all 8, the last block)
-                                                         * truncates: it then dies to exact zero; louder, they round */
+#define RQH_LOUD 128                                    /* a line end this quiet (all 8, the last block) truncates: it then
+                                                         * dies to exact zero; louder, they round. (It was 1024: a loud
+                                                         * tail switched to truncating while a louder one still rounded,
+                                                         * the superposition residual of HALL MIX 127 -73.7 dBFS against
+                                                         * the bypass' -80 + 6, tools/fx_pristine.py; 128: -79.9, the
+                                                         * tail's exact zero ~0.1 s later at DECAY 127, 2026-11-08) */
 static const uint16_t RQH_AL[RQH_AN] = {210, 158, 561, 410};
 static const int16_t RQH_AG[RQH_AN] = {12288, 12288, 10240, 10240};   /* Q14: 0.75, 0.75, 0.625, 0.625 */
 #define RQH_HZ(f) ((uint32_t)((f) * CTL / 44100.0 * 4294967296.0))
