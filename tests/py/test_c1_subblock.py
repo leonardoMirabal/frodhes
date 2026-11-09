@@ -102,6 +102,21 @@ def test_heavy_stream(env):
     assert np.array_equal(a.L, r.L) and np.array_equal(a.R, r.R), f"C1_STREAM {env}: not the one-core build"
 
 
+@pytest.mark.parametrize("env", [None, "busy=3", "order=1,refuse=3"])
+def test_type_rest_ramp_as_one_core(env):
+    """a drive TYPE's rest ramp after a note dies away (drive.c drv_rest_ramp_c, 0.9.10: KHLON + COMP + TREM, F06):
+    its tests read each chunk's own samples, so the chunks ramp as one core does, whenever core 1 takes them (it read
+    the block's later samples, not rendered yet, and added the ramp to their input: up to 47 LSB off the one-core
+    build in the monkey's takes, 16470 in one)"""
+    t = open(os.path.join(ROOT, "tests", "scripts", "quiet_gated.txt")).read()
+    t = "\n".join(l for l in t.splitlines() if l and not l.startswith("#") and " expect " not in l)
+    b = build(os.path.join(ROOT, "build", "host", "c1stream", "frodhes"), ["-DFR_C1=1", "-DC1_STREAM=1"])
+    a = render(f"c1s_rr_{env}", t, b, env and {"FRODHES_C1": env})
+    r = render("c1s_rr_ref", t, ref_bin())
+    d = first_diff(a, r)
+    assert d is None, f"{env}: the rest ramp differs from one core's from {d / 44100:.3f} s"
+
+
 def _flip(case, v0, v1, b, tag, onset=None):
     """case's control held at v0, moved to v1 at T_FLIP; onset: the chord struck at T_FLIP instead of T_NOTE"""
     t = cs.script(case, v0, flip=v1)
