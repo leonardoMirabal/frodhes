@@ -110,14 +110,15 @@ def test_key_rise_fails_a_cut_at_the_key_up():
 
 def test_clk_off_judged_by_the_rise_where_the_note_sounds():
     """a sounding key-up over the ratio's ceiling passes with no rise and fails with one; a silent key-up keeps the
-    ceiling (v0.9.9 -100: silent)"""
+    ceiling (v0.9.9 -100: silent) unless its tail stays within 1 LSB"""
     base = cells(clk_off=-100.0)
-    ok = rd.judge(cells(clk_off=4.0, clk_rise=1.0), base, [])[0]
+    ok = rd.judge(cells(clk_off=4.0, clk_sh=[[4.0, 1.0, 9.0]]), base, [])[0]
     assert not [f for f in ok if f[2] == "clk_off"], ok
-    bad = rd.judge(cells(clk_off=4.0, clk_rise=8.0), base, [])[0]
+    bad = rd.judge(cells(clk_off=4.0, clk_sh=[[4.0, 8.0, 9.0]]), base, [])[0]
     assert any(f[2] == "clk_off" and f[6].startswith("CEILING") for f in bad), bad
-    silent = rd.judge(cells(clk_off=4.0), base, [])[0]
+    silent = rd.judge(cells(clk_off=4.0, clk_sh=[[4.0, None, 9.0]]), base, [])[0]
     assert any(f[2] == "clk_off" and f[6].startswith("CEILING") for f in silent), silent
+    assert not rd.judge(cells(clk_off=-100.0, clk_sh=[[-100.0, None, 1.0]]), base, [])[0]
 
 
 def test_harmonic_floor_bins_under_minus_100_dbfs_exempt():
@@ -169,3 +170,30 @@ def test_an_exact_cell_entry_governs_over_a_wildcard():
     assert rd.judge(cells(level=-16.5), cells(), [wild, ex])[0]          # +3.5: inside the wildcard, outside the exact
     assert rd.judge(cells(level=-16.5), cells(), [wild])[0] == []
     assert rd.exact_entry({"match": "hq/F15/PRESET/[AB]/k67v20"}) and not rd.exact_entry({"match": "*/F15/PRESET/*"})
+
+
+def test_a_metric_measured_in_some_shifts_only_is_kept():
+    """merge_shifts took the metric set from shift 0 alone: a metric some shifts lack was dropped (hq MARIMBA FX B
+    k84v40 on c11bc1b8 lost its key-up rise and read clk_off +2.5 against the ceiling); the union, and every shift's
+    clk_sh row"""
+    lab = "k84v40"
+    runs = [{lab: {"clk_off": 2.5}}, {lab: {"clk_off": 2.5, "x": 1.0, "clk_sh": [[2.5, -0.5, 2.0]]}}]
+    m = rd.merge_shifts(runs)[lab]
+    assert m["x"] == 1.0 and m["clk_off"] == 2.5 and m["clk_sh"] == [[2.5, -0.5, 2.0]]
+
+
+def test_clk_off_is_judged_per_shift():
+    """every shift passes by its own rule or the cell fails: a sounding shift with no rise passes, a silent shift (no
+    sample in its last 10 ms) with a real step after the key-up fails the cell, though the median would pass"""
+    base = cells(clk_off=-100.0)
+    rows = [[2.5, -0.5, 2.0], [2.5, -0.5, 2.0], [2.5, -0.5, 2.0], [2.5, -0.5, 2.0]]
+    assert not rd.judge(cells(clk_off=2.5, clk_sh=rows), base, [])[0]
+    step = [[2.5, -0.5, 2.0], [2.5, -0.5, 2.0], [2.5, -0.5, 2.0], [30.0, None, 400.0]]
+    f = rd.judge(cells(clk_off=2.5, clk_sh=step), base, [])[0]
+    assert any(x[2] == "clk_off" and "shift(s) [3]" in x[6] for x in f), f
+    quiet = [[2.5, -0.5, 2.0], [-100.0, None, 1.0]]                    # silent and within 1 LSB: silence
+    assert not rd.judge(cells(clk_off=2.5, clk_sh=quiet), base, [])[0]
+    import numpy as np
+    x = np.zeros(rd.FS)
+    x[rd.FS // 2 - 100:rd.FS // 2:3] = 1.0                             # a +-1 LSB note: it sounds at the key-up
+    assert rd.sounds_at(x, rd.FS // 2) and not rd.sounds_at(x, rd.FS // 2 + int(0.02 * rd.FS))

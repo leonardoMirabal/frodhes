@@ -3283,15 +3283,6 @@ changes:
     min: 4.003
     max: 5.003
     reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
-  - match: "hq/MARIMBA/FX/B/k84v40"
-    metric: "keyup"
-    silent: false
-    min: -49.930
-    max: -48.930
-    reason: "int16 floor, natural decay: B's tail reaches 0 at +93 ms (A v40 at +1 ms), at the window's start: 1 of
-      the 4 shifts carries samples there (-49.43; the compressor's dither off: 2 of 4, -43.3; the dither does not keep
-      it alive); A at B's output level (A v58) reads silent in the level sweep, B too; no step (key_rise <= 0),
-      gate off byte-identical in the window; build/sonic/resp-ab/mar/cellproof7.txt, mar/lvlcell.txt (mar/cellproof.py, mar/lvlcell.py). Coordinator sign-off 2026-11-09"
 
 # ---- 14. zipper (2026-11-09): PLATE's modulated reads mended (f529faa2 / this branch), per cell, the move against
 #  v0.9.9 measured on the full grid +-0.5 dB: the cells the change takes past their tolerance or an entry's range. Only
