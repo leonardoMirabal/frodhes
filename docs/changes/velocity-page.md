@@ -3,8 +3,10 @@
 - RESPONSE (CC 40) has two settings: **FULL** (the default), the full dynamic range, and **LIGHT**, a light touch
   with soft notes louder. FULL goes from velocity 20 to 127 over about 34.5 dB (39.4 dB from velocity 1), in steps
   of at most 0.65 dB a velocity; LIGHT keeps 0.9.9's 25.5 dB. Both play at the same level from medium velocities up,
-  with the same tone at every key and velocity. VIBES and MARIMBA ignore it.
-- The output's silence gate opens and closes 6 dB lower (16 LSB, -66 dBFS, was 32), so FULL's softest notes and
+  with the same tone at every key and velocity. On VIBES and MARIMBA, FULL is their response as in 0.9.9 (unchanged)
+  and LIGHT lifts the soft notes by the electric piano's LIGHT-over-FULL amount (+9 dB at velocity 20 and below, 0
+  from 60), the same tone.
+- On the electric piano TYPEs the output's silence gate opens and closes 6 dB lower (16 LSB, -66 dBFS, was 32; VIBES and MARIMBA keep 32), so FULL's softest notes and
   long tails are not cut sooner than in 0.9.9 (notes faded by the gate within 1 s, keys 21-96: velocity 1 10, 10 8,
   20 5, 30 4, each at most 0.9.9's).
 - The pedal's thud follows the note's level as heard (with RESPONSE's soft end): never louder than the note.

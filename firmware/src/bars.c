@@ -220,6 +220,34 @@ static int32_t bar_fam_nz(void)
 #include "hq/bars_hq.c"                            /* the HQ bars (the Move only) */
 #endif
 
+/* RESPONSE on the bars (0.9.10, the coordinator: no knob that does nothing): the electric piano's level map. A (FULL,
+ * rh_touch_mode 0) leaves the strike as it was, byte-identical; B (LIGHT) lifts the soft end by the same ratio the
+ * electric piano's LIGHT has over its FULL (rhodes.c rh_dyn: 1 / RH_DYN_V, up to +9.0 dB at v20 and below, 0 dB from
+ * v60). The strike's force pulse and its contact noise only: the modes are linear, so the note is the same note at
+ * another level (the same tone); read at each strike, as the electric piano's */
+static uint32_t bar_lt_g(uint32_t vel)              /* Q15, >= 32768 */
+{
+    return rh_touch_mode && vel < RH_DYN_V_HI ? (32768u << 15) / RH_DYN_V[vel] : 32768u;
+}
+static void bar_lt_pulse(bar_voice_t *v, uint32_t vel)
+{
+    uint32_t g = bar_lt_g(vel);
+    uint64_t p;
+    if (g == 32768u) return;
+    p = ((uint64_t)(uint32_t)v->pamp * g + 16384u) >> 15;
+#ifdef FR_HQ
+    v->pamp = p > 65535u ? 65535 : (int32_t)p;     /* (HQ's live contact may leave it over 32767: bars_hq.c) */
+#else
+    v->pamp = p > 32767u ? 32767 : (int32_t)p;     /* (bar_load_pulse's own cap) */
+#endif
+}
+static int32_t bar_nz_strike(uint32_t vel)          /* the contact noise a strike adds (bar_nz_e) */
+{
+    int64_t e = ((int64_t)bar_nz * bar_fam_nz() * vel) >> 22;
+    uint32_t g = bar_lt_g(vel);
+    return g == 32768u ? (int32_t)e : (int32_t)((e * g) >> 15);
+}
+
 static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
 {
     uint32_t tyi = bar_sub < BAR_NTYPE ? bar_sub : 0u;
@@ -300,8 +328,9 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
 #if defined(FR_HQ) && HQB_CONTACT
     hqb_pulse(v, vel, 0);                           /* HQ: MARIMBA's top keys from the live contact */
 #endif
+    bar_lt_pulse(v, vel);                           /* RESPONSE (B: the light touch's soft end) */
     /* contact noise: filtered noise, louder for harder mallets and faster strikes, decaying (tau ~ 23 ms) */
-    bar_nz_e += (int32_t)(((int64_t)bar_nz * bar_fam_nz() * vel) >> 22);
+    bar_nz_e += bar_nz_strike(vel);
 }
 
 static void bar_set_damper(bar_voice_t *v, int32_t w)
@@ -369,7 +398,8 @@ static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already wa
 #if defined(FR_HQ) && HQB_CONTACT
             hqb_pulse(v, vel, 1);                   /* HQ: the mallet meets the ringing bar (the live contact) */
 #endif
-            bar_nz_e += (int32_t)(((int64_t)bar_nz * bar_fam_nz() * vel) >> 22);
+            bar_lt_pulse(v, vel);                   /* RESPONSE (B: the light touch's soft end) */
+            bar_nz_e += bar_nz_strike(vel);
             return 1;
         }
     for (i = 0; i < BAR_NA; i++)
@@ -1512,7 +1542,7 @@ static void bar_begin(uint32_t n)
         c->fn = (uint16_t)(v->felt_n < BAR_N ? v->felt_n : BAR_N);
         if (c->fn) { c->fr = r; r = bar_lfsr_skip(r, c->fn); }
         if (v->pend && v->fade != 32768)            /* its note starts at the block's end (bar_init's noise strike) */
-            nz += (int32_t)(((int64_t)bar_nz * bar_fam_nz() * v->pend_vel) >> 22);
+            nz += bar_nz_strike(v->pend_vel);   /* (as bar_init: RESPONSE B included) */
     }
     bar_c1_act = act;
     bar_c1_nzr = r;

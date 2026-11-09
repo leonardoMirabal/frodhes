@@ -16,7 +16,7 @@ the same from v60 up, and never under A. Measured on the host, the engine alone 
 - pristine: A is B times one gain, the residual at most 4 LSB peak (the 16-bit rounding; harmonics re H1 the same:
   a measure of H3..H6 at a soft note reads the 16-bit floor, so the residual is the check);
 - CC 40 turned while a note sounds does not touch it (taken at the strike): the same samples;
-- VIBES and MARIMBA do not read RESPONSE: the same samples with A and B.
+- VIBES and MARIMBA: from v60 the same samples with A and B (below, B is the level map: tests/py/test_bars_response.py).
 Never louder after the key-up with either response: tests/py/test_release_never_louder.py (its -LIGHT rows); TONE's
 level compensation with either: tests/py/test_tone_level.py."""
 import os
@@ -90,13 +90,13 @@ def test_response_taken_at_the_strike():
 
 
 @pytest.mark.parametrize("cc79", (0, 110), ids=["VIBES", "MARIMBA"])
-def test_bars_ignore_response(cc79):
+def test_bars_same_from_v60(cc79):
     def bar(resp):
         ev = ["50 midi 0xB0 10 127", f"100 midi 0xB0 40 {resp}", f"150 midi 0xB0 79 {cc79}",
-              "400 midi 0x90 60 20", "450 midi 0x90 72 100", "1400 midi 0x80 60 0", "1400 midi 0x80 72 0"]
+              "400 midi 0x90 60 64", "450 midi 0x90 72 100", "1400 midi 0x80 60 0", "1400 midi 0x80 72 0"]
         r = run(f"vresp-bar-{cc79}-{resp}", ev, 2000)
         return np.stack([r.L, r.R], 1)
-    assert np.array_equal(bar(0), bar(127)), "a bar engine reads RESPONSE"
+    assert np.array_equal(bar(0), bar(127)), "a bar engine's LIGHT differs from FULL from v60"
 
 
 def test_a_steps_smooth():
