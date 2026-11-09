@@ -892,7 +892,8 @@ static void gr_meter(frui *u, float x, float y, float w)
 
 static void pager(frui *u, float rx, float y, float h, int page)
 {
-    char buf[8];
+    char buf[16];                                   /* (an int's 11 characters + " / 2": Linux gcc's
+                                                     * -Wformat-truncation) */
     float w = 100.f, x = rx - w;
     ctrl_box(u, x, y, w, h, 0, 0);
     chevron(u, x + 14.f, y + h * 0.5f, 3.5f, 1, page > 0 ? C_TEXT : C_DIM);
@@ -1200,7 +1201,7 @@ static void cc_table(frui *u, float x, float y, float w, float h)
     for (i = 0; i < vis && first + i < nr; i++) {
         int k = first + i, l = learned[k] >= 0;
         float ry = y + 24.f + 24.f * (float)i, yc = ry + 12.f;
-        char buf[8];
+        char buf[12];                               /* (an int's 11 characters: Linux gcc's -Wformat-truncation) */
         snprintf(buf, sizeof buf, "%d", l ? learned[k] : CCMAP[rows[k]].cc);
         if (i) hair_h(u, x + 8.f, x + w - 20.f, ry, FRUI_RGB(22, 22, 24));
         txr(u, x + 32.f, mid(u, yc, 10.5f), T_MENU, FRUI_TNUM, buf, l ? C_ACC : C_TEXT);

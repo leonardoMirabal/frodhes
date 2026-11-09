@@ -125,7 +125,7 @@ Frodhes plugin for macOS 11 or newer (Apple silicon and Intel)
 The installer (frodhes-plugin-macos.pkg) puts the three formats into your own Library, no administrator password:
   ~/Library/Audio/Plug-Ins/CLAP/Frodhes.clap
   ~/Library/Audio/Plug-Ins/VST3/Frodhes.vst3
-  ~/Library/Audio/Plug-Ins/Components/Frodhes.component     (Audio Unit: Logic, GarageBand, ...)
+  ~/Library/Audio/Plug-Ins/Components/Frodhes.component     (Audio Unit)
 
 By hand from this zip: copy each bundle into the folder of the same name above, then clear the download flag:
   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/*/Frodhes.*

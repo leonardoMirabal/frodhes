@@ -23,8 +23,9 @@ def test_plugin_core():
     assert "Gate D: PASS" in r.stdout
 
 
-def test_iface_header_compiles():
-    """plugin/frp_ui_iface.h stands alone (the GUI branch builds against it)"""
+def test_iface_header_compiles(tmp_path):
+    """plugin/frp_ui_iface.h stands alone (the GUI branch builds against it); -fsyntax-only writes nothing, and the
+    compiler runs in pytest's tmp_path, so no worker shares a file under build/ (test_no_build_races)"""
     r = subprocess.run(["cc", "-fsyntax-only", "-Wall", "-Wextra", "-Werror", "-x", "c",
-                        os.path.join(ROOT, "plugin", "frp_ui_iface.h")], capture_output=True, text=True)
+                        os.path.join(ROOT, "plugin", "frp_ui_iface.h")], capture_output=True, text=True, cwd=tmp_path)
     assert r.returncode == 0, r.stderr

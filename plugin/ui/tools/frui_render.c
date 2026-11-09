@@ -303,7 +303,7 @@ static int directions(const int *maj7, const int *min9, const int *vib)
     static const char *const vn[3] = {"A1-rail", "A2-plate", "A3-framed"};
     static const int vl[3] = {FRUI_LOOK_RAIL, FRUI_LOOK_PLATE, FRUI_LOOK_A3};
     static const char *const SN[5] = {"main", "menu-engine", "settings-midi", "knob-learn", "tab-comp-delay"};
-    char path[1024], dir[1024];
+    char path[2048], dir[1024];                     /* (path: dir + a file name; Linux gcc's -Wformat-truncation) */
     int v, k, bad = 0;
     uint32_t *sheet[2];
     frui_model m;
