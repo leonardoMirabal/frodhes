@@ -1356,6 +1356,10 @@ static int32_t cmp_gsh_of(int32_t kr)
                             if (d_ >= 0) { cmp_env += (int32_t)(((int64_t)d_ * ka) >> 16); hd = CMP_HOLD; }        \
                             else if (hd) hd--;                                                                     \
                             else cmp_env += (int32_t)(((int64_t)d_ * kr) >> 16); } while (0)
+static int32_t cmp_mk;                                   /* MAKEUP (log2 Q12) as the gain uses it: it glides to the
+                                                          * knob's value, 1/16 of the way every 16 samples (5.8 ms),
+                                                          * then exactly there; a step of the knob was a gain ramp of
+                                                          * 16 samples (0 -> 127: +24 dB, the click 17x) */
 static int32_t ilog2_q12(uint32_t x)                     /* log2(x), Q12; x > 0 (no clz: a binary search) */
 {
     int32_t e = 0;
@@ -1408,8 +1412,15 @@ __attribute__((noinline)) static void cmp_from(const int32_t *m, uint32_t n, int
     uint32_t j;
     for (j = 0; j < n; j++) if (iabs(m[j]) > pk) pk = iabs(m[j]);
     cmp_env = pk << 8; cmp_hd = CMP_HOLD;
+    cmp_mk = mk;
     cmp_gs = cmp_gr_at(cmp_env, thr, slope) << 4;
     cmp_g = cmp_exp2(mk - (cmp_gs >> 4));
+}
+static inline int32_t cmp_glide(int32_t mk)              /* cmp_mk one sub-block closer to mk */
+{
+    int32_t d = mk - cmp_mk;
+    cmp_mk += (d > 15 || d < -15) ? d >> 4 : d;
+    return cmp_mk;
 }
 #if FR_C1
 static int32_t cmp_pkc;                                  /* (fx_comp: a switch-on block's input peak so far) */
@@ -1444,6 +1455,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         for (j = fxc_o; j < fxc_e; j++) if (iabs(m[j]) > cmp_pkc) cmp_pkc = iabs(m[j]);
         if (FXC_1) {
             cmp_env = cmp_pkc << 8; cmp_hd = CMP_HOLD;
+            cmp_mk = mk;
             cmp_gs = cmp_gr_at(cmp_env, thr, slope) << 4;
             cmp_g = cmp_exp2(mk - (cmp_gs >> 4));
         } else if (cmp_pkc > p0) {                    /* a higher peak in a later chunk: the detector run again from
@@ -1462,7 +1474,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         cmp_hd = hd;
         gr = cmp_gsm(cmp_gr_at(cmp_env, thr, slope));
         fx_cmp_gr = gr;
-        g1 = cmp_exp2(mk - gr);
+        g1 = cmp_exp2(cmp_glide(mk) - gr);
         step = (g1 - g0) / 16;
         for (j = sb; j < sb + 16u; j++) {
             g0 += step;
@@ -1504,7 +1516,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         cmp_hd = hd;
         gr = cmp_gsm(cmp_gr_at(cmp_env, thr, slope));
         fx_cmp_gr = gr;
-        g1 = cmp_exp2(mk - gr);
+        g1 = cmp_exp2(cmp_glide(mk) - gr);
         step = (g1 - g0) / 16;
         for (j = sb; j < sb + 16u && j < n; j++) {
             g0 += step;
@@ -1977,9 +1989,9 @@ static uint32_t exp2_neg(uint32_t x)
     p = ((p * u) >> 15) + 32768u;
     return i < 15u ? p >> (i + 1u) : 0u;
 }
-static void hall_gains(int32_t s)
+static void hall_gains(int32_t s)                       /* s: the size in Q4 (rv_hsz; a whole size: s << 4) */
 {
-    uint32_t q = exp2_neg((uint32_t)s * 65536u / 30u), k, g;
+    uint32_t q = exp2_neg((uint32_t)s * 4096u / 30u), k, g;
     for (k = 0; k < HL_NL; k++) {
         g = exp2_neg((HL_LEN[k] * 59u * q) >> 15);
         hl.g[k] = (int16_t)(((g > 32440u ? 32440u : g) * 6193u) >> 15);
@@ -2056,7 +2068,7 @@ static FX_RAM __attribute__((noinline)) int32_t rev_down(const int32_t *in, int3
 /* one control block (CTL frames in, HL_NC at the half rate out): ol[] = the mid, or[] = the side (x HL_OUT), the
  * caller upsamples them (fx_reverb) */
 static void rev_hall(const int32_t *rev_in, int32_t size, int32_t damp, int32_t md, int32_t *ol, int32_t *or)
-{
+{                                                       /* (size: Q4) */
     int16_t *a = rev_ap, *o, *y;
     uint32_t i, k, s, m, d, w = hl.w;
     int32_t kd = HL_KD(damp), ld;
@@ -2126,6 +2138,11 @@ static uint32_t pd_fill FX_OWN_SECTION;                              /* writes s
 static int32_t rv_inb[RV_DZ + CTL];                   /* the send: RV_DZ samples of history (rev_down), the block */
 #define rv_in (rv_inb + RV_DZ)
 static int32_t rv_off, rv_damp = 60;                   /* DECAY's size offset and TONE's damping, as they glide */
+static int32_t rv_hsz RH_SP_SEC(".bss.fx_rvhsz");      /* HALL's size from SIZE / MIX (Q4) as it glides: 1/4 step a
+                                                        * control block (a SIZE AUTO <-> 1 step moved it up to 35 steps
+                                                        * at once, every line's gain with it: 2.1x a held tail's d2, the
+                                                        * wet; 0.9.10); at rest SIZE's own (a SIZE that has not moved
+                                                        * renders as before) */
 static uint8_t rv_running;
 static void fx_predelay(int32_t *x, uint32_t tgt)      /* one control block: x[] delayed by the tap */
 {

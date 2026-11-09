@@ -130,9 +130,15 @@ static __attribute__((noinline)) void rev_locut(int32_t *x, int32_t v)
 }
 /* a kernel's input: rev_hall's (rev_down: the half-band decimation, HL_IN, the DC blocker), into rv_x */
 static void rev_dec(const int32_t *in) { FR_FAR(rev_down)(in, &rv_hp, &rv_he, rv_x); }
+/* a new TYPE's input fades in (Q15, +128 a sample: 256 samples, 5.8 ms; 32768: none). 0.9.10: it started at the send's
+ * full level, mid-waveform under a ringing chord, a step into empty lines that every line then passed on for its first
+ * round: INFINITE after PLATE 2.9x a held tank's d2 for 150 ms (rev TYPE's sweep, the wet), 1.2 .. 3x by the block it
+ * started in. From silence (a preset, a TYPE set before playing) the fade passes zeros: the same output */
+static int32_t rv_xin RH_SP_SEC(".data.fx_rvxin") = 32768;
 /* TYPE t starts, its lines reading as empty; HALL left full is cleared by the main loop first (rv_cur 0 meanwhile) */
 static __attribute__((noinline)) void rev_begin(uint32_t t)
 {
+    rv_xin = 0;
     if (rv_cur == RV_HALL) rv_hall_dirty = 1;
     memset(rv_m, 0, sizeof rv_m); memset(rv_s, 0, sizeof rv_s); rv_hp = rv_he = 0;
     if (t == RV_HALL && rv_hall_dirty) { rv_cur = 0; return; }
@@ -163,7 +169,7 @@ static int rev_frozen(void)       /* 0, or 1 SUSTAIN (DECAY 120..126), 2 FREEZE 
 static void rev_reset_state(void)
 {
     memset(rv_m, 0, sizeof rv_m); memset(rv_s, 0, sizeof rv_s); memset(rv_inb, 0, sizeof rv_inb); rv_hp = rv_he = 0;
-    rv_lc = 0; rv_fade = 0; rv_hall_dirty = 0;
+    rv_lc = 0; rv_fade = 0; rv_hall_dirty = 0; rv_xin = 32768;
     if (!rv_cur) rv_cur = RV_HALL;
     if (rv_cur == RV_PLATE) rev_plate_start(&rev_u.p), rv_pz = -1;
     else if (rv_cur == RV_INF) rev_inf_start(&rev_u.i);
@@ -213,7 +219,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
     int32_t rko, vl, skn, sko;
     int quiet = !rv_running;
     if (tgt >= (int32_t)RV_N) tgt = RV_HALL;
-    if (!rv_running) { rv_md8 = md << 8; rv_mg = fx_p[FXP_RV_MOD] << 4; }
+    if (!rv_running) { rv_md8 = md << 8; rv_mg = fx_p[FXP_RV_MOD] << 4; rv_hsz = size << 4; }
     if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = sendn; rv_sko = sendo; }   /* (at
                                                     * rest, or the out under -66 dBFS for 2 blocks, the boot's silence
                                                     * too: INFINITE's return follows MIX, the sends take MIX's at once) */
@@ -232,7 +238,8 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
         }
         if (rv_cur == RV_INF) send = sendo, sk = sko, rk = rko;   /* (the TYPE that runs now: its law) */
         else send = sendn, sk = skn, rk = RV_RK;
-        for (j = 0; j < RV_DZ; j++) rv_inb[j] = rv_inb[CTL + j];   /* (rev_down's history) */
+        for (j = 0; j < RV_DZ; j++) rv_inb[j] = rv_xin ? rv_inb[CTL + j] : 0;   /* (rev_down's history; a TYPE just
+                                                        * started: none, its input fades in from 0) */
         if (sk != send)                                /* (MIX moved: the send's ramp over the block) */
             rv_send_ramp(L + sb, R + sb, sk + (int32_t)(((int64_t)(send - sk) * (int32_t)sb) / (int32_t)n),
                          sk + (int32_t)(((int64_t)(send - sk) * (int32_t)(sb + CTL)) / (int32_t)n));
@@ -242,15 +249,21 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
             rv_in[j] = clampi(FX_HC(1, (int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15), -131071, 131071), -131071, 131071);
         if (lcv || rv_lc) rev_locut(rv_in, lcv);
         if (pd || pd_on) fx_predelay(rv_in, pd);
+        if (rv_xin < 32768)                            /* (a TYPE just started: its input fades in) */
+            for (j = 0; j < CTL; j++) {
+                rv_xin = rv_xin + 128 < 32768 ? rv_xin + 128 : 32768;
+                rv_in[j] = (int32_t)(((int64_t)rv_in[j] * rv_xin) >> 15);
+            }
         if (rv_off != off) rv_off += rv_off < off ? 1 : -1;
         if (rv_damp != damp) rv_damp += rv_damp < damp ? (damp - rv_damp > 2 ? 2 : damp - rv_damp)
                                                       : -(rv_damp - damp > 2 ? 2 : rv_damp - damp);
         if (rv_dk != dv) rv_dk += rv_dk < dv ? 1 : -1;
         if (rv_md8 != md << 8) rv_md8 += PH_CL((md << 8) - rv_md8, -32, 32);
         if (rv_mg != fx_p[FXP_RV_MOD] << 4) rv_mg += rv_mg < fx_p[FXP_RV_MOD] << 4 ? 1 : -1;
+        if (rv_hsz != size << 4) rv_hsz += PH_CL((size << 4) - rv_hsz, -4, 4);
         cur = rv_cur;
         if (cur) for (i = 0; i < RV_QZ; i++) rv_m[i] = om[HL_NC - RV_QZ + i], rv_s[i] = os[HL_NC - RV_QZ + i];
-        if (cur == RV_HALL) rev_hall(rv_in, size + rv_off, rv_damp, rv_md8, om, os);
+        if (cur == RV_HALL) rev_hall(rv_in, rv_hsz + (rv_off << 4), rv_damp, rv_md8, om, os);
         else if (cur) {
             rev_ctl_t c;
             if (cur == RV_PLATE && (rv_pz < 0 || !rev_plate_active(&rev_u.p))) rv_pz = v;   /* (AUTO: from silence) */

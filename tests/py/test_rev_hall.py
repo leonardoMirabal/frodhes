@@ -26,9 +26,12 @@ OUT = os.path.join(ROOT, "build", "rev_hall", os.environ.get("PYTEST_XDIST_WORKE
 # 605dc28398d57a98 15484 4):
 # 0.9.10 rev-grain Q (the diffusers round while the input is live or a line end loud, truncate otherwise: every tail
 # still ends in exact silence; before: 85bb23072cef107f 12073 5 / 6529f8f754b75c58 10528 6 / 616a5aa47c595f20 15496 4):
+# 0.9.10 zipper (HALL's size glides 1/4 step a control block, rv_hsz: the fuzz moves MIX, AUTO's size, under its
+# signals; with the glide made instant (rv_hsz = size << 4) the hashes are rev-grain Q's exactly (rc-0910 merge,
+# checked); before: 41954438c623758b 12073 5 / 14a669a9673adf3c 10526 6 / 007a3f0c79d0a296 15498 4):
 # seed, blocks -> hash, blocks the reverb ran, tails that ended in silence
-WANT = {(1, 20000): "41954438c623758b 12073 5", (7, 20000): "14a669a9673adf3c 10526 6",
-        (95, 20000): "007a3f0c79d0a296 15498 4"}
+WANT = {(1, 20000): "90916c0b884220bb 12119 5", (7, 20000): "6ad7a66cc8517a4e 10567 6",
+        (95, 20000): "a005f52b4cb12ae0 15518 4"}
 
 
 @pytest.fixture(scope="module")

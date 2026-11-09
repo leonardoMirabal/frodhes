@@ -69,7 +69,7 @@ int main(int argc, char **argv)
         for (blk = 0; blk < nb; blk++) {
             memmove(fb, fb + CTL, sizeof fb[0] * RV_DZ);
             burst(fb + RV_DZ, blk, lv);
-            rev_hall(fb + RV_DZ, size, damp, (64 + 4) >> 3, m, sd);   /* MOD 64: HALL as before */
+            rev_hall(fb + RV_DZ, size << 4, damp, (64 + 4) >> 3, m, sd);   /* MOD 64: HALL as before (size: Q4) */
             for (i = 0; i < HL_NC; i++) { fwrite(&m[i], 4, 1, o); fwrite(&sd[i], 4, 1, o); }
         }
         fclose(o);

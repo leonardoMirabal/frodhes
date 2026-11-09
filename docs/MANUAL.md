@@ -470,7 +470,7 @@ PERFORM knob (REVERB on ASSIGN).
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **TYPE** | **OFF**, **HALL**, **PLATE** or **INFINITE** (below). OFF stops what goes into the reverb and lets the tail ring out. Switching it on with MIX at 0 gives MIX a starting amount. A new type takes over at once: the old tail fades out in a few milliseconds and the new type starts empty |
+| K1 | **TYPE** | **OFF**, **HALL**, **PLATE** or **INFINITE** (below). OFF stops what goes into the reverb and lets the tail ring out. Switching it on with MIX at 0 gives MIX a starting amount. A new type takes over at once: the old tail fades out in a few milliseconds and the new type starts empty, what goes into it fading in as quickly (no step under a ringing chord) |
 | K2 | **MIX** | How much reverb (0 = none, the tail rings out). With SIZE on AUTO (REVERB 2), more MIX also makes the space bigger on HALL and PLATE (on PLATE once the tail has died away; on INFINITE MIX is the level only) |
 | K3 | **DECAY** | How long the tail rings. HALL: 5.0 (the default), 0 about half as long, 10.0 about twice. PLATE: from under a second to about 6 s. INFINITE: from about 4 s to a minute; from 120 (**SUSTAIN**) the tail stops fading and what you play piles up on it, and at the very top, 127 (**FREEZE**), the tail holds exactly as it is and what you play stays dry |
 | K4 | **TONE** | The tail's treble: darker (more damping) or brighter (less); +0.0 (the default) in between. On PLATE it also darkens what goes in |
