@@ -3231,7 +3231,7 @@ changes:
     max: -3.731
     reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
 
-# ---- 13. resp-ab (2026-11-09), per cell, each with its proof in the reason (the coordinator signs off per cell):
+# ---- 13. resp-ab (2026-11-09), per cell, each with its proof in the reason. Signed off: coordinator 2026-11-09.
 #  - RESPONSE B on the bar engines (bars.c bar_lt_g, 3c0eda86): v40 level / peak by the level map; MARIMBA B v40 keyup /
 #    decay where B reads as A at the same output level (A v58) within 0.5 dB (the move: v0.9.9's v40 was silent there);
 #  - RESPONSE B on FELT / SUIT: k81v40 keyup, the reverb tail's share at the louder level;
