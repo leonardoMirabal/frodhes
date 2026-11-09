@@ -10,6 +10,7 @@ import sys
 import wave
 
 import numpy as np
+import pytest
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -169,9 +170,15 @@ def test_usb_clock_never_over_usb_c(tmp_path):
 def test_usb_stress_detectors(tmp_path):
     ok, rep = _fake(tmp_path, mh.usb_stress, secs=8.0)
     assert ok, [t["events"] for t in rep["takes"]]
-    ok, rep = _fake(tmp_path, mh.usb_stress, ("click", 2.37), ("stale", 3.3), ("zero", 6.13), secs=16.0)
-    low = {k for _, k, _ in rep["takes"][0]["events"]}
-    assert not ok and {"click", "stale", "zero"} <= low, low
+    # (the clicks: 2.85 s, where the fake take's 50 ms lead stays under hil_crackle's LIM_ON (its limiting() mask,
+    # 2.76-3.00 s clear), labelled click; 2.41 s, under it (2.40-2.43 s held), labelled click-lim, information.
+    # f62488fd's 16-note chords put 2.37 s, the old place, under the limiter)
+    ok, rep = _fake(tmp_path, mh.usb_stress, ("click", 2.85), ("click", 2.41), ("stale", 3.3), ("zero", 6.13),
+                    secs=16.0)
+    ev = {(round(t, 2), k) for t, k, _ in rep["takes"][0]["events"]}
+    low = {k for _, k in ev}
+    assert not ok and {"click", "click-lim", "stale", "zero"} <= low, ev
+    assert (2.85, "click") in ev and (2.41, "click-lim") in ev, ev
 
 
 def test_usb_cli_fake(tmp_path):
@@ -243,6 +250,59 @@ def test_usb_host_quiet_mix_aligns_on_time(tmp_path):
     assert all(abs(w["lag_ms"] - 1000 * lag / 44100) < 0.05 for w in rep["rows"]), [
         (w["note"], w["lag_ms"]) for w in rep["rows"]]
     assert ok, rep["verdict"]
+
+
+def _quiet_take(fault):
+    """the quiet-mix take (Main Out 17.11 dB under the tap, 14.92 ms late, whole LSB with TPDF dither) with a fault"""
+    g, lag = 10 ** (-17.11 / 20), 658
+
+    class R(mh.FakeRig):
+        def rec(self, dur, events):
+            h = mh.host_phrase(events, dur, 0)
+            x = np.zeros_like(h)
+            x[lag:] = g * h[:-lag]
+            x = fault(x, lag)
+            rng = np.random.default_rng(7)
+            x += rng.uniform(-0.5, 0.5, x.shape) + rng.uniform(-0.5, 0.5, x.shape)
+            return {"x": np.round(x), "sr": 44100, "xruns": []}
+    return R()
+
+
+def test_usb_host_floor_judging(tmp_path):
+    """a note is judged only when its tail is JUDGE_OVER_FLOOR_DB over the take's rounding floor: 96 v90's tail at
+    -59.6 dBFS in the quiet mix (4370bb25) left -39.7 dB of the take's own dither and failed a sound that is the
+    host's. The rows say how far over the floor each tail is"""
+    ok, rep = mh.usb_host(_quiet_take(lambda x, lag: x), str(tmp_path), out=lambda s: None)
+    assert ok, rep["verdict"]
+    for w in rep["rows"]:
+        assert w["judged"] == (w["tail_dbfs"] >= mh.TAIL_JUDGED_DBFS and w["over_floor_db"] >= mh.JUDGE_OVER_FLOOR_DB)
+    assert sum(w["judged"] for w in rep["rows"]) >= 5, rep["rows"]
+
+
+@pytest.mark.parametrize("fault", ["slip", "gain", "softclip", "softclip0"])
+def test_usb_host_catches_planted_faults(tmp_path, fault):
+    """the floor rule still catches real faults on the quiet mix: a 1 ms timing slip inside every held note, a 1 dB
+    gain error on every other note, a soft clip (tanh, knee 2000 LSB); and a soft clip on a full-level take (knee
+    8000 LSB)"""
+    _, marks, _ = mh.phrase_events()
+    sr = 44100
+
+    def slip(x, lag):
+        for _, t, _ in marks:
+            k = int((t + 0.7) * sr) + lag
+            x = np.concatenate([x[:k], x[k - 44:]])[:len(x)]
+        return x
+
+    def gain(x, lag):
+        y = x.copy()
+        for i, (_, t, _) in enumerate(marks):
+            if i % 2:
+                y[int(t * sr) + lag:int((t + mh.NOTE_S + 0.5) * sr) + lag] *= 10 ** (1 / 20)
+        return y
+    f = {"slip": slip, "gain": gain, "softclip": lambda x, lag: 2000 * np.tanh(x / 2000),
+         "softclip0": lambda x, lag: 8000 * np.tanh(x / 10 ** (-17.11 / 20) / 8000)}[fault]
+    ok, rep = mh.usb_host(_quiet_take(f), str(tmp_path), out=lambda s: None)
+    assert not ok and rep["verdict"].startswith("DIFFERS"), rep["verdict"]
 
 
 def test_usb_host_hq_probe_only_where_the_take_resolves_it(tmp_path):
