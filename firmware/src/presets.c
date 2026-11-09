@@ -79,7 +79,7 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     /* ---- DRY (F01..F04, F13, F15): each instrument as the model plays it, the compressor and a trace of room only */
     /* F01 STAGE 77: the clean stage piano (the boot sound) */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 50, 0xFF,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 52, 0xFF,
     /* F02 SUITCASE: the suitcase's cabinet, no vibrato */
     P_TYPE, 1, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_RV_DEPTH, 16, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 44, 0xFF,
