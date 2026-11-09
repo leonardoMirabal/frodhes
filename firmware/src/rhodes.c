@@ -203,13 +203,14 @@ static inline uint32_t rh_phys_sum(const rh_voice_t *v, uint32_t s)
 #include "hq/rhodes_hq.h"                      /* the HQ Rhodes (the Move only; never in the FM-1 / SMK builds) */
 #endif
 #ifdef DINGHY_HOST
-static int32_t rh_mono[256], rh_x[SUB], rh_F[SUB];
+static int32_t rh_mono[256], rh_xF[2u * SUB];
 #else                                          /* the mode / pickup loops' buffers in one section of their own (firmware
                                                 * only), out of the compiler's global merge: with 8 voices the merge
                                                 * moved them and the mode loop lost a register (a stack load) */
-static int32_t rh_mono[256] __attribute__((section(".bss.rh_buf"))), rh_x[SUB] __attribute__((section(".bss.rh_buf"))),
-    rh_F[SUB] __attribute__((section(".bss.rh_buf")));
+static int32_t rh_mono[256] __attribute__((section(".bss.rh_buf"))), rh_xF[2u * SUB] __attribute__((section(".bss.rh_buf")));
 #endif
+#define rh_x rh_xF                             /* the modes' sum (pickup input) and, right after it in one array, the */
+#define rh_F (rh_xF + SUB)                     /* hammer force: the force loop reads xp[SUB], no pointer of its own */
 static uint32_t rh_ages;
 #ifdef DINGHY_HOST
 static uint32_t rh_h_steals;                   /* host: the steals (engine.c eng_host_report, tools/engine_ab.py) */
@@ -838,7 +839,9 @@ static inline __attribute__((always_inline)) int32_t rh_hermite_u(const int32_t 
     int32_t t, p0, p1, m0, m1, c2, c3, a, d;  /* t < 2^22: 32-bit, so the products below are 32 x 32 */
     const int32_t *q;
     RH_REG32(hi); RH_REG32(lo);
-    if (__builtin_expect(hi >= (RH_S_MAX_HI << 12), 0)) { i = RH_S_MAX_HI - 1u; t = 0x3FFFFF; }  /* s >> 44, s >> 22 of the clamp */
+    /* the clamp (s >> 44, s >> 22 of the limit); its RH_REG32s keep the two constants in this rare branch: without
+     * them the compiler built them every sample and selected (pickup loop 77 -> 71 instructions per 2 samples) */
+    if (__builtin_expect(hi >= (RH_S_MAX_HI << 12), 0)) { i = RH_S_MAX_HI - 1u; t = 0x3FFFFF; RH_REG32(i); RH_REG32(t); }
     else if (sh) { uint32_t h = hi << 20; RH_REG32(h); i = hi >> 12; t = (int32_t)((h >> 10) | (lo >> 22)); }
     else { i = hi >> 12; t = (int32_t)(((lo >> 22) & 0x3FFu) | ((hi << 10) & 0x3FFC00u)); }
     RH_REG32(t); RH_REG32(i);
@@ -1668,11 +1671,11 @@ static inline __attribute__((always_inline)) int32_t rh_mode_f_t(rh_ms_t *s, int
     int32_t x = s->x, y = s->y, e = s->e, eps = s->eps, b = s->b, pk = 0;
     int64_t X = ((int64_t)x << 30) + (uint32_t)s->ex;
     uint32_t ey = (uint32_t)s->ey;
-    int32_t *xp = rh_x, *xe = rh_x + SUB; const int32_t *fp = rh_F;
+    int32_t *xp = rh_x, *xe = rh_x + SUB;
     RH_REG32(xe);
     do {
         int64_t t;
-        RH_REG32(b); y += (int32_t)(((int64_t)*fp * b) >> 20);
+        RH_REG32(b); y += (int32_t)(((int64_t)xp[SUB] * b) >> 20);   /* (rh_F[j]) */
         RH_REG32(e);
         X += (int64_t)e * y;
         x = (int32_t)(X >> 30);
@@ -1682,7 +1685,7 @@ static inline __attribute__((always_inline)) int32_t rh_mode_f_t(rh_ms_t *s, int
         if (first) *xp = x; else *xp += x;
         if (iabs(x) > pk) pk = iabs(x);
         if (iabs(y) > pk) pk = iabs(y);
-        xp++; fp++;
+        xp++;
     } while (xp < xe);
     s->x = sat28i(x); s->y = sat28i(y); s->ex = (int32_t)((uint32_t)X & 0x3FFFFFFFu); s->ey = (int32_t)ey; s->peak = pk;
     return pk >> 3;
