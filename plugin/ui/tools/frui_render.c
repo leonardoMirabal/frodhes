@@ -56,29 +56,16 @@ static const uint8_t PR_F18[] = {FRP_TYPE, 2, FRP_DECAY, 84, FRP_NOISE, 30, FRP_
     FRP_RV_DEPTH, 76, FRP_RV_TYPE, 1, FRP_RV_DECAY, 104, FRP_RV_PREDLY, 60, FRP_RV_TONE, 56, FRP_RV_MOD, 84,
     FRP_RV_LOCUT, 80, FRP_LEVEL, 55, 0xFF};
 
-/* the factory presets' names and instruments (F01..F57: presets.c, move/move_presets.h), for the PRESETS sheet */
-static const struct { const char *name; int type; } FACT[57] = {
-    {"STAGE 77", 0}, {"SUITCASE", 1}, {"EARLY FELT", 2}, {"BELL DYNO", 3}, {"SUIT TREM", 1}, {"DRIVEN 77", 0},
-    {"BALLAD", 0}, {"DYNO 80S", 3}, {"70S PHASER", 0}, {"FUNK WAH", 0}, {"RESO SWEEP", 0}, {"AUTO WAH", 0},
-    {"VIBES", 4}, {"VIBES ECHO", 4}, {"MARIMBA", 5}, {"WOOD ECHO", 5}, {"TAPE ECHO", 0}, {"DREAM", 2}, {"RADIO", 0},
-    {"STAGE77 ECHO", 0}, {"STAGE77 TAPE", 0}, {"SUITCASE DRY", 1}, {"SUITCASE AMP", 1}, {"FELT HALL", 2},
-    {"FELT ECHO", 2}, {"BELL SOFT", 3}, {"BELL ECHO", 3}, {"TREM ECHO", 1}, {"TREM DEEP", 1}, {"DRIVEN77 LVL", 0},
-    {"DRIVEN BODY", 0}, {"BALLAD TIGHT", 0}, {"BALLAD DARK", 0}, {"DYNO80S LVL", 3}, {"DYNO80S SOFT", 3},
-    {"PHASER LVL", 0}, {"PHASER SLOW", 0}, {"FUNK WAH LVL", 0}, {"FUNK PLUCK", 0}, {"RESO SPACE", 0},
-    {"RESO SMOOTH", 0}, {"AUTOWAH ECHO", 0}, {"AUTOWAH TAPE", 0}, {"VIBES HALL", 4}, {"VIBES MOTOR", 4},
-    {"VIBES CLEAN", 4}, {"VIBES DRIFT", 4}, {"MARIMBA HALL", 5}, {"MARIMBA ECHO", 5}, {"WOOD PLAIN", 5},
-    {"WOOD LIGHT", 5}, {"TAPE WIDE", 0}, {"TAPE DARK", 0}, {"DREAM CLEAR", 2}, {"DREAM DEEP", 2}, {"RADIO LVL", 0},
-    {"RADIO LOW", 0},
-};
+#include "frui_fact.h"   /* FACT[FACT_N]: the factory presets' names and instruments (tools/gen_move_presets.py) */
 /* the list: the factory presets, then nu user presets (named from users[], instruments from utype[]) */
 static void plist(frui_model *m, int nu, const char *const *users, const int *utype)
 {
     int i;
-    for (i = 0; i < 57 + nu && i < FRUI_PL_MAX; i++) {
-        int u = i >= 57;
-        snprintf(m->pl[i].tag, sizeof m->pl[i].tag, "%c%02d", u ? 'U' : 'F', u ? i - 56 : i + 1);
-        snprintf(m->pl[i].name, sizeof m->pl[i].name, "%s", u ? users[(i - 57) % 4] : FACT[i].name);
-        m->pl[i].type = (uint8_t)(u ? utype[(i - 57) % 4] : FACT[i].type);
+    for (i = 0; i < FACT_N + nu && i < FRUI_PL_MAX; i++) {
+        int u = i >= FACT_N;
+        snprintf(m->pl[i].tag, sizeof m->pl[i].tag, "%c%02d", u ? 'U' : 'F', u ? i - FACT_N + 1 : i + 1);
+        snprintf(m->pl[i].name, sizeof m->pl[i].name, "%s", u ? users[(i - FACT_N) % 4] : FACT[i].name);
+        m->pl[i].type = (uint8_t)(u ? utype[(i - FACT_N) % 4] : FACT[i].type);
         m->pl[i].user = (uint8_t)u;
     }
     m->pl_n = i;

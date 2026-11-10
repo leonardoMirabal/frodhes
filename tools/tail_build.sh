@@ -118,7 +118,7 @@ if [ $fail = 0 ]; then
     # the plugin's names (plugin/gen/params_map.h: F01-F57 from presets.c and the Move's records) after a reorder
     step presets-plugin "$PY" tools/gen_plugin_params.py || fail=1
     # (the records, variants.json, the header, MOVE.md's table and the plugin's map only)
-    git -C "$WT" diff -- move/presets move/move_presets.h docs/MOVE.md plugin/gen > "$OUT/presets.patch"
+    git -C "$WT" diff -- move/presets move/move_presets.h docs/MOVE.md plugin/gen plugin/ui/tools/frui_fact.h > "$OUT/presets.patch"
     if [ -s "$OUT/presets.patch" ]; then
         note "      presets: CHANGED with presets.c: $(grep '^+# ' "$OUT/presets.patch" | sed 's/^+# //'); presets.patch (commit it on the branch)"
     else

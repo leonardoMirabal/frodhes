@@ -15,7 +15,7 @@ renders: $(OUT)/frui_render
 	$(OUT)/frui_render "$(FONT)" $(OUT) $(DFONT)
 	mkdir -p $(OUT)/directions-a3 && FRUI_DIRECTIONS=1 $(OUT)/frui_render "$(FONT)" $(OUT) $(DFONT)
 
-$(OUT)/frui_render: $(SRC) tools/frui_render.c frui.h frui_font.h frui_gfx.h frui_params.h frui_text.h
+$(OUT)/frui_render: $(SRC) tools/frui_render.c tools/frui_fact.h frui.h frui_font.h frui_gfx.h frui_params.h frui_text.h
 	mkdir -p $(OUT)
 	nice -n 10 $(CC) $(CFLAGS) -o $@.tmp $(SRC) tools/frui_render.c -lz -lm && mv $@.tmp $@
 
