@@ -390,7 +390,8 @@ def test_usb_host_96v90_of_the_2026_10_30_take():
     far under the -30 dB limit"""
     sr, lag, late, g = 44100, 658, 953, 10 ** (-17.11 / 20)
     ev, marks, dur = mh.phrase_events()
-    h = mh.host_phrase(ev, dur, 0, None, mh.GLOBAL_CCS)
+    import dry_dist                                      # (the take played the F01 of its day: dry_dist's TYPE base,
+    h = mh.host_phrase(ev, dur, 0, None, mh.GLOBAL_CCS, dry_dist.TYPE_BASE)   # not the proposed 19's F01, 0.9.10)
     t = next(t for name, t, n in marks if name == mh.HQ_PROBE)
     a, b = int(t * sr), int((t + mh.NOTE_S) * sr)
     ta = a + sr // 2

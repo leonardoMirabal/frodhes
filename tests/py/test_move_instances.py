@@ -37,7 +37,8 @@ def knobs():
             + ["set s_tune 0", "renderall 20"])
 
 
-SCRIPT = (["get dev_inst", "get preset_name"] + hit()                        # 0 one Frodhes: it plays
+SCRIPT = (["get dev_inst", "get preset_name", "set p_level 64"] + hit()     # 0 one Frodhes: it plays (at LEVEL 64,
+          #   0 dB: the step to LEVEL 0 below is 12 dB whatever F01's own LEVEL; the proposed 19's F01 holds 30)
           + ["new", "sleep 300", "renderall 400", "get dev_inst", "get preset_name"] + hit()   # 1 the second slot plays
           + ["use 0", "get preset_name", "set p_level 0", "renderall 20"] + hit()  # 2 the first, LEVEL 0
           + ["use 1", "get p_level", "use 0", "set p_level 64", "renderall 10"]   # (the second's LEVEL is its own)
