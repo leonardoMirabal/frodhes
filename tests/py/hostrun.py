@@ -109,6 +109,12 @@ class Run:
         x = self.L if ch is None or ch == 0 else self.R
         return x[int(t0 * FS):int(t1 * FS)]
 
+    def mid(self, t0=0.0, t1=None):
+        """(L + R) / 2: the mono sum, where the dry width's side (fx.c fx_width, stage 2: L = M + S, R = M - S)
+        cancels; the level and spectrum checks of a dry setup read it"""
+        a, b = int(t0 * FS), (len(self.L) if t1 is None else int(t1 * FS))
+        return (self.L[a:b] + self.R[a:b]) / 2
+
 
 def script(lines):
     """lines: "T what ..." strings (or (t, text) pairs); sorted by time, keeping the given order at equal times"""

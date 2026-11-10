@@ -221,7 +221,8 @@ def _voice_cases():
         def bell(ty=ty):
             """BELL (CC 30): the bright overtone at the strike. The energy above 3 kHz in the first 100 ms of a C5
             rises 12 .. 24 dB from 0 to 10; at least 6"""
-            h = [band_db(rh_note(ty, [(30, v)], n=72).seg(0.2, 0.3), 3000, 16000) for v in (0, 127)]
+            h = [band_db(rh_note(ty, [(30, v)], n=72).mid(0.2, 0.3), 3000, 16000) for v in (0, 127)]   # (the mono
+            # sum: the dry width's side carries C5's 3-4 kHz partials into one channel, FELT's -67 dB floor at BELL 0)
             return h[1] - h[0], 6.0, f"attack > 3 kHz {h[0]:.1f} -> {h[1]:.1f} dB"
 
         def hammer(ty=ty):
@@ -781,7 +782,7 @@ def _wah():
         S = []
         for extra in ([], [cc(30, 17, 127), cc(32, 18, 64), cc(33, 19, 64)]):
             w = R(CLEAN + extra + sum((note(200, n, vel, 1200) for n in (48, 55, 60, 64)), []), 1600)
-            f, X = spec(w.seg(0.21, 0.4))
+            f, X = spec(w.mid(0.21, 0.4))                # (the mono sum: the dry width's comb cancels)
             S.append(np.array([X[(f >= a) & (f < b)].sum() for a, b in zip(edges[:-1], edges[1:])]) + 1e-9)
         i = int(np.argmax(S[1] / S[0]))
         return math.sqrt(edges[i] * edges[i + 1])
@@ -887,6 +888,13 @@ def _psync():
     return -abs(r - 2.0), -0.02, f"{r:.3f} Hz"
 
 
+def mono_dry(w):
+    """a dry setup's output is the mono sum plus only the dry width's side (fx.c fx_width, stage 2; L == R before):
+    side / mid under -18 dB"""
+    m, sd = (w.L + w.R) / 2, (w.L - w.R) / 2
+    return 10 * np.log10(np.mean(sd ** 2) / (np.mean(m ** 2) + 1e-9) + 1e-12) < -18.0
+
+
 @case("CHORUS-ON-DEPTH")
 def _cdepth():
     """CHORUS EFFECT (K1) and DEPTH (CC 86): the left / right band levels swing 0 dB at 0, 10.5 dB p-p at 5.0; at
@@ -897,7 +905,7 @@ def _cdepth():
         f, _ = lr_band(w.seg(0.5, 6.2), w.seg(0.5, 6.2, 1))
         s.append(p2p(f) * 10 / math.log(10))
     off = pha([(85, 0), (86, 64)])
-    assert np.array_equal(off.L, off.R)
+    assert mono_dry(off)
     return s[1] - s[0], 4.0, f"{s[0]:.1f} -> {s[1]:.1f} dB p-p"
 
 
@@ -1486,7 +1494,7 @@ def _bypass():
         assert np.abs(w.L - dry.L).max() <= 1, extra
     raw = R(CLEAN + HEAVY + [cc(100, 119, 127)] + probe, 2000)        # (RAW skips the master and the limiter too)
     dry0 = R(CLEAN + [cc(25, 110, 64)] + probe, 2000)                 # (and F01's LEVEL trim, -1.7 dB since 0.9.5)
-    assert tdist(raw.seg(0.3, 1.0), dry0.seg(0.3, 1.0)) < 0.1 and abs(rms_db(raw.seg(0.3, 1.0)) - rms_db(dry0.seg(0.3, 1.0))) < 0.3
+    assert tdist(raw.mid(0.3, 1.0), dry0.mid(0.3, 1.0)) < 0.1 and abs(rms_db(raw.mid(0.3, 1.0)) - rms_db(dry0.mid(0.3, 1.0))) < 0.3   # (the mono sums: the dry width's side cancels)
     d = tdist(wet.seg(0.3, 1.0), dry.seg(0.3, 1.0))
     return d, 10.0, f"the effects: {d:.1f} dB of timbre; bypassed: none"
 
@@ -1557,10 +1565,10 @@ def _reserved():
 
 @case("SPREAD-CC105")
 def _spread():
-    """CC 105 (SPREAD, S13): a low key moves left, a high key right; at 0 the sound is the mono sum (L == R, dry)"""
+    """CC 105 (SPREAD, S13): a low key moves left, a high key right; at 0 the sound is the mono sum (L == R, dry; with the dry width's side only)"""
     lo, hi = note(300, 36, 100, 600), note(1100, 93, 100, 600)
     d = R(CLEAN + lo + hi, 2000)
-    assert np.array_equal(d.L, d.R)
+    assert mono_dry(d)
     w = R(CLEAN + [cc(30, 105, 127)] + lo + hi, 2000)
     db = lambda x, a, b: 20 * np.log10(np.sqrt(np.mean(x[int(a * FS):int(b * FS)] ** 2)) + 1e-9)
     bl = db(w.L, 0.35, 0.8) - db(w.R, 0.35, 0.8)

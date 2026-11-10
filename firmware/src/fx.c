@@ -1659,7 +1659,7 @@ __attribute__((noinline)) static void cmp_from(const int32_t *m, uint32_t n, int
 static const int16_t CMP_SLOPE[8] = {1365, 2048, 2731, 3072, 3413, 3584, 3686, 3891};   /* 1 - 1/R, Q12 */
 static void cmp_auto(void)                               /* (main loop: fx_set; the ISR reads fx_cmp_amk / fx_cmp_beta) */
 {
-    static const int16_t AT[6] = {56, 64, 80, 96, 112, 127}, AQ[6] = {0, 266, 993, 2026, 3500, 5017};
+    static const int16_t AT[6] = {56, 64, 80, 96, 112, 127}, AQ[6] = {0, 405, 1065, 2152, 3672, 5339};
     int32_t t = fx_p[FXP_CMP_AMT], i = 1, q = 0;
     if (t > 56) {
         while (t > AT[i]) i++;
@@ -2517,6 +2517,10 @@ static uint32_t gate_quiet;
  * sample, as clearing it all at once (that one block took ~5 ms of the 5.8 on the FM-1); the pre-delay line is
  * cleared the same way at its next use (pd_on = 0). */
 static volatile uint8_t fx_reset_req;
+/* the dry width's state (fx_width, below) */
+static int32_t wd_buf[512] POOL;                        /* the high-passed dry, WD_D back */
+static uint32_t wd_w;
+static int32_t wd_lp, wd_h2, wd_g;                      /* the band-pass' states (wd_lp Q8); the width's gain (Q15) */
 static void fx_reset_state(void)
 {
     lfo_ph = 0; lfo_rnd = 0x9E3779B9u; tw_ph = 0; ph_ph = 0; cp_ph = 0; dly_wow = 0; dly_flt = 0;
@@ -2538,6 +2542,7 @@ static void fx_reset_state(void)
     cmp_g = 65536; cmp_ds = 0x9E3779B9u;                /* (the gain's dither: its boot seed) */
     dc_l = dc_r = dce_l = dce_r = 0; memset(lk_l, 0, sizeof lk_l); memset(lk_r, 0, sizeof lk_r); lk_pk = 0; lk_g = 32768;
     gate_g = gate_tgt = 32768; gate_quiet = 0;
+    memset(wd_buf, 0, sizeof wd_buf); wd_lp = wd_h2 = 0;        /* (the dry width's reflection) */
 #ifdef FX_RESET_ONE_BLOCK
     memset(dly_buf, 0, sizeof dly_buf); memset(pd_buf, 0, sizeof pd_buf); dly_rst = 0;
 #endif
@@ -2628,6 +2633,59 @@ FX_RAM __attribute__((noinline)) static void fx_spread(const int32_t *mono, int3
 /* SPREAD's side for the bypass' sub-block (sd[j - sb]): rh_side + sb while it is on, else fx_zs (zeros: the plain
  * mono, the same integers; one loop each for both, less flash) */
 static int32_t fx_zs[LK] RH_SP_SEC(".bss.fx_zs");
+/* ---- the dry width (stage 2, 2026-11-10): the plain piano was a mono point on headphones (side / mid -25 dB with
+ * F01's room, none dry), while CHORUS / PHASER on sounded bigger at the same loudness (their width alone). A side
+ * wall's first reflection gives the dry a little width: the side S is the dry's band 570 Hz .. 4 kHz (one-pole high-
+ * and low-pass: the bass stays mono as in a room, the wall takes the top) delayed by WD_D (10 ms, 3.4 m of extra
+ * path) at WD_K; L = M + S, R = M - S. No modulation. The mono sum (L + R) / 2 is the dry exactly, the two ears'
+ * critical-band loudness within 0.05 cb (the per-ear comb ripples opposite in L and R), and the reflection arrives
+ * 10 ms after the strike: the v127 chords' peak +0.02 dB at most (tests/py/test_dry_width.py). The last stage before
+ * the limiter (fx_out, per sub-block, after the bypass' mix, the DC blockers and LEVEL; the limiter's gain is the
+ * same both sides and 1 unless limiting, so (L + R) / 2 stays the mono output exactly): M = (L + R) / 2, so FX on and off,
+ * the crossfade and every effect (the FILTER, TREM, the delay) get the same one reflection of their own output. Off
+ * while SPREAD's own side is on (wd_g glides it out / in over 16 blocks). Cost: one loop, ~18 instructions a sample */
+#ifndef WD_D
+#define WD_D 441                                        /* samples: 10 ms */
+#endif
+#ifndef WD_A
+#define WD_A 2553                                       /* Q15: the high-pass' pole, 1 - exp(-2 pi 570 / 44100) */
+#endif
+#ifndef WD_B
+#define WD_B 14260                                      /* Q15: the low-pass' pole, 1 - exp(-2 pi 4000 / 44100) */
+#endif
+#ifndef WD_K
+#define WD_K (-6554)                                    /* Q15: -0.2, the reflection's level in its band; the sign
+                                                         * puts it on the side of the hall's early part (with F01's
+                                                         * room +0.6 dB of width more than + would) */
+#endif
+static __attribute__((noinline)) int32_t fx_width(uint32_t o, uint32_t e, int on)
+{
+    uint32_t j, w = wd_w;
+    int32_t lp = wd_lp, h2 = wd_h2, g, kg, pk = 0, *pl = fx_L + o, *pr = fx_R + o;
+    g = wd_g;
+    if (o == 0u) {                                      /* (the block's first chunk: a step of the glide a block) */
+        g = clampi(g + (on ? 2048 : -2048), 0, 32768); wd_g = g;   /* 16 blocks from 0 to 1 */
+    }
+    kg = (WD_K * g) >> 15;
+    for (j = o; j < e; j++) {
+        int32_t l = *pl, r = *pr, x = (l + r) >> 1, sd;
+        lp += (int32_t)(((int64_t)((x << 8) - lp) * WD_A) >> 15);   /* (Q8: in whole LSBs the high-pass' state lagged
+                                                         * a slow tail by up to 12, a side of -1 LSB for 90 ms after
+                                                         * the note: test_every_control SUSTAIN) */
+        h2 += (int32_t)(((int64_t)(x - (lp >> 8) - h2) * WD_B) >> 15);   /* (the wall's absorption: a low-pass) */
+        sd = wd_buf[(w - WD_D) & 511u];
+        wd_buf[w & 511u] = h2; w++;
+        sd *= kg;                                       /* (32 bits: |h2| < 2^18) toward zero, so the side ends in */
+        sd = (sd + ((sd >> 31) & 32767)) >> 15;         /* exact zeros (a floor left -1 LSB on L 40 ms after the note:
+                                                         * test_every_control DELAY-MIX) */
+        l += sd; r -= sd; *pl++ = l; *pr++ = r;
+        l = iabs(l); r = iabs(r);
+        if (l > pk) pk = l;
+        if (r > pk) pk = r;
+    }
+    wd_w = w; wd_lp = lp; wd_h2 = h2;
+    return pk;                                          /* (the sub-block's peak, for the limiter) */
+}
 /* the bypassed dry with SPREAD's side: L = M + S, R = M - S (out of line: fx_process's registers as without it) */
 FX_RAM __attribute__((noinline)) static void fx_spread_dry(const int32_t *mono, const int32_t *sd, uint32_t sb)
 {
@@ -2741,6 +2799,10 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
             }
             fx_lv_dith = ds;
         }
+        pn = FR_FAR(fx_width)(sb, sb + LK, !FX_SIDE_ONB);   /* the dry width (stage 2): one wall reflection, after
+                                                         * the DC blockers and LEVEL (per channel: their rounding of
+                                                         * M + S and M - S left 1 LSB of noise in the mono sum, the
+                                                         * v20 notes' inh +10 dB); its peak replaces pn */
         tgt = lk_g + ((32768 - lk_g) >> 6) + 1;        /* release */
         if (tgt > 32768) tgt = 32768;
         if (lk_need(lk_pk) < tgt) tgt = lk_need(lk_pk);

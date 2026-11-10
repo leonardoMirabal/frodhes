@@ -467,7 +467,7 @@ def test_compressor_threshold_and_makeup(eng):
         w = run(f"ds-cmp{thr}-{eng}", pre + [cc(30, 112, 127), cc(31, 108, 0), cc(32, 109, 0), cc(33, 113, 0),
                                             cc(34, 107, thr), cc(35, 106, 127), "70 dump"] + hi, 7500)
         txt = w.state(70)[f"card.{PG['COMP']}.0"]
-        a, b = frames(w.seg(0.15, 7.4), 441), frames(ref.seg(0.15, 7.4), 441)
+        a, b = frames(w.mid(0.15, 7.4), 441), frames(ref.mid(0.15, 7.4), 441)   # (mono sums: the dry width cancels)
         lvl = 20 * np.log10(np.abs(b).max(axis=1) / 32768 + 1e-9)
         gr = 20 * np.log10(np.sqrt((b ** 2).mean(axis=1) + 1e-9) / np.sqrt((a ** 2).mean(axis=1) + 1e-9))
 
@@ -501,7 +501,7 @@ def test_level(eng):
     for v in (0, 30, 64, 127):
         w = run(f"ds-lvl{v}-{eng}", pre + [cc(30, 110, v), "50 dump"] + note(100, 60, 40, 1500), 1700)
         txt = w.state(50)[f"card.{PG['SETUP']}.1"]
-        assert_db(rms_db(w.seg(0.2, 1.5)) - rms_db(ref.seg(0.2, 1.5)), txt, f"LEVEL {v}")
+        assert_db(rms_db(w.mid(0.2, 1.5)) - rms_db(ref.mid(0.2, 1.5)), txt, f"LEVEL {v}")   # (mono sums: RAW has no width)
 
 
 def test_drive_type_card_is_what_runs():

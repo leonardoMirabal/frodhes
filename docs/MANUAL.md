@@ -1162,11 +1162,18 @@ ignore it. (The damper's own settle follows the register: a little slower in the
 treble.)
 
 **SPREAD** (CC 105, saved with the preset; MIDI only, there is no card for it) spreads the electric piano across the stereo
-field by key, low keys left, high keys right, as seen from the player. 0 (the default) is the mono piano; 64 a gentle
+field by key, low keys left, high keys right, as seen from the player. 0 (the default) is the piano with a little room
+width (below); 64 a gentle
 width; 127 places the lowest key of an 88-key piano fully left and the highest fully right. It is set at each strike
 (turning it moves the next notes). The chorus, phaser, delay and reverb take the spread; COMP, DRIVE, the FILTER and
 TREM/WAH work on the mono sum, and SPREAD follows their level (a hard drive narrows the image a little). VIBES and
 MARIMBA ignore it.
+
+**Width.** With SPREAD at 0 every sound gets one side-wall reflection: the mid and upper range (about 570 Hz to 4 kHz)
+10 ms late, about 14 dB down, on the side only (left plus, right minus). The bass stays centred, nothing is modulated,
+and the mono sum is unchanged, so a mono speaker hears exactly the piano. On headphones the piano is no longer a point
+in the middle; the loudness and the chord peaks stay the same. It applies with the effects on and off (after them, so
+the FILTER, TREM and the delay reach it too), and it fades out while SPREAD is above 0, which brings its own side.
 
 | CC | Parameter | CC | Parameter |
 | --- | --- | --- | --- |

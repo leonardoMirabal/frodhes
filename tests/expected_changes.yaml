@@ -15585,3 +15585,69 @@ changes:
   - {match: "hq/F11/PRESET/A/k93v64", metric: inh, min: 3.80, max: 4.30, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D hq: s1 -33.6 -> -33.4, lim -34.5"}
   - {match: "hq/F11/PRESET/B/k93v20", metric: inh, min: 4.17, max: 4.67, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D hq: s1 -22.3 -> -22.7, lim -24.2"}
   - {match: "hq/F19/PRESET/A/k93v20", metric: H3, min: 4.67, max: 5.17, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D hq: s1 -46.1 -> -46.7, lim -48.6"}
+
+# ---- 19. The dry width (stage 2, fx.c fx_width): one side-wall reflection, 570 Hz .. 4 kHz, 10 ms, -14 dB, as the
+# side (L = M + S, R = M - S; the mono sum unchanged). Moves only cells whose window holds the 10 ms after the dry.
+  - match: "*/MARIMBA/FXOFF/*/k84v*"
+    metric: "clk"
+    min: -187.3
+    max: -179.9
+    reason: "the dry width (stage 2, fx.c fx_width): its wall reflection 10 ms after the dry: the key-up click metric of MARIMBA's short top notes (the dry's own end, an exact-zero window in 0.9.9) now reads the reflection's 10 ms tail; lower, no click added (the pristine clk ceiling holds)"
+  - match: "hq/MARIMBA/FX/B/k69v40"
+    metric: "decay"
+    min: 6.8
+    max: 7.8
+    reason: "the dry width (stage 2, fx.c fx_width): its wall reflection 10 ms after the dry: MARIMBA v40's short decay measured 10 ms longer by the reflection (fast grid, HQ)"
+  - match: "hq/MARIMBA/FX/A/k57v40"
+    metric: "keyup"
+    min: -5.9
+    max: -3.2
+    reason: "the dry width (stage 2, fx.c fx_width): its wall reflection 10 ms after the dry: the key-up window's level, lower (the reflection's comb against the room's tail at this cell)"
+  - match: "fm1/MARIMBA/FXOFF/A/k57v127"
+    metric: "keyup"
+    silent: false
+    min: -71.88
+    max: -70.88
+    reason: "silent -> -71.4 dB: the dry width (stage 2, fx.c fx_width): its wall reflection 10 ms after the dry, in the key-up window after MARIMBA's dry ends (FX off; 0.9.9 exact zeros)"
+  - match: "fm1/MARIMBA/FXOFF/B/k57v127"
+    metric: "keyup"
+    silent: false
+    min: -71.88
+    max: -70.88
+    reason: "silent -> -71.4 dB: the dry width (stage 2, fx.c fx_width): its wall reflection 10 ms after the dry, in the key-up window after MARIMBA's dry ends (FX off; 0.9.9 exact zeros)"
+  - match: "fm1/MARIMBA/FXOFF/A/chord-mid"
+    metric: "keyup"
+    silent: false
+    min: -72.47
+    max: -71.47
+    reason: "silent -> -72.0 dB: the dry width (stage 2, fx.c fx_width): its wall reflection 10 ms after the dry, in the key-up window after MARIMBA's dry ends (FX off; 0.9.9 exact zeros)"
+  - match: "fm1/MARIMBA/FXOFF/B/chord-mid"
+    metric: "keyup"
+    silent: false
+    min: -72.47
+    max: -71.47
+    reason: "silent -> -72.0 dB: the dry width (stage 2, fx.c fx_width): its wall reflection 10 ms after the dry, in the key-up window after MARIMBA's dry ends (FX off; 0.9.9 exact zeros)"
+  - match: "hq/MARIMBA/FXOFF/A/k57v127"
+    metric: "keyup"
+    silent: false
+    min: -72.70
+    max: -71.70
+    reason: "silent -> -72.2 dB: the dry width (stage 2, fx.c fx_width): its wall reflection 10 ms after the dry, in the key-up window after MARIMBA's dry ends (FX off; 0.9.9 exact zeros)"
+  - match: "hq/MARIMBA/FXOFF/B/k57v127"
+    metric: "keyup"
+    silent: false
+    min: -72.70
+    max: -71.70
+    reason: "silent -> -72.2 dB: the dry width (stage 2, fx.c fx_width): its wall reflection 10 ms after the dry, in the key-up window after MARIMBA's dry ends (FX off; 0.9.9 exact zeros)"
+  - match: "hq/MARIMBA/FXOFF/A/chord-mid"
+    metric: "keyup"
+    silent: false
+    min: -65.0
+    max: -56.4
+    reason: "silent -> -57.0 dB: the dry width (stage 2, fx.c fx_width): its wall reflection 10 ms after the dry, in the key-up window after MARIMBA's dry ends (FX off; 0.9.9 exact zeros)"
+  - match: "hq/MARIMBA/FXOFF/B/chord-mid"
+    metric: "keyup"
+    silent: false
+    min: -65.0
+    max: -56.4
+    reason: "silent -> -57.0 dB: the dry width (stage 2, fx.c fx_width): its wall reflection 10 ms after the dry, in the key-up window after MARIMBA's dry ends (FX off; 0.9.9 exact zeros)"
