@@ -1,0 +1,48 @@
+# signed off (coordinator 2026-11-10): v40 = RESPONSE A now equals B (soft end bf41540a + attack a0bd58ee);
+# v20 = newly over -70 dBFS, so measured (soft end). cols: build TYPE/preset case RESPONSE key vel measure (dB re H1) | rc3 | stage 1 (c5811371) | the ceiling (0.9.9 + 3 dB, H floor -60) | stage 1 built -DRH_ATK_A=0 | the measure in dBFS
+v40  fm1  F07   PRESET A  k 28 v 40  H3    rc3  -53.72  stage1  -52.56  limit  -52.79  noatk  -54.14  abs  -91.1 dBFS  no drive
+v40  fm1  F07   PRESET B  k 28 v 40  H3    rc3  -55.42  stage1  -52.56  limit  -52.79  noatk  -54.14  abs  -91.1 dBFS  no drive
+v40  fm1  F08   PRESET A  k 28 v 40  H5    rc3  -54.39  stage1  -50.91  limit  -51.71  noatk  -52.64  abs  -90.3 dBFS  no drive
+v40  fm1  F08   PRESET B  k 28 v 40  H5    rc3  -53.39  stage1  -50.91  limit  -51.71  noatk  -52.64  abs  -90.3 dBFS  no drive
+v20  fm1  F11   PRESET A  k 33 v 20  inh   rc3     nan  stage1  -23.78  limit  -24.72  noatk     nan  abs  -90.4 dBFS  DRIVE preset
+v20  fm1  F19   PRESET A  k 45 v 20  inh   rc3     nan  stage1  -20.79  limit  -22.87  noatk  -21.21  abs  -86.4 dBFS  DRIVE preset
+v40  hq   F08   PRESET A  k 28 v 40  H5    rc3  -54.64  stage1  -51.27  limit  -51.73  noatk  -53.09  abs  -90.7 dBFS  no drive
+v40  hq   F08   PRESET A  k 28 v 40  H6    rc3  -54.65  stage1  -51.29  limit  -51.43  noatk  -53.10  abs  -90.7 dBFS  no drive
+v40  hq   F08   PRESET B  k 28 v 40  H5    rc3  -53.69  stage1  -51.27  limit  -51.73  noatk  -53.09  abs  -90.7 dBFS  no drive
+v40  hq   F08   PRESET B  k 28 v 40  H6    rc3  -54.02  stage1  -51.29  limit  -51.43  noatk  -53.10  abs  -90.7 dBFS  no drive
+v20  hq   F11   PRESET A  k 33 v 20  inh   rc3     nan  stage1  -23.32  limit  -23.63  noatk     nan  abs  -89.9 dBFS  DRIVE preset
+v40  hq   F12   PRESET A  k 69 v 40  H4    rc3  -62.12  stage1  -55.57  limit  -60.00  noatk  -56.35  abs  -92.2 dBFS  DRIVE preset
+v20  hq   F19   PRESET A  k 45 v 20  inh   rc3     nan  stage1  -20.98  limit  -22.78  noatk  -21.35  abs  -86.6 dBFS  DRIVE preset
+
+# PROVISIONAL stage 1 (coordinator 2026-11-10): must return under the rc3 ceilings by rc4. Cause: the attack's lift
+# (a0bd58ee, RH_ATK_A 6200) into the compressor / drive (noatk = rc3; hq F08 k45v96: + the chorus make-up, b53ec034).
+# Stage 2's compressor rework targets these; any still over at rc4: RH_ATK_A lowered until they pass.
+# DRIVE presets are exempt from pristine (the compressor is on there too).
+# cols: build TYPE/preset case RESPONSE key vel measure (dB re H1) | rc3 | stage 1 (c5811371) | the ceiling (0.9.9 + 3 dB, H floor -60) | stage 1 built -DRH_ATK_A=0 | the measure in dBFS
+# 26 cells (16 on drive presets, 10 without drive)
+fm1  DYNO  FX     A  k 28 v 64  H4    rc3  -61.12  stage1  -58.90  limit  -60.00  noatk  -61.12  abs  -94.9 dBFS  no drive
+fm1  DYNO  FX     B  k 28 v 64  H4    rc3  -61.12  stage1  -58.90  limit  -60.00  noatk  -61.12  abs  -94.9 dBFS  no drive
+fm1  F05   PRESET A  k 28 v 96  H5    rc3  -49.92  stage1  -48.57  limit  -49.88  noatk  -49.92  abs  -82.1 dBFS  DRIVE preset
+fm1  F05   PRESET B  k 28 v 96  H5    rc3  -49.92  stage1  -48.57  limit  -49.88  noatk  -49.92  abs  -82.1 dBFS  DRIVE preset
+fm1  F06   PRESET A  k 45 v 96  H4    rc3  -50.32  stage1  -50.08  limit  -50.13  noatk  -50.32  abs  -77.8 dBFS  DRIVE preset
+fm1  F06   PRESET B  k 45 v 96  H4    rc3  -50.32  stage1  -50.08  limit  -50.13  noatk  -50.32  abs  -77.8 dBFS  DRIVE preset
+fm1  F08   PRESET B  k 28 v 20  H4    rc3  -51.27  stage1  -49.57  limit  -49.88  noatk  -51.31  abs  -93.6 dBFS  no drive
+fm1  F10   PRESET A  k 33 v 96  H4    rc3  -54.34  stage1  -53.04  limit  -53.37  noatk  -54.34  abs  -86.5 dBFS  DRIVE preset
+fm1  F10   PRESET A  k 45 v 64  inh   rc3  -44.57  stage1  -40.42  limit  -42.11  noatk  -44.57  abs  -76.4 dBFS  DRIVE preset
+fm1  F10   PRESET B  k 33 v 96  H4    rc3  -54.34  stage1  -53.04  limit  -53.37  noatk  -54.34  abs  -86.5 dBFS  DRIVE preset
+fm1  F10   PRESET B  k 45 v 64  inh   rc3  -44.57  stage1  -40.42  limit  -42.11  noatk  -44.57  abs  -76.4 dBFS  DRIVE preset
+fm1  F19   PRESET A  k 45 v 64  H3    rc3  -47.48  stage1  -46.25  limit  -46.42  noatk  -47.48  abs  -94.2 dBFS  DRIVE preset
+fm1  F19   PRESET B  k 45 v 64  H3    rc3  -47.48  stage1  -46.25  limit  -46.42  noatk  -47.48  abs  -94.2 dBFS  DRIVE preset
+fm1  FELT  DECAY0 A  k 93 v 96  H2    rc3  -36.63  stage1  -36.59  limit  -36.62  noatk  -36.63  abs  -78.1 dBFS  no drive
+fm1  ST77  DECAY0 A  k 93 v 96  H2    rc3  -26.46  stage1  -26.44  limit  -26.45  noatk  -26.46  abs  -68.1 dBFS  no drive
+hq   F04   PRESET A  k 28 v 64  H6    rc3  -55.06  stage1  -53.46  limit  -53.57  noatk  -55.06  abs  -89.6 dBFS  no drive
+hq   F04   PRESET B  k 28 v 64  H6    rc3  -55.06  stage1  -53.46  limit  -53.57  noatk  -55.06  abs  -89.6 dBFS  no drive
+hq   F05   PRESET A  k 28 v110  H6    rc3  -54.50  stage1  -53.54  limit  -53.58  noatk  -54.50  abs  -83.8 dBFS  DRIVE preset
+hq   F05   PRESET B  k 28 v110  H6    rc3  -54.50  stage1  -53.54  limit  -53.58  noatk  -54.50  abs  -83.8 dBFS  DRIVE preset
+hq   F06   PRESET A  k 28 v 96  H3    rc3  -51.55  stage1  -50.49  limit  -50.85  noatk  -51.55  abs  -82.3 dBFS  DRIVE preset
+hq   F06   PRESET B  k 28 v 96  H3    rc3  -51.55  stage1  -50.49  limit  -50.85  noatk  -51.55  abs  -82.3 dBFS  DRIVE preset
+hq   F08   PRESET A  k 45 v 96  H5    rc3  -60.87  stage1  -58.36  limit  -58.44  noatk  -59.98  abs  -85.1 dBFS  no drive
+hq   F08   PRESET B  k 28 v 20  H4    rc3  -51.73  stage1  -49.96  limit  -50.07  noatk  -51.80  abs  -94.0 dBFS  no drive
+hq   F08   PRESET B  k 45 v 96  H5    rc3  -60.87  stage1  -58.36  limit  -58.44  noatk  -59.98  abs  -85.1 dBFS  no drive
+hq   F10   PRESET A  k 45 v 64  inh   rc3  -46.24  stage1  -41.31  limit  -43.50  noatk  -46.24  abs  -77.0 dBFS  DRIVE preset
+hq   F10   PRESET B  k 45 v 64  inh   rc3  -46.24  stage1  -41.31  limit  -43.50  noatk  -46.24  abs  -77.0 dBFS  DRIVE preset
