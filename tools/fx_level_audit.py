@@ -63,7 +63,9 @@ def render(job):
     for n, v in notes:
         ls += [f"{T_ON} midi 0x90 {n} {v}", f"{T_OFF} midi 0x80 {n} 0"]
     ls.append(f"{END} end")
-    d = os.path.join(OUT, "runs", os.path.basename(b))
+    # (a folder per process: two pytest workers (xdist) render the same tags at once, and one removed the other's
+    # .wav before it was read, FileNotFoundError, the PR #36 host-pytest 4/4 job)
+    d = os.path.join(OUT, "runs", "%s-%d" % (os.path.basename(b), os.getpid()))
     os.makedirs(d, exist_ok=True)
     out = os.path.join(d, tag.replace("/", "_"))
     with open(out + ".txt", "w") as f:
@@ -74,6 +76,10 @@ def render(job):
     x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float).reshape(-1, 2) / 32768
     for e in (".wav", ".txt"):
         os.remove(out + e)
+    try:
+        os.rmdir(d)                                 # (the process's folder, once its last render is read)
+    except OSError:
+        pass
     return tag, x[:, 0], x[:, 1]
 
 
