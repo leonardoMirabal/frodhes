@@ -615,7 +615,7 @@ def test_usb_host_tune_on_the_0_9_9_d2_takes(tmp_path):
     motor: the d2 now plays its usb-host with the motor off). (2026-11-10) Since the 0.9.10 sound (rc4: the proposed 19,
     the engine changes) the host no longer plays what those 0.9.9 takes hold, so the residual verdict is not judged
     here any more (a sound check against an old release's takes); the TUNE is: measured -8 on all three, under 1 c
-    left after it"""
+    left after it. The residual check comes back when new rc4 (0.9.10) d2 takes exist"""
     import shutil
     import pytest
     src = _d2b()
