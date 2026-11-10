@@ -1668,6 +1668,15 @@ static void cmp_auto(void)                               /* (main loop: fx_set; 
     fx_cmp_amk = (q * CMP_SLOPE[fx_p[FXP_CMP_RATIO] & 7]) >> 12;
     fx_cmp_beta = t <= 56 ? 0 : t >= 80 ? CMP_BETA : CMP_BETA * (t - 56) / 24;   /* the body lift fades in with it */
 }
+/* the auto make-up never past the reduction (stage 2, the coordinator 2026-11-10): it gives back at most what the
+ * compressor takes at that moment, so the gain over MAKEUP is never above 1 and no peak rises over the bypass (a slow
+ * ATTACK let a v127 chord's strike through under the full auto make-up: +3.0 dB at THRESH -40, 20:1, ATTACK 100).
+ * The part of it the reduction does not cover, to subtract */
+static inline int32_t cmp_amx(int32_t amk, int32_t gr)
+{
+    int32_t x = amk - gr;
+    return x > 0 ? x : 0;
+}
 static inline int32_t cmp_glide(int32_t mk)              /* cmp_mk one sub-block closer to mk */
 {
     int32_t d = mk - cmp_mk;
@@ -1686,7 +1695,8 @@ static void fx_comp(int32_t *m, uint32_t n)
     int32_t kas = kr16 >= CMP_SAK ? ka >> CMP_SAS : ka, beta = fx_cmp_beta;   /* kas: a small rise's attack */
     int32_t thr = -((fx_p[FXP_CMP_AMT] * 27434) >> 7);              /* log2 Q12 re full scale: 0 .. -6.64 (-40 dB) */
     int32_t slope = CMP_SLOPE[fx_p[FXP_CMP_RATIO] & 7];
-    int32_t mk = ((fx_p[FXP_CMP_GAIN] * 16461) >> 7) + fx_cmp_amk;  /* make-up + the auto make-up, log2 Q12 */
+    int32_t amk = fx_cmp_amk;
+    int32_t mk = ((fx_p[FXP_CMP_GAIN] * 16461) >> 7) + amk;         /* make-up + the auto make-up, log2 Q12 */
     if (mk > 16461) mk = 16461;                                     /* (MAKEUP + the auto make-up: at most +24 dB) */
     int on = fx_p[FXP_CMP_SW] != 0;
     cmp_gsh = cmp_gsh_of(kr16);
@@ -1733,7 +1743,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         cmp_hd = hd;
         gr = cmp_body(cmp_gsm(cmp_gr_at(cmp_env, thr, slope)), beta);
         fx_cmp_gr = gr;
-        g1 = cmp_exp2(cmp_glide(mk) - gr);
+        g1 = cmp_exp2(cmp_glide(mk) - gr - cmp_amx(amk, gr));
         cmp_ds = cmp_ds * 1664525u + 1013904223u;
         dt = cmp_env >= (128 << 8) ? CMP_DTH + (cmp_ds >> 26) : CMP_DTH0;
         step = (g1 - g0) / 16;
@@ -1782,7 +1792,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         cmp_hd = hd;
         gr = cmp_body(cmp_gsm(cmp_gr_at(cmp_env, thr, slope)), beta);
         fx_cmp_gr = gr;
-        g1 = cmp_exp2(cmp_glide(mk) - gr);
+        g1 = cmp_exp2(cmp_glide(mk) - gr - cmp_amx(amk, gr));
         cmp_ds = cmp_ds * 1664525u + 1013904223u;
         dt = cmp_env >= (128 << 8) ? CMP_DTH + (cmp_ds >> 26) : CMP_DTH0;
         step = (g1 - g0) / 16;

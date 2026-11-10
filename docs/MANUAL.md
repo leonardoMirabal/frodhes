@@ -353,8 +353,9 @@ comes first in the chain, right after the piano. It stays clean on chords: it ho
 waveform and lets it go smoothly (about 0.1 s), so it adds no roughness of its own; after a loud chord a soft note
 comes back to full level within about 0.3 s.
 
-Below −17.6 dB THRESH brings its own make-up: turning it down (or RATIO up) keeps the average volume the same and
-squeezes the dynamics, so soft notes come up and loud ones go down. Past −25 dB a strike gets the full RATIO and a held
+Below −17.6 dB THRESH brings its own make-up: it gives back the first few dB of reduction, so moderate playing
+keeps its level while the loudest parts are squeezed. It never gives back more than the compressor is taking at that
+moment, so no peak comes out louder than with the compressor off (MAKEUP, set by hand, can still raise it). Past −25 dB a strike gets the full RATIO and a held
 note then relaxes to about two thirds of the reduction over 0.2 s, so heavy settings bring the sustain up instead of
 clamping it. Its release follows the music: a chord's beating does not pump it, a new strike lets it go at RELEASE's
 speed.

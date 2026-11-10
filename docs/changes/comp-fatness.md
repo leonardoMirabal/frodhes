@@ -1,6 +1,7 @@
 ## Changes
-- COMPRESSOR: THRESH and RATIO bring their own make-up (none up to -17.6 dB, where every factory preset sits): turning
-  THRESH down keeps the average loudness and squeezes the dynamics. MAKEUP is a trim on top.
+- COMPRESSOR: THRESH and RATIO bring their own make-up (none up to -17.6 dB, where every factory preset sits): it gives
+  back the first dB of reduction, never more than the compressor takes at that moment, so no peak rises over the
+  compressor-off level. MAKEUP is a trim on top.
 - COMPRESSOR: past -25 dB (faded in from -17.6) a held note relaxes to about two thirds of its reduction over 0.2 s
   (a strike gets the full RATIO), so heavy compression brings the sustain up against the attack. The factory presets
   (THRESH -14.5 .. -17.6 dB) are unaffected by both.

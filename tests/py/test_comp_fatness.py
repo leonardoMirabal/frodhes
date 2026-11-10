@@ -52,7 +52,9 @@ def test_auto_makeup_and_fatness():
         r = run(SETS, atk)
         for k in SETS:
             d = [r[f"{k}|{s}"]["cb"] - r[f"off|{s}"]["cb"] for s in SIG]
-            assert abs(np.mean(d)) <= 0.3, f"{k} ATK {atk}: the average loudness {np.mean(d):+.2f} re the bypass"
+            # THRESHOLD: |mean| <= 0.3 -> every signal <= +0.05 cb (stage 2, 2026-11-10: the auto make-up only up to the
+            # reduction, so nothing is louder than the bypass; the average is below it by design, -1.2 .. -2 cb)
+            assert max(d) <= 0.05, f"{k} ATK {atk}: a signal louder than the bypass, {max(d):+.2f} cb"
             on, off = r[f"{k}|chd127"], r[f"off|chd127"]
             assert max(on["pkL"], on["pkR"]) <= max(off["pkL"], off["pkR"]) + 0.05, f"{k} ATK {atk}: the chord's peak"
             if (k, atk) in FAT:

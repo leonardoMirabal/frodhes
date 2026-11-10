@@ -476,7 +476,8 @@ def test_compressor_threshold_and_makeup(eng):
         def err(T):
             o = lvl - T
             sel = (o > -9) & (o < 12)
-            model = np.where(o <= -3, 0, np.where(o < 3, SL * (o + 3) ** 2 / 12, SL * o)) - auto
+            model = np.maximum(np.where(o <= -3, 0, np.where(o < 3, SL * (o + 3) ** 2 / 12, SL * o)) - auto, 0)
+            # (the auto make-up gives back at most the reduction: fx.c cmp_amx)
             return np.sqrt(np.mean((gr[sel] - model[sel]) ** 2)) if sel.sum() > 20 else 99
 
         Ts = np.linspace(-45, 0, 901)

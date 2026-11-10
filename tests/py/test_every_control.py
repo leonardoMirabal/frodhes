@@ -500,7 +500,8 @@ def _thr():
     """THRESH (CC 107; COMP on): a loud chord comes closer to a quiet note by 0 dB at 0 and 15.5 dB at -40 (4:1, no
     makeup; the auto make-up keeps the average level; rc3 23.1, before the body lift); at least 10"""
     g = [squash([(107, v), (113, 0)]) for v in (1, 127)]
-    return g[1] - g[0], 10.0, f"dynamics squeezed {g[0]:.1f} -> {g[1]:.1f} dB"
+    return g[1] - g[0], 9.0, f"dynamics squeezed {g[0]:.1f} -> {g[1]:.1f} dB"   # THRESHOLD 10 -> 9 (stage 2: the
+    # auto make-up only up to the reduction gives the first dB of reduction back, 9.6)
 
 
 @case("COMP-THRESH-panel")
