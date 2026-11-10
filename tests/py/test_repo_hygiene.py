@@ -27,6 +27,10 @@ THIRD_PARTY_OK = {"move/vendor/": "move/vendor/LICENSE.schwung"}   # "path/prefi
                                                 # Move's plugin ABI header, MIT, with its notice)
 # names replaced by generic wording in 0.9.5 (comments, tools, tests, public text)
 BRANDS = re.compile(r"reface|yamaha|ableton|arturia|pigments|kontakt|orchestral mallets|jrhodes|fender", re.I)
+# music software by name (2026-11-08, the plugin's docs): public text says "a CLAP host", "an Audio Unit host";
+# case-sensitive, so the words logic / live / reason in code stay free (the real host list: private/)
+DAWS = re.compile(r"\b(?:Logic Pro|Logic|GarageBand|MainStage|Bitwig|Reaper|REAPER|Studio One|Renoise|Cubase|Nuendo|"
+                  r"FL Studio|Pro Tools|Ardour|Reason Studios|Ableton Live)\b")
 FENDER_OK = re.compile(r"trademark", re.I)      # the non-affiliation / trademark lines may name the owners
 # the Move as a target (the user, 2026-10-28: "Ableton Move" is the product Frodhes runs on, as M-VAVE FM-1): the
 # product name, a manual anchor made from it, and what the Move itself reports (its login, the USB port names)
@@ -79,6 +83,8 @@ def problems(files, root=ROOT):
                 if m.group(0).lower() in ("fender", "ableton") and FENDER_OK.search(line):
                     continue
                 bad.append(f"{f}:{n}: brand name {m.group(0)!r} (use generic wording)")
+            for m in DAWS.finditer(line):
+                bad.append(f"{f}:{n}: music software name {m.group(0)!r} (use generic wording: a CLAP / VST3 / AU host)")
     return bad
 
 
@@ -112,6 +118,7 @@ def test_each_rule_fires(tmp_path):
         "vendor/lib/x.c": b"int x;\n",                                   # third-party copy
         "firmware/src/a.c": b"/* the Yamaha reface CP chain */\n",       # replaced brand
         "tools/m.py": b"# an Ableton pack\n",
+        "docs/d.md": b"rescan in Bitwig and Logic; the logic of it\n",       # music software by name
         "LICENSING.md": b"\"Fender\" and \"Rhodes\" are trademarks of their owners\n",   # allowed
         "firmware/src/p.c": b"/* KHLON TSH8 OHCD BHLUE DYNO */\n",       # the user's names: allowed
         "docs/releases/v0.9.4.md": b"a physically modelled Fender Rhodes\n",            # published notes: exempt
@@ -120,4 +127,5 @@ def test_each_rule_fires(tmp_path):
     joined = "\n".join(bad)
     assert "tools/blob.bin: binary" in joined and "tools/huge.txt" in joined and "vendor/lib/x.c" in joined
     assert "firmware/src/a.c:1: brand name 'Yamaha'" in joined and "'reface'" in joined and "tools/m.py:1" in joined
+    assert "docs/d.md:1: music software name 'Bitwig'" in joined and "'Logic'" in joined and "'logic'" not in joined
     assert "LICENSING.md" not in joined and "p.c" not in joined and "ok.png" not in joined and "v0.9.4" not in joined

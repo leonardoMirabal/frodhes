@@ -135,3 +135,16 @@ def test_cli(tmp_path):
     r = run("d2", "--fake", "--ws", "none", "--engines", "rhodes", "--inject", "hiss", "--out", str(tmp_path / "d"))
     md = open(tmp_path / "d" / "summary.md").read()
     assert r.returncode == 2 and "| all | preflight | FAIL" in md and "usb-host" not in md, md
+
+
+def test_preflight_unread_channel_stops(tmp_path):
+    """the slot's receive channel unread (no "send" in the channel): the preflight stops with the reason, never a
+    KeyError (the device run's crash at preflight_cmd: chan["send"])"""
+    rep = {"ws": {"synth": "frodhes"}, "config": {}, "track": {}, "errors": ["shadow_chain_config.json: not read"]}
+    chan = mh.resolve_channel(rep)
+    assert chan["stop"] and "send" not in chan
+
+    class A:
+        fake, ws, midi, audio, host, inject = False, "ws://x", None, None, None, ()
+    ok, res = mh.preflight_cmd(A(), str(tmp_path), chan, rep)
+    assert not ok and res["verdict"].startswith("STOP:") and "--ch N" in res["verdict"], res

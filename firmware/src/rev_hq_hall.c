@@ -23,14 +23,21 @@
  * mix writes a row with plain stores; line k reads its column RQH_LEN[k] rows back (+ its modulation). RQH_R is a
  * multiple of the block, so a block's 32 rows never wrap; a read across the end is copied (rarely).
  * Exact silence: while the tank is quiet (every line end under RQH_LOUD) the products truncate toward zero (sh_tz), the
- * one-pole decays toward its input, the mix's / 4 truncates (always): without input every line can only shrink; loud,
- * the line ends round (no bias: the T60 holds at any level). rev_hqh_active() is 0 once the input and every line end have been 0
- * for longer than the longest line. Start: O(1) (the ring is not cleared): until a line has been written through,
+ * one-pole decays toward its input, the diffusers and the mix's / 16 truncate: without input every line can only
+ * shrink; loud, the line ends, the diffusers and the mix round (no bias: the T60 holds at any level). The line ends
+ * keep 2 bits under the ring's LSB (16x the line's scale; quiet: the ring's 4x as before, x 4) into the mix and the
+ * taps, and the return rounds once (0.9.10 rev-grain: at a low MIX the tank never leaves the quiet state; the taps at
+ * the ring's LSB, the return truncated after them, left harmonics up to 8 dB over the linear reverb's; loud, the
+ * diffusers' and the mix's truncation put the superposition residual at MIX 127 at -73.7 dBFS, now -76.4 (RQH_LOUD): the
+ * effects' pristine gate's -74). rev_hqh_active() is 0 once the input and every line end have been 0 for longer than the longest line. Start: O(1) (the ring is not cleared): until a line has been written through,
  * its reads older than the start read 0 (through the copy of the ring's end, the first 93 ms). */
 
 #ifndef FR_RAM
 #define FR_RAM
 #define FR_FAR(fn) fn
+#endif
+#ifndef FX_RAM                                  /* (frodhes.c: FR_RAM, or flash in FR_C1 builds: core 1 runs the effects from XIP) */
+#define FX_RAM FR_RAM
 #endif
 /* the cost, us per 256-frame block (instruction counts of the compiled loops, rev_hq.c's REV_US_* comment) */
 #define REV_US_HQH 445u
@@ -46,9 +53,18 @@ static const uint16_t RQH_LEN[RQH_NL] = {1427, 1789, 2161, 2539, 2903, 3271, 363
 _Static_assert(RQH_R >= RQH_LMAX + RQH_SW + 1u + 32u && RQH_R % 32u == 0u, "rev_hq_hall.c: the ring");
 #define RQH_KP 340                                      /* TONE's pole per damp step (Q15) */
 #define RQH_SGN 0x96u                                   /* the input's sign per line (bit k: - for line k) */
-#define RQH_OUT 13800                                   /* the taps (Q13 of the row / 4: the half-rate HALL's Bark loudness) */
-#define RQH_LOUD 1024                                   /* a line end this quiet (4x the line's scale, all 8, the last block)
-                                                         * truncates: it then dies to exact zero; louder, they round */
+#define RQH_OUT 13800                                   /* the taps (Q13 of the row / 16 x 16: the half-rate HALL's Bark
+                                                         * loudness; rev_hq.c's return takes the 16 out) */
+#define RQH_LOUD 2048                                   /* a line end this quiet (16x the line's scale, all 8, the last block)
+                                                         * truncates: it then dies to exact zero; louder, they round. (It was
+                                                         * 1024 at 4x: a loud tail switched to truncating while a louder one
+                                                         * still rounded, the superposition residual of HALL MIX 127 -73.7 dBFS
+                                                         * against the bypass' -80 + 6, tools/fx_pristine.py; 128 at 4x: -79.9,
+                                                         * the tail's exact zero ~0.1 s later at DECAY 127, 2026-11-08. With
+                                                         * 0.9.10 rev-grain's 2 extra bits and loud-mode rounding, 2048 at 16x
+                                                         * (512 at 4x): -76.4; 512 at 16x put a click on the HQ MARIMBA's
+                                                         * key-up (clk_off -48 dB, the quiet switch's step at a low level), 1024 one
+                                                         * on F02 k93v110; 4096: -74.2, too near the -74 limit) */
 static const uint16_t RQH_AL[RQH_AN] = {210, 158, 561, 410};
 static const int16_t RQH_AG[RQH_AN] = {12288, 12288, 10240, 10240};   /* Q14: 0.75, 0.75, 0.625, 0.625 */
 #define RQH_HZ(f) ((uint32_t)((f) * CTL / 44100.0 * 4294967296.0))
@@ -72,6 +88,9 @@ typedef struct {
 } rev_hqh_t;
 _Static_assert(RQ_NC == 32u, "rev_hq_hall.c: one control block = 32 samples");
 
+/* the rounding (a loud tank) and the truncation toward zero (a quiet one: it dies to exact zero) */
+#define RQH_RND(m, sh) (((m) + (1 << ((sh) - 1))) >> (sh))
+#define RQH_TZ(m, sh) sh_tz(m, sh)
 static void rev_hqh_start(rev_hqh_t *s)
 {
     uint32_t k;
@@ -94,9 +113,9 @@ static void rqh_gains(rev_hqh_t *s, int32_t sz)
     }
     s->gsz = sz;
 }
-/* the 4 diffusers over the block (v = x + g b, y = b - g v, Q14, truncated: no input, no growth), in runs that do
- * not wrap */
-static FR_RAM __attribute__((noinline)) void rqh_dif(rev_hqh_t *s, int32_t *x)
+/* the 4 diffusers over the block (v = x + g b, y = b - g v, Q14; lo (the tank quiet): truncated, no input, no growth;
+ * loud: rounded), in runs that do not wrap */
+static FX_RAM __attribute__((noinline)) void rqh_dif(rev_hqh_t *s, int32_t *x, int lo)
 {
     int16_t *a = s->ap;
     uint32_t k, i;
@@ -107,11 +126,17 @@ static FR_RAM __attribute__((noinline)) void rqh_dif(rev_hqh_t *s, int32_t *x)
             int16_t *q = a + d;
             int32_t *u = x + i;
             m = L - d < RQ_NC - i ? L - d : RQ_NC - i;
-            if ((s->afull >> k) & 1u)
+            if (((s->afull >> k) & 1u) && lo)
                 for (j = 0; j < m; j++) {
                     int32_t b = q[j], v = hl_c16(u[j] + sh_tz(b * g, 14));
                     q[j] = (int16_t)v;
                     u[j] = b - sh_tz(v * g, 14);
+                }
+            else if ((s->afull >> k) & 1u)                  /* (loud: rounded) */
+                for (j = 0; j < m; j++) {
+                    int32_t b = q[j], v = hl_c16(u[j] + RQH_RND(b * g, 14));
+                    q[j] = (int16_t)v;
+                    u[j] = b - RQH_RND(v * g, 14);
                 }
             else                                        /* (not written through since the start: it reads 0) */
                 for (j = 0; j < m; j++) {
@@ -134,14 +159,14 @@ static FR_RAM __attribute__((noinline)) void rqh_dif(rev_hqh_t *s, int32_t *x)
     for (i = 0; i < RQ_NC; i++, q += RQH_NL, y += RQH_NL) {                                                     \
         int32_t u = RD, v;                                                                                      \
         l = u + SH((l - u) * p, 15);                                                                            \
-        v = SH(l * g, 15);                                                                                      \
+        v = SH##V(l * g);                                                                                      \
         *y = v;                                                                                                 \
         ao |= v;                                                                                                \
         am |= (uint32_t)(v + RQH_LOUD);                                                                         \
     }
-#define RQH_RND(m, sh) (((m) + (1 << ((sh) - 1))) >> (sh))
-#define RQH_TZ(m, sh) sh_tz(m, sh)
-static FR_RAM __attribute__((noinline)) uint32_t rqh_end(const int16_t *q, int32_t f, int32_t *y, int32_t *lp, int32_t p,
+#define RQH_TZV(m) (sh_tz(m, 15) * 4)                   /* (the line end: quiet at the ring's 4x, as before; loud 16x) */
+#define RQH_RNDV(m) RQH_RND(m, 13)
+static FX_RAM __attribute__((noinline)) uint32_t rqh_end(const int16_t *q, int32_t f, int32_t *y, int32_t *lp, int32_t p,
                                                          int32_t g, int lo, int32_t *pao)
 {
     int32_t l = *lp, ao = 0;
@@ -157,27 +182,35 @@ static FR_RAM __attribute__((noinline)) uint32_t rqh_end(const int16_t *q, int32
     *pao |= ao;
     return am;
 }
-/* the mix: the 8-point Hadamard of the line ends, its row / 4 (truncated toward zero: no bias, and the flash it
- * saves against a rounded twin; the T60s the same) +- the input, clamped,
+/* the mix: the 8-point Hadamard of the line ends, its row / 16 (lo: truncated toward zero; loud: rounded) +- the
+ * input, clamped,
  * into the ring's rows o (8 plain stores a row); row 0 the mid, row 1 the side */
+/* the taps: |h| <= 8 x 4 x 46341, 64-bit; rounded symmetrically (half away from zero: p + 4096 - 1 when negative),
+ * an odd function, so a quiet tank adds no even harmonic (0.9.10 rev-grain on rc-0910: the floor here lifted
+ * hq F11 B k45v40 H6 1.5 dB, residual 51.7 against v0.9.9's 46.4; symmetric: 44.3) */
+#define RQH_TAP(h) ((int32_t)(((int64_t)(h) * RQH_OUT + 4096 + ((int64_t)(h) * RQH_OUT >> 63)) >> 13))
 #define RQH_BF(a, b) { int32_t t_ = a; a = t_ + b; b = t_ - b; }
-#define RQH_W8(SH, k, h) o[k] = (int16_t)hl_c16(SH(h, 2) + (((RQH_SGN >> k) & 1u) ? -x : x));
+#define RQH_W8(SH, k, h) o[k] = (int16_t)hl_c16(SH(h, 4) + (((RQH_SGN >> k) & 1u) ? -x : x));
 #define RQH_MIX8(SH)                                                                                            \
     for (i = 0; i < RQ_NC; i++, y += RQH_NL, o += RQH_NL) {                                                     \
         int32_t h0 = y[0], h1 = y[1], h2 = y[2], h3 = y[3], h4 = y[4], h5 = y[5], h6 = y[6], h7 = y[7], x = xs[i];\
         RQH_BF(h0, h1) RQH_BF(h2, h3) RQH_BF(h4, h5) RQH_BF(h6, h7)                                             \
         RQH_BF(h0, h2) RQH_BF(h1, h3) RQH_BF(h4, h6) RQH_BF(h5, h7)                                             \
         RQH_BF(h0, h4) RQH_BF(h1, h5) RQH_BF(h2, h6) RQH_BF(h3, h7)                                             \
-        mid[i] = ((h0 >> 2) * RQH_OUT) >> 13;           /* (|h| <= 8 x 46341: the product < 2^31) */            \
-        side[i] = ((h1 >> 2) * RQH_OUT) >> 13;                                                                  \
+        mid[i] = h0;                                                                                            \
+        side[i] = h1;                                                                                           \
         RQH_W8(SH, 0, h0) RQH_W8(SH, 1, h1) RQH_W8(SH, 2, h2) RQH_W8(SH, 3, h3)                                 \
         RQH_W8(SH, 4, h4) RQH_W8(SH, 5, h5) RQH_W8(SH, 6, h6) RQH_W8(SH, 7, h7)                                 \
     }
-static FR_RAM __attribute__((noinline)) void rqh_mix8(int16_t *o, const int32_t *y, const int32_t *xs, int32_t *mid,
-                                                      int32_t *side)
+static FX_RAM __attribute__((noinline)) void rqh_mix8(int16_t *o, const int32_t *y, const int32_t *xs, int32_t *mid,
+                                                      int32_t *side, int lo)
 {
     uint32_t i;
-    RQH_MIX8(RQH_TZ)
+    if (lo) RQH_MIX8(RQH_TZ)
+    else RQH_MIX8(RQH_RND)
+    for (i = 0; i < RQ_NC; i++) { mid[i] = RQH_TAP(mid[i]); side[i] = RQH_TAP(side[i]); }   /* the taps: their own
+                                                         * pass (mid / side hold rows 0 and 1 till then), the mix's
+                                                         * registers free of the 64-bit products */
 }
 
 static __attribute__((noinline)) void rev_hqh_run(rev_hqh_t *s, const int32_t *in, int32_t *mid, int32_t *side,
@@ -190,8 +223,8 @@ static __attribute__((noinline)) void rev_hqh_run(rev_hqh_t *s, const int32_t *i
         rqh_gains(s, s->gsz < 0 ? c->size : s->gsz + (c->size > s->gsz ? 1 : -1));
     if (c->damp != s->gdmp) { s->p = clampi(c->damp * RQH_KP, 0, 31500); s->gdmp = c->damp; }
     for (i = 0; i < RQ_NC; i++) { s->x[i] = in[i]; act |= in[i]; }
-    FR_FAR(rqh_dif)(s, s->x);
     lo = s->amax < 2u * RQH_LOUD;
+    FR_FAR(rqh_dif)(s, s->x, lo);
     for (k = 0; k < RQH_NL; k++) {
         uint32_t D = RQH_LEN[k], f = 0, r;
         const int16_t *q;
@@ -213,7 +246,7 @@ static __attribute__((noinline)) void rev_hqh_run(rev_hqh_t *s, const int32_t *i
         am |= FR_FAR(rqh_end)(q, (int32_t)f, &s->y[0][k], &s->lp[k], s->p, s->g[k], lo, &act);
     }
     s->amax = am;                                       /* (< 2 RQH_LOUD: the tank is quiet) */
-    FR_FAR(rqh_mix8)(s->ring + s->w * RQH_NL, &s->y[0][0], s->x, mid, side);
+    FR_FAR(rqh_mix8)(s->ring + s->w * RQH_NL, &s->y[0][0], s->x, mid, side, lo);
     s->w = s->w + RQ_NC >= RQH_R ? 0u : s->w + RQ_NC;
     if (s->e < RQH_WARM) s->e += RQ_NC;
     s->quiet = act ? 0u : s->quiet < RQH_WARM + RQ_NC ? s->quiet + RQ_NC : s->quiet;

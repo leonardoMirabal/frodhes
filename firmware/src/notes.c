@@ -42,6 +42,7 @@ FR_COLD static int eng_ring_room(void) { return eq_w - eq_r < 31u; }   /* (one s
                                                                 * (merged in, it splits rh_F / rh_x: engine.c eq) */
 #endif
 static struct { uint32_t down[4], sus[4]; uint8_t on; } ped PED_OWN_SECTION;
+static void live_pedal(uint32_t on);             /* seq.c: the recorder's notes the pedal held end with it */
 static void eng_send(uint32_t type, uint32_t n, uint32_t v)
 {
     uint32_t i;
@@ -56,9 +57,11 @@ static void eng_send(uint32_t type, uint32_t n, uint32_t v)
         for (i = 0; i < 4u; i++) ped.sus[i] = on ? (ped.on ? ped.sus[i] : 0u) | ped.down[i] : 0u;
         ped.on = on;
         eng_pedal_level(v);
+        live_pedal(on);
     } else {
         for (i = 0; i < 4u; i++) ped.down[i] = ped.sus[i] = 0;
         eng_all_off();
+        live_pedal(0);
     }
 }
 static void eng_q(uint32_t type, uint32_t n, uint32_t v)

@@ -23,6 +23,7 @@ from scipy.signal import resample_poly
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import hil_scan as h  # noqa: E402
+import dry_dist  # noqa: E402
 
 BIN = os.path.join(ROOT, "build", "host", "frodhes")
 FS = h.FS
@@ -38,7 +39,7 @@ def host_build():
 def take(noise, key, up_ms):
     """VRig.reset (DRY, VIBES, the motor off, NOISE) + CC 10, key v100 at 0.5 s, let go up_ms ms after 2.0 s;
     resampled to FS: (mono, the onset index as the suite finds it)"""
-    s = ["20 midi 0xB0 81 0", "21 midi 0xB0 91 0", "60 midi 0xB0 79 0", "61 midi 0xB0 47 0", f"62 midi 0xB0 {NZ} {noise}",
+    s = dry_dist.type_base_lines(10) + ["20 midi 0xB0 81 0", "21 midi 0xB0 91 0", "60 midi 0xB0 79 0", "61 midi 0xB0 47 0", f"62 midi 0xB0 {NZ} {noise}",
          "450 midi 0xB0 10 127", f"500 midi 0x90 {key} 100", f"{2000 + up_ms} midi 0x80 {key} 0", "2600 end"]
     out = hostrun.out(f"knock-{noise}-{key}-{up_ms}")
     with open(out + ".txt", "w") as f:
@@ -51,15 +52,14 @@ def take(noise, key, up_ms):
 
 
 @pytest.mark.parametrize("seed", (2, 5, 6, 7))
-def test_the_suite_row_on_the_host(seed):
+def test_the_suite_row_on_the_host(seed, tmp_path):
     """the suite itself on the host build: the seeds whose latencies put a key-up a block later than the reference's
     (seed 2: A4 let go at 5508 ms in the NOISE 0 take, 5509 in the NOISE 48 one, a block boundary between)"""
-    js = os.path.join(ROOT, "build", "hil", "vibes-host.json")
-    if os.path.exists(js):
-        os.remove(js)                                   # (a report left by an earlier run never passes for this one)
+    js = os.path.join(str(tmp_path), "vibes-host.json")   # (its own folder: never build/hil, shared with every run;
+    env = dict(os.environ, FRODHES_HIL_OUT=str(tmp_path))  # CI arm64 2026-11-09 found the report there gone, exit 0)
     r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "hil_scan.py"), "--host", str(seed), "--only",
-                        "vibes_decay"], capture_output=True, text=True, cwd=ROOT)   # (exit 1 on a failed row: the rows say which)
-    assert os.path.exists(js), (seed, r.returncode, r.stdout[-2000:], r.stderr[-2000:])
+                        "vibes_decay"], capture_output=True, text=True, cwd=ROOT, env=env)   # (exit 1 on a failed row: the rows say which)
+    assert os.path.exists(js), (seed, r.returncode, r.stdout[-1500:], r.stderr[-1500:], os.listdir(str(tmp_path)))
     rows = json.load(open(js))["suites"]["vibes_decay"]
     bad = [(r["check"], r["setting"], r["usb"]) for r in rows if r["check"].startswith("NOISE") and not r["ok"]]
     assert not bad, (seed, bad)

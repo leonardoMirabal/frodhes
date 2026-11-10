@@ -86,6 +86,10 @@
           "label": "MARIMBA VOICE"
         },
         {
+          "level": "vel",
+          "label": "VELOCITY"
+        },
+        {
           "level": "comp",
           "label": "COMPRESSOR"
         },
@@ -467,6 +471,24 @@
         "param": "ui_engine",
         "equals": 2
       }
+    },
+    "vel": {
+      "name": "VELOCITY",
+      "params": [
+        {
+          "key": "s_vresp",
+          "name": "RESP",
+          "type": "enum",
+          "options": [
+            "FULL",
+            "LIGHT"
+          ],
+          "default": 0
+        }
+      ],
+      "knobs": [
+        "s_vresp"
+      ]
     },
     "comp": {
       "name": "COMPRESSOR",
@@ -1277,6 +1299,12 @@
           "min": 0,
           "max": 127,
           "default": 127
+        },
+        {
+          "key": "r_version",
+          "name": "VER",
+          "type": "string",
+          "access": "read"
         }
       ],
       "knobs": [
@@ -1285,7 +1313,8 @@
         "m_at_hi",
         "m_pa_cc",
         "m_pa_lo",
-        "m_pa_hi"
+        "m_pa_hi",
+        "r_version"
       ]
     }
   }

@@ -184,6 +184,11 @@ Frodhes changes its platform files in a few small places:
     unrolled on 64-bit sums (`uac_tap48` in `usb.c`, the same stream).
   - The USB audio ring keeps one more block in hand (`UA_HOLD`, `UA_N` 1024 in `usb.c`): a render of up to a whole
     block can no longer run it dry and repeat a frame. This adds 5.8 ms of USB latency.
+- **The second core (a build switch, off by default).** `tools/build.py --c1` (`FR_C1` in `frodhes.c`) builds a
+  two-core FM-1 image: `hal/fm1_core1.h` starts core 1 at boot through `APP_EARLY()` in `platform.c` (before the audio
+  and the timers), holds it on every reset (`FM1_RESET_HOOK` in `hal/fm1_sys.h`) and on a fault of core 0
+  (`FM1_FAULT_HOOK` in `hal/fm1_irq.h`); both hooks are empty in every other build. `app.ld` keeps the crash record
+  first in NOINIT, where core 1's stack lives. The default image is byte-identical with or without this code.
 - **The browser and the host.** It builds for the browser (`DINGHY_WEB`), and there is a host-mode fix in `gfx.c`.
 - **The screen.** `FONT_S` in `gen/felucca_font.h` stores only the glyphs the firmware draws (`tools/gen_font.py`;
   the others point at `?`, which `gfx.c` draws for them).

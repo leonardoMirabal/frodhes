@@ -10,6 +10,7 @@ import sys
 import wave
 
 import numpy as np
+import pytest
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -169,9 +170,15 @@ def test_usb_clock_never_over_usb_c(tmp_path):
 def test_usb_stress_detectors(tmp_path):
     ok, rep = _fake(tmp_path, mh.usb_stress, secs=8.0)
     assert ok, [t["events"] for t in rep["takes"]]
-    ok, rep = _fake(tmp_path, mh.usb_stress, ("click", 2.37), ("stale", 3.3), ("zero", 6.13), secs=16.0)
-    low = {k for _, k, _ in rep["takes"][0]["events"]}
-    assert not ok and {"click", "stale", "zero"} <= low, low
+    # (the clicks: 2.85 s, where the fake take's 50 ms lead stays under hil_crackle's LIM_ON (its limiting() mask,
+    # 2.76-3.00 s clear), labelled click; 2.41 s, under it (2.40-2.43 s held), labelled click-lim, information.
+    # f62488fd's 16-note chords put 2.37 s, the old place, under the limiter)
+    ok, rep = _fake(tmp_path, mh.usb_stress, ("click", 2.85), ("click", 2.41), ("stale", 3.3), ("zero", 6.13),
+                    secs=16.0)
+    ev = {(round(t, 2), k) for t, k, _ in rep["takes"][0]["events"]}
+    low = {k for _, k in ev}
+    assert not ok and {"click", "click-lim", "stale", "zero"} <= low, ev
+    assert (2.85, "click") in ev and (2.41, "click-lim") in ev, ev
 
 
 def test_usb_cli_fake(tmp_path):
@@ -243,6 +250,59 @@ def test_usb_host_quiet_mix_aligns_on_time(tmp_path):
     assert all(abs(w["lag_ms"] - 1000 * lag / 44100) < 0.05 for w in rep["rows"]), [
         (w["note"], w["lag_ms"]) for w in rep["rows"]]
     assert ok, rep["verdict"]
+
+
+def _quiet_take(fault):
+    """the quiet-mix take (Main Out 17.11 dB under the tap, 14.92 ms late, whole LSB with TPDF dither) with a fault"""
+    g, lag = 10 ** (-17.11 / 20), 658
+
+    class R(mh.FakeRig):
+        def rec(self, dur, events):
+            h = mh.host_phrase(events, dur, 0)
+            x = np.zeros_like(h)
+            x[lag:] = g * h[:-lag]
+            x = fault(x, lag)
+            rng = np.random.default_rng(7)
+            x += rng.uniform(-0.5, 0.5, x.shape) + rng.uniform(-0.5, 0.5, x.shape)
+            return {"x": np.round(x), "sr": 44100, "xruns": []}
+    return R()
+
+
+def test_usb_host_floor_judging(tmp_path):
+    """a note is judged only when its tail is JUDGE_OVER_FLOOR_DB over the take's rounding floor: 96 v90's tail at
+    -59.6 dBFS in the quiet mix (4370bb25) left -39.7 dB of the take's own dither and failed a sound that is the
+    host's. The rows say how far over the floor each tail is"""
+    ok, rep = mh.usb_host(_quiet_take(lambda x, lag: x), str(tmp_path), out=lambda s: None)
+    assert ok, rep["verdict"]
+    for w in rep["rows"]:
+        assert w["judged"] == (w["tail_dbfs"] >= mh.TAIL_JUDGED_DBFS and w["over_floor_db"] >= mh.JUDGE_OVER_FLOOR_DB)
+    assert sum(w["judged"] for w in rep["rows"]) >= 5, rep["rows"]
+
+
+@pytest.mark.parametrize("fault", ["slip", "gain", "softclip", "softclip0"])
+def test_usb_host_catches_planted_faults(tmp_path, fault):
+    """the floor rule still catches real faults on the quiet mix: a 1 ms timing slip inside every held note, a 1 dB
+    gain error on every other note, a soft clip (tanh, knee 2000 LSB); and a soft clip on a full-level take (knee
+    8000 LSB)"""
+    _, marks, _ = mh.phrase_events()
+    sr = 44100
+
+    def slip(x, lag):
+        for _, t, _ in marks:
+            k = int((t + 0.7) * sr) + lag
+            x = np.concatenate([x[:k], x[k - 44:]])[:len(x)]
+        return x
+
+    def gain(x, lag):
+        y = x.copy()
+        for i, (_, t, _) in enumerate(marks):
+            if i % 2:
+                y[int(t * sr) + lag:int((t + mh.NOTE_S + 0.5) * sr) + lag] *= 10 ** (1 / 20)
+        return y
+    f = {"slip": slip, "gain": gain, "softclip": lambda x, lag: 2000 * np.tanh(x / 2000),
+         "softclip0": lambda x, lag: 8000 * np.tanh(x / 10 ** (-17.11 / 20) / 8000)}[fault]
+    ok, rep = mh.usb_host(_quiet_take(f), str(tmp_path), out=lambda s: None)
+    assert not ok and rep["verdict"].startswith("DIFFERS"), rep["verdict"]
 
 
 def test_usb_host_hq_probe_only_where_the_take_resolves_it(tmp_path):
@@ -330,7 +390,8 @@ def test_usb_host_96v90_of_the_2026_10_30_take():
     far under the -30 dB limit"""
     sr, lag, late, g = 44100, 658, 953, 10 ** (-17.11 / 20)
     ev, marks, dur = mh.phrase_events()
-    h = mh.host_phrase(ev, dur, 0, None, mh.GLOBAL_CCS)
+    import dry_dist                                      # (the take played the F01 of its day: dry_dist's TYPE base,
+    h = mh.host_phrase(ev, dur, 0, None, mh.GLOBAL_CCS, dry_dist.TYPE_BASE)   # not the proposed 19's F01, 0.9.10)
     t = next(t for name, t, n in marks if name == mh.HQ_PROBE)
     a, b = int(t * sr), int((t + mh.NOTE_S) * sr)
     ta = a + sr // 2
@@ -349,10 +410,12 @@ def test_usb_host_96v90_of_the_2026_10_30_take():
     def extra(k):
         res = mh._mono(mv[a + k:b + k]) - g * mh._mono(h[a:b])
         return 20 * np.log10(np.sqrt(np.mean(res ** 2)) / np.sqrt(np.mean((g * mh._mono(h[a:b])) ** 2)))
-    assert extra(late) > -32, extra(late)                # (the old pick: the attack off, "another sound")
     corr, got = mh._align(mv, h, a, b, ta, b, lo, hi)
     assert got == lag and corr > 0.999, (got, corr)
     assert extra(got) < -35, extra(got)
+    # (the old pick: the attack off, "another sound"; 2026-11-08: 0.9.10's note -34.0 dB there against -45.1 aligned,
+    # was > -32: the trap kept as a margin over the right lag's residual)
+    assert extra(late) > extra(got) + 6, (extra(late), extra(got))
 
 
 def test_align_breaks_a_steady_tail_tie_on_the_attack():
@@ -484,3 +547,197 @@ def test_clock_probe_cli_fake(tmp_path):
     assert r.returncode == 1 and "PRESS PLAY NOW" in r.stdout and "mb_clock_block" in r.stdout, r.stdout[-2000:]
     r = run("clock-probe", "--fake", "--out", str(tmp_path / "ok"))
     assert r.returncode == 0 and "PASS" in r.stdout, r.stdout[-2000:]
+
+
+# ---- the 0.9.9 d2's fixes (K1): the slot's TUNE, MUTE over the WebSocket, VIBES' motor off
+def _d2b():
+    """the 0.9.9 USB-C d2's saved takes (build/rel099/move/d2b): this checkout's build/, else (a worktree, whose .git
+    file names the main checkout's .git/worktrees/<name>) the main checkout's"""
+    roots = [ROOT]
+    try:
+        g = open(os.path.join(ROOT, ".git")).read().strip()
+        if g.startswith("gitdir:") and "/.git/" in g:
+            roots.append(g.split(None, 1)[1].split("/.git/")[0])
+    except OSError:
+        pass
+    for root in roots:
+        d = os.path.join(root, "build", "rel099", "move", "d2b")
+        if os.path.isdir(d):
+            return d
+    return None
+
+
+def test_tune_for_and_the_offset():
+    """the slot's TUNE as read wins; unknown, a measured offset of 2 c or more is rounded (clamped to +-50); under it
+    the host stays at 0. pitch_offset_c reads a whole-take offset between two renders"""
+    assert mh.tune_for(-8, None) == (-8, "slot") and mh.tune_for("-8.0", 3.0) == (-8, "slot")
+    assert mh.tune_for(None, -7.8) == (-8, "measured") and mh.tune_for(None, 99.0) == (50, "measured")
+    assert mh.tune_for(None, 1.5) == (0, "none") and mh.tune_for(None, None) == (0, "none")
+    assert mh.slot_tune({"s_tune": "-8"}) == -8 and mh.slot_tune({}) is None and mh.slot_tune({"s_tune": ""}) is None
+    sr = 44100
+    _, marks, dur = mh.phrase_events()
+    t = np.arange(int(dur * sr)) / sr
+    ref = np.zeros((len(t), 2))
+    flat = np.zeros((len(t), 2))
+    for _, t0, n in marks:
+        k = (t >= t0) & (t < t0 + mh.NOTE_S)
+        f = mh.note_hz(n)
+        ref[k] += 3000 * np.sin(2 * np.pi * f * t[k])[:, None]
+        flat[k] += 3000 * np.sin(2 * np.pi * f * 2 ** (-8 / 1200) * t[k])[:, None]
+    assert abs(mh.pitch_offset_c(flat, ref, marks, sr) + 8.0) < 0.5
+
+
+def test_usb_host_renders_the_host_at_the_slots_tune(tmp_path):
+    """a Move whose slot was saved at TUNE -8 (the 0.9.9 d2: every note -8 c, DIFFERS everywhere): with the TUNE read
+    (r.tune) the host plays it too and the take passes; unread, the take's own offset gives it (measured); read
+    wrong (0), the take differs and the verdict names the offset left"""
+    class Tuned(mh.FakeRig):
+        def rec(self, dur, events):
+            h = mh.host_phrase(events, dur, 0, None, mh.GLOBAL_CCS, tune=-8)
+            x = np.zeros_like(h)
+            x[300:] = 0.5 * h[:-300]
+            return {"x": np.round(x), "sr": 44100, "xruns": []}
+    r = Tuned()
+    r.tune = -8
+    ok, rep = mh.usb_host(r, str(tmp_path / "a"), out=lambda s: None)
+    assert ok and (rep["tune"], rep["tune_source"]) == (-8, "slot") and abs(rep["pitch_left_c"]) < 1, rep["verdict"]
+    assert "TUNE -8 c (the slot's)" in rep["verdict"]
+    ok, rep = mh.usb_host(Tuned(), str(tmp_path / "b"), out=lambda s: None)
+    assert ok and (rep["tune"], rep["tune_source"]) == (-8, "measured"), rep["verdict"]
+    r.tune = 0
+    ok, rep = mh.usb_host(r, str(tmp_path / "c"), out=lambda s: None)
+    assert not ok and "DIFFERS" in rep["verdict"] and "still -8" in rep["verdict"], rep["verdict"]
+
+
+def test_usb_host_tune_on_the_0_9_9_d2_takes(tmp_path):
+    """the 0.9.9 USB-C d2's own takes (build/rel099/move/d2b, slot TUNE -8, not read then): re-analysed, the Rhodes
+    (F01) and MARIMBA (F15) passed with the measured TUNE -8 on the 0.9.9 sound; VIBES (F13) still differed (its free
+    motor: the d2 now plays its usb-host with the motor off). (2026-11-10) Since the 0.9.10 sound (rc4: the proposed 19,
+    the engine changes) the host no longer plays what those 0.9.9 takes hold, so the residual verdict is not judged
+    here any more (a sound check against an old release's takes); the TUNE is: measured -8 on all three, under 1 c
+    left after it. The residual check comes back when new rc4 (0.9.10) d2 takes exist"""
+    import shutil
+    import pytest
+    src = _d2b()
+    if src is None:
+        pytest.skip("no build/rel099/move/d2b (the 0.9.9 d2's takes)")
+    for e in ("rhodes", "marimba", "vibes"):
+        d = tmp_path / e
+        shutil.copytree(os.path.join(src, e, "usb-host"), d)
+        ok, rep = mh.usb_host_file(str(d), out=lambda s: None)
+        assert (rep["tune"], rep["tune_source"]) == (-8, "measured"), (e, rep["verdict"])
+        assert abs(rep["pitch_left_c"]) < 1, (e, rep["verdict"])
+        assert rep["program"] == mh.D2_PRESET[e]
+
+
+def test_usb_note_judges_the_pitch_against_the_tune(tmp_path):
+    """usb-note: the pitch is judged against the slot's TUNE (the fake plays at TUNE 0: read as -20, it is 20 c off)"""
+    r = mh.FakeRig()
+    r.tune = -20
+    ok, rep = mh.usb_note(r, str(tmp_path), out=lambda s: None)
+    assert not ok and rep["tune"] == -20 and "TUNE -20 c" in rep["verdict"], rep["verdict"]
+    r.tune = -5
+    ok, rep = mh.usb_note(r, str(tmp_path), out=lambda s: None)
+    assert ok, rep["verdict"]
+
+
+def test_cc_param_over_usb_c():
+    """over USB-C CC 103 (MUTE) never reaches the slot: with a WebSocket it is set there (p_release), without the caller
+    learns it was lost; CC 47 (the motor) goes both ways; the tap and the fake take the CC alone"""
+    r = mh.UsbRig.__new__(mh.UsbRig)
+    sent, ws = [], []
+    r._send = lambda kind, a, b=0: sent.append((kind, a, b))
+    assert mh.cc_param(r, 103, 127) is False and mh.cc_param(r, 47, 0) is True and mh.cc_param(r, 28, 64) is True
+    r.ws_set = lambda k, v: ws.append((k, v))
+    assert mh.cc_param(r, 103, 127) is True and mh.cc_param(r, 47, 0) is True and mh.cc_param(r, 28, 64) is True
+    assert ws == [("p_release", 127), ("p_mot_on", 0)] and sent.count(("cc", 103, 127)) == 2
+    f = mh.FakeRig()
+    assert mh.cc_param(f, 103, 127) is True and f.state[103] == 127
+
+
+def test_usb_sus_marimba_mute_over_the_websocket(tmp_path):
+    """MARIMBA usb-sus over USB-C: MUTE (CC 103 127) goes over the WebSocket and back to its default after; with no
+    WebSocket a failing row says it was NOT JUDGED and why"""
+    class Usb(mh.FakeRig):
+        fake = False
+
+    calls = []
+    r = Usb()
+    r.ws_set = lambda k, v: calls.append((k, v))
+    mh.usb_sus(r, str(tmp_path / "a"), engine="marimba", out=lambda s: None)
+    dflt = dict(mh.hs.param_defaults())[103]
+    assert calls == [("p_release", 127), ("p_release", dflt)], calls
+    ok, rep = mh.usb_sus(Usb(inject=[("nosus", 0.0)]), str(tmp_path / "b"), engine="marimba", out=lambda s: None)
+    assert not ok and rep["verdict"].startswith("NOT JUDGED: CC 103 (p_release)") and rep["lost_cc"] == [103], rep
+
+
+def test_d2_vibes_usb_host_motor_off(tmp_path):
+    """d2 plays VIBES' usb-host with the motor off on both sides (CC 47 0 after F13's program change; the host gets
+    it too) and names the slot's TUNE in the summary"""
+    code = mh.d2(mh.FakeEchoRig(), str(tmp_path), ("vibes",), stress_secs=4.0, out=lambda s: None,
+                 only=["usb-host"])
+    rep = __import__("json").load(open(tmp_path / "report.json"))
+    host = next(w for w in rep["rows"] if w["test"] == "usb-host")
+    assert code == 0 and host["report"]["motor_off"] and "motor off" in host["numbers"], host
+    assert "Slot TUNE: not read" in open(tmp_path / "summary.md").read()
+
+
+def test_take_tape_reads_the_preset_and_the_ccs():
+    """usb-host's TAPE switch: the preset a program change loads (F12 LUSH CHO, F14 VIBES ECHO, F17 TAPE ECHO, F19 WARM
+    DRIVE and the Move's TAPE variants play DELAY TAPE), then the take's own CCs (88 the type, 89 DEPTH)"""
+    assert mh.program_preset(0) == 1 and mh.program_preset(15) == 16 and mh.program_preset(32) == 17
+    assert mh.program_preset(20) is None                   # (U05: a user slot, no factory record)
+    assert [pc for pc in range(16) if mh.take_tape(pc)] == [11, 13]
+    assert mh.take_tape(32) and not mh.take_tape(33) and mh.take_tape(34)
+    assert mh.take_tape(0, [(88, 127), (89, 64)]) and not mh.take_tape(32, [(89, 0)])
+    assert not mh.take_tape(32, [(88, 40)])                # (DIG)
+
+
+class _Shifted(mh.FakeRig):
+    """the Move as the host build plays it with every note shift s later after CC 10 (MIDI over USB and the Move's
+    blocks: the 2026-11-10 TAPE study), through half the volume and 300 frames of latency; scale: one note's level"""
+    def __init__(self, program, shift, scale=None):
+        super().__init__()
+        self.program, self.shift, self.scale = program, shift, scale
+
+    def rec(self, dur, events):
+        ev = [(t + (self.shift if k != "cc" else 0.0), k, a, b) for t, k, a, b in events]
+        h = mh.host_phrase(ev, dur, self.program, None, mh.GLOBAL_CCS)
+        if self.scale:
+            name, db = self.scale
+            _, marks, _ = mh.phrase_events()
+            t = next(t for nm, t, _ in marks if nm == name) + self.shift
+            a, b = int(t * 44100), int((t + mh.NOTE_S) * 44100)
+            h[a:b] *= 10 ** (db / 20)
+        x = np.zeros_like(h)
+        x[300:] = 0.5 * h[:-300]
+        return {"x": np.round(x), "sr": 44100, "xruns": []}
+
+
+def test_usb_host_judges_tape_on_level_and_spectrum(tmp_path):
+    """F17 TAPE ECHO with the notes one and two blocks later after CC 10 than the host plays them: the residual reads
+    the wow's phase (over -40 dB on some note), so TAPE is judged on level and critical bands and passes; a note 1 dB
+    down fails it; DIG at the same shift (F01 with DELAY DIG) stays on the residual and passes"""
+    for sh in (256 / 44100, 512 / 44100):
+        ok, rep = mh.usb_host(_Shifted(32, sh), str(tmp_path / ("t%d" % int(sh * 1e5))), program=32, out=lambda s: None)
+        assert rep["tape"] and ok, rep["verdict"]
+        assert "TAPE: level and spectrum" in rep["verdict"]
+        assert any(w["residual_net_db"] > -40 for w in rep["rows"] if w["judged"]), "the residual alone would pass"
+        assert all(abs(w["level_db"]) <= mh.TAPE_LEVEL_DB and w["cb_max_db"] <= mh.TAPE_CB_DB for w in rep["rows"])
+    ok, rep = mh.usb_host(_Shifted(32, 256 / 44100, ("60 v100", -1.0)), str(tmp_path / "low"), program=32,
+                          out=lambda s: None)
+    assert not ok and rep["verdict"].startswith("DIFFERS (TAPE)") and "60 v100" in rep["verdict"], rep["verdict"]
+
+
+def test_usb_host_dig_stays_on_the_residual(tmp_path):
+    """DELAY DIG at DEPTH 64 (no wow) on F15 MARIMBA (no LFO effect on): the same one-block shift is exact after the
+    alignment, so DIG stays on the residual and passes"""
+    orig = mh.phrase_events
+    dig = [(0.06, "cc", 88, 40), (0.06, "cc", 89, 64)]
+    try:
+        mh.phrase_events = lambda t0=0.4: (lambda e: (e[0][:1] + dig + e[0][1:], e[1], e[2]))(orig(t0))
+        ok, rep = mh.usb_host(_Shifted(14, 256 / 44100), str(tmp_path / "dig"), program=14, out=lambda s: None)
+    finally:
+        mh.phrase_events = orig
+    assert not rep["tape"] and ok, rep["verdict"]
+    assert all(w["residual_net_db"] <= -40 for w in rep["rows"] if w["judged"])

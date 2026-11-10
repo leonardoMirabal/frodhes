@@ -104,6 +104,12 @@
           ]
         },
         {
+          "title": "VELOCITY",
+          "lines": [
+            "K1 RESP"
+          ]
+        },
+        {
           "title": "COMPRESSOR",
           "lines": [
             "K1 THRESH",
@@ -220,7 +226,8 @@
             "K3 AT HI",
             "K4 PA CC",
             "K5 PA LO",
-            "K6 PA HI"
+            "K6 PA HI",
+            "K7 VER"
           ]
         }
       ]

@@ -14,6 +14,11 @@ import pytest
 
 import hostrun
 
+import os  # noqa: E402
+import sys  # noqa: E402
+sys.path.insert(0, os.path.join(hostrun.ROOT, "tools"))
+import dry_dist  # noqa: E402
+
 FS = 44100
 CC_TW_SW, CC_TW_DEPTH, CC_TW_SYNC, CC_TW_MODE, CC_TW_SHAPE = 17, 18, 20, 21, 22
 CC_DL_SW, CC_DL_DEPTH, CC_DL_SYNC = 88, 89, 25
@@ -867,7 +872,7 @@ def test_auto_saves_one_at_a_time():
     """the setup's auto save (HOST_SAVE_MS beside the loop) runs when the pattern's becomes due: the pattern's waits
     for it (neither busy-finishes the other in the main loop), a note sent meanwhile is taken at once, both are
     written"""
-    lines = seq_pattern()
+    lines = dry_dist.type_base_lines(10) + seq_pattern()   # (the voicing at its defaults: F01's rings longer)
     r0 = run("saves-probe", lines, 6000)
     t_pat = [int(t) for t in re.findall(r"^\s*(\d+) ms  pattern . erased", r0.out, re.M)][0]
     found = None

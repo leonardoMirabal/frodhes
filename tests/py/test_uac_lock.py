@@ -84,6 +84,15 @@ def test_table_current():
     assert subprocess.run([sys.executable, os.path.join(ROOT, "tools", "gen_uac_fir_lock.py"), "--check"]).returncode == 0
 
 
+def test_packed_table_unpacks_exactly(exes):
+    """usb.c uac_fl_unpack rebuilds the generator's table in RAM, every int16 (the header holds it packed: 7716 B)"""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import gen_uac_fir_lock
+    got = np.array([[int(x) for x in ln.split()] for ln in
+                    subprocess.run([exes["lock"], "table"], capture_output=True, text=True, check=True).stdout.splitlines()])
+    assert got.shape == (1280, 12) and (got == gen_uac_fir_lock.table()).all()
+
+
 @pytest.mark.parametrize("rate,ppm", [(48, -600), (48, 451), (48, 600), (44, -600), (44, 451), (44, 600)])
 def test_quality_vs_48k_path(exes, baseline, rate, ppm):
     worst = []
@@ -183,7 +192,8 @@ def test_start_no_transient(r48):
 def test_tail_into_history_bit_exact(rate, ppm):
     """the firmware's tail (platform.c, locked) writes the block straight into the resampler's history and taps once
     (uac_tap_hist); a MASTER ramp's block still goes in 32-frame pieces (uac_tap). Both, and the two mixed, give the
-    pieces' stream bit for bit: a chirp + noise, full-scale noise through the knee, silence; L and R in place"""
+    pieces' stream bit for bit; so do two cores' early pieces (platform.c APP_TAIL_EARLY: each 32 frames at the
+    history's start, a tap of 32), mixed with whole blocks and uac_tap's pieces: a chirp + noise, full-scale noise through the knee, silence; L and R in place"""
     exe = build("uac_rs_test", "uac_rs_test.c")
     rng = np.random.default_rng(3)
     t = np.arange(int(FS * 8)) / FS
@@ -192,10 +202,10 @@ def test_tail_into_history_bit_exact(rate, ppm):
     x[int(FS * 6):int(FS * 6.5)] = 0
     x = np.clip(np.round(x), -32767, 32767).astype("<i2").tobytes()
     out = {}
-    for mode in "012":
+    for mode in "0123":
         p = subprocess.run([exe, str(rate), *ppm], input=x, capture_output=True,
                            env={**os.environ, "UAC_RS_BLOCK": mode})
         assert p.returncode == 0, (mode, p.returncode, p.stderr.decode()[-300:])
         out[mode] = p.stdout
     assert len(out["0"]) > rate * 7 * 2
-    assert out["1"] == out["0"] and out["2"] == out["0"]
+    assert out["1"] == out["0"] and out["2"] == out["0"] and out["3"] == out["0"]

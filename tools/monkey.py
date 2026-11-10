@@ -17,11 +17,11 @@ toward fast changes while notes ring ("ring" bursts: a pedalled chord and a run 
 The invariants (check), on every run:
   crash      the host exits 0 within its time limit; no sanitizer report (--san: ASan + UBSan build)
   race       the host's own voice checks (RACE STUCK / RACE LOST: a voice held that no note wants)
-  peak       the output never passes the limiter's ceiling (24000)
+  peak       the output never passes the limiter's ceiling (LIM_T 24000, -2.7 dBFS)
   wrap       (--san / --san-every) no int16 narrowing in the audio path out of range: the sanitizer build has the
              (int16_t) casts of rhodes / bars / fx / the delay and reverbs taken out (a no-op in range) and checks the
              implicit ones; with signed overflow (UBSan) that is every int wrap. (A sample-step test cannot tell a
-             wrap from loud bright audio under the 24000 limiter: steps up to 48000 are legal; 0.9.5's 5 "wraps" of
+             wrap from loud bright audio under the limiter (24000 then): steps up to 48000 are legal; 0.9.5's 5 "wraps" of
              40-43k were a +22 dB makeup into HP12 and a tape echo near the ceiling, bit-identical in this build)
   rail       no run of 32 equal samples above 20000 (an output stuck on a rail)
   stuck      no voice held, no note source or count left after the panic (the end: every note off on all 16
@@ -37,7 +37,8 @@ The clicks (clicks): K events of the stream (a CC, a knob, a button, a Program C
 with no note starting near it) are rendered with and without that event (the stream ends at it); the largest second
 difference from 6 ms before to 30 ms after it, against the larger of the run without it and the run with it once
 settled (60-93 ms after), and the same on the difference of the two runs (the change alone: the reverb, the delay
-and the other notes cancel), over 10x is a click (click_ratio). A click is named by what it changed (the parameters
+and the other notes cancel), over 10x is a click (click_ratio). An event that starts a note (more voices 8 ms after
+it: a knob on the ARPEGGIO page moving the next step) is not checked, as the arp's CCs and buttons are not. A click is named by what it changed (the parameters
 that differ in the two runs' dumps); the ones private/BUGHUNT-095.md already lists are reported as known, the
 others fail.
 
@@ -541,7 +542,9 @@ def click_one(events, i, binary=BIN, detail=False):
     b = run(script_text(without, extra, t + 150), binary)
     if a.code or b.code or not len(a.x) or not len(b.x):
         return None
-    ring = rms_db(b.x[ms(t - 50):ms(t)])
+    if int(a.dumps.get(t + 8, {}).get("voices", 0)) > int(b.dumps.get(t + 8, {}).get("voices", 0)):
+        return None                             # (it started a note: a knob on the ARPEGGIO page moving the next
+    ring = rms_db(b.x[ms(t - 50):ms(t)])        # step, as the arp's CCs and ARP button do; its onset is no click)
     ratio, plain, diff = click_ratio(a.x, b.x, t)
     changed = []
     for at in (t + 8, t + 31):

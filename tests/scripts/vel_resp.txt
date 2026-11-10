@@ -1,0 +1,58 @@
+# RESPONSE (0.9.10): how the electric piano answers a velocity, every source alike; K1 of the velocity page, the last
+# VOICE page (VOICE 3/3 on the Rhodes: HOME, then SELECT three times; K1 = encoder 2). FULL (A, the default and every
+# older record), LIGHT (B); BLEND (C) once it is built (params.c VRESP_N). It stops at both ends. "expect state vresp"
+# = "set/engine": the setting and the engine's copy (rhodes.c rh_touch_mode, read at each note-on). A change marks the
+# settings for the auto save. CC 40 sets it in VRESP_N bands (two: 0-63 A, 64-127 B). The save, the power cycle and
+# the older records: tests/py/test_vel_resp.py. A velocity is never rewritten: tests/py/test_vel_layers.py.
+100 btn 8
+150 expect state page FRODHES
+200 turn 0 1
+250 turn 0 1
+300 turn 0 1
+350 expect state page VOICE
+350 expect state vpage 3/3
+350 expect state label0 RESPONSE
+350 expect state card0 FULL
+350 expect state label1 TOUCH
+350 expect state label2 KEY_VEL
+350 expect state vresp 0/0
+350 expect state dirty 0
+400 turn 2 -1
+450 expect state card0 FULL
+450 expect state vresp 0/0
+450 expect state dirty 0
+500 turn 2 1
+550 expect state card0 LIGHT
+550 expect state vresp 1/1
+550 expect state dirty 1
+# a note held across the changes keeps sounding (the response applies at the next strike)
+600 midi 0x90 60 100
+700 turn 2 1
+750 expect state card0 LIGHT
+750 expect state vresp 1/1
+800 turn 2 -1
+850 expect state card0 FULL
+850 expect state vresp 0/0
+900 midi 0x90 64 100
+1000 expect rms > -40
+1100 midi 0x80 60 0
+1100 midi 0x80 64 0
+1200 turn 2 1
+1250 expect state card0 LIGHT
+1300 turn 2 -1
+1350 expect state card0 FULL
+1350 expect state vresp 0/0
+# CC 40: two bands, the card follows
+1400 midi 0xB0 40 127
+1450 expect state card0 LIGHT
+1450 expect state vresp 1/1
+1500 midi 0xB0 40 63
+1550 expect state card0 FULL
+1550 expect state vresp 0/0
+1600 midi 0xB0 40 64
+1650 expect state card0 LIGHT
+1650 expect state vresp 1/1
+1700 midi 0xB0 40 0
+1750 expect state card0 FULL
+1750 expect state vresp 0/0
+2000 end

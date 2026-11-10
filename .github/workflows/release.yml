@@ -1,6 +1,7 @@
 name: release
 # A version tag (v0.9.1, v0.9.2 ...) builds the firmware and publishes the GitHub release with the .fwsc attached
-# (as frodhes-X.Y.Z.fwsc and frodhes.fwsc), and the SMK-37 builds next to them, each under a fixed name and a
+# (as frodhes-X.Y.Z.fwsc and frodhes.fwsc), the FM-1's two-core image (./build.sh --c1: frodhes-X.Y.Z-c1.fwsc and
+# frodhes-c1.fwsc), and the SMK-37 builds next to them, each under a fixed name and a
 # versioned one: frodhes-smk37-pro.fwsc / frodhes-X.Y.Z-smk37-pro.fwsc, frodhes-smk37-elite.fwsc /
 # frodhes-X.Y.Z-smk37-elite.fwsc, frodhes-mke-p37.fwsc / frodhes-X.Y.Z-mke-p37.fwsc (./build.sh --board smk37 [--model elite|mke]; identity SMK-37 Pro_470,
 # SMK-37 Elite_470, MKE-P37_470, as tools/build.py sets them). The notes are docs/releases/<tag>.md (tools/release.py
@@ -19,6 +20,12 @@ name: release
 # (tools/move_asset.sh: no record, no Move asset; a different sha256 stops the release), after tools/move_catalog.py
 # checked the tag's tarball (one folder frodhes/, module.json's version the tag's). The job release-json then writes
 # release.json to main for Schwung Manager (see that job: it needs a key that may push to main).
+# The desktop plugin: the job plugin runs .github/workflows/plugin.yml on the tag (macOS, Windows, Linux x86_64 and
+# aarch64: built with the tag's version, packaged, checked self-contained, validated); after the release is public the
+# job plugin-release attaches its packages under fixed names (frodhes-plugin-macos.pkg, frodhes-plugin-macos.zip,
+# frodhes-plugin-windows.zip, frodhes-plugin-linux-x86_64.zip, frodhes-plugin-linux-aarch64.zip), only those of the
+# platforms the release commit records as tested ("Plugin tested: macos windows linux-x86_64 ...", tools/plugin_asset.sh:
+# no record, no plugin asset). Nothing above waits for it: a plugin failure never holds back the firmware or the Move.
 # Tag only what passed the tests on the FM-1 (CLAUDE.md: test and document).
 on:
   push:
@@ -140,9 +147,10 @@ jobs:
       - name: build
         run: |
           V="${GITHUB_REF_NAME#v}"
+          ./build.sh --c1 --release "$V"           # the two-core image first (build/frodhes-X.Y.Z-c1.fwsc)
           ./build.sh --release "$V"
-          ls -l "build/frodhes-$V.fwsc"
-          sha256sum "build/frodhes-$V.fwsc"
+          ls -l "build/frodhes-$V.fwsc" "build/frodhes-$V-c1.fwsc"
+          sha256sum "build/frodhes-$V.fwsc" "build/frodhes-$V-c1.fwsc"
       - name: build the SMK-37 packages
         run: |
           V="${GITHUB_REF_NAME#v}"
@@ -176,6 +184,8 @@ jobs:
           # releases/latest/download/frodhes.fwsc (the docs never name a version)
           mkdir -p build/publish
           cp "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc
+          # the two-core image the same way: frodhes-X.Y.Z-c1.fwsc and frodhes-c1.fwsc (the docs link the fixed name)
+          cp "build/frodhes-$V-c1.fwsc" build/publish/frodhes-c1.fwsc
           # the SMK-37 packages, versioned and under fixed names (the emulator and the docs link the fixed ones)
           # (tools/release.py SMK_ASSETS; the build names them frodhes-X.Y.Z-smk37[-elite|-mke].fwsc)
           for m in "smk37:smk37-pro" "smk37-elite:smk37-elite" "smk37-mke:mke-p37"; do
@@ -183,6 +193,7 @@ jobs:
             cp "build/frodhes-$V-${m%%:*}.fwsc" "build/publish/frodhes-$V-${m#*:}.fwsc"
           done
           set -- "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc \
+            "build/frodhes-$V-c1.fwsc" build/publish/frodhes-c1.fwsc \
             "build/publish/frodhes-$V-smk37-pro.fwsc" "build/publish/frodhes-$V-smk37-elite.fwsc" \
             "build/publish/frodhes-$V-mke-p37.fwsc" \
             build/publish/frodhes-smk37-pro.fwsc build/publish/frodhes-smk37-elite.fwsc \
@@ -229,6 +240,37 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+  # ---- the desktop plugin (see the top): built and validated from the tag by plugin.yml, attached once the release
+  # is public. sign: Developer ID + notarization on macOS when the MACOS_* secrets exist (docs/PLUGIN.md "Signing"),
+  # else ad-hoc signed.
+  plugin:
+    uses: ./.github/workflows/plugin.yml
+    with:
+      version: ${{ github.ref_name }}
+      sign: true
+    secrets: inherit
+  plugin-release:
+    needs: [release, plugin]
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.plugin.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0             # (tools/plugin_asset.sh reads the release commit)
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: plugin-*
+          merge-multiple: true
+          path: build/plugin-ci
+      - name: the packages of the platforms the release commit records as tested
+        run: sh tools/plugin_asset.sh "${GITHUB_REF_NAME#v}" build/plugin-ci build/publish/plugin
+      - name: attach them to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -- build/publish/plugin/*
+          if [ ! -e "$1" ]; then echo "no plugin asset for this release"; exit 0; fi
+          gh release upload "$GITHUB_REF_NAME" "$@" --clobber
   # ---- release.json on main: Schwung Manager's update check (the Move in Schwung's module catalog) ----
   # After the release is public, and only when it carries the Move package (the job release's output move): writes
   # release.json = {"version": "X.Y.Z", "download_url": the tag's frodhes-module.tar.gz} (tools/move_catalog.py

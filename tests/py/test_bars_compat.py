@@ -108,9 +108,9 @@ def test_vibes_cards(new):
     assert [d[f"kind4.down{i}"] for i in range(5)] == ["WAH", "TREM", "PAN", "OFF", "OFF"]
     assert labels(d, "motor", 4) == ["MOTOR", "DEPTH", "SPEED", "SHAPE"]
     assert d["motor4.hint"] == "THE VIBRAPHONE'S MOTOR"
-    assert d["pages4"] == "vpages=3 count=26 comp_pos=5"            # VOICE 1/3 2/3 3/3 (MOTOR), then COMPRESSOR (EQ next)
+    assert d["pages4"] == "vpages=4 count=28 comp_pos=6"            # VOICE 1/4 .. 3/4 (MOTOR), 4/4 (velocity), then COMPRESSOR
     for t in range(4):
-        assert d[f"pages{t}"] == "vpages=2 count=25 comp_pos=4"     # VOICE 1/2 2/2, then COMPRESSOR (EQ next)
+        assert d[f"pages{t}"] == "vpages=3 count=27 comp_pos=5"     # VOICE 1/3 2/3, 3/3 (velocity), then COMPRESSOR
     # the motor on, then a Rhodes TYPE: no tremolo comes on
     assert d["motor_on_rhodes"] == "OFF fxsw=0 fxmode=0"
     assert (d["motrate.0"], d["motrate.78"], d["motrate.120"], d["motrate.127"]) == ("0.5HZ", "3.5HZ", "10HZ", "10HZ")
@@ -136,8 +136,8 @@ def test_midi(new):
     assert d["factory.12"] == "F13 VIBES type=4 sw=0 mode=0 mot=1 depth=90 rate=66 shape=0 rev=20"   # 0.9.5 presets (DRY)
     assert d["factory.13"] == "F14 VIBES ECHO type=4 sw=0 mode=0 mot=0 depth=110 rate=78 shape=0 rev=34"
     assert d["factory.14"].startswith("F15 MARIMBA type=5 sw=0 mode=0 mot=0 ") and d["factory.14"].endswith("rev=22")
-    assert d["factory.15"].startswith("F16 WOOD ECHO type=5 ") and d["factory.15"].endswith("rev=38")
-    assert [d[f"factory.{i}"].split(" type=")[0] for i in (16, 17, 18)] == ["F17 TAPE ECHO", "F18 DREAM", "F19 RADIO"]
+    assert d["factory.15"].startswith("F16 WOOD ECHO type=5 ") and d["factory.15"].endswith("rev=38")   # (FINAL19 v2: hall 38)
+    assert [d[f"factory.{i}"].split(" type=")[0] for i in (16, 17, 18)] == ["F17 TAPE ECHO", "F18 DREAM", "F19 WARM DRIVE"]
 
 
 def chain(nf, x, undo=False):
@@ -233,7 +233,7 @@ def test_marimba_cards(new):
     assert labels(d, "voice", 5) == ["STRIKE", "MALLET", "TUBE", "WEIGHT"]
     assert labels(d, "decay", 5) == ["RING", "MUTE", "NOISE", "TUNE"]
     assert d["decay5.hint"] == "HOW BARS RING; MUTE = HAND"
-    assert d["pages5"] == "vpages=2 count=25 comp_pos=4"   # (23: the DISPLAY page, then REVERB 2; 24: the EQ; 25: SEQUENCER 2)
+    assert d["pages5"] == "vpages=3 count=27 comp_pos=5"   # (+1: the velocity page, 0.9.10) (23: the DISPLAY page, then REVERB 2; 24: the EQ; 25: SEQUENCER 2; 26: DISPLAY 2)
     assert [d[f"perf5.{i}"] for i in range(16, 23)] == ["STRIKE", "MALLET", "TUBE", "WEIGHT", "RING", "MUTE", "NOISE"]
     assert (d["tone5.0"], d["tone5.64"], d["tone5.127"]) == ("CENTRE", "L/3", "EDGE")
     assert [d[f"bark5.{v}"] for v in (0, 42, 85, 127, 20)] == ["SOFT", "MED", "HARD", "RUBBER", "1.6"]

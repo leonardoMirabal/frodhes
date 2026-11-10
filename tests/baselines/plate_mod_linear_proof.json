@@ -1,0 +1,28 @@
+[
+{
+"grid": "full",
+"cell": "hq/F05/PRESET/A/k28v96",
+"metric": "H5",
+"quantity": "H5",
+"residual": 51.363,
+"residual_099": 56.516,
+"linear": true,
+"x4_clamps": {
+"new": 0,
+"o99x4": 0
+}
+},
+{
+"grid": "full",
+"cell": "hq/F05/PRESET/B/k28v96",
+"metric": "H5",
+"quantity": "H5",
+"residual": 51.363,
+"residual_099": 56.516,
+"linear": true,
+"x4_clamps": {
+"new": 0,
+"o99x4": 0
+}
+}
+]

@@ -95,10 +95,14 @@ def test_cc_path_traps_are_as_documented():
 
 
 def card_of(slot):
-    order = list(M["pages"])                                       # (the PG_ enum's order: host_state card.<pg>.<k>)
+    """the host dump's key of a settings card: card.<pg>.<k> (the PG_ enum's order), or vcard.2.<k> for the velocity
+    page (PG_VEL: the Rhodes' last VOICE page, VOICE 3/3, 0.9.10)"""
+    order = [p for p in M["pages"] if p != "PG_VEL"]
     for i, pg in enumerate(order):
         if slot in M["pages"][pg]["cards"]:
-            return i, M["pages"][pg]["cards"].index(slot)
+            return f"card.{i}.{M['pages'][pg]['cards'].index(slot)}"
+    if slot in M["pages"]["PG_VEL"]["cards"]:
+        return f"vcard.2.{M['pages']['PG_VEL']['cards'].index(slot)}"
     raise KeyError(slot)
 
 
@@ -113,6 +117,8 @@ def test_settings_options_match_the_cards():
         opts = chain[key]["options"]
         for x in range(len(opts)):
             v = 64 if slot == "S_SQEDIT" and x else x
+            if slot == "S_VRESP":                       # (CC 40 in bands of 128 / the methods: each band's middle)
+                v = (2 * x + 1) * 64 // len(opts)
             lines += [cc(t, int(kcc), v), f"{t + 3} dump"]
             want.append((t + 3, slot, opts[x]))
             t += 6
@@ -126,8 +132,7 @@ def test_settings_options_match_the_cards():
     r = run("move-slots", lines, t + 50)
     bad = []
     for tt, slot, o in want:
-        pg, k = card_of(slot)
-        got = r.state(tt)[f"card.{pg}.{k}"]
+        got = r.state(tt)[card_of(slot)]
         if gen.short_value(got) != o:                   # (the FM-1's name, the Move's abbreviation of it)
             bad.append((slot, o, got))
     assert not bad, bad
@@ -163,8 +168,8 @@ def test_saved_setup_survives_a_power_cycle():
              flash=fl)
     assert r1.saves, "the setup change was not saved"
     r2 = tp.boot("move-state-2", fl, end=400)
-    pg, k = card_of("S_MCH")
-    assert r2.state(100)[f"card.{pg}.{k}"] == r1.state(4000)[f"card.{pg}.{k}"] == "2"
+    c = card_of("S_MCH")
+    assert r2.state(100)[c] == r1.state(4000)[c] == "2"
 
 
 def _bridge(*args, stdin=None):
@@ -274,7 +279,9 @@ def test_plugin_presets_and_hierarchy_per_type():
             bad = [(n, x, got[pid] if pid < len(got) else None) for n, pid, x in want[i] if pid >= len(got) or got[pid] != x]
             assert not bad, (i, name, bad)                         # (parameter, want, got)
     names = {i: name for i, (_, _, _, name) in enumerate(pr)}
-    assert names[35] == "F20 STAGE77 ECHO" and names[72] == "F57 RADIO LOW", (names[35], names[72])
+    import gen_move_presets as gp                           # (the names follow presets.c's order: --sync by name)
+    last = gp.table()[-1]
+    assert names[35] == "F20 STAGE77 ECHO" and names[72] == "F%02d %s" % (last[0], last[1]), (names[35], names[72])
     ty = {int(ln.split()[1]): ln.split()[2] for ln in out if ln.startswith("type ")}
     assert [ty[t] for t in range(6)] == ["0", "0", "0", "0", "1", "2"]
     hl = [int(ln.split()[1]) for ln in out if ln.startswith("hierarchy ")]

@@ -15,7 +15,11 @@ import zlib
 import numpy as np
 import pytest
 
-from hostrun import FS, OUT, cc, note, run
+from hostrun import FS, OUT, ROOT, cc, note, run
+
+import sys  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import dry_dist  # noqa: E402
 
 SECTOR = 4096
 SET, BANK_A, BANK_B, SEQ_A, SEQ_B, REC_B, PAT = range(7)    # (SET: 0.9.5's settings and 0.9.6's record A)
@@ -135,7 +139,8 @@ def test_power_cycle_keeps_everything(eng):
     """change the settings, save a user preset, record a pattern, let it go silent, switch off: on again, all of it
     is back (and the header names what plays)"""
     fl = flash_file(f"pc-{eng}")
-    lines = ENGINES[eng] + [cc(20, 81, 90), cc(21, 91, 40),           # the panel: an edit of F01 (DRIVE, REVERB)
+    lines = dry_dist.type_base_lines(10) + ENGINES[eng] + [cc(20, 81, 90), cc(21, 91, 40),   # (the voicing at its defaults)
+                                      # the panel: an edit of F01 (DRIVE, REVERB)
                             "30 btn 1",                                 # OCT+ (the FM-1's)
                             "40 turn 0 1", "42 turn 0 1", "45 turn 0 1", "50 turn 5 7",   # DECAY page, TUNE +7
                             "60 btn 7", "65 turn 2 -12",                # TEMPO, BPM 108
@@ -165,7 +170,8 @@ def test_save_timing():
     for silence; a
     user preset saved while a note rings, too; the pattern 1.5 s after its change while stopped and silent"""
     fl = flash_file("timing")
-    lines = [cc(1000, 114, 127),                                        # silent: saved 2 s later
+    lines = dry_dist.type_base_lines(10) + [cc(1000, 114, 127),         # silent: saved 2 s later (the voicing at its
+                                                                        # defaults: F01's rings longer)
              "4000 midi 0x90 60 100", cc(4100, 114, 0), "8000 midi 0x80 60 0",   # a change under a note
              "9000 midi 0x90 64 100", "9100 btn 9", "9200 btn 9", "12000 midi 0x80 64 0",   # SAVE while it rings
              cc(14000, 63, 127), "14100 midi 0x90 67 100", "14150 midi 0x80 67 0", cc(14200, 63, 0),   # a step
@@ -386,6 +392,9 @@ def test_v2_bank_converts_to_v3_and_round_trips():
     open(fl, "wb").write(img)
     play = ["150 midi 0xC0 16 0", "250 dump", "250 expect preset", "250 expect sound", "300 midi 0x90 60 100",
             "900 midi 0x80 60 0", "300 midi 0x90 67 90", "900 midi 0x80 67 0"]
+    # U01 selected and the settings saved first, so a boots straight into U01 as b does (0.9.10's F01 is not the
+    # defaults: a boot on F01 then the program change left F01's state in the first notes)
+    boot("bank2-0", fl, ["150 midi 0xC0 16 0"], end=3000)
     a = boot("bank2-a", fl, play + ["4000 btn 9", "4100 btn 9", "6000 dump"], end=6500)   # SAVE to U01 again
     assert not a.fails, a.fails
     s = a.state(250)

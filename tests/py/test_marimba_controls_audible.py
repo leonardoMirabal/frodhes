@@ -29,6 +29,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import marimba_scan as ms  # noqa: E402
 import bar_measure as bm  # noqa: E402
+import dry_dist  # noqa: E402
 
 AWAIT = pytest.mark.xfail(ms.stub_detected(), reason=ms.await_reason(), strict=False)
 MARIMBA = [cc(20, 79, 127)]
@@ -40,7 +41,7 @@ def f0(n):
 
 
 def play(tag, setup, note, vel=100, on=200, dur=1500, end=None, raw=True):
-    lines = MARIMBA + (RAW if raw else []) + setup + [f"{on} midi 0x90 {note} {vel}", f"{on + dur} midi 0x80 {note} 0"]
+    lines = dry_dist.type_base_lines(10) + MARIMBA + (RAW if raw else []) + setup + [f"{on} midi 0x90 {note} {vel}", f"{on + dur} midi 0x80 {note} 0"]
     return run(tag, lines, end or on + dur + 1500)
 
 
@@ -204,8 +205,9 @@ def test_motor_ccs_are_inert():
 def test_motor_ccs_are_accepted():
     """the plumbing: the motor CCs on MARIMBA leave TYPE and the VOICE pages as they are (no MOTOR page)"""
     r = run("mca-motpage", MARIMBA + [cc(30, 47, 127), cc(31, 48, 127), "100 dump", "200 btn 8", "250 turn 0 1",
-                                      "300 turn 0 1", "350 turn 0 1", "400 dump"], 500)
+                                      "300 turn 0 1", "350 turn 0 1", "370 dump", "380 turn 0 1", "400 dump"], 500)
     assert r.state(100)["card.2.0"] == "MARIMBA"
+    assert r.state(370)["vpage"] == "3/3" and r.state(370)["label0"] == "RESPONSE", r.state(370)["vpage"]   # (velocity)
     assert r.state(400)["page"] == "COMPRESSOR", r.state(400)["page"]
 
 

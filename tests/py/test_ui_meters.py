@@ -47,9 +47,10 @@ def run(tag, lines, end_ms, check=False):
 
 
 TYPES = [("ST77", 80, 8), ("SUIT", 80, 40), ("FELT", 80, 72), ("DYNO", 80, 104), ("VIBE", 79, 0)]
-VOICE = {"rhodes": [["TONE", "BARK", "BELL", "HAMMER"], ["DECAY", "RELEASE", "NOISE", "TUNE"]],
+VEL_PAGE = ["RESPONSE", "TOUCH", "KEY VEL", ""]                  # every engine's last VOICE page (0.9.10)
+VOICE = {"rhodes": [["TONE", "BARK", "BELL", "HAMMER"], ["DECAY", "RELEASE", "NOISE", "TUNE"], VEL_PAGE],
          "vibes": [["STRIKE", "MALLET", "TUBE", "WEIGHT"], ["RING", "DAMPER", "NOISE", "TUNE"],
-                   ["MOTOR", "DEPTH", "SPEED", "SHAPE"]]}
+                   ["MOTOR", "DEPTH", "SPEED", "SHAPE"], VEL_PAGE]}
 ROW_X0, ROW_X1, ROW_Y0, ROW_DY, ROW_H = 6, 233, 46, 42, 38      # plan §2: x 6-233, y 46 + 42 k, height 38
 LABEL_X1 = 90                                                     # the labels end before x 90 (where amber is looked for)
 VALUE_XR = ROW_X0 + 220                                           # ui.c draw_row: values right-aligned at row x 220
@@ -451,7 +452,7 @@ def voice_pages(pages):
 
 @pytest.mark.parametrize("name,cc_n,v", TYPES, ids=[t[0] for t in TYPES])
 def test_dynamic_voice_pages(meters, name, cc_n, v):
-    """VOICE 1..n from the engine's table: Rhodes 2, VIBES 3, right after FRODHES, in order, with their labels;
+    """VOICE 1..n from the engine's table and the velocity page: Rhodes 3, VIBES 4, right after FRODHES, in order, with their labels;
     no DECAY or MOTOR page; the count n/m runs 1..m over the walk (or names the VOICE group)"""
     pages, bwd, fwd = pages_of(name, cc_n, v)
     eng = "vibes" if name == "VIBE" else "rhodes"

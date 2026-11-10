@@ -7,7 +7,7 @@ instrument. Frodhes draws its own screen: the Move's eight knobs as eight cards,
 What each control does to the sound is described in the [FM-1 manual](MANUAL.md#4-the-pages). This manual covers
 the Move's controls and what is different.
 
-![The first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix](manual/img/move/move-frodhes.png?v=ed05fe9c)
+![The first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix](manual/img/move/move-frodhes.png?v=ba262a7f)
 
 ## Contents
 
@@ -80,7 +80,8 @@ pads, the step buttons, Up and Down (the octave), Play and the other buttons sta
 ### Presets
 
 On the FRODHES page, turn **knob 5 (PRESET)**. **F01-F19** are the FM-1's factory sounds, **F20-F57** are two more
-versions of each, made for the Move, and **U01-U16** are your own.
+versions of each, made for the Move, and **U01-U16** are your own. 0.9.10 changed the factory presets and some of their
+numbers (the [list](MANUAL.md#6-presets)); F20-F57 follow them (the appendix below).
 
 ### Saving a sound
 
@@ -120,7 +121,7 @@ saved with the Move's set: load the set and the track's sound comes back.
 The Move's screen is 128 x 64 pixels in one colour. Every picture in this manual is that screen, drawn by the file
 the Move runs and shown 4 times larger.
 
-![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=5388b9c5)
+![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=18fa53cf)
 
 - **The overview** is one page: eight cards, knobs 1-4 on the top row and 5-8 below, each with its name, its value
   and a bar. A knob with no control on that page has no card.
@@ -131,7 +132,7 @@ the Move runs and shown 4 times larger.
   shows that the effects are off (FX OFF, the Left arrow). An **`S`** shows that the sustain holds (SUS ON, the Right
   arrow).
 
-![The header with the effects off (X) and the sustain on (S); the FX and SUS cards agree](manual/img/move/move-header-fx-sus.png?v=93d1d2cc)
+![The header with the effects off (X) and the sustain on (S); the FX and SUS cards agree](manual/img/move/move-header-fx-sus.png?v=333d757c)
 
 - **The large card**: touch a knob, or turn it, and its card fills the screen: the name, the value in large letters,
   a wide bar of the same kind and, along the bottom, a mark for each of the page's knobs, the one you hold filled.
@@ -144,7 +145,7 @@ the Move runs and shown 4 times larger.
 - **A message** shows in a box for about a second: `SPRD RESET` after a double tap, `SAVED U05` after a save,
   `NOT SAVED` when you leave the save card with Back.
 
-![A double tap on SPREAD: back to 0, SPRD RESET](manual/img/move/move-reset.png?v=32b0b271)
+![A double tap on SPREAD: back to 0, SPRD RESET](manual/img/move/move-reset.png?v=c42be043)
 
 - **The knob lights** show each knob's value, as on Schwung's own screens: knobs 1-4 white and 5-8 amber, brighter
   as the value grows, dark where the page has no control. **The Left arrow** is lit while the effects are on, **the
@@ -168,6 +169,7 @@ so the page count is 13 or 14.
 | **VIBES VOICE** | STRIKE · MALLET · TUBE · WEIGHT · RING · DAMPR · NOISE · TUNE |
 | **VIBES MOTOR** | MOTOR · DEPTH · SPEED · SHAPE · SYNC |
 | **MARIMBA VOICE** | STRIKE · MALLET · TUBE · WEIGHT · RING · MUTE · NOISE · TUNE |
+| **VELOCITY** | RESP |
 | **COMPRESSOR** | THRESH · RATIO · ATTACK · MKUP · COMP · REL |
 | **EQ** | LOW · MID · FREQ · HIGH |
 | **DRIVE/FILTER** | DRIVE · AMOUNT · TONE · MIX · FILTER · FREQ · RESO · LFO |
@@ -178,7 +180,7 @@ so the page count is 13 or 14.
 | **TEMPO** | TRSYNC · PHSYNC · DLSYNC |
 | **ARPEGGIO** | MODE · RATE · OCT · GATE · HOLD |
 | **LFO/SETUP** | SHAPE · RATE · SYNC · RETRIG · DLTONE · LEVEL · CHAN |
-| **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI |
+| **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI · VER |
 
 The names are the FM-1's where they fit and shorter where they do not (HAMMR, DAMPR, MKUP; an option the same way
 everywhere, so the reverb's INFINITE is INF). CHAN is the FM-1's MIDI CHANNEL; FREQ on the EQ page is its MID
@@ -193,19 +195,29 @@ effects](#the-effects)), PRESET (knob 5: the sound, its full name across knobs 5
 saving](#presets-and-saving)) and the delay's MIX (DELAY, knob 8, the FM-1's PERFORM name for it). Knobs 6 and 7 have
 no control here.
 
-![FRODHES](manual/img/move/move-frodhes.png?v=ed05fe9c)
+![FRODHES](manual/img/move/move-frodhes.png?v=ba262a7f)
 ![Knob 5 touched: the preset, its name above and its number large](manual/img/move/move-frodhes-k5.png?v=caea2c9e)
 
 ### PIANO VOICE, VIBES VOICE, VIBES MOTOR, MARIMBA VOICE
 
-The instrument's own controls: the electric piano types' [VOICE pages](MANUAL.md#voice-12-and-22), the
+The instrument's own controls: the electric piano types' [VOICE pages](MANUAL.md#voice-13-and-23), the
 [vibraphone](MANUAL.md#vibes-the-vibraphone) and [its motor](MANUAL.md#the-motor-on-and-off), the
 [marimba](MANUAL.md#marimba). The FRODHES page's TONE and BELL (MALLET, MOTOR, TUBE on the bars) are here.
 
-![PIANO VOICE, with ST77](manual/img/move/move-piano-voice.png?v=ecc3ee4f)
-![VIBES VOICE, with VIBE](manual/img/move/move-vibes-voice.png?v=5813033f)
-![VIBES MOTOR, with VIBE](manual/img/move/move-vibes-motor.png?v=bae8352b)
-![MARIMBA VOICE, with MRMB](manual/img/move/move-marimba-voice.png?v=51161958)
+![PIANO VOICE, with ST77](manual/img/move/move-piano-voice.png?v=feae1542)
+![VIBES VOICE, with VIBE](manual/img/move/move-vibes-voice.png?v=ff0e605e)
+![VIBES MOTOR, with VIBE](manual/img/move/move-vibes-motor.png?v=6ef36494)
+![MARIMBA VOICE, with MRMB](manual/img/move/move-marimba-voice.png?v=f1604c31)
+
+### VELOCITY (RESP)
+
+RESP, how the electric piano answers velocity: **FULL** (the default), the full dynamic range, or **LIGHT**, a
+lighter touch with soft notes louder. It changes the sound only, for every note (pads, a keyboard, the arpeggiator);
+the velocity itself reaches Frodhes as played. It is the FM-1's last VOICE page ([RESPONSE](MANUAL.md#voice-33-velocity),
+CC 40). The FM-1's TOUCH and KEY VEL, for its own keys, are not on the Move: the pads' sensitivity is the Move's own
+setting ([Velocity](#velocity)).
+
+![VELOCITY: RESP FULL](manual/img/move/move-velocity.png?v=8ff77254)
 
 ### COMPRESSOR
 
@@ -215,8 +227,8 @@ top line. Under it is a thick bar of 15 segments, lit from the right as the redu
 to 30 dB). The peak is held for a second as a taller segment. The meter moves while you play. When the compressor is
 off the bar is a dotted outline and reads COMP OFF.
 
-![COMPRESSOR, the compressor off: COMP OFF](manual/img/move/move-compressor.png?v=56e9b438)
-![COMPRESSOR on: the meter at 12 dB of gain reduction, the peak held at 20 dB](manual/img/move/move-compressor-gr.png?v=d1821dfd)
+![COMPRESSOR, the compressor off: COMP OFF](manual/img/move/move-compressor.png?v=0d813518)
+![COMPRESSOR on: the meter at 12 dB of gain reduction, the peak held at 20 dB](manual/img/move/move-compressor-gr.png?v=f4275cfe)
 
 ### EQ
 
@@ -226,8 +238,8 @@ values: LOW, MID and HIGH in dB, from -15 to +15, with +0.0 (flat) in the middle
 in Hz, from 200 to 5.0K (5 kHz), 1.0K in the middle. Every one starts flat (+0.0, FREQ 1.0K), and with the three
 gains at +0.0 the EQ is out of the sound. A double tap sets a knob back to that. Over MIDI: CC 34-37, 64 flat.
 
-![EQ, flat: every gain +0.0, FREQ 1.0K](manual/img/move/move-eq.png?v=1a870bcc)
-![EQ set as in the manual's picture: LOW +3.1, MID -4.0 at 551 Hz, HIGH +1.9](manual/img/move/move-eq-set.png?v=ab58ec77)
+![EQ, flat: every gain +0.0, FREQ 1.0K](manual/img/move/move-eq.png?v=58783b61)
+![EQ set as in the manual's picture: LOW +3.1, MID -4.0 at 551 Hz, HIGH +1.9](manual/img/move/move-eq-set.png?v=dbba4bda)
 ![Knob 3 touched: FREQ at 551 Hz](manual/img/move/move-eq-set-k3.png?v=9ce90eaa)
 
 ### DRIVE/FILTER, TREM/PHASER
@@ -235,16 +247,16 @@ gains at +0.0 the EQ is out of the sound. A double tap sets a knob back to that.
 Two of the FM-1's pages side by side: the [drive](MANUAL.md#drive) and the [filter](MANUAL.md#filter), the
 [tremolo / pan / wah](MANUAL.md#tremwah) and the [phaser](MANUAL.md#phaser).
 
-![DRIVE/FILTER](manual/img/move/move-drive-filter.png?v=5388b9c5)
-![TREM/PHASER](manual/img/move/move-trem-phaser.png?v=c64100c6)
+![DRIVE/FILTER](manual/img/move/move-drive-filter.png?v=18fa53cf)
+![TREM/PHASER](manual/img/move/move-trem-phaser.png?v=855147c5)
 
 ### CHORUS, DELAY
 
 A page each, with the FM-1's cards: the [chorus](MANUAL.md#chorus), the [delay](MANUAL.md#delay). The delay's mix
 is also on the first page (DELAY, knob 8).
 
-![CHORUS](manual/img/move/move-chorus.png?v=bb3314f0)
-![DELAY](manual/img/move/move-delay.png?v=77534716)
+![CHORUS](manual/img/move/move-chorus.png?v=fd8f98f8)
+![DELAY](manual/img/move/move-delay.png?v=a82450f7)
 
 ### REVERB
 
@@ -255,8 +267,8 @@ manual's REVERB). At FREEZE new notes play dry; turn DECAY under 120 to get the 
 On the Move the reverb runs at the full sample rate: its tails keep their top octave. The controls and the presets
 are the same as on the FM-1.
 
-![REVERB](manual/img/move/move-reverb.png?v=fec0fdc0)
-![REVERB at INF, DECAY at 127: FREZ on the overview](manual/img/move/move-reverb-freeze.png?v=3d4bb58f)
+![REVERB](manual/img/move/move-reverb.png?v=3114e888)
+![REVERB at INF, DECAY at 127: FREZ on the overview](manual/img/move/move-reverb-freeze.png?v=69f335ab)
 ![The DECAY card at 127: FREEZE](manual/img/move/move-reverb-freeze-k3.png?v=ecf3a9f3)
 
 ### TEMPO, ARPEGGIO
@@ -265,25 +277,27 @@ The synced rates of the tremolo, the phaser and the delay (the FM-1's [TEMPO](MA
 CLOCK), and the arpeggiator ([The arpeggiator](#the-arpeggiator)). They follow the Move's tempo ([MIDI and
 tempo](#midi-and-tempo)).
 
-![TEMPO](manual/img/move/move-tempo.png?v=7d2ac32b)
-![ARPEGGIO, as a new Frodhes starts: OFF, 1/16, 1 octave, 60 %, HOLD OFF](manual/img/move/move-arpeggio.png?v=d8d5cb02)
+![TEMPO](manual/img/move/move-tempo.png?v=c90ab784)
+![ARPEGGIO, as a new Frodhes starts: OFF, 1/16, 1 octave, 60 %, HOLD OFF](manual/img/move/move-arpeggio.png?v=a491c235)
 
 ### LFO/SETUP, MAPPINGS
 
-The filter's [LFO](MANUAL.md#lfo), the delay's tone, the output LEVEL and the MIDI channel (CHAN, ALL by default;
+The filter's [LFO](MANUAL.md#lfo), the delay's tone, the output LEVEL, the MIDI channel (CHAN, ALL by default;
 [SETUP](MANUAL.md#setup) and [MIDI](MANUAL.md#midi)), and the pressure mappings (Move only):
 
 - **AT CC / AT LO / AT HI**: channel pressure (aftertouch) drives the control on that MIDI CC number, from LO (no
   pressure) to HI (full pressure).
 - **PA CC / PA LO / PA HI**: the same for poly pressure, from the most pressed held pad. Letting a pad go ends its
   pressure.
+- **VER**: the Frodhes version installed (a release's number; a development build shows DEV and the first digits
+  of its commit), as on the FM-1's [MIDI](MANUAL.md#midi) page. Read only: turning the knob does nothing.
 
 An HI under LO turns the direction round. A CC of 0 is off, and both mappings are off by default. The control moves
 as if a controller sent that CC (the CC numbers are the FM-1's, the manual's [MIDI](MANUAL.md#12-midi)). A mapping
 to one of the FM-1's developer and test CCs (2-4, 8-11, 41, 42, 114, 116 and 119) does nothing.
 
-![LFO/SETUP](manual/img/move/move-lfo-setup.png?v=a1da1851)
-![MAPPINGS](manual/img/move/move-mappings.png?v=be59afe9)
+![LFO/SETUP](manual/img/move/move-lfo-setup.png?v=ef9ddf28)
+![MAPPINGS](manual/img/move/move-mappings.png?v=66781c3a)
 
 ## The list
 
@@ -291,9 +305,9 @@ to one of the FM-1's developer and test CCs (2-4, 8-11, 41, 42, 114, 116 and 119
 the menu, each section under its name. Turn the jog wheel to a row and click to open it; Back closes the list. The
 header counts the rows (`5/21`).
 
-![The list: the pages, DRIVE/FILTER picked](manual/img/move/move-pages.png?v=fcd9ce1d)
-![Below the pages: USER PRESETS (SAVE TO USER) and MY PRESETS](manual/img/move/move-menu.png?v=240d3549)
-![The MODULE rows: Module Help, Swap Module ...](manual/img/move/move-menu-module.png?v=5346c3ed)
+![The list: the pages, DRIVE/FILTER picked](manual/img/move/move-pages.png?v=7f4bde0a)
+![Below the pages: USER PRESETS (SAVE TO USER) and MY PRESETS](manual/img/move/move-menu.png?v=f9915bc0)
+![The MODULE rows: Module Help, Swap Module ...](manual/img/move/move-menu-module.png?v=cdae7dc8)
 
 - **USER PRESETS, SAVE TO USER**: saves the sound into one of Frodhes' 16 user slots ([Presets and
   saving](#presets-and-saving)).
@@ -371,6 +385,9 @@ track and with the Move's own instruments too, so Frodhes cannot play soft.
 
 Notes from a keyboard on USB-A or from a computer keep their velocity either way. (With Full Velocity on, the Move
 also sends each such note a second time at 127; Frodhes ignores that copy.)
+
+Frodhes never changes a velocity it receives. RESP on the [VELOCITY](#velocity-resp) page changes how the electric piano
+sounds at each velocity (FULL or LIGHT), not the velocity.
 
 ## MIDI and tempo
 
@@ -489,22 +506,22 @@ Two more versions (B and C) of each FM-1 preset, made for the Move.
 | F25 | FELT ECHO | F03 C: the bigger hall and a soft dark analog echo on the quarter note |
 | F26 | BELL SOFT | F04 B: dry, the top edge softer, a little more plate |
 | F27 | BELL ECHO | F04 C: a short digital echo on the dotted 1/8, a little more plate |
-| F28 | TREM ECHO | F05 B: a soft analog echo on the quarter note, the level re-set |
-| F29 | TREM DEEP | F05 C: a slower, deeper vibrato, more warmth and plate |
-| F30 | DRIVEN77 LVL | F06 B: as F06, the level re-set (half way between chord and phrase) |
-| F31 | DRIVEN BODY | F06 C: more drive and body, a longer tape slap |
+| F28 | WARM77 FAT | F05 B: a firmer compressor (3:1, faster attack, longer release), more hall |
+| F29 | WARM77 ECHO | F05 C: a soft dark analog echo on the quarter note, a little more hall |
+| F30 | VINTAGE 77 | F06 B: darker and softer: less bell and hammer, a gentle compressor, a plate |
+| F31 | PUNCH TAPE | F06 C: a tape echo on the dotted 1/8, a slightly bigger hall |
 | F32 | BALLAD TIGHT | F07 B: less boom in the long plate's tail (LOW CUT 80) |
 | F33 | BALLAD DARK | F07 C: a longer, darker analog echo tail, a slower chorus |
-| F34 | DYNO80S LVL | F08 B: as F08, the level re-set |
-| F35 | DYNO80S SOFT | F08 C: the echo softer and darker, less chorus |
+| F34 | TREM ECHO | F08 B: a soft analog echo on the quarter note, the level re-set |
+| F35 | TREM DEEP | F08 C: a slower, deeper vibrato, more warmth and plate |
 | F36 | PHASER LVL | F09 B: as F09, the level re-set |
 | F37 | PHASER SLOW | F09 C: a slower, more liquid sweep, a longer analog echo |
 | F38 | FUNK WAH LVL | F10 B: as F10, the level re-set |
 | F39 | FUNK PLUCK | F10 C: less squash, more pluck (2:1, slower attack), a short dark slap |
 | F40 | RESO SPACE | F11 B: more echo and hall |
 | F41 | RESO SMOOTH | F11 C: a smoother peak (less resonance), a wider sweep |
-| F42 | AUTOWAH ECHO | F12 B: a digital echo on the quarter note |
-| F43 | AUTOWAH TAPE | F12 C: a tape echo on the dotted 1/8 and a plate |
+| F42 | LUSH SOFT | F12 B: a softer bark, a gentler compressor, a shorter decay |
+| F43 | LUSH DARK | F12 C: a slower chorus, a darker analog echo on the quarter note |
 | F44 | VIBES HALL | F13 B: dry, a little more hall |
 | F45 | VIBES MOTOR | F13 C: the slower, deeper motor, more hall |
 | F46 | VIBES CLEAN | F14 B: a cleaner echo (fewer repeats) |
@@ -517,7 +534,7 @@ Two more versions (B and C) of each FM-1 preset, made for the Move.
 | F53 | TAPE DARK | F17 C: the echo on the quarter note, darker repeats |
 | F54 | DREAM CLEAR | F18 B: less chorus wobble under the hall |
 | F55 | DREAM DEEP | F18 C: a slower, deeper pan, the echo on the dotted 1/4 |
-| F56 | RADIO LVL | F19 B: as F19, the level re-set |
-| F57 | RADIO LOW | F19 C: the band a little lower: more body |
+| F56 | DRIVE SOFT | F19 B: a softer bark, a gentler compressor |
+| F57 | DRIVE BODY | F19 C: more drive and body, a longer tape slap |
 
 Building Frodhes for the Move, its tests and installing over ssh are in [MOVE-DEV.md](MOVE-DEV.md).

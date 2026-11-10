@@ -89,3 +89,105 @@ def test_dev_opens_only_frodhes(monkeypatch, names):
     monkeypatch.setitem(sys.modules, "mido", Mido)
     m.Dev()
     assert opened == ["Frodhes FM-1", "Frodhes FM-1"]
+
+
+def test_force_takes_only_the_named_unit():
+    """--port / FM1_PORT (a loaned unit with its own USB name): only that name, never the Frodhes FM-1"""
+    try:
+        fp.force("Dualcore", devs=[])
+        names = ["Frodhes FM-1", "Dualcore Test", "Textura FM-1", "M6"]
+        assert fp.pick(names) == ["Dualcore Test"] and fp.first(names) == "Dualcore Test"
+        assert fp.devices([dev("Frodhes FM-1"), dev("Dualcore Test")], 2) == [1]
+        assert fp.is_fm1("Dualcore Test") and not fp.is_fm1("Frodhes FM-1")
+        assert fp.pick(["Frodhes FM-1"]) == [] and os.environ.get("FM1_PORT") == "Dualcore"
+    finally:
+        fp.force(None)
+    assert "FM1_PORT" not in os.environ and fp.pick(["Frodhes FM-1", "Dualcore Test"]) == ["Frodhes FM-1"]
+
+
+IOREG = """+-o Root  <class IORegistryEntry>
+  +-o AppleT8132USBXHCI@00000000  <class AppleT8132USBXHCI>
+  | +-o Felucca Update@00100000  <class IOUSBHostDevice>
+  |     {
+  |       "USB Product Name" = "Felucca Update"
+  |       "locationID" = 1048576
+  |     }
+  |   +-o Dualcore Test@20130000  <class IOUSBHostDevice>
+  |       "USB Product Name" = "Dualcore Test"
+  |       "locationID" = 538116096
+  | +-o Frodhes FM-1@20140000  <class IOUSBHostDevice>
+  |       "locationID" = 538181632
+  |       "USB Product Name" = "Frodhes FM-1"
+"""
+
+
+def test_ioreg_and_match():
+    devs = fp.parse_ioreg(IOREG)
+    assert devs == [("Felucca Update", 0x00100000), ("Dualcore Test", 0x20130000), ("Frodhes FM-1", 0x20140000)]
+    assert fp.usb_match("Dualcore", devs) == [("Dualcore Test", 0x20130000)]
+    assert fp.usb_match("Frodhes FM-1", devs) == [("Frodhes FM-1", 0x20140000)]
+    assert fp.parse_loc("0x00100000") == 1048576 and fp.parse_loc("1048576") == 1048576
+
+
+def test_force_refuses_a_shared_name_and_a_wrong_location():
+    two = [("Frodhes FM-1", 0x20130000), ("Frodhes FM-1", 0x00100000)]
+    try:
+        with pytest.raises(SystemExit, match="cannot be told apart"):
+            fp.force("Frodhes FM-1", devs=two)
+        one = [("Frodhes FM-1", 0x20130000), ("Dualcore Test", 0x00100000)]
+        with pytest.raises(SystemExit, match="not there"):
+            fp.force("Dualcore", 0x20130000, devs=one)
+        assert fp.FORCED is None
+        fp.force("Dualcore", 0x00100000, devs=one)
+        assert fp.pick(["Frodhes FM-1", "Dualcore Test"]) == ["Dualcore Test"]
+    finally:
+        fp.force(None)
+
+
+def test_ports_by_location():
+    """2026-11-09: unit 2's CoreMIDI ports keep the old name "Dualcore Test" while its USB product is "Frodhes FM-1"
+    (as the user's unit): the ports at a location by CoreMIDI's indices into python-rtmidi's lists (mido reorders
+    its output list), the USB product there by ioreg"""
+    ins = ["IAC Driver Bus 1", "M6", "Frodhes FM-1", "Dualcore Test"]
+    outs = ["IAC Driver Bus 1", "MIDISPORT 2x4 Port 3", "M6", "Frodhes FM-1", "Dualcore Test"]
+    at = ([(3, "Dualcore Test")], [(4, "Dualcore Test")])
+    assert fp.midi_names_at(0x20130000, ins, outs, at) == (["Dualcore Test"], ["Dualcore Test"])
+    assert fp.midi_names_at(0x20130000, ins, outs[:4], at) is None          # (a port went meanwhile)
+    devs = [("Frodhes FM-1", 0x00100000), ("Frodhes FM-1", 0x20130000), ("Textura", 0x1), ("Sonic Test", 0x2),
+            ("FM-1", 0x3), ("FM-1", 0x3)]
+    assert fp.fm1_usb_at(0x20130000, devs) == "Frodhes FM-1"
+    assert fp.fm1_usb_at(0x1, devs) is None and fp.fm1_usb_at(0x2, devs) is None
+    assert fp.fm1_usb_at(0x3, devs) is None and fp.fm1_usb_at(0x4, devs) is None   # (two there / nothing there)
+
+
+def test_audio_by_location(monkeypatch):
+    """2026-11-09: both units' USB audio devices are named "Frodhes FM-1": devices() took the first one, whichever
+    unit it was. Now the one at the pinned location (CoreAudio's UID carries the USB location), and two without a
+    location are refused"""
+    sd = [dict(name="M6", max_input_channels=6), dict(name="Frodhes FM-1", max_input_channels=2),
+          dict(name="Frodhes FM-1", max_input_channels=2), dict(name="MacBook Pro Speakers", max_input_channels=0)]
+    ca = [("M6", "AppleUSBAudioEngine:MOTU:M6:M6AE045D2Y:1,2"),
+          ("Frodhes FM-1", "AppleUSBAudioEngine:Hügelton Instruments:Frodhes FM-1:100000:2"),
+          ("Frodhes FM-1", "AppleUSBAudioEngine:Hügelton Instruments:Frodhes FM-1:20130000:2"),
+          ("MacBook Pro Speakers", "BuiltInSpeakerDevice")]
+    assert fp.uid_loc(ca[1][1]) == 0x00100000 and fp.uid_loc(ca[2][1]) == 0x20130000
+    assert fp.uid_loc(ca[0][1]) is None and fp.uid_loc(ca[3][1]) is None
+    monkeypatch.delenv("FM1_LOCATION", raising=False)
+    monkeypatch.setattr(fp, "AUDIO_LOC", None)
+    with pytest.raises(SystemExit) as e:
+        fp.devices(sd, 2, ca=ca)
+    assert "0x00100000" in str(e.value) and "0x20130000" in str(e.value)
+    assert fp.devices(sd[:2], 2, ca=ca[:2]) == [1]                                # (one unit: as before)
+    fp.pin_audio(0x20130000)
+    try:
+        assert fp.devices(sd, 2, ca=ca) == [2]
+        assert os.environ["FM1_LOCATION"] == "0x20130000"
+        fp.pin_audio(0x00100000)
+        assert fp.devices(sd, 2, ca=ca) == [1]
+        fp.pin_audio(0x30000000)
+        assert fp.devices(sd, 2, ca=ca) == []                                     # (nothing there: no device)
+        with pytest.raises(SystemExit):
+            fp.devices(sd, 2, ca=ca[:3])                                          # (lists disagree: refused)
+    finally:
+        fp.pin_audio(None)
+    assert "FM1_LOCATION" not in os.environ

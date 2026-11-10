@@ -256,6 +256,14 @@ class DryJack:
             for kind, t in self.jinject:
                 while any(-hc.GUARD[0] - 2 * WIDEN <= t - x <= hc.GUARD[1] + 2 * WIDEN for x in g):
                     t += 0.005
+                if kind in ("jdrop", "jstep"):              # (the drop, the step's first 30 ms, where the sound is
+                    w = int((DRY_DROP_S if kind == "jdrop" else 0.03) * sr)   # loudest within 300 ms, outside the
+                                                            # guards: a 3 ms gap in material near the jack's floor
+                    ok = [t + 0.005 * d for d in range(-60, 61)   # is no fault anyone hears or any detector can see,
+                          if not any(-hc.GUARD[0] - 2 * WIDEN <= t + 0.005 * d - x <= hc.GUARD[1] + 2 * WIDEN
+                                     for x in g) and 0 <= int((t + 0.005 * d) * sr) < len(u) - w]
+                    if ok:                                  # and the mark followed the sound; the time is recorded)
+                        t = max(ok, key=lambda c: float(np.mean(u[int(c * sr):int(c * sr) + w] ** 2)))
                 if kind == "click":
                     i = int(t * sr)
                     if i < len(u):

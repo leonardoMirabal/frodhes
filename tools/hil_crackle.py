@@ -143,10 +143,10 @@ HEAVY = dict(DRIVE=127, DRV_MIX=64, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH
              PH_FDBK=127, CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
              RV_DECAY=127, RV_PREDLY=127, FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # hil_cpu's + the reverb's
 MODERATE = dict(DRIVE=60, CP_SW=64, CP_DEPTH=64, PH_SW=127, PH_DEPTH=64, DL_SW=48, DL_DEPTH=64, DL_TIME=60, REV=80)
-REG = dict(bass=[28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48],
-           mid=[48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83],
-           high=[72, 76, 79, 83, 86, 88, 91, 95, 98, 100, 103, 107],
-           spread=[28, 40, 52, 59, 64, 71, 76, 83, 88, 95, 100, 105])
+REG = dict(bass=[28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52, 53, 55],   # (13-16: --voices, FR_C1)
+           mid=[48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83, 86, 88, 91, 95],
+           high=[72, 76, 79, 83, 86, 88, 91, 95, 98, 100, 103, 107, 60, 64, 67, 69],
+           spread=[28, 40, 52, 59, 64, 71, 76, 83, 88, 95, 100, 105, 35, 47, 67, 91])
 RECIPE = [36, 60, 84, 43, 67, 91, 48, 72, 96, 55, 79, 41, 65, 89, 52]   # low, middle, high in turn
 LEDS = (("OFF", 1), ("PLAYED", 2), ("ALL", 3))                         # ui.c LEDS_N: 0 ROOTS 1 OFF 2 PLAYED 3 ALL
 
@@ -712,7 +712,7 @@ STEP_JACK_FLOOR = -80.0                       # sign, within this, the jack's lo
 
 
 def det_step(x, fs, ons, offs, lag=0.0, widen=0.0, step_db=12.0, win_ms=1000 * STEP_WIN, min_db=-45.0, periods=(),
-             ref=None, own=None):
+             ref=None, own=None, agree=None):
     """a sudden level step: the 20 ms window's level >= step_db off the window before it and staying there (the next
     two within 6 dB of it), above min_db, with no note-on or pedal change from 25 ms before to 45 ms after (an attack,
     a damper's thump) and, for a step down, no note-off or pedal-up in the 300 ms before it (a damper's fall); windows
@@ -728,6 +728,11 @@ def det_step(x, fs, ons, offs, lag=0.0, widen=0.0, step_db=12.0, win_ms=1000 * S
     there, with ref (a function (t_before, t_after, win) -> the jack's two levels in dB at those USB times, or None),
     a step the jack has too (same sign, within STEP_AGREE dB, over STEP_JACK_FLOOR) is the music's own and goes to
     own [(frame, detail)]; a USB-path step (a lost or repeated block, the ring) is on USB alone and stays an event.
+    agree (the jack's steps: a function like ref, the jack's times -> USB's two levels): a jack step USB has at the
+    same moment (same sign, within STEP_AGREE dB, its louder window over STEP_JACK_FLOOR) is the music's own and goes
+    to own, anywhere in the take (rc3 rhodes-worst1, 2026-11-09: the jack +15 dB at 2.780 s, USB +13 dB there, a delay
+    echo under the tremolo; USB's own detector judges that step on USB); a jack-path step (the codec, the DAC, the
+    output stage) is on the jack alone and stays an event.
     ons / offs on the recording's clock (map_clock), or the event clock and lag"""
     x = np.asarray(x, float)
     p = (x ** 2).mean(axis=1) if x.ndim == 2 else x ** 2
@@ -766,6 +771,14 @@ def det_step(x, fs, ons, offs, lag=0.0, widen=0.0, step_db=12.0, win_ms=1000 * S
                     if own is not None:
                         own.append(((b + 1) * w, f"level {d:+.0f} dB, the jack {dj:+.0f} dB (a modulation's first "
                                                  f"period)"))
+                    continue
+        if agree is not None:
+            lv = agree(b * w / fs, i * w / fs, w / fs)     # (USB at the same moment)
+            if lv is not None:
+                du = lv[1] - lv[0]
+                if du * d > 0 and abs(du - d) <= STEP_AGREE and max(lv) > STEP_JACK_FLOOR:
+                    if own is not None and not (own and (b + 1) * w - own[-1][0] < 3 * w):
+                        own.append(((b + 1) * w, f"level {d:+.0f} dB, USB {du:+.0f} dB"))
                     continue
         if out and (b + 1) * w - out[-1][0] < 3 * w:
             continue                                       # (the same step, seen from the next window)
@@ -1040,7 +1053,19 @@ def analyse(usb, jack, fs_usb, events, lag_usb=0.0, lag_jack=None, widen=0.0, cc
                                     if lagj is not None else 0.0)
                 k = int(tu * fs_usb)
                 res["jack"].append((i / FS_JACK, "click-lim" if 0 <= k < len(lim) and lim[k] else "click", d))
-        add("jack", FS_JACK, "step", lambda: det_step(jack, FS_JACK, gjt, offj, 0.0, widen, periods=per))
+        def uref(tb, ti, ws):                                # (the jack's times -> USB's clock -> its 20 ms levels)
+            out = []
+            for tjk in (tb, ti):
+                a = int(round(float(map_clock((tjk - cj[0]) / (1.0 + cj[1]), cu)) * fs_usb))
+                n = int(round(ws * fs_usb))
+                if a < 0 or a + n > len(q):
+                    return None
+                out.append(10 * np.log10((q[a:a + n].astype(float) ** 2).mean() + 1e-3) - 20 * np.log10(32767))
+            return out
+        usb_steps = res["info"]["step_usb_too"] = []
+        add("jack", FS_JACK, "step", lambda: det_step(jack, FS_JACK, gjt, offj, 0.0, widen, periods=per,
+                                                       agree=uref, own=usb_steps))
+        res["info"]["step_usb_too"] = [f"{i / FS_JACK:.3f} s {d}" for i, d in usb_steps]
         add("jack", FS_JACK, "track", lambda: tev)
     for k in ("usb", "jack"):
         res[k].sort()
@@ -1185,6 +1210,13 @@ def _places(x, fs, events, rng, k, kind, avoid_lim=None, ccs=(), widen=0.0, cloc
                                                             # need the take's first ~0.56 s: a slip at 0.30 - 0.55 s
                                                             # is not judged on any build, from 0.56 s it is: 2026-10-28)
     ok[-int((2.0 if kind == "drop1ms" else 0.5) * fs):] = False   # (a slip is judged over the next second)
+    if kind == "drop1ms":                                   # (and sound to judge it on: the jack's tracking needs
+        from scipy.ndimage import minimum_filter1d as mnf   # steady windows after the slip; 2026-11-10, stage 2: a
+        w3 = int(0.3 * fs)                                  # draw at 9.34 s in rhodes-recipe-dry1, 20 ms before the
+        ahead = np.empty_like(lv)                           # dampers' silence, left the slip one window to show in)
+        ahead[:-w3] = mnf(lv, w3, origin=-(w3 // 2))[w3:]
+        ahead[-w3:] = 0
+        ok &= ahead > 32767 * 0.01
     if avoid_lim is not None:
         ok &= ~avoid_lim[:len(ok)]
     if kind in ("dropout", "jack_dropout"):                 # (sound on both sides, as the detector wants it)
@@ -1209,6 +1241,12 @@ def _places(x, fs, events, rng, k, kind, avoid_lim=None, ccs=(), widen=0.0, cloc
         d0, d1 = q[1:-1, 0] - q[:-2, 0], q[2:, 0] - q[1:-1, 0]
         sl = np.zeros(len(ok), bool)
         sl[1:-1] = (np.sign(d0) == np.sign(d1)) & (np.abs(d0) >= 40) & (np.abs(d1) >= 40)
+        if q.shape[1] > 1:                                  # every channel on its slope (2026-11-09, rc-0910: a copy
+            e0, e1 = q[1:-1, 1] - q[:-2, 1], q[2:, 1] - q[1:-1, 1]   # with the other channel at its turn shows that
+            sl[1:-1] &= (np.sign(e0) == np.sign(e1)) & (np.abs(e0) >= 40) & (np.abs(e1) >= 40)   # channel 3.5 dB
+                                                            # smoother, under det_repeat's agree (4 dB, every channel):
+                                                            # a 25-frame hold at VIBES worst1 12.336 s, L 23 dB, missed;
+                                                            # the detector's own rule, not a new limit)
         ok &= np.roll(sl, 1)                                # (the copy goes in at p: frame p - 1 on the slope)
     cand = np.flatnonzero(ok)
     out = []
@@ -1331,6 +1369,7 @@ def self_test(engines=ENGINES, worst_s=20.0, recipe_s=24.0, seed=0, k=10, log=pr
                 if dev:
                     fu = clock_fit(u, ev, FS_HOST, rate=cu[1] + RATE_ERR)
                     fj = clock_fit(jk, ev, FS_JACK, rate=cj[1] + RATE_ERR)
+                    _, fj = jack_from_usb(u, FS_HOST, jk, ev, (fu["lag"], fu["rate"]), (fj["lag"], fj["rate"]), fj)
                     tt = np.linspace(0.0, dur, 64)
                     for src, f_, c_ in (("usb", fu, cu), ("jack", fj, cj)):
                         err = float(np.abs(map_clock(tt, (f_["lag"], f_["rate"])) - map_clock(tt, c_)).max())
@@ -1351,7 +1390,7 @@ def self_test(engines=ENGINES, worst_s=20.0, recipe_s=24.0, seed=0, k=10, log=pr
             rng = np.random.default_rng(seed + 99)
             base = [c for c in clips if c[0].endswith(("-worst1", "-recipe-dry1", "-recipe-fx1"))]
             kinds = r["kinds_device" if dev else "kinds"]
-            for kind in KINDS:
+            for ki, kind in enumerate(KINDS):
                 f = m = tries = 0
                 per = 1 if kind == "drop1ms" else 5         # (a lost packet moves the rest of the take: one a copy)
                 cand = [c for c in base if kind != "step" or "-recipe" in c[0]]   # (no room for a step in the busy
@@ -1359,6 +1398,10 @@ def self_test(engines=ENGINES, worst_s=20.0, recipe_s=24.0, seed=0, k=10, log=pr
                 while m < k and tries < 12:
                     name, u, jk, ev, ccs, fit = cand[tries % len(cand)]
                     tries += 1
+                    rng = np.random.default_rng([seed + 99, ki, tries])   # (each kind and take its own draws: the
+                    # places in one take no longer move with another's sound (the bounded draws' rejection sampling
+                    # takes as many as each take's audible frames allow): 0.9.10's effect make-ups changed a busy take
+                    # and moved a VIBES click in the dry one onto a bright attack's shadow)
                     u2, j2, marks = inject(kind, u, jk, ev, rng, min(per, k - m), ccs,   # (placed by the truth,
                                            widen=(DEV_JITTER + CLOCK_TOL) if dev else 0.0,   # found without it;
                                            clock_usb=cu, clock_jack=cj)                # outside the wider guards)
@@ -1521,6 +1564,12 @@ class Device:
         return got.get("usb"), (got["jack"][:, 0] if "jack" in got else None), counters, rig
 
 
+ONSET_NOISE_X = 3.0                           # onset_lag's threshold: at least this x the recording's peak before it
+# THRESHOLD (stage 2, 2026-11-10): 4.0 -> 3.0. The Move dry run's LEVEL -12 dB worst take: the first chord's strike
+# 256 LSB on the simulated jack, its noise peak 66 (3.9 x): at 4 x the onset was the next louder moment, 50 ms late,
+# outside align's 30 ms search. 3 x the lead's own peak is still far over the noise (a peak of 0.3 s of it)
+
+
 def onset_lag(x, events, fs, thr=None):
     """s from the event clock to the recording: the first sound against the first note-on. thr (LSB): by default 10 x
     the recording's peak before it (and >= 24): the FM-1's jack sits 10-15 dB under USB, and a fixed 300 LSB there
@@ -1531,8 +1580,15 @@ def onset_lag(x, events, fs, thr=None):
     a = _peak(x)
     s = int(max(0.0, min(on) - 0.005) * fs)
     if thr is None:                                    # (and at most a tenth of the first note's peak: a hum)
-        thr = max(24.0, 10 * float(a[int(0.05 * fs):s].max())) if s > int(0.06 * fs) else 24.0
+        pre = float(a[int(0.05 * fs):s].max()) if s > int(0.06 * fs) else 0.0
+        thr = max(24.0, 10 * pre) if s > int(0.06 * fs) else 24.0
         thr = min(thr, max(4.0, 0.1 * float(a[s:s + int(0.25 * fs)].max(initial=0.0))))
+        thr = max(thr, min(ONSET_NOISE_X * pre,         # (never under the noise: rc3 rhodes-worst1's jack, 2026-11-09:
+                           0.5 * float(a[s:s + int(0.25 * fs)].max(initial=0.0))))   # its noise peak 5 LSB, the
+                                                        # tenth of a quiet first chord 4: the lag 0.7 ms on noise, not
+                                                        # ~13 ms, every jack guard 12 ms early; and never over half
+                                                        # the first note's peak: the Move's LEVEL -12 dB jack take,
+                                                        # noise 67 LSB, the first chord 328, else the lag 129 ms late)
     i = np.flatnonzero(a[s:] > thr)
     return (s + int(i[0])) / fs - min(on) if len(i) else 0.0
 
@@ -1643,6 +1699,55 @@ def clock_fit(x, events, fs, rate=None):
     return dict(lag=float(lag), rate=float(r), n=int(len(te)), span=round(span, 2), how=how)
 
 
+JACK_XC_S, JACK_XC_MAX, JACK_XC_NCC = 1.0, 0.060, 0.9   # jack_lag_from_usb: 1 s from the first sound, +-60 ms
+
+
+def jack_lag_from_usb(u, fs_u, j, events, cu, cj):
+    """the jack's lag from USB's: USB's first-sound lag (cu, its clock fit) plus the jack's offset against USB, measured
+    by cross-correlation over JACK_XC_S from the first note-on (USB resampled to the jack's 48 kHz, +-JACK_XC_MAX). The
+    jack runs 10-15 dB under USB and its first sound can sit near its noise (rc3 rhodes-worst1: 0.7 ms on noise, the
+    true lag ~13 ms); USB's onset is the sure one, and the offset is the two streams' own (the jack ~3-4.5 ms ahead
+    of USB on the FM-1, 2026-11-09). Returns (lag, ncc), or None where the two do not agree (ncc < JACK_XC_NCC)"""
+    on = [e[0] for e in events if e[1] == "on"]
+    if u is None or j is None or not on or not len(u) or not len(j):
+        return None
+    m = np.asarray(u, float)
+    m = m.mean(axis=1) if m.ndim == 2 else m
+    t0 = float(map_clock([min(on)], cu)[0])                # (the first note on USB's clock)
+    n, L = int(JACK_XC_S * FS_JACK), int(JACK_XC_MAX * FS_JACK)
+    tj = np.arange(-L, n + L) / FS_JACK + t0                # (USB's samples at the jack's rate, around the window)
+    if tj[0] * fs_u < 0 or tj[-1] * fs_u >= len(m) - 1:
+        return None
+    us = np.interp(tj * fs_u, np.arange(len(m)), m)
+    a = int(round(t0 * FS_JACK))
+    if a - L < 0 or a + n + L > len(j):
+        return None
+    ja = np.asarray(j, float)
+    best = (0.0, 0)
+    for k in range(-L, L + 1):                              # (the jack's window k frames off USB's)
+        js = ja[a + k:a + k + n]
+        c = float(np.dot(js, us[L:L + n]))
+        if abs(c) > abs(best[0]):
+            best = (c, k)
+    c, k = best
+    js = ja[a + k:a + k + n]
+    ncc = abs(c) / (np.sqrt((js ** 2).sum() * (us[L:L + n] ** 2).sum()) + 1e-20)
+    if ncc < JACK_XC_NCC:
+        return None
+    # the same sound: USB's time t0 is the jack's t0 + k / FS_JACK; the jack's clock through that point at its rate
+    lag = t0 + k / FS_JACK - min(on) * (1.0 + cj[1])
+    return float(lag), float(ncc)
+
+
+def jack_from_usb(u, fs_u, j, ev, cu, cj, fj):
+    """the jack's clock with its lag from USB's where the two streams agree (jack_lag_from_usb); fj gets how"""
+    r = jack_lag_from_usb(u, fs_u, j, ev, cu, cj) if u is not None and j is not None else None
+    if r is None:
+        return cj, fj
+    fj = dict(fj or {}, lag=r[0], how=f"USB's lag + the jack's offset (ncc {r[1]:.3f}; first sound {cj[0]:.4f})")
+    return (r[0], cj[1]), fj
+
+
 def save_snip(path, x, fs, t):
     import wave
     a = max(0, int((t - 0.5) * fs))
@@ -1657,7 +1762,7 @@ def save_snip(path, x, fs, t):
 # ------------------------------------------------------------------------------------------------------ the runs
 def device_takes(eng, a):
     """the takes of a device run: the stimulus, then (both sources) the no-USB recipe, then (--leds) the LEDS ones"""
-    T = [(n, c, e, d, dict(usb=True)) for n, c, e, d in takes(eng, a.worst_s, a.recipe_s, a.seed)]
+    T = [(n, c, e, d, dict(usb=True)) for n, c, e, d in takes(eng, a.worst_s, a.recipe_s, a.seed, a.voices)]
     rng = np.random.default_rng(a.seed + 7)
     if a.source == "both" and a.no_usb_s > 0:
         ev, dur = recipe_events(voices(eng), a.no_usb_s, rng)
@@ -1675,7 +1780,7 @@ def plan_text(engines, a):
         for name, ccs, ev, dur, opt in device_takes(eng, a):
             non = sum(1 for e in ev if e[1] == "on")
             lines.append(f"  {name:22s} {dur:6.1f} s  {len(ccs):3d} setup CCs  {non:4d} note-ons  "
-                         f"{sum(1 for e in ev if e[1] == 'cc' and e[2] == 64):3d} pedal moves  voices {voices(eng)}"
+                         f"{sum(1 for e in ev if e[1] == 'cc' and e[2] == 64):3d} pedal moves  voices {a.voices or voices(eng)}"
                          + ("  (USB stream closed: the jack alone)" if not opt["usb"] else "")
                          + (f"  (LEDS {opt['leds']}: set on the DISPLAY page when asked)" if opt.get("leds") else ""))
             total += dur + 1.5
@@ -1701,7 +1806,7 @@ def run_takes(engines, a, dev=None, log=print):
         E = dict(takes=[], events=0, cpu_worst=None, whole_worst=None, shed=0, usb_counters={}, voices=None, rig=[],
                  click_lim=0, over_ceiling=0, zero_own=0, counter_fails=[], polled=bool(dev and dev.poll))
         T = device_takes(eng, a) if dev else [(n, c, e, d, dict(usb=True)) for n, c, e, d in
-                                              takes(eng, a.worst_s, a.recipe_s, a.seed)]
+                                              takes(eng, a.worst_s, a.recipe_s, a.seed, a.voices)]
         for name, ccs, ev, dur, opt in T:
             counters = None
             if dev:
@@ -1722,6 +1827,7 @@ def run_takes(engines, a, dev=None, log=print):
                 fu = clock_fit(u, ev, fs, rate=dev.clock.get("usb"))   # (each recording's own clock: its rate
                 fj = clock_fit(j, ev, FS_JACK, rate=dev.clock.get("jack"))   # from the recorder, the lag fitted)
                 cu, cj = (fu["lag"], fu["rate"]), (fj["lag"], fj["rate"])
+                cj, fj = jack_from_usb(u, fs, j, ev, cu, cj, fj)
                 fits = dict(usb=fu if u is not None else None, jack=fj if j is not None else None)
                 if counters:
                     sm = counters["summary"]
@@ -1823,13 +1929,23 @@ def parse_args(argv=None):
     ap.add_argument("--leds", action="store_true", help="the LEDS OFF / PLAYED / ALL takes (asks for each)")
     ap.add_argument("--quick", action="store_true", help="20 s worst + 24 s recipe per engine")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--voices", type=int, default=None, choices=range(1, 17), metavar="N",
+                    help="the chords' notes (default: the firmware's RH_VOICES / BAR_VOICES; 14 for a two-core FR_C1 build)")
     ap.add_argument("--jack-dev", default="M6")
     ap.add_argument("--jack-ch", type=int, default=5)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--host", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--no-self-test", action="store_true", help="(device) skip the self-test before the takes")
+    ap.add_argument("--port", metavar="NAME", help="only the unit whose MIDI port / audio device name contains NAME "
+                    "(a second FM-1 with its own USB name, tools/build.py --usb-name); refused when two USB "
+                    "devices share the name")
+    ap.add_argument("--location", metavar="LOC", help="with --port: the unit's USB location (macOS ioreg locationID, "
+                    "e.g. 0x00100000), refused when the unit is not there")
     a = ap.parse_args(argv)
+    if a.port:
+        import fm1_ports
+        fm1_ports.force(a.port, None if a.location is None else fm1_ports.parse_loc(a.location))
     if a.quick:
         a.worst_s, a.recipe_s, a.no_usb_s = 20.0, 24.0, min(a.no_usb_s, 20.0)
     return a

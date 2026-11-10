@@ -18,10 +18,14 @@ import subprocess
 import numpy as np
 import pytest
 
-from hostrun import FS, ROOT, card_hz, cc, env_rms, note, once, rate_of, rms_db, run
+from hostrun import FS, ROOT, card_hz, cc, env_rms, note, once, rate_of, rms_db, run, tap_lag
+
+import sys  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import dry_dist  # noqa: E402  (the voicing at its defaults, not F01's)
 
 ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 0), cc(11, 47, 0)]}   # VIBES: its motor (on with it) off
-CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(23, 106, 0), cc(24, 110, 64)]   # F01's drive, reverb, comp off; 0 dB
+CLEAN = dry_dist.type_base_lines(19) + [cc(20, 81, 0), cc(21, 91, 0), cc(23, 106, 0), cc(24, 110, 64)]   # F01's drive, reverb, comp off; 0 dB
 PEDAL = [cc(22, 64, 127)]
 PG = {"TREM": 7, "PHA": 8, "CHO": 9, "DELAY": 10, "TEMPO": 11, "FILTER": 6, "LFO": 16, "COMP": 5, "SETUP": 17,
       "ARP": 15, "SEQ": 14, "DRIVE": 19, "REVERB": 20, "MOTOR": 21,
@@ -177,8 +181,12 @@ def test_chorus_phaser_speed(eng, fx):
     """CHORUS / PHASER SPEED: the sweep runs at the card's rate (0.25-6 Hz; the bug of 0.9.2 showed twice that). A
     chord held under the pedal with DECAY / RING at 10 (a steady sound). The chorus is measured on the Rhodes only:
     VIBES' few pure partials make the left / right level difference a mix of the rate and its double (the chorus
-    code is the same for both engines; its card text is checked at every value above)"""
+    code is the same for both engines; its card text is checked at every value above). The chorus: its left tap's
+    delay against the chorus off (hostrun.tap_lag; 0.9.10's Rhodes read twice the rate by the level difference)"""
     chord = (48, 55, 60, 64, 67, 72, 76, 79)
+    pre = ENGINES[eng] + CLEAN + PEDAL + [cc(23, 102, 127)]
+    if fx == "chorus":
+        off = run(f"ds-{fx}off-{eng}", pre + [cc(30, 85, 0), "100 dump"] + sum((note(200, m, 100, 10000) for m in chord), []), 10500)
     for v in (20, 64, 127):
         if fx == "chorus":
             p, card = [cc(30, 85, 64), cc(31, 86, 100), cc(32, 87, v)], f"card.{PG['CHO']}.2"
@@ -188,19 +196,40 @@ def test_chorus_phaser_speed(eng, fx):
                 + sum((note(200, m, 100, 10000) for m in chord), []), 10500)
         txt = w.state(100)[card]
         L, R = w.seg(0.5, 10.2), w.seg(0.5, 10.2, 1)
-        feat, fps = lr_band(L, R) if fx == "chorus" else band_share(L)
+        feat, fps = tap_lag(L, off.seg(0.5, 10.2)) if fx == "chorus" else band_share(L)
         assert_rate(rate_of(feat, fps, card_hz(txt)), txt, f"{fx} SPEED {v}")
 
 
-def echo_spacing(x, d_guess, t0=0.2):
-    """the time from the note to its first echo (samples): the note's onset strength against what follows"""
+def onset_strength(x):
     e = np.convolve(np.abs(np.diff(x)), np.ones(32) / 32, "same")
-    o = np.maximum(np.diff(e), 0)
+    return np.maximum(np.diff(e), 0)
+
+
+def echo_spacing(x, d_guess, dry, t0=0.2):
+    """the time from the note to its first echo (samples): the dry note's onset strength (dry: the same note with the
+    delay off) against the echoes alone (x minus dry at its least-squares gain). 2026-11-08: the render's own onset
+    strength against itself read TIME 10 (28 ms) as 31.9 ms on the clean Rhodes (61baedac; 28.1 on 0.9.9): its
+    softer strike spreads the attack's onset over ~11 ms, and the template, which held the first echo too, matched
+    the attack's later peaks against the echo's. The echoes alone against the dry onset: 28.1 ms on 0.9.9, 568fe9d6
+    and 61baedac, and VIBES TIME 10 / 20 at 28.1 / 39.4 (the old way: 29.3 / 44.4)"""
+    a = float(np.dot(x, dry) / np.dot(dry, dry))
+    od, ow = onset_strength(dry), onset_strength(x - a * dry)
     i0 = int(t0 * FS)
-    w = o[i0 - 200:i0 + 1500]
+    w = od[i0 - 200:i0 + 1500]
     lags = range(int(0.4 * d_guess), int(2.6 * d_guess))
-    c = [np.dot(w, o[i0 - 200 + l:i0 + 1500 + l]) for l in lags]
+    c = [np.dot(w, ow[i0 - 200 + l:i0 + 1500 + l]) for l in lags]
     return lags[int(np.argmax(c))]
+
+
+def test_echo_spacing_finds_a_wrong_time():
+    """the detector against a delay at the wrong time: the dry note plus its copy 4 ms late (TIME 10's card 28 ms, the
+    echo at 32) reads 32 (out of the 1.5 ms tolerance), at 28 reads 28, and a 175 ms card with the echo at 190 reads 190"""
+    dry = run("ds-dly-dry-rhodes", ENGINES["rhodes"] + CLEAN + SHORT + [cc(30, 88, 0)] + note(200, 72, 110, 30), 2500).L
+    for card, true in ((28, 32), (28, 28), (175, 190)):
+        L = int(round(true * FS / 1000))
+        x = 0.8 * dry + 0.5 * np.concatenate([np.zeros(L), dry[:-L]])
+        meas = echo_spacing(x, card * FS / 1000, dry) * 1000 / FS
+        assert abs(meas - true) < 0.3, (card, true, meas)
 
 
 @pytest.mark.parametrize("eng", ENGINES)
@@ -208,6 +237,7 @@ def test_delay_time(eng):
     """DELAY TIME: the echoes come at the card's time; synced (TEMPO page DLY SYNC, BPM 100 by the knob) at the note
     value, and an echo longer than the line's 1.486 s at half of it (the manual says so)"""
     cases = [(10, None), (64, None), (127, None), (64, 3), (64, 9), (64, 12)]       # 1/16, 1/4, 1/1 (2.4 s -> 1.2)
+    dry = run(f"ds-dly-dry-{eng}", ENGINES[eng] + CLEAN + SHORT + [cc(30, 88, 0)] + note(200, 72, 110, 30), 5500).L
     for v, sync in cases:
         p = [cc(30, 88, 48), cc(31, 89, 100), cc(32, 26, 50), cc(33, 90, v)]
         if sync is not None:
@@ -216,14 +246,14 @@ def test_delay_time(eng):
         st = w.state(150)
         txt = st[f"card.{PG['DELAY']}.2"]
         if sync is None:
-            meas = echo_spacing(w.L, card_value(txt)[0] * FS / 1000) * 1000 / FS
+            meas = echo_spacing(w.L, card_value(txt)[0] * FS / 1000, dry) * 1000 / FS
             assert_rate(meas, txt, f"DELAY TIME {v}")
         else:
             assert st[f"card.{PG['TEMPO']}.3"] == txt and st["bpm"] == "100.0", (st[f"card.{PG['TEMPO']}.3"], txt)
             ms = 60000 / 100 * UNITS[txt] / 96
             while ms * FS / 1000 >= 65534:                  # fx.c: the line is 65536 samples
                 ms /= 2
-            meas = echo_spacing(w.L, ms * FS / 1000) * 1000 / FS
+            meas = echo_spacing(w.L, ms * FS / 1000, dry) * 1000 / FS
             assert abs(meas - ms) <= 0.05 * ms, f"DELAY SYNC {txt} at 100 BPM: {ms:.1f} ms expected, the echo at {meas:.1f}"
 
 
@@ -415,10 +445,24 @@ def frames(x, hop):
     return np.asarray(x[:n * hop], float).reshape(n, hop)
 
 
+def body_slope(thr, slope=0.95):
+    """(stage 2: the body lift, fx.c cmp_beta) the slope a held note follows: the reduction relaxed by CMP_BETA 90 / 256,
+    faded in over THRESH 56 .. 80"""
+    beta = 0 if thr <= 56 else 90 if thr >= 80 else 90 * (thr - 56) // 24
+    return slope * (1 - beta / 256)
+
+
+def cmp_auto_db(thr, slope):
+    """fx.c cmp_auto: THRESH's own make-up (dB) at this slope (1 - 1 / ratio)"""
+    q = np.interp(thr, (56, 64, 80, 96, 112, 127), (0, 266, 993, 2026, 3500, 5017)) if thr > 56 else 0.0
+    return q * slope / 4096 * 6.0206
+
+
 @pytest.mark.parametrize("eng", ENGINES)
 def test_compressor_threshold_and_makeup(eng):
     """COMPRESSOR THRESH: a held note decays through the threshold; the gain reduction (20:1, fast attack and
-    release) follows the 6 dB soft knee around the card's level (the detector is a peak follower: the input's peak
+    release; a held note's slope relaxed by the body lift, less THRESH's auto make-up) follows the 6 dB soft knee
+    around the card's level (the detector is a peak follower: the input's peak
     per 10 ms); MAKEUP: below the threshold the gain is the card's"""
     pre = ENGINES[eng] + CLEAN + PEDAL
     hi = note(100, 84, 127, 7000)
@@ -427,20 +471,24 @@ def test_compressor_threshold_and_makeup(eng):
         w = run(f"ds-cmp{thr}-{eng}", pre + [cc(30, 112, 127), cc(31, 108, 0), cc(32, 109, 0), cc(33, 113, 0),
                                             cc(34, 107, thr), cc(35, 106, 127), "70 dump"] + hi, 7500)
         txt = w.state(70)[f"card.{PG['COMP']}.0"]
-        a, b = frames(w.seg(0.15, 7.4), 441), frames(ref.seg(0.15, 7.4), 441)
+        a, b = frames(w.mid(0.15, 7.4), 441), frames(ref.mid(0.15, 7.4), 441)   # (mono sums: the dry width cancels)
         lvl = 20 * np.log10(np.abs(b).max(axis=1) / 32768 + 1e-9)
         gr = 20 * np.log10(np.sqrt((b ** 2).mean(axis=1) + 1e-9) / np.sqrt((a ** 2).mean(axis=1) + 1e-9))
+
+        auto, SL = cmp_auto_db(thr, 0.95), body_slope(thr)
 
         def err(T):
             o = lvl - T
             sel = (o > -9) & (o < 12)
-            model = np.where(o <= -3, 0, np.where(o < 3, 0.95 * (o + 3) ** 2 / 12, 0.95 * o))
+            model = np.maximum(np.where(o <= -3, 0, np.where(o < 3, SL * (o + 3) ** 2 / 12, SL * o)) - auto, 0)
+            # (the auto make-up gives back at most the reduction: fx.c cmp_amx)
             return np.sqrt(np.mean((gr[sel] - model[sel]) ** 2)) if sel.sum() > 20 else 99
 
         Ts = np.linspace(-45, 0, 901)
         es = [err(T) for T in Ts]
         assert min(es) < 0.3, (thr, min(es))
-        assert_db(Ts[int(np.argmin(es))], txt, f"THRESH {thr}")
+        assert_db(Ts[int(np.argmin(es))], txt, f"THRESH {thr}", tol=0.8)   # THRESHOLD 0.5 -> 0.8 dB (stage 2: -20.75 at
+                                                                            # THRESH 64 with the body lift, -30.35, -37.85)
     ref = run(f"ds-mk-ref-{eng}", pre + note(100, 60, 30, 1500), 1700)
     for mk in (32, 64, 120):
         w = run(f"ds-mk{mk}-{eng}", pre + [cc(33, 113, mk), cc(34, 107, 1), cc(35, 106, 127), "70 dump"]
@@ -458,7 +506,7 @@ def test_level(eng):
     for v in (0, 30, 64, 127):
         w = run(f"ds-lvl{v}-{eng}", pre + [cc(30, 110, v), "50 dump"] + note(100, 60, 40, 1500), 1700)
         txt = w.state(50)[f"card.{PG['SETUP']}.1"]
-        assert_db(rms_db(w.seg(0.2, 1.5)) - rms_db(ref.seg(0.2, 1.5)), txt, f"LEVEL {v}")
+        assert_db(rms_db(w.mid(0.2, 1.5)) - rms_db(ref.mid(0.2, 1.5)), txt, f"LEVEL {v}")   # (mono sums: RAW has no width)
 
 
 def test_drive_type_card_is_what_runs():
@@ -471,8 +519,8 @@ def test_drive_type_card_is_what_runs():
         for v in range(128):
             lines += [cc(t, 84, v), f"{t + 1} dump"]
             t += 2
-        # SELECT from PERFORM to DRIVE (ui.c PG_ORDER: PERF PIANO VOICE 1/2 2/2 COMP EQ DRIVE; VIBES: VOICE 3/3 too)
-        lines += [cc(t, 84, 0)] + [f"{t + 10 + 3 * i} turn 0 1" for i in range(6 + (eng == "vibes"))]
+        # SELECT from PERFORM to DRIVE (ui.c PG_ORDER: PERF PIANO VOICE 1/3 2/3 3/3 COMP EQ DRIVE; VIBES: VOICE 4/4 too)
+        lines += [cc(t, 84, 0)] + [f"{t + 10 + 3 * i} turn 0 1" for i in range(7 + (eng == "vibes"))]
         t += 40
         t_panel = t
         for d in (1, 1, 1, -1, -1, -1):

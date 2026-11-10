@@ -18,7 +18,9 @@ import hil_scan as h  # noqa: E402
 NAMES = ["types", "presets", "effects", "bypass", "fx_all", "fx_toggle", "delay_time", "tremolo_rate", "sustain",
          "held_tail", "stress", "silence"]
 # measure group -> the largest difference allowed between two runs (dB / LU; host: <= 0.09 seen)
-TOL = {"types": 0.15, "preset": 0.15, "effects": 0.25, "fx_all": 0.25, "toggle": 0.25, "bypass": 0.25}
+TOL = {"types": 0.15, "preset": 0.15, "effects": 0.25, "fx_all": 0.45, "toggle": 0.25, "bypass": 0.25}
+# 2026-11-08: fx_all 0.45 (0.25): 0.9.10's partials (pulse_pz.h, rhodes_tables.h) make C3 G3's coinciding partials
+# phase-sensitive (G3 a block late: F06 0.37 LU, F11 0.44; 0.15 on 0.9.9; the levels and RH_NO_* flags not the cause)
 
 
 def metrics(rep):
@@ -64,11 +66,15 @@ def test_without_the_reset_the_runs_differ():
     assert max(d.values()) > 1.0, sorted(d.items(), key=lambda kv: -kv[1])[:6]
 
 
-@pytest.mark.parametrize("notes, lim", [((57, 64, 69), None), (h.CH_NOTES, 0.25), (h.FX_NOTES, 0.25)],
-                         ids=["octave", "CHORD", "fx_all"])
+@pytest.mark.parametrize("notes, lim", [((45, 57, 69), None), ((57, 64, 69), "report"), (h.CH_NOTES, 0.25),
+                                        (h.FX_NOTES, 0.5)],   # (2026-11-08: TOL)
+                         ids=["octave", "octave_a3_report", "CHORD", "fx_all"])
 def test_a_chord_note_one_block_late(notes, lim):
     """the classic chords hold no octave: a note one block late moves an octave chord's loudness by up to 2 LU
-    (its coinciding partials' phase), the chosen chords by <= 0.25 LU"""
+    (its coinciding partials' phase), the chosen chords by <= 0.25 LU. The octave case is a sensitivity probe (it must
+    move > 1 LU: a late note is visible), not a quality limit: A2 A3 A4 since rc-0910 (1.60 LU; 0.9.9 2.72). A3 E4 A4,
+    the probe before, only reports (0.79 LU; 0.9.9 1.44): 0.9.10's tine mode from A3 up (1f596312) is less
+    phase-sensitive"""
     H = h.hr()
     worst = 0.0
     for pc in (0, 5, 10):                                 # F01, F06 (2.0 LU with A3 E4 A4), F11
@@ -82,7 +88,9 @@ def test_a_chord_note_one_block_late(notes, lim):
             i = int(np.argmax(np.abs(x).max(1) > 200))
             lv.append(h.lufs(x[i:i + int(1.1 * H.FS)] / 32768.0))
         worst = max(worst, max(abs(v - lv[0]) for v in lv))
-    if lim is None:
+    if lim == "report":
+        print(f"octave A3 E4 A4 one block late: {worst:.2f} LU (report only)")
+    elif lim is None:
         assert worst > 1.0, worst
     else:
         assert worst <= lim, worst

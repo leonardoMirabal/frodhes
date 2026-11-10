@@ -19,6 +19,9 @@ and the idle-with-every-effect one (the fixed part), 3 takes each as usual.
 --engine vibes selects VIBES (CC 79), with the motor on (CC 47; records v3: the engine's own) wherever the effects
 are on (the tremolo too: it can run on top of the motor), off elsewhere, and adds the bar engine's worst voicings (edge strike, RUBBER, tube and weight at 127). It also prints the
 bar engine's lowest mode cap and most live upper modes per scenario (CC 112 / 113 replies).
+--heavy-cc CC:V[,CC:V] adds those controls to every heavy (every-effect) scenario: 84:76 the drive TSH8, 105:127
+SPREAD. --port NAME: only the unit whose MIDI port / audio device name contains NAME (fm1_ports.force: refused
+when two USB devices share the name); --location LOC (with --port): and it must be the unit at that USB location.
 --fx-each: idle, then each effect alone (minus idle without effects) = the per-effect cost table of fx.c (FX_US_*).
 --calib (VIBES): 8 RUBBER edge strikes at v127 with the mode cap forced (developer CC 9) to 0, 8, 16, 24, 32, 40, 48
 upper modes, no effects, then 4 and 1 voices: fits the cost per upper mode-block and the fixed part per voice, for
@@ -128,7 +131,16 @@ def mid_top(nv):
     return list(range(48, 48 + max(0, nv - 2))) + TOP2[:min(2, nv)]
 STAGES = {1: "engine (eng_render)", 2: "fx copy", 3: "compressor", 4: "filter + LFO", 5: "drive", 6: "trem / wah",
           7: "phaser", 8: "chorus", 9: "delay", 10: "reverb", 11: "bypass / DC / LEVEL", 12: "limiter", 13: "gate",
-          14: "fx (other)", 15: "after the last stamp"}
+          14: "fx (other)", 15: "after the last stamp",
+          # FR_C1 + C1_PROF (frodhes.c C1PF): since the block's start (@), or a span; "blk" = summed over a block
+          16: "c0 voices done @", 17: "c0 voices blk", 18: "c1 block-start job", 19: "c0 last wait", 20: "c0 waits before",
+          21: "c0 tail-loop wait", 22: "c1 done @", 44: "front chunks on c0 (count)",
+          45: "c0 eng_begin", 46: "SNAP end @", 47: "SNAP c0 voices done @", 48: "SNAP c0 voices blk",
+          49: "SNAP c0 eng_begin", 50: "SNAP c1 done @", 51: "SNAP blocks after PC +1 (count)",
+          23: "c1 last chunk fx", 24: "c1 first chunk fx", 25: "c1 middle chunk fx", 26: "COMP blk", 27: "EQ blk",
+          28: "DRIVE blk", 29: "FILTER blk", 30: "TREM blk", 31: "SPREAD+PHASER blk", 32: "delay blk", 33: "reverb blk",
+          34: "fx_out blk", **{35 + i: f"first: {k}" for i, k in enumerate(("COMP", "EQ", "DRIVE", "FILTER", "TREM",
+                                                                             "SPREAD+PHASER", "delay", "reverb", "fx_out"))}}
 
 
 def default_voices(eng):
@@ -151,6 +163,13 @@ def ports():
         import mido
         outs = fm1_ports.pick(mido.get_output_names())
         ins = fm1_ports.pick(mido.get_input_names())
+        if fm1_ports.AUDIO_LOC is not None:           # a pinned unit (FM1_LOCATION): its MIDI too, never the other
+            at = fm1_ports.midi_names_at(fm1_ports.AUDIO_LOC)
+            if not at or not at[0] or not at[1]:
+                sys.exit(f"hil_cpu: no MIDI ports at USB 0x{fm1_ports.AUDIO_LOC:08x}")
+            ins, outs = at
+        elif len(outs) > 1 or len(ins) > 1:
+            sys.exit("hil_cpu: two FM-1 MIDI ports: give FM1_LOCATION=0x...")
         if not outs or not ins:
             sys.exit("no FM-1 MIDI port")
         import fm1_midi
@@ -279,6 +298,15 @@ def main(argv=None):
     if "-h" in argv or "--help" in argv:              # the options only: no device opened
         print(__doc__)
         return dict(code=0)
+    loc = None
+    if "--location" in argv:                          # --location LOC: the --port unit's USB location (asserted)
+        i = argv.index("--location")
+        loc = fm1_ports.parse_loc(argv[i + 1])
+        del argv[i:i + 2]
+    if "--port" in argv:                              # --port NAME: only that unit (fm1_ports.force: a second FM-1;
+        i = argv.index("--port")                      # refused when two USB devices share the name)
+        fm1_ports.force(argv[i + 1], loc)
+        del argv[i:i + 2]
     argv0 = sys.argv
     try:
         if "--keyadc" in argv and argv[argv.index("--keyadc") + 1:argv.index("--keyadc") + 2] == ["gate"]:
@@ -371,7 +399,7 @@ def run_cpu(argv):  # noqa: C901
             take()
             time.sleep(0.005)
         if not {116, 117} <= got.keys():
-            sys.exit("no profiler reply (a firmware without CC 116?)")
+            sys.exit("hil_cpu: no profiler reply (a firmware without CC 116?)")
         t0 = time.monotonic()
         while time.monotonic() - t0 < (0.15 if "--stages" in sys.argv or "--tick" in sys.argv else 0.08):   # the replies after 115-118
             take()
@@ -491,31 +519,47 @@ def run_cpu(argv):  # noqa: C901
         rate = int(sys.argv[sys.argv.index("--usb") + 1]) if "--usb" in sys.argv else 48000
         devs = fm1_ports.devices(sd.query_devices(), 2)
         if not devs:
-            sys.exit("--usb: no FM-1 audio input")
+            sys.exit("hil_cpu: --usb: no FM-1 audio input")
         # the device itself switched to RATE (as rh_devcmp): without it Core Audio keeps the FM-1 at its current
         # nominal rate and converts, and the firmware runs the other rate's path
         ca = sd.CoreAudioSettings(change_device_parameters=True, fail_if_conversion_required=True)
         if _USB.get("rate") != rate:              # (open once: --keyadc gate runs many measurements on it)
             close_usb()
-            stream = sd.InputStream(device=devs[0], samplerate=rate, channels=2, dtype="int16", blocksize=128,
-                                    callback=lambda *a: None, extra_settings=ca)
-            stream.start()
+            for k in (0, 1):                      # (a PortAudio error at the start: once more after 2 s, then a
+                stream = sd.InputStream(device=devs[0], samplerate=rate, channels=2, dtype="int16",   # one-line exit
+                                        blocksize=128, callback=lambda *a: None, extra_settings=ca)   # the logs keep)
+                try:
+                    stream.start()
+                    break
+                except sd.PortAudioError as e:
+                    stream.close()
+                    if k:
+                        sys.exit(f"hil_cpu: --usb {rate}: the FM-1 stream did not start: {e}")
+                    print(f"hil_cpu: --usb {rate}: the stream did not start ({e}); once more in 2 s")
+                    time.sleep(2.0)
             _USB.update(rate=rate, stream=stream)
             time.sleep(1.0)
         query.usb = {}
         query()                                       # the firmware's own view of the stream (CC 100 id 12)
         st = query.usb.get("state")
         if st is not None and (not st & 2 or bool(st & 4) != (rate == 48000)):
-            sys.exit(f"--usb {rate}: the FM-1 reports the stream {usb_line(query.usb)} (state {st}): not at {rate} Hz")
+            sys.exit(f"hil_cpu: --usb {rate}: the FM-1 reports the stream {usb_line(query.usb)} (state {st}): not at {rate} Hz")
         print(f"USB audio open at {rate} Hz, blocksize 128 (the FM-1 confirms: {usb_line(query.usb).split(':')[0]})")
     heavy = dict(DRIVE=127, EQ_LO=127, EQ_MID=0, EQ_HI=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
                  CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
                  FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # the filter at its heaviest: LP18, the LFO
+    if "--heavy-cc" in sys.argv:                      # --heavy-cc CC:V[,CC:V]: more controls in every heavy scenario
+        for kv in sys.argv[sys.argv.index("--heavy-cc") + 1].split(","):   # (e.g. 84:76 the drive TSH8, 105:127 SPREAD)
+            c, v = (int(x) for x in kv.split(":"))
+            if not (0 <= c <= 127 and 0 <= v <= 127):
+                sys.exit("--heavy-cc: CC:V, 0..127 each")
+            CC[f"CC{c}"] = c
+            heavy[f"CC{c}"] = v
     nv = int(sys.argv[sys.argv.index("--voices") + 1]) if "--voices" in sys.argv else default_voices(eng)
-    if not 1 <= nv <= 12:
-        sys.exit("--voices: 1..12")
-    bass8 = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48][:nv]          # the first 8: the lists as before
-    chord8 = [48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83][:nv]
+    if not 1 <= nv <= 16:
+        sys.exit("--voices: 1..16")
+    bass8 = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52, 53, 55][:nv]   # the first 8: the lists as before
+    chord8 = [48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83, 86, 88, 91, 95][:nv]  # (13-16: two-core builds, FR_C1)
     worst_only = "--worst" in sys.argv
     rows = []
 

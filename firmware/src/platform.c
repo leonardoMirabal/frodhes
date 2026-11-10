@@ -20,6 +20,8 @@
  * and may define, before the #include:
  *   LCD_IDLE()        called while the screen's DMA sends a strip (the keys, MIDI: nothing waits for a redraw)
  *   FELUCCA_UAC 0     no USB audio (MIDI only)
+ *   APP_EARLY()       (Frodhes) called once at boot, the interrupts off, before the audio and the timers start and the
+ *                     top of RAM is locked: what must start first (FR_C1: the second core, hal/fm1_core1.h)
  */
 /* Frodhes: and APP_OUT_WRITTEN 1: app_audio writes every sample of out (then out is not cleared before it) */
 /* the panel by name: buttons (fm1_in.buttons, fm1_input_edges, fm1_led_key: bit / id), the encoders
@@ -549,8 +551,70 @@ static __attribute__((noinline)) void master_ramp(int32_t *o, int32_t m)
     master_prev = m;
 }
 #undef TAIL_PRE
+#ifndef APP_TAIL_EARLY
+#define APP_TAIL_EARLY 0
+#endif
+#if APP_TAIL_EARLY
+/* Frodhes (0.9.10, two cores: APP_TAIL_EARLY): the tail below in pieces of 32 frames, the first ones run early by the
+ * app (tail_early, still in this interrupt: frodhes.c app_audio, while core 0 waits for core 1's last effects) on
+ * the frames already final; the interrupt does the rest after app_audio. The same samples as the one pass: MASTER
+ * and the clip act frame by frame, the USB tap in pieces of 32 is the one tap (tests/uac_rs_test.c, bit for bit).
+ * Allowed (tl.on) only when nothing can tell the pieces from the pass: MASTER not moving (master_ramp: the whole
+ * pass after), the USB ring with room for the whole block (else the one tap drops it all, a piece only its part) */
+static struct { int32_t *o; int32_t m; uint32_t b, fill, on; } tl __attribute__((section(".bss.tail_tl")));
+#if FELUCCA_UAC
+#define TAIL_ROOM() (!uac.feed || UA_N - (ua_w - ua_r) >= HALF_FRAMES + HALF_FRAMES / 8u + 2u)
+#define TAIL_FILL() (uac.feed && uac.go ? ua_w - ua_r + 1u : 0u)
+#else
+#define TAIL_ROOM() 1
+#define TAIL_FILL() 0u
+#endif
+#if FELUCCA_UAC && FELUCCA_UAC_LOCK == 1
+#define TAIL_PQ() UAC_HIST                      /* (a piece: its frames at the history's start, then a tap of 32) */
+#define TAIL_PTAP(q) uac_tap_hist(32u)
+#else
+#define TAIL_PQ() tap_q
+#define TAIL_PTAP(q) TAIL_TAP(q)
+#endif
+static __attribute__((noinline)) void tail_piece(int32_t *c, int32_t m)   /* 32 frames: the loop below, one pass */
+{
+#define TAIL_PRE(x) ((x) > 32767 ? 32767 : (x) < -32767 ? -32767 : (x))
+    TAIL_Q_T *q = TAIL_PQ();
+    uint32_t i;
+    HAL_KEEP_REG(q);
+    if (usb_pre_master) {
+        for (i = 0; i < 32u; i++, c += 2, q += 2) {
+            int32_t l = TAIL_PRE(c[0]), r = TAIL_PRE(c[1]);
+            TAIL_KEEP(q);
+            q[0] = (TAIL_Q_T)l; q[1] = (TAIL_Q_T)r;
+            c[0] = (l * m) >> MASTER_JACK_SH;
+            c[1] = (r * m) >> MASTER_JACK_SH;
+        }
+    } else {
+        for (i = 0; i < 32u; i++, c += 2, q += 2) {
+            int32_t pl = c[0] * m, pr = c[1] * m, l = pl >> 12, r = pr >> 12;
+            l = TAIL_PRE(l); r = TAIL_PRE(r);
+            TAIL_KEEP(q);
+            q[0] = (TAIL_Q_T)l; q[1] = (TAIL_Q_T)r;
+            pl >>= MASTER_JACK_SH; pr >>= MASTER_JACK_SH;
+            c[0] = TAIL_JACK(pl);
+            c[1] = TAIL_JACK(pr);
+        }
+    }
+    TAIL_PTAP(q);
+#undef TAIL_PRE
+}
+static void tail_early(uint32_t frames)         /* the app: frames 0 .. frames - 1 of the block are final */
+{
+    if (!tl.on || frames > HALF_FRAMES) return;
+    if (!tl.b) tl.fill = TAIL_FILL();          /* (the ring's low point, before a tap) */
+    while (tl.b < 2u * frames) { tail_piece(tl.o + tl.b, tl.m); tl.b += 64u; }
+}
+#endif
+static volatile uint32_t wd_isr_n;              /* the watchdog's proof the audio interrupt runs */
 void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) */
 {
+    wd_isr_n = wd_isr_n + 1u;
     uint8_t p;
     uint32_t t0 = fm1_ticks();
     in_audio = 1;
@@ -566,9 +630,23 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
 #endif
         uint32_t t1, fill;
         UAC_ONLY(uac_render_start());
+#if APP_TAIL_EARLY
+        tl.o = o; tl.b = 0; tl.m = master_q12;  /* (only the main loop writes MASTER: the value read after app_audio) */
+        tl.on = tl.m == master_prev && TAIL_ROOM();
+#endif
         app_audio(o, HALF_FRAMES);
         t1 = fm1_ticks();
         fill = uac.feed && uac.go ? ua_w - ua_r + 1u : 0u;   /* the ring's low point: the render ran it down */
+#if APP_TAIL_EARLY
+        if (tl.b) {                             /* pieces run early: the rest in pieces, the same samples */
+            fill = tl.fill;
+            for (b = tl.b; b < HALF_WORDS; b += 64u)
+                tail_piece(o + b, tl.m);
+            tl.on = 0;
+            goto tail_done;
+        }
+        tl.on = 0;
+#endif
         /* Frodhes: one pass per 32 frames (MASTER, the clip, the codec's shift; the USB tap's samples into tap_q) instead
          * of three over the block; the same samples. MASTER read once: only the main loop writes it */
         m = master_q12;
@@ -611,6 +689,9 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
         if (!ramp)
             TAIL_TAP_BLOCK();
 #undef TAIL_PRE
+#if APP_TAIL_EARLY
+    tail_done:
+#endif
         fm1_audio_ack_half();
         isr_stats(t0, t1, fill);
 #ifdef FM1_PROF_TICK
@@ -622,11 +703,30 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
 extern void isr_alnk0(void);
 
 /* ---- the main loop's duties: watchdog, USB, the installer's update request, the MASTER knob */
+/* the watchdog is fed only while the whole app runs: the main loop (this call), the audio interrupt (its count moved
+ * in the last WD_STALL), the clock (fm1_ticks moved within WD_SPIN passes) and what the app adds (APP_WD_OK: core 1's
+ * jobs). A stall of any of them stops the feeding and the watchdog resets the chip (0x0D: about 8 s) */
+#define WD_STALL (3000000u * FM1_TICKS_PER_US)
+#define WD_SPIN 2000000u
+#ifndef APP_WD_OK
+#define APP_WD_OK(now) 1
+#endif
+FR_COLD static void wd_poll(void)
+{
+    static uint32_t isr, isr_t, tk, spin, init;
+    uint32_t now = fm1_ticks(), n = wd_isr_n;
+    if (!init) { init = 1; isr = n; isr_t = tk = now; }
+    if (now != tk) tk = now, spin = 0;
+    else if (spin < WD_SPIN) spin++;
+    if (n != isr) isr = n, isr_t = now;
+    if (spin < WD_SPIN && now - isr_t < WD_STALL && APP_WD_OK(now))
+        fm1_wdt_feed();
+}
 FR_COLD static void platform_poll(void)
 {
     static int32_t knob_avg = 512 * 16;
     int32_t a;
-    fm1_wdt_feed();
+    wd_poll();
 #if defined(UAC_FAULT_CLI_US) && FELUCCA_UAC
     {   /* developer builds only (APP_DEFS=-DUAC_FAULT_CLI_US=N): while the USB audio stream flows, the interrupts off
          * for N us every ~50 ms (N 0: 300, 400 .. 900 us in turn), a flash slice's shape, for the EP4 poll's device
@@ -689,9 +789,11 @@ FR_COLD static void fm1_fault(const fm1_crash_t *c)
         draw_text_box(10, 60 + i * 20, 220, &FONT_S, b, C_WHITE, 0);
     }
     t0 = fm1_ticks();
-    while ((uint32_t)(fm1_ticks() - t0) < 8000u * 1000u * FM1_TICKS_PER_US)
-        fm1_wdt_feed();
+    for (i = 0; (uint32_t)(fm1_ticks() - t0) < 8000u * 1000u * FM1_TICKS_PER_US && i < 20000000u; i++)
+        fm1_wdt_feed();                         /* (bounded by a count too: a stopped clock must not feed forever) */
     fm1_reboot();
+    for (;;)                                    /* (no feeding: the watchdog resets if the reboot did not) */
+        ;
 }
 
 void fm1_cstart(void)
@@ -753,6 +855,9 @@ void fm1_cstart(void)
 #ifndef OLD_OWNER_AT
     smk_owner_check();
 #endif
+#endif
+#ifdef APP_EARLY
+    APP_EARLY();
 #endif
     fm1_audio_init(abuf, HALF_WORDS, isr_alnk0, 3);   /* (abuf is zero: .bss) */
     usb_start();

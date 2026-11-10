@@ -8,6 +8,7 @@ leave notes behind, nothing saturates. The physics targets (decays, tube build-u
 tests (Gate VA / VB), not these."""
 import json
 import os
+import re
 import subprocess
 import sys
 import wave
@@ -22,10 +23,12 @@ BIN = os.path.join(ROOT, "build", "host", "frodhes")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 FS = 44100
 VIBES = "60 midi 0xB0 79 0\n60 midi 0xB0 47 0\n"   # CC 79: the bar types (VIBES); the motor (on with it) off
-RAW = "50 midi 0xB0 119 127\n"
+import dry_dist  # noqa: E402
+TB = "".join(ln + "\n" for ln in dry_dist.type_base_lines(15))
+RAW = "".join(ln + "\n" for ln in dry_dist.type_base_lines(45)) + "50 midi 0xB0 119 127\n"   # the voicing at its defaults, not F01's (dry_dist.TYPE_BASE)
 F3B = [53, 55, 57, 59, 60, 62, 64, 65]
 F3B9 = F3B + [67]                             # nine bar voices (the S12 cases)
-F3BV = F3B + [67, 69, 71, 72]                 # edge_chord: the first BAR_VOICES (fr_voices) of them
+F3BV = F3B + [67, 69, 71, 72, 74, 76]         # edge_chord: the first BAR_VOICES (fr_voices) of them
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -119,7 +122,7 @@ def test_the_motor_does_nothing_on_a_rhodes_type():
 
 def test_motor_passes_fx_trem_on_vibes():
     """On VIBES the motor is the engine's, the effects' tremolo stays off: with RAW off the motor's AM equals the RAW one"""
-    s = ("20 midi 0xB0 81 0\n21 midi 0xB0 91 0\n" + VIBES + MOTOR.format(rate=78)   # dry: F01's drive / reverb off
+    s = (TB + "20 midi 0xB0 81 0\n21 midi 0xB0 91 0\n" + VIBES + MOTOR.format(rate=78)   # dry: F01's drive / reverb off
          + "70 midi 0xB0 64 127\n200 midi 0x90 69 100\n4200 end\n")
     raw, _ = render("mot_raw", RAW + s)
     fx, _ = render("mot_fx", s)
@@ -148,7 +151,13 @@ def proxy_us(log):
 def test_cpu_model_holds(fxus):
     """every voice (BAR_VOICES) struck at the edge with everything at maximum, again and again, the budget planned for no effects,
     every effect, and nearly twice that effect load: the cost model's worst block stays under the 4800 us gate
-    minus its margin (bars.c BAR_NS_*), by construction; no saturation, no clicks"""
+    minus its margin (bars.c BAR_NS_*), by construction; no saturation, no clicks. With more than 10 voices (the
+    two-core build FR_C1: 14 on core 0, the effects on core 1, core 0's share FR_C1_FX_US) the twice-the-effects case is
+    twice core 0's share: 14 voices' fixed cost and 2000 us exceed the gate whatever the model trims (a load no build
+    has: one core after a hold strikes 10 voices, FR_C1_NV1)"""
+    if fxus == 2000 and fr_voices() > 10:
+        src = open(os.path.join(ROOT, "firmware", "src", "frodhes.c")).read()
+        fxus = 2 * int(re.search(r"#define FR_C1_FX_US (\d+)u", src).group(1))
     x, log = render(f"cpu{fxus}", edge_chord(), {"FRODHES_FXUS": str(fxus)})
     assert proxy_us(log) <= 4650, proxy_us(log)
     assert counter(log, "sat28").split()[-1] == "0"

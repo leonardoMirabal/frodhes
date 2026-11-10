@@ -36,6 +36,12 @@ FLAG. The checks (each against static renders at 0, 32, 64, 96 and 127, or at an
           the held renders' own, over the held renders' level difference: over 0.5 flags (a 46 ms crossfade spreads
           the difference over ~4 windows; a one-sample switch puts most of it into one)
   noeff   every held value renders the same (at most 1 LSB apart): a control that does nothing
+  jump3   (Case span: wah RATE, filter LFO) the level step over 3 windows (70 ms) against the renders held within 6 of the
+          sweep's values over that span: over 1.5 dB flags. A smooth 3-4 dB step over 50 ms moves no single window by
+          1.5 dB (jump misses it); K20, 2026-11-09: wah RATE clean 0.03, a 3 / 4 dB step 2.5 .. 3.9; filter LFO clean
+          1.0, the steps 2.3 .. 3.7 but one (1.3). lfo RATE and PLATE SIZE are not in it: renders held at neighbouring
+          values swing as much over 70 ms (the LFO's phase against the restrikes, the plate's tank), so a 3 dB step
+          reads 1.2 .. 3.9 there (build/t3/k20); their clicks and zippers stay checked
   stuck   after the sweep is back at 0, its last 300 ms against the render held at 0 (both floored at -60 dBFS, the
           silence gate's level): over 1.5 dB flags (a state the
           control left behind)
@@ -45,7 +51,12 @@ off), which is where a bent tail shows. Each render is cached by the binary's ha
 the pytest workers share them (build/host/ctl_sweep/).
 
 Material: the chord C3 E4 G4 A4 C5 at velocity 100, held by the pedal from 0.5 s (no other harmonic of the chord
-within 4 % of 440 or 880 Hz). MARIMBA rings out within a second, so there the chord is struck again every 800 ms.
+within 4 % of 440 or 880 Hz) and struck again every second (RESTRIKE) up to the sweep's end, so its timbre is steady
+over the sweep. 0.9.10: a hard-struck Rhodes note darkens over its first 2 s on purpose (the harmonic decay glide), and
+a reverb's tank or the tape's echo during a sweep holds older, brighter material than the held renders at that moment:
+the zipper and pitch checks then read the source's change, not the control's (plate MIX 3.0x, TAPE TIME 3.4x, broadband,
+at the sweep's end). The checks themselves are unchanged; the strikes fall 500 ms from T_FLIP, outside every flip
+window. MARIMBA rings out within a second, so there the chord is struck (and let go) every 800 ms.
 Setup: every effect off (COMP, DRIVE, FILTER, TREM, CHO/PHA, DELAY, REVERB, SPREAD 0, LEVEL 64), then only the
 control's own effect; CC 10 (the developer reset) at 300 ms makes every render deterministic.
 
@@ -76,14 +87,17 @@ T_END = T_SW1 + 500
 STUCK_FLOOR = -60.0                            # dBFS: the "stuck" levels' floor, the silence gate's level
 STATICS = [0, 32, 64, 96, 127]
 PARTIALS = [440.0, 880.0]
-LIMITS = {"pitch": 5.0, "zipper": 2.0, "jump": 1.5, "dropout": 20.0, "mono": 1.0, "click": 10.0, "trans_hi": 3.0,
+LIMITS = {"pitch": 5.0, "zipper": 2.0, "jump": 1.5, "jump3": 1.5, "dropout": 20.0, "mono": 1.0, "click": 10.0, "trans_hi": 3.0,
           "trans_lo": 6.0, "stuck": 1.5,
           "xjump": 0.5}
+PROMINENCE = 4.0                               # pitch_p90: a partial 12 dB over its band, or no pitch read
+RESTRIKE = 1000                                # the chord struck again this often (ms; T_FLIP sits between strikes)
 T_FLIP = 2000                                  # the one-move renders: the control moved here (the chord rings)
 
 # every effect off: COMP, its THRESH, DRIVE type, AMOUNT, FILTER, its LFO, TREM, CHO/PHA, PHASER, DELAY, its MIX,
 # REVERB MIX, TYPE, SIZE AUTO, SPREAD, LEVEL 0 dB, STAGE 77
-BASE = [(106, 0), (107, 0), (84, 0), (81, 0), (70, 0), (72, 0), (17, 0), (85, 0), (12, 0), (88, 0), (89, 0),
+BASE = [(28, 64), (29, 64), (30, 64), (31, 64), (102, 64), (103, 64), (104, 48),   # the voicing at rc2's F01 (= the
+        (106, 0),                                                     # defaults): 0.9.10's F01 is no longer the defaults (107, 0), (84, 0), (81, 0), (70, 0), (72, 0), (17, 0), (85, 0), (12, 0), (88, 0), (89, 0),
         (91, 0), (95, 0), (73, 0), (105, 0), (110, 64), (80, 0)]
 ENGINE = {"rhodes": [], "vibes": [(79, 0), (47, 0)], "marimba": [(79, 127)]}   # (VIBES: the motor off but on MOTOR)
 
@@ -100,14 +114,21 @@ class Case:
     static values (default 0, 32, 64, 96, 127; an enum: its band centres)"""
 
     def __init__(self, name, cc, setup=(), engine="rhodes", kind="knob", additive=False, mono=False, statics=None,
-                 page="", skip=(), through=False, xfade=False):
+                 page="", skip=(), through=False, xfade=False, near=False, run=False, zref=(), span=False):
         self.name, self.cc, self.setup, self.engine, self.kind = name, cc, list(setup), engine, kind
+        self.near = near                         # jump: against renders held near the sweep's value (jump_near_db)
+        self.span = span                         # jump3: the 3-window step against renders held near (jump3_db)
+        self.run = run                           # the sweep starts at 1 from 200 ms, not 0: the effect runs from the
+        # start, as in the held renders (a reverb started at 1 s, under a ringing chord, has another modulation phase
+        # against the strikes than one started before the chord: the zipper measure read that as a step)
         self.xfade = xfade                       # xjump: a crossfade between options of different levels (below)
         self.through = through                   # trans: the move glides through the values between its ends (a
         # cutoff): the range is every static from the start to the end value, not the two ends alone
         self.additive, self.mono, self.page = additive, mono, page
         self.skip = set(skip)                    # checks that do not apply to this case (the reasons: _cases)
         self.statics = list(statics) if statics else list(STATICS)
+        self.zref = list(zref)                   # zipper: against statics held with these CCs added (what the sweep
+        # latches at its start: PLATE's AUTO SIZE keeps MIX 1's size while the tail rings), not the plain statics
 
     def __repr__(self):
         return self.name
@@ -154,13 +175,19 @@ def _cases():
                  skip={"jump"}))                 # (a cutoff swept through the chord moves its level by design; a
         # band-pass gliding 16 kHz -> 30 Hz passes through the chord, louder than at either end: 'through')
     add(Case("filter RESO", 71, [(70, 46), (74, 80)], page="FILTER"))
-    add(Case("filter LFO", 72, [(70, 46), (74, 80), (71, 40)], page="FILTER"))   # (at 0 the filter still filters)
+    add(Case("filter LFO", 72, [(70, 46), (74, 80), (71, 40)], page="FILTER",    # (at 0 the filter still filters)
+             near=True, span=True))              # (the LFO's own swing grows with the depth: at ~110 it moves the
+    # chord's level 6 dB a window, more than at any of the five statics; renders held near the sweep's value swing
+    # as much: 0.9.10, the sweep 6.28 dB, held at 111 6.21)
     add(Case("filter TYPE", 70, [(74, 80), (71, 40)], kind="select", statics=bands(6), page="FILTER",
              skip={"jump"}, xfade=True))         # (the TYPEs differ by up to ~23 dB on the chord at 1.5 kHz (LP vs HP):
     # the level has to move by that much, so the sweep's jump check does not apply; xjump bounds how fast it moves:
     # a 46 ms crossfade spreads it over ~4 windows of 512 samples, 0.9.5's one-sample switch put up to 0.8 of it
     # into one window)
-    add(Case("lfo RATE", 76, [(70, 46), (74, 80), (71, 40), (72, 60)], page="LFO"))
+    add(Case("lfo RATE", 76, [(70, 46), (74, 80), (71, 40), (72, 60)], page="LFO",
+             skip={"jump"}))                     # (a rate, as the other rate controls: the LFO's phase against the
+    # restrikes differs at every value, so the filter's level a window does too: renders held near 113 swing 4.6 dB
+    # a window, more than the sweep's 2.62; the zipper and the click stay checked)
     add(Case("lfo SHAPE", 75, [(70, 46), (74, 80), (71, 40), (72, 60)], kind="select", statics=bands(5), page="LFO"))
     # TREM/WAH
     for m, s in (("AM", [(17, 60), (21, 100)]), ("PAN", [(17, 60), (21, 0)])):
@@ -168,7 +195,7 @@ def _cases():
         add(Case(f"trem {m} RATE", 19, s + [(18, 90)], kind="pitch", page="TREM/WAH"))
         add(Case(f"trem {m} SHAPE", 22, s + [(18, 90), (19, 70)], page="TREM/WAH"))
     add(Case("wah DEPTH", 18, [(17, 100), (19, 70)], page="TREM/WAH"))
-    add(Case("wah RATE", 19, [(17, 100), (18, 90)], page="TREM/WAH"))
+    add(Case("wah RATE", 19, [(17, 100), (18, 90)], page="TREM/WAH", span=True))
     add(Case("wah SHAPE", 22, [(17, 100), (18, 90), (19, 70)], page="TREM/WAH",   # (SHAPE does nothing on WAH:
              skip={"noeff"}))                    # its card shows "-" there, tests/scripts/wah_shape.txt)
     add(Case("trem/wah EFFECT", 17, [(18, 90), (19, 70)], kind="select", statics=[21, 64, 107], page="TREM/WAH"))
@@ -192,7 +219,10 @@ def _cases():
     for t, v in (("HALL", 40), ("PLATE", 70), ("INF", 110)):
         for zs, z in (("auto", 0), ("size64", 64)):
             add(Case(f"rev {t} {zs} MIX", 91, [(95, v), (73, z)], kind="mix", additive=True, mono=True,
-                     page="REVERB"))
+                     page="REVERB", run=True, zref=[(73, 1)] if (t, z) == ("PLATE", 0) else ()))
+            # (PLATE AUTO: the sweep's tank keeps the size MIX 1 latched, SIZE 1, while the statics run sizes 32 ..
+            # 127, whose plates differ in fine structure: against them 2.11 / wet 2.16; against statics held at SIZE 1,
+            # the sweep's own tank, 1.04)
         s = [(95, v), (91, 64)]
         add(Case(f"rev {t} DECAY", 92, s, additive=True, page="REVERB"))
         add(Case(f"rev {t} TONE", 93, s, additive=True, page="REVERB"))
@@ -225,7 +255,7 @@ def script(case, value=None, sweep=False, off=False, flip=None):
     if not off:
         L += [f"150 midi 0xB0 {c} {v}" for c, v in case.setup]
         if case.cc is not None:
-            L.append(f"200 midi 0xB0 {case.cc} {0 if sweep else value}")
+            L.append(f"200 midi 0xB0 {case.cc} {(1 if case.run else 0) if sweep else value}")
     L.append("300 midi 0xB0 10 127")                       # the developer reset: deterministic lines and LFOs
     L.append(f"{T_NOTE} midi 0xB0 64 127")                 # the pedal: the chord rings through the sweep
     if case.engine == "marimba":                           # (rings out within a second: struck again)
@@ -233,8 +263,10 @@ def script(case, value=None, sweep=False, off=False, flip=None):
         while t < T_SW1:
             L += [f"{t} midi 0x90 {n} 100" for n in CHORD] + [f"{t + 100} midi 0x80 {n} 0" for n in CHORD]
             t += 800
-    else:
-        L += [f"{T_NOTE} midi 0x90 {n} 100" for n in CHORD]
+    else:                                                  # struck again every second, held by the pedal (0.9.10)
+        for t in range(T_NOTE, T_SW1, RESTRIKE):          # (let go after 100 ms, the pedal holds it: a key held
+            L += [f"{t} midi 0x90 {n} 100" for n in CHORD] + [f"{t + 100} midi 0x80 {n} 0" for n in CHORD]   # down
+                                                           # is not struck again by a second note-on)
     if sweep:
         for k, v in enumerate(list(range(1, 128)) + list(range(126, -1, -1))):
             L.append(f"{T_SW0 + k * STEP} midi 0xB0 {case.cc} {v}")
@@ -298,7 +330,8 @@ def rms_db(x):
 
 # ---- the measurements (the MIX audit's analysis, 2026-10-25)
 def peakf(x, f0, nfft=1 << 15):
-    """the spectral peak within 4 % of f0, parabolic interpolation on the log magnitude: (Hz, magnitude)"""
+    """the spectral peak within 4 % of f0, parabolic interpolation on the log magnitude: (Hz, magnitude, prominence:
+    the peak over the band's median magnitude)"""
     X = np.abs(np.fft.rfft(x * np.hanning(len(x)), nfft))
     fr = np.fft.rfftfreq(nfft, 1 / FS)
     idx = np.where((fr > f0 * 0.96) & (fr < f0 * 1.04))[0]
@@ -306,20 +339,23 @@ def peakf(x, f0, nfft=1 << 15):
     a, b, c = np.log(X[i - 1] + 1e-12), np.log(X[i] + 1e-12), np.log(X[i + 1] + 1e-12)
     d = a - 2 * b + c
     p = 0.5 * (a - c) / d if d != 0 else 0.0
-    return (i + p) * FS / nfft, X[i]
+    return (i + p) * FS / nfft, X[i], X[i] / (np.median(X[idx]) + 1e-12)
 
 
 def pitch_p90(sig, ref):
     """p90 of |cents| of the 440 / 880 Hz partials, sig against ref, windows of 8192 (hop 4096) over the sweep's
-    span; windows where sig's partial is under 3 % of ref's are skipped (the wet at MIX 0). None: no window"""
+    span; windows where sig's partial is under 3 % of ref's are skipped (the wet at MIX 0), and those where it stands
+    less than PROMINENCE over its +-4 % band's median (a reverb's tank smears a partial into a band with no one pitch:
+    the peak picked in it moved by tens of cents from window to window, held or swept alike, rev TYPE / PLATE SIZE's
+    wet 0.9.10). None: no window"""
     al = []
     for s0 in range(ms(T_SW0), ms(T_SW1) - 8192, 4096):
         a, b = sig[s0:s0 + 8192].mean(1), ref[s0:s0 + 8192].mean(1)
         cs = []
         for f0 in PARTIALS:
-            fa, ma = peakf(a, f0)
-            fb, mb = peakf(b, f0)
-            if ma < 0.03 * mb or not (np.isfinite(fa) and np.isfinite(fb)) or fa <= 0 or fb <= 0:
+            fa, ma, pa = peakf(a, f0)
+            fb, mb, _ = peakf(b, f0)
+            if ma < 0.03 * mb or pa < PROMINENCE or not (np.isfinite(fa) and np.isfinite(fb)) or fa <= 0 or fb <= 0:
                 continue
             cs.append(1200 * np.log2(fa / fb))
         if cs:
@@ -354,6 +390,43 @@ def jump_db(sweep, statics):
     ds = np.abs(np.diff(w))[a:b]
     D = np.max([np.abs(np.diff(win_db(s)))[a:b] for s in statics], 0)
     live = np.minimum(w[a:b], w[a + 1:b + 1]) > -90       # (not across the silence gate: -66 dBFS, then exact 0)
+    return float((ds - D)[live].max()) if live.any() else 0.0
+
+
+NEAR = list(range(0, 128, 4)) + [127]         # jump_near_db: the held values (every 4th, and the end)
+SEQ = list(range(1, 128)) + list(range(126, -1, -1))   # the sweep's values, one per STEP from T_SW0
+
+
+def jump_near_db(sweep, held, span=6):
+    """jump_db against the renders held within span of the sweep's value in each window (held: value -> render)
+    instead of the statics: a control whose own movement grows with its value (an LFO's depth) moves the level
+    between windows as much in a render held there"""
+    a, b = ms(T_SW0) // 1024, ms(T_SW1) // 1024
+    w = win_db(sweep)
+    ds = np.abs(np.diff(w))[a:b]
+    st = {v: np.abs(np.diff(win_db(h)))[a:b] for v, h in held.items()}
+    D = np.empty(len(ds))
+    for i in range(len(ds)):
+        t = (a + i) * 1024 * 1000.0 / FS
+        v = SEQ[max(0, min(len(SEQ) - 1, int((t - T_SW0) // STEP)))]
+        D[i] = max(st[u][i] for u in st if abs(u - v) <= span)
+    live = np.minimum(w[a:b], w[a + 1:b + 1]) > -90
+    return float((ds - D)[live].max()) if live.any() else 0.0
+
+
+def jump3_db(sweep, held, span=3, rad=6):
+    """the sweep's level step over span windows against the largest step over the same windows of the renders held
+    within rad of every value the sweep has over them (held: value -> render): a step smoothed over ~50 ms"""
+    a, b = ms(T_SW0) // 1024, ms(T_SW1) // 1024
+    w = win_db(sweep)
+    ds = np.abs(w[span:] - w[:-span])[a:b]
+    st = {v: np.abs(win_db(h)[span:] - win_db(h)[:-span])[a:b] for v, h in held.items()}
+    D = np.empty(len(ds))
+    for i in range(len(ds)):
+        vs = [SEQ[max(0, min(len(SEQ) - 1, int(((a + i + k) * 1024 * 1000.0 / FS - T_SW0) // STEP)))]
+              for k in range(span + 1)]
+        D[i] = max(st[u][i] for u in st if min(vs) - rad <= u <= max(vs) + rad)
+    live = np.minimum(w[a:b], w[a + span:b + span]) > -90
     return float((ds - D)[live].max()) if live.any() else 0.0
 
 
@@ -509,9 +582,22 @@ def measure(case, binary=BIN):
             p = pitch_p90(sw - off, off)
             if p is not None:
                 r["pitch_wet"] = round(p - max([x for x in pw if x is not None] or [0.0]), 1)
-    r["zipper"] = round(zipper_ratio(sw, stl), 2)
-    r["zipper_wet"] = round(zipper_ratio(sw - off, [s - off for s in stl]), 2) if case.additive else None
-    r["jump"] = round(jump_db(sw, stl), 2)
+    zl = stl
+    if case.zref:                                      # (the statics with the sweep's latched state: Case.zref)
+        zc = Case(case.name, case.cc, case.setup + case.zref, case.engine, case.kind, case.additive, run=case.run)
+        zl = [render(script(zc, value=v), binary) for v in case.statics]
+    r["zipper"] = round(zipper_ratio(sw, zl), 2)
+    r["zipper_wet"] = round(zipper_ratio(sw - off, [s - off for s in zl]), 2) if case.additive else None
+    if case.near or case.span:
+        for v in NEAR:
+            if v not in st:
+                st[v] = render(script(case, value=v), binary)
+    if case.near:
+        r["jump"] = round(jump_near_db(sw, {v: st[v] for v in NEAR}), 2)
+    else:
+        r["jump"] = round(jump_db(sw, stl), 2)
+    if case.span:
+        r["jump3"] = round(jump3_db(sw, {v: st[v] for v in NEAR}), 2)
     r["dropout"] = round(dropout_db(sw, stl), 1)
     if case.kind == "mix":
         r["mix0"] = float(np.abs(st[case.statics[0]] - off).max())
@@ -538,9 +624,12 @@ def checks(case, r):
     if r.get("zipper_wet") is not None:
         out["zipper_wet"] = (r["zipper_wet"], LIMITS["zipper"], r["zipper_wet"] <= LIMITS["zipper"])
     out["jump"] = (r["jump"], LIMITS["jump"], r["jump"] <= LIMITS["jump"])
+    if r.get("jump3") is not None:
+        out["jump3"] = (r["jump3"], LIMITS["jump3"], r["jump3"] <= LIMITS["jump3"])
     out["dropout"] = (r["dropout"], LIMITS["dropout"], r["dropout"] <= LIMITS["dropout"])
     if "mix0" in r:
-        out["mix0"] = (r["mix0"], 1.0, r["mix0"] <= 1.0)   # (1 LSB: PAN's equal-power rounding at DEPTH 0)
+        out["mix0"] = (r["mix0"], 2.0, r["mix0"] <= 2.0)   # (1 LSB: PAN's equal-power rounding at DEPTH 0;
+        # THRESHOLD 1 -> 2 LSB, stage 2: the dry width's side reads (L + R) >> 1, so that LSB reaches the side once more)
     if r.get("click"):
         k, v = max(r["click"].items(), key=lambda kv: kv[1])
         out["click"] = (f"{v} ({k})", LIMITS["click"], v <= LIMITS["click"])

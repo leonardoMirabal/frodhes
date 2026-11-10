@@ -232,6 +232,16 @@
     "default": 64
   },
   {
+    "key": "s_vresp",
+    "name": "RESP",
+    "type": "enum",
+    "options": [
+      "FULL",
+      "LIGHT"
+    ],
+    "default": 0
+  },
+  {
     "key": "p_cmp_amt",
     "name": "THRESH",
     "type": "int",
@@ -908,5 +918,11 @@
     "min": 0,
     "max": 127,
     "default": 127
+  },
+  {
+    "key": "r_version",
+    "name": "VER",
+    "type": "string",
+    "access": "read"
   }
 ]

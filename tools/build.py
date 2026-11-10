@@ -9,13 +9,13 @@ Outputs in build/: frodhes.bin (app), loader/ota.bin (update loader),
 frodhes.fwsc (package). See README.md for the toolchain and the SDK.
 
 --board smk37 (or BOARD=smk37) builds for the M-Vave SMK-37 (docs/SMK37.md): -DBOARD_SMK37=1 for the app and the
-loader, the app at 7 voices (-DFR_VOICES=7u), identity SMK-37 Pro_470 (every version, as the FM-1's FM-1_958: PR #3's,
+loader, the app at 10 voices (-DFR_VOICES=10u), identity SMK-37 Pro_470 (every version, as the FM-1's FM-1_958: PR #3's,
 so a unit that ran 0.9.2-SMK updates in place; not tested on hardware), the store family FRODHES (the owner tag), the
 SMK flash layout (fm1pkg_make.py, app slot 0x97400 = 619,520 B), the package build/frodhes-smk37.fwsc. --model elite /
 mke (or MODEL=) with smk37: the same build under the SMK-37 Elite's or the MKE-P37's model name (identity SMK-37
 Elite_470 / MKE-P37_470, the loader's and the update record's name too; -DSMK_MODEL), so M-Vave's updater still takes
 that unit's factory package: frodhes-smk37-elite.fwsc, -mke.fwsc. The default stays the FM-1, built as before
-(FM-1_958, 9 voices).
+(FM-1_958, 10 voices).
 
 The JieLi toolchain is Linux x86-64 only. JIELI_TOOLCHAIN points at it; on
 macOS (or with JIELI_DOCKER=1) each tool runs in a linux/amd64 container.
@@ -64,7 +64,7 @@ BOARD = "fm1"                       # fm1 (default) or smk37: BOARD env or --boa
 BOARD_PREFIX = {"smk37": "SMK-37 Pro_47"}   # Frodhes' SMK-37 identity: prefix + 0 = SMK-37 Pro_470 for every version
                                     # and model name (PR #3's; Dinghy's own is _99N); the FM-1's is PRODUCT below
 BOARD_DEFS = {"fm1": [], "smk37": ["-DBOARD_SMK37=1"]}
-BOARD_APP_DEFS = {"fm1": [], "smk37": ["-DFR_VOICES=7u"]}   # the app only (not the loader): the SMK at 7 voices
+BOARD_APP_DEFS = {"fm1": [], "smk37": ["-DFR_VOICES=10u"]}   # the app only (not the loader): the SMK at 10 voices (the FM-1's)
 MODELS = {"pro": "SMK-37 Pro", "elite": "SMK-37 Elite", "mke": "MKE-P37"}   # smk37: one keyboard, three names
 MODEL_PID = {"pro": 0x0007, "elite": 0x0008, "mke": 0x0009}   # the app's USB product id per model (usb.c: the FM-1
                                     # 0x0006, the SMK-37 Pro 0x0007 by default; the name "Frodhes <model>", GitHub #21)
@@ -198,11 +198,26 @@ def build_loader():
     return ota
 
 
+def app_git():
+    """the commit for a dev build's VERSION card (MIDI page K4): $APP_GIT, else the short hash from git, else none
+    (a tree without git, e.g. inside a container). Release builds show their version text instead."""
+    if VERSION:
+        return ""
+    g = os.environ.get("APP_GIT")
+    if g is None:
+        try:
+            g = subprocess.run(["git", "rev-parse", "--short=7", "HEAD"], capture_output=True, text=True,
+                               timeout=10).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            g = ""
+    return g if re.fullmatch(r"[0-9a-f]{4,40}", g or "") else ""
+
+
 # ---- app
 
 def build_app():
     flags = [*CFLAGS, *APP_OPT, *BOARD_DEFS[BOARD], *BOARD_APP_DEFS[BOARD], "-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen",
-             f'-DFELUCCA_ID="{PRODUCT}"', f'-DAPP_VER="{VERSION or "0.0"}"']
+             f'-DFELUCCA_ID="{PRODUCT}"', f'-DAPP_VER="{VERSION or "0.0"}"', f'-DAPP_GIT="{app_git()}"']
     if BOARD == "smk37":
         if not re.fullmatch(r"[A-Z0-9]{1,7}", DATA_FAMILY):
             raise SystemExit("DATA_FAMILY: 1..7 of A-Z 0-9")
@@ -216,12 +231,23 @@ def build_app():
     tc_all(*cmds)
     elf = OUT / "frodhes.elf"
     ld = FW / "app.ld"
+    txt = ld.read_text()
     if APP_SLOT != 0x8DFBC:          # another board's app slot (SMK-37): the same script, its XIP length
-        txt = ld.read_text()
         if txt.count("LENGTH = 0x8DFBC") != 1:
             raise SystemExit("app.ld: the XIP LENGTH line was not found")
+        txt = txt.replace("LENGTH = 0x8DFBC", f"LENGTH = {APP_SLOT:#X}".replace("0X", "0x"))
+    if C1:
+        # --c1: the effects run from flash, so .ram_text is half of RAMTEXT; the rest of it and 0x01C06000..0x01C08000
+        # (the "RAM-run debug" room no tool uses) become .ramx: NOLOAD, never cleared (scratch written before it is
+        # read, as NOINIT's), CPU data only; the PC limit still covers .ram_text alone (fm1_guard.h)
+        a, b = "RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x6000", "_rt_load = LOADADDR(.ram_text);"
+        if txt.count(a) != 1 or txt.count(b) != 1:
+            raise SystemExit("app.ld: the RAMTEXT lines were not found (--c1 .ramx)")
+        txt = txt.replace(a, "RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x8000").replace(
+            b, b + "\n    .ramx (NOLOAD) : { . = ALIGN(8); _ramx_start = .; *(.ramx*) . = ALIGN(4); _ramx_end = .; } > RAMTEXT")
+    if txt != ld.read_text():
         ld = OUT / "app.ld"
-        ld.write_text(txt.replace("LENGTH = 0x8DFBC", f"LENGTH = {APP_SLOT:#X}".replace("0X", "0x")))
+        ld.write_text(txt)
     tc("pi32v2/bin/ld", "--gc-sections", "-e", "_start", "-T", ld, OUT / "crt0.o", OUT / "fm1_vec.o",
        OUT / "fm1_isr.o", OUT / "frodhes.o", "-o", elf)
     for sect in ("text.bin", "data.bin", "ramtext.bin"):
@@ -308,6 +334,36 @@ BAR_LOOPS = [("bar_run_lo", 32, "upper slot Q32, 4 samples"), ("bar_run_hi", 32,
              ("bar_felt_pass", 15, "felt noise"), ("bar_force", 16, "the pulse")]
 
 
+C1 = False                          # --c1: two cores (frodhes.c FR_C1), the FM-1 only
+
+
+def c1_check(rt_names):
+    """--c1: core 1 runs only flash code: no function marked FX_RAM in the effects' files may sit in
+    .ram_text (frodhes.c defines FX_RAM empty in FR_C1 builds); the core-1 idle loop and entry must"""
+    errors, notes, fx = [], [], set()
+    for f in sorted((Path(__file__).resolve().parents[1] / "firmware" / "src").glob("*.c")):
+        src = re.sub(r"__attribute__\(\([^()]*(\([^()]*\))?[^()]*\)\)", "", f.read_text())
+        for m in re.finditer(r"^[^#*\n]*\bFX_RAM\b[^;{(\n]*?\b(\w+)\s*\(", src, re.M):
+            fx.add(m.group(1))
+    bad = sorted(n for n in rt_names if n in fx)
+    if bad:
+        errors.append(f"--c1: effect code in .ram_text (core 1 must run it from flash): {bad[:6]}")
+    for need in ("fr_c1_main", "fr_c1_entry"):
+        if need not in rt_names:
+            errors.append(f"--c1: {need} not in .ram_text (core 1 idles in RAM)")
+    # core 0's hot loops run from flash too (frodhes.c FR_RAM empty in FR_C1 builds): with both cores busy, code read
+    # from RAM glitches on this chip (single high-bit flips, the stored code intact; the 0.9.10 RC soak's core-0 faults
+    # in rh_hd_step). .ram_text keeps core 1's idle loop, its entry and ping, and the flash driver only
+    other = sorted(n for n in rt_names if not re.match(r"(_rt_|fr_c1_|c1_|fl_\w*_ram$)", n))
+    if other:
+        errors.append(f"--c1: core 0 code in .ram_text (it must run from flash with two cores): {other[:6]}")
+    if len(fx) < 30:
+        errors.append(f"--c1: only {len(fx)} FX_RAM functions found in the sources (the check's pattern is stale)")
+    if not errors:
+        notes.append(f"--c1: core 1's {len(fx)} effect functions all in flash, its idle loop in .ram_text")
+    return errors, notes
+
+
 def check(img, syms, dis, rt):
     errors, notes = [], []
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
@@ -328,6 +384,10 @@ def check(img, syms, dis, rt):
             rt_calls.append(f"{rt_fn}: {ln.strip()}")
     if not any(n.startswith("fl_") for n in rt_names):
         errors.append(".ram_text: the flash driver (fl_*) not found")
+    if C1:
+        e, n = c1_check(rt_names)
+        errors += e
+        notes += n
     if rt_calls:
         errors.append(f".ram_text: the flash driver contains calls: {rt_calls[:3]}")
     else:
@@ -341,6 +401,13 @@ def check(img, syms, dis, rt):
             val = (int(v[0]) & 0xFFFFFFFF) if v[0] else int(v[1], 16) & 0xFFFFFFFF
             if 0xFFC00000 <= val < 0xFFD00000:
                 errors.append(f"reference to ROM address {val:#010x}")
+    # rh_hd_step (rhodes.c, RAM, core 0's audio interrupt): no 64-bit load from the stack. Its clamp compiled to a
+    # predicated one (r9_r8 = d[sp+8]) and core 0 faulted there (EMU_MSG bit 0; the 0.9.10 RC, soak rows 276 / 277)
+    hd = re.search(r"^rh_hd_step:\n(.*?)(?=^[A-Za-z_][\w.]*:$)", dis, re.S | re.M)
+    if hd and re.search(r"= d\[sp", hd.group(1)):
+        errors.append("rh_hd_step loads a 64-bit word from the stack (rhodes.c rh_hd_flux: the core-0 fault of 0.9.10)")
+    elif hd:
+        notes.append("rh_hd_step: no 64-bit load from the stack")
     if len(img) > APP_SLOT:
         errors.append(f"image {len(img)} B exceeds the app slot")
     loops = hot_loops(dis)
@@ -377,6 +444,9 @@ def check(img, syms, dis, rt):
     ram = sym("_bss_end") - 0x01C08000
     pool = sym("_pool_end") - 0x01C20000
     notes.append(f"image {len(img)} B of {APP_SLOT}; RAM .data+.bss {ram} B of 98304; pool {pool} B of 344064")
+    if C1:
+        notes.append(f"--c1: .ramx {sym('_ramx_end') - sym('_ramx_start')} B, .ram_text + .ramx end at "
+                     f"{sym('_ramx_end'):#x} of 0x1c08000")
     # the fonts' tables in the image (UI-SIMPLIFY: the flash they take; a face the code no longer uses is gone):
     # AF_<N>* (aa_font.h, gen_aa_font.py) and FONT_<N>* (felucca_font.h, gfx.c), by objdump -t sizes
     font = {}
@@ -498,7 +568,7 @@ def package(board="fm1", model="pro", release=None):
 
 
 def main():
-    global PRODUCT, VERSION, BOARD, APP_SLOT, APP_OPT
+    global PRODUCT, VERSION, BOARD, APP_SLOT, APP_OPT, C1
     ap = argparse.ArgumentParser()
     ap.add_argument("--release", metavar="X.Y.Z", help="release build: version string X.Y.Z, file frodhes-X.Y.Z.fwsc")
     ap.add_argument("--board", choices=sorted(BOARD_DEFS), default=None,
@@ -509,7 +579,20 @@ def main():
     ap.add_argument("--o2", action="store_true",
                     help="probe: the app at -O2 -fno-unroll-loops instead of -Os (not with --release; the USB-MIDI "
                          "babbled at -O2 once, 2026-10-13: run the USB checks on such a build)")
+    ap.add_argument("--c1", action="store_true",
+                    help="two cores (frodhes.c FR_C1: 14 voices on core 0, the effects and the full-rate reverb on "
+                         "core 1); the FM-1 only; file frodhes[-X.Y.Z]-c1.fwsc, identity FM-1_958 as every build")
+    ap.add_argument("--usb-name", metavar="NAME",
+                    help="a developer image's USB product name (MIDI port, audio device), for a second FM-1 on the "
+                         "same computer: never a name the tools pick by themselves (frodhes, felucca, fm-1, textura); "
+                         "the FM-1 only, not with --release; file ...-usb.fwsc")
     a = ap.parse_args()
+    if a.usb_name is not None:
+        low = a.usb_name.lower()
+        if (a.release or not re.fullmatch(r"[A-Za-z0-9 ]{3,24}", a.usb_name)
+                or any(k in low for k in ("frodhes", "felucca", "fm-1", "textura"))):
+            raise SystemExit("--usb-name: 3-24 letters, digits, spaces; none of frodhes/felucca/fm-1/textura; "
+                             "not with --release")
     if a.o2:
         if a.release:
             raise SystemExit("--o2 is a probe: not with --release")
@@ -531,6 +614,17 @@ def main():
             raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z or X.Y.Z-suffix")
         VERSION = a.release
     PRODUCT, name = package(BOARD, model, a.release)
+    if a.c1:
+        if BOARD != "fm1":
+            raise SystemExit("--c1: the FM-1 only")
+        C1 = True
+        BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], "-DFR_C1=1"]
+        name = name[:-len(".fwsc")] + "-c1.fwsc"
+    if a.usb_name is not None:
+        if BOARD != "fm1":
+            raise SystemExit("--usb-name: the FM-1 only")
+        BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], f'-DUSB_PRODUCT="{a.usb_name}"']
+        name = name[:-len(".fwsc")] + "-usb.fwsc"
     fm1pkg_make.SDK = a.sdk
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:

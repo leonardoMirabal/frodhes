@@ -8,6 +8,7 @@
 130 turn 0 1
 140 turn 0 1
 145 turn 0 1
+147 turn 0 1
 200 expect state page DRIVE
 200 expect state label0 EFFECT
 200 expect state card0 FDRV
@@ -110,6 +111,7 @@
 3690 turn 0 -1
 3695 turn 0 -1
 3697 turn 0 -1
+3699 turn 0 -1
 3700 expect state page PERFORM
 3700 expect state card0 OFF
 3710 turn 2 20

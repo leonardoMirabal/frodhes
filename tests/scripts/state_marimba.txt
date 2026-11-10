@@ -15,19 +15,22 @@
 200 expect led 5 0
 # a key plays it
 300 keys 0x80
-700 expect rms > -40
+500 expect rms > -40
 800 keys 0
-# ---- the VOICE pages: two (no MOTOR page): HOME, SELECT x3 = VOICE 1/2, VOICE 2/2, COMPRESSOR
+# ---- the VOICE pages: two (no MOTOR page) and the velocity page: HOME, SELECT x4 = VOICE 1/3, VOICE 2/3, VOICE 3/3,
+# COMPRESSOR
 1700 btn 8
 1750 turn 0 1
 1800 turn 0 1
-1850 expect state vpage 2/2
+1850 expect state vpage 2/3
 1850 expect state hint HOW_BARS_RING;_MUTE_=_HAND
 1900 turn 0 1
+1902 turn 0 1
 2000 expect state page COMPRESSOR
-# ---- MUTE from the panel: SELECT back to VOICE 2/2, K2 up 10 detents; the engine gets it
+# ---- MUTE from the panel: SELECT back to VOICE 2/3 (past the velocity page), K2 up 10 detents; the engine gets it
 2010 turn 0 -1
-2050 expect state vpage 2/2
+2012 turn 0 -1
+2050 expect state vpage 2/3
 2100 turn 3 10
 2200 expect state vcard.1.1 0.8
 2200 expect sound

@@ -39,22 +39,22 @@ def sweep(lines, t, vels):
 
 
 def test_touch_curve_is_keyvel_c():
-    """the SMK's keybed velocity through keyvel.c's curve (kv_upow, kv_vmap) at every TOUCH (SETUP K4, as on the
-    FM-1): within 1 of the formula, rising, the ends 1 and 127, FIXED = KEY VEL"""
+    """the SMK's keybed velocity through keyvel.c's curve (kv_upow, kv_vmap) at every TOUCH (the velocity page's
+    K2, the last VOICE page, as on the FM-1): within 1 of the formula, rising, the ends 1 and 127, FIXED = KEY VEL"""
     b = smk_build()
-    lines = ["100 btn 7", "200 btn 7"]             # GLO (FM-1 id 7): TEMPO, then SETUP (K4 = TOUCH)
+    lines = [f"{100 + 10 * i} turn 0 1" for i in range(4)]   # SELECT x4: FRODHES, VOICE 1/3 .. 3/3 (K2 = TOUCH)
     t, vels, want = 300, list(range(1, 128)), []
     for touch, d in ((1, 0), (0, -1), (2, 2), (3, 1)):   # MEDIUM (the default), LIGHT, HEAVY, FIXED
         for i in range(abs(d)):                    # one step a turn (ui.c S_TOUCH), 20 ms apart
-            lines.append(f"{t + 20 * i} turn 5 {1 if d > 0 else -1}")
+            lines.append(f"{t + 20 * i} turn 3 {1 if d > 0 else -1}")
         lines.append(f"{t + 50} dump")
         t = sweep(lines, t + 100, vels)
         want.append(touch)
     r = run("smk-touch", lines, t + 200, binary=b)
     ons = [vel for _, st, n, vel in r.midi_out if st == 0x90 and n == 60]
     assert len(ons) == 4 * len(vels), len(ons)
-    names = [r.state(ts)["card3"] for ts in sorted(r.dumps)]   # SETUP K4, the TOUCH card
-    assert all(r.state(ts)["page"] == "SETUP" and r.state(ts)["label3"] == "TOUCH" for ts in r.dumps)
+    names = [r.state(ts)["card1"] for ts in sorted(r.dumps)]   # the velocity page's K2, the TOUCH card
+    assert all(r.state(ts)["vpage"] == "3/3" and r.state(ts)["label1"] == "TOUCH" for ts in r.dumps)
     for i, touch in enumerate(want):
         got = ons[i * len(vels):(i + 1) * len(vels)]
         ref = [smk_vel(v, touch) for v in vels]
@@ -78,9 +78,9 @@ def test_key_velocity_on_usb_midi_out():
     for v in (1, 20, 43, 80, 127):
         lines += [f"{t} vel {v}", f"{t + 10} keys 0x80", f"{t + 100} keys 0"]
         t += 300
-    lines += [f"{t} turn 0 1"]                  # SELECT: the FRODHES page, K4 = KEY VEL (FM-1 ids: K4 = 5)
+    lines += [f"{t + 2 * i} turn 0 1" for i in range(4)]   # SELECT x4: the velocity page, K3 = KEY VEL (FM-1 ids: 4)
     for i in range(36):                          # 96 -> 60 one detent at a time
-        lines.append(f"{t + 10 + 5 * i} turn 5 -1")
+        lines.append(f"{t + 10 + 5 * i} turn 4 -1")
     t += 400
     for v in (1, 43, 127):
         lines += [f"{t} vel {v}", f"{t + 10} keys 0x80", f"{t + 100} keys 0"]

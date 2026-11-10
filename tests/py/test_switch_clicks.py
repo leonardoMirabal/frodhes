@@ -14,8 +14,12 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 import hostrun as H  # noqa: E402
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
+import dry_dist  # noqa: E402
+
 TE = 1500
-CLEAN = [H.cc(20, 81, 0), H.cc(21, 91, 0), H.cc(21, 70, 0), H.cc(22, 106, 0), H.cc(22, 107, 0), H.cc(22, 113, 0)]
+CLEAN = dry_dist.type_base_lines(10) + [H.cc(20, 81, 0),   # (the voicing at its defaults, not F01's)
+          H.cc(21, 91, 0), H.cc(21, 70, 0), H.cc(22, 106, 0), H.cc(22, 107, 0), H.cc(22, 113, 0)]
 
 
 def chord(t=300, notes=(36, 48, 52, 55, 60), v=110, dur=3000):

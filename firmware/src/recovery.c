@@ -3,6 +3,7 @@
  * startup, RAM flash driver and USB stack are still required. TIMER5, audio,
  * settings, samples, projects, editor and normal UI are never started here. */
 static uint32_t recovery_last, recovery_fraction, recovery_usb_last;
+static int midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2);   /* (platform.c, below) */
 
 static void recovery_poll(void)
 {
@@ -25,7 +26,12 @@ static void recovery_poll(void)
 
 static void recovery_step(void)
 {
+    uint8_t st, d1, d2;
     recovery_poll();
+    while (midi_get(&st, &d1, &d2))          /* nothing plays here: the ring dropped, else 40 notes or CCs fill it,
+                                              * usb.c holds EP1 OUT (NAK) for room and the installer's SysEx never
+                                              * arrives: USB RESCUE answered nothing */
+        ;
     usb_retry(fm1_ms);
     if (usb.uboot_req) {
         usb_detach();

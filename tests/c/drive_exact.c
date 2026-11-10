@@ -49,6 +49,23 @@ static void rk_bq_run(const rk_bq *c, int64_t *st, const int32_t *in, int32_t *o
     }
     st[0] = s1; st[1] = s2;
 }
+/* POST (0.9.10): b x 2^8, its output carried in Q8 through the recursion, cut to the bus on the way out (the
+ * bus-floored output in the loop left a dead band and H3 -5..-15 dB on a quiet note: its rounding error went round
+ * the poles); the reference kernel updated with the firmware */
+static void rk_post_run(const rk_bq *c, int64_t *st, int32_t *m, uint32_t n)
+{
+    int32_t b0 = c->b0, b1 = c->b1, b2 = c->b2, a1 = c->a1, a2 = c->a2;
+    int64_t s1 = st[0], s2 = st[1];
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        int32_t x = m[i], y;
+        y = (int32_t)((s1 + M64(b0, x)) >> 24);
+        s1 = s2 + M64(b1, x) + M64(a1, y);
+        s2 = M64(b2, x) + M64(a2, y);
+        m[i] = y >> 8;
+    }
+    st[0] = s1; st[1] = s2;
+}
 static void rk_op_run(const rk_bq *c, int64_t *st, const int32_t *in, int32_t *out, uint32_t n, int add)
 {
     int32_t b0 = c->b0, b1 = c->b1, a1 = c->a1;
@@ -171,7 +188,7 @@ static void rk_run(const rk_coef *c, rk_state *s, int32_t *m, int32_t *tmp, uint
         if (c->aa) { rk_aa_run(c, s, tmp, tmp, n); rk_fir_run(&s->v1, tmp, m, n); }
         else { uint32_t i; rk_plain_run(c, s, tmp, tmp, n); for (i = 0; i < n; i++) m[i] += tmp[i]; }
     }
-    rk_bq_run(&c->post, s->post, m, m, n);
+    rk_post_run(&c->post, s->post, m, n);
 }
 static int32_t unflip(uint32_t v) { return (int32_t)(v ^ 0x80000000u); }
 static int32_t mean_or(const uint32_t *r, uint32_t i, uint32_t stride, uint32_t h)
@@ -192,12 +209,14 @@ static void rk_coef_for(rk_coef *c, int a, int t)
     c->o1.a1 = mean_or(g, 3, 11, gh); c->o1.a2 = mean_or(g, 4, 11, gh);
     c->cl.b0 = mean_or(g, 5, 11, gh); c->cl.b1 = mean_or(g, 6, 11, gh); c->cl.a1 = mean_or(g, 7, 11, gh);
     c->o1b.b0 = mean_or(g, 8, 11, gh); c->o1b.b1 = mean_or(g, 9, 11, gh); c->o1b.a1 = mean_or(g, 10, 11, gh);
-    c->post.b0 = (int32_t)((M64(mean_or(p, 0, 5, th), s) + (1 << 23)) >> 24);
-    c->post.b1 = (int32_t)((M64(mean_or(p, 1, 5, th), s) + (1 << 23)) >> 24);
-    c->post.b2 = (int32_t)((M64(mean_or(p, 2, 5, th), s) + (1 << 23)) >> 24);
+    c->post.b0 = (int32_t)((M64(mean_or(p, 0, 5, th), s) + (1 << 15)) >> 16);
+    c->post.b1 = (int32_t)((M64(mean_or(p, 1, 5, th), s) + (1 << 15)) >> 16);
+    c->post.b2 = (int32_t)((M64(mean_or(p, 2, 5, th), s) + (1 << 15)) >> 16);
     c->post.a1 = mean_or(p, 3, 5, th); c->post.a2 = mean_or(p, 4, 5, th);
-    if (getenv("DRIVE_EXACT_POST"))                    /* (POST's b given: the design's own k fold, for a check) */
+    if (getenv("DRIVE_EXACT_POST")) {                  /* (POST's b given: the design's own k fold, for a check) */
         sscanf(getenv("DRIVE_EXACT_POST"), "%d,%d,%d", &c->post.b0, &c->post.b1, &c->post.b2);
+        c->post.b0 *= 256; c->post.b1 *= 256; c->post.b2 *= 256;   /* (x 2^8: rk_post_run) */
+    }
     c->kc4 = KH_KC4; c->rail = KH_RAIL; c->gf = KH_GF; c->ys_post = gr < KH_PRE_ROW;
     c->aa = a - 1 >= (int)KH_AA_FROM;
     if (getenv("DRIVE_EXACT_AA")) c->aa = atoi(getenv("DRIVE_EXACT_AA"));   /* (the design's own AA choice: g >= 0.6) */

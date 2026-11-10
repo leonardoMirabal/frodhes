@@ -23,7 +23,10 @@ import sys
 import numpy as np
 import pytest
 
-from hostrun import FS, cc, card_hz, env_rms, rate_of, rms_db, run
+from hostrun import FS, ROOT, cc, card_hz, env_rms, rate_of, rms_db, run
+
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import dry_dist  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -85,7 +88,8 @@ def am_db(x, guess):
 
 
 def play(tag, setup, note, vel=100, on=200, dur=1500, end=None, raw=True):
-    lines = VIBES + (RAW if raw else []) + MOTOR_OFF + setup + [f"{on} midi 0x90 {note} {vel}", f"{on + dur} midi 0x80 {note} 0"]
+    lines = dry_dist.type_base_lines(10) + VIBES + (RAW if raw else [])   # (the voicing at its defaults, not F01's)
+    lines = lines + MOTOR_OFF + setup + [f"{on} midi 0x90 {note} {vel}", f"{on + dur} midi 0x80 {note} 0"]
     return run(tag, lines, end or on + dur + 1500)
 
 
@@ -236,13 +240,14 @@ def test_velocity_brightens(note):
 
 
 def test_key_vel_card_is_heard():
-    """the FRODHES page's KEY VEL (K4) is the keys' velocity: 40 vs 117 (the user's) on the A4 key"""
-    pre = ["100 turn 1 1", "120 turn 1 1", "140 turn 1 1", "160 turn 1 1", "200 btn 8"] + RAW + MOTOR_OFF
+    """KEY VEL (the velocity page's K3, VIBES VOICE 4/4) is the keys' velocity: 40 vs 117 (the user's) on the A4 key"""
+    pre = ["100 turn 1 1", "120 turn 1 1", "140 turn 1 1", "160 turn 1 1", "200 btn 8", "210 turn 0 1", "220 turn 0 1",
+           "230 turn 0 1", "240 turn 0 1"] + RAW + MOTOR_OFF
     lv = {}
     for kv in (40, 117):
-        turns = ["300 turn 5 -14"] if kv == 40 else ["300 turn 5 5", "320 turn 5 1"]   # (more than a detent: x4)
+        turns = ["300 turn 4 -14"] if kv == 40 else ["300 turn 4 5", "320 turn 4 1"]   # (more than a detent: x4)
         r = run(f"va-kvel{kv}", pre + turns + ["500 dump", "600 keys 0x10000", "1400 keys 0"], 1500)
-        assert r.state(500)["card.2.3"] == str(kv)
+        assert r.state(500)["vpage"] == "4/4" and r.state(500)["card2"] == str(kv), (r.state(500)["vpage"], r.state(500)["card2"])
         lv[kv] = rms_db(r.L[int(0.62 * FS):int(1.1 * FS)])
     assert lv[117] - lv[40] >= 10.0, lv
 

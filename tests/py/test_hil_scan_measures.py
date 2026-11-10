@@ -60,3 +60,30 @@ def test_a_residue_before_the_first_event_is_not_the_onset():
     m[i:] += bar(n - i)
     on, lat, lats = h.align(m, sched)
     assert abs(on[0] - i) <= 2 * FS // 1000 and abs(lat - 0.065) < 0.003, (on, lat)
+
+
+# ---- K4: rc-0.9.9h's flaky MARIMBA jack rows (private/BACKLOG-after-099.md)
+def test_floor_sub():
+    """the floor taken off a band's power, at most FLOOR_SUB_MAX_DB; none (USB's exact zeros) leaves it"""
+    assert h.floor_sub(2.0, None) == 2.0 and h.floor_sub(2.0, 1.0) == 1.0
+    assert abs(h.floor_sub(1.0, 1.0) - 10 ** (-h.FLOOR_SUB_MAX_DB / 10)) < 1e-12
+    # WAH DEPTH 0 / 127 on the jack: 8 dB apart under the hiss (0.6 of DEPTH 0's band in each take, dry's too): read
+    # raw 6.4 dB (under the 6 dB row's margin once the run's spread adds in); less the floor, the 8 dB that is there
+    hiss, x0, x127, dry = 0.6, 1.0, 10 ** 0.8, 1.0
+    raw = 10 * np.log10((x127 + hiss) / (dry + hiss)) - 10 * np.log10((x0 + hiss) / (dry + hiss))
+    sub = (10 * np.log10(h.floor_sub(x127 + hiss, hiss) / h.floor_sub(dry + hiss, hiss)) -
+           10 * np.log10(h.floor_sub(x0 + hiss, hiss) / h.floor_sub(dry + hiss, hiss)))
+    assert raw < 6.5 and abs(sub - 8.0) < 1e-9, (raw, sub)
+
+
+def test_noise_floor_flags():
+    """MARIMBA NOISE contact's floor flag: rc-0.9.9h T2's key 48 (the jack -51 dB, USB -64, the hiss estimate a
+    window low at -60: within 6 dB missed) is the floor by the jack against USB; USB never is (no hiss); a jack
+    reading near USB's and over its hiss is compared"""
+    de = 48
+    t2 = {"usb": {"c": {de: -64.0}, "cfl": -240.0}, "jack": {"c": {de: -51.0}, "cfl": -60.0}}
+    assert h.noise_floor_flags(t2, de) == {"usb": False, "jack": True}
+    near = {"usb": {"c": {de: -40.0}, "cfl": -240.0}, "jack": {"c": {de: -41.0}, "cfl": -60.0}}
+    assert h.noise_floor_flags(near, de) == {"usb": False, "jack": False}
+    hiss = {"jack": {"c": {de: -52.0}, "cfl": -55.0}, "usb": None}
+    assert h.noise_floor_flags(hiss, de) == {"jack": True, "usb": False}

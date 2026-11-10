@@ -72,6 +72,11 @@ METER = {
     "r_cmp_pk": {"key": "r_cmp_pk", "name": "REDUCT", "type": "string", "access": "read",
                  "viz": {"group": "gr", "role": "pk"}},
 }
+# the app's version, read only (the FM-1's MIDI page K4, VERSION; the user, 2026-11-09: on the last page of every
+# version): a release's X.Y.Z, else DEV and the commit (ui.c ui_version_long, move_bridge.h mb_get serves it). No
+# knob action, no C row; on Frodhes' own screen a card of text (screen_core.js type "text"), on the grid a read cell
+VERSION_KEY = {"r_version": {"key": "r_version", "name": "VER", "type": "string", "access": "read"}}
+READ_KEYS = {**METER, **VERSION_KEY}
 SCREEN_CONF = {"hold_ms": 500,     # the large card stays this long after the knob is let go (tune on the device)
                "fast_ms": 40,      # two detents closer than this: a fast turn ...
                "fast_mul": 4,      # ... moves a wide range (> 24 steps) this many steps a detent
@@ -109,12 +114,13 @@ HELP_MAX = 20                      # a help line: about 20 characters on the 128
 FM1_ONLY_PAGES = {"PERFORM": "the Move's knobs are direct: no assignable performance knobs",
                   "ASSIGN": "the Move's knobs are direct: no assignable performance knobs",
                   "DISPLAY": "the FM-1's screen and key lights",
+                  "DISPLAY 2": "the FM-1's key lights (SUSTAIN LEDS)",
                   "SEQUENCER 2": "the FM-1's sequencer (a step's CHANCE): the Move has its own, ours stays inert"}
 # the FM-1's settings cards that are hardware only (ui.c S_*), with the reason
 FM1_ONLY_SLOTS = {"S_KVEL": "the FM-1's own keys' velocity", "S_TOUCH": "the FM-1's own keys' touch",
                   "S_USBVOL": "the FM-1's USB audio", "S_TRS": "the FM-1's TRS MIDI jack",
                   "S_COLOR": "the FM-1's screen", "S_BRIGHT": "the FM-1's screen", "S_LEDS": "the FM-1's key lights",
-                  "S_PLED": "the FM-1's PLAY light",
+                  "S_PLED": "the FM-1's PLAY light", "S_SUSLED": "the FM-1's key lights under the sustain",
                   "S_SQSTEP": "the FM-1's sequencer cursor (SEQUENCER 2): no sequencer on the Move",
                   "S_SQCHANCE": "the FM-1's sequencer, a step's CHANCE (SEQUENCER 2): no sequencer on the Move"}
 # the settings cards the Move owns (the user, 2026-10-28 12:10): the Move's tempo and transport lead (move_bridge.h
@@ -147,6 +153,8 @@ SLOTS = {
     "S_SQSWING": {"off": -50, "unit": "%", "cc": 46},          # 50 .. 75 %
     "S_SQEDIT": {"options": ["UNDO", "ERASE"], "cc": 45},
     "S_MCH": {"options": ["ALL"] + [str(c) for c in range(1, 17)]},
+    # the velocity response (0.9.10, params.c N_VRESP): the names of the methods built so far (VRESP_N), CC 40
+    "S_VRESP": {"names": "N_VRESP", "first": True, "cc": 40},
 }
 # keys of the Move's own, with no FM-1 card: a CC sent as is (latch: 0 / 127; trigger: 127 on a write)
 EXTRA = {
@@ -196,6 +204,9 @@ HOLE = None
 MOVE_LEVELS = [
     ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_fx", "s_screen", HOLE, HOLE, "p_delay"]),
     ("voice", "VOICE", ["VOICE"], []),
+    # (the user, 2026-11-08: the velocity page right after the VOICE pages, as the FM-1's last VOICE page; RESPONSE
+    # only: the pads' velocity reaches the engine as played, the Move's own settings set its pads' sensitivity)
+    ("vel", "VELOCITY", ["VELOCITY"], []),
     ("comp", "COMPRESSOR", ["COMPRESSOR"], ["p_cmp_sw", "p_cmp_rel", "r_cmp_gr", "r_cmp_pk"]),
     # the EQ before the drive, as on the FM-1 (COMPRESSOR, EQ, DRIVE): its own level of four, the FM-1's page
     ("eq", "EQ", ["EQ"], []),
@@ -214,7 +225,7 @@ MOVE_LEVELS = [
     ("tmp", "TEMPO", ["TEMPO"], []),
     ("arp", "ARPEGGIO", ["ARPEGGIO"], ["s_arphold"]),
     ("lfo_set", "LFO/SETUP", ["LFO", "SETUP", "MIDI"], []),
-    ("maps", "MAPPINGS", [], MAP_KEYS),
+    ("maps", "MAPPINGS", [], MAP_KEYS + ["r_version"]),   # (the last page: VERSION, VERSION_KEY)
 ]
 # extra keys that are parameters with no FM-1 card (they keep their CC on the FM-1)
 MOTOR_EXTRA = ["p_mot_sync"]       # VIBES' MOTOR level: the motor's sync (CC 51, no card on the FM-1)
@@ -230,7 +241,9 @@ SHORT = {"EFFECT": None, "TREM SYNC": "TRSYNC", "PHA SYNC": "PHSYNC", "DLY SYNC"
          # (Schwung sets grid labels in a proportional font, 29 px wide: these three are cut there, HAMME DAMPE MAKEU)
          "HAMMER": "HAMMR", "DAMPER": "DAMPR", "MAKEUP": "MKUP",
          # (the EQ's MID FREQ: FREQ on its page of four, LOW MID FREQ HIGH, as the filter's FREQ; said "Mid frequency")
-         "MID FREQ": "FREQ"}
+         "MID FREQ": "FREQ",
+         # (the MIDI page's velocity response, 0.9.10; a placeholder name, as the card's)
+         "RESPONSE": "RESP"}
 # parameters with no FM-1 card whose params.c label is a cryptic short form: their name on the Move (the FM-1's
 # manual's name)
 PARAM_NAME = {"P_SPREAD": "SPREAD"}
@@ -312,8 +325,8 @@ def model():
     rows_l = re.findall(r"\{([^{}]*)\}", re.search(r"PAGE_LAB\[PG_N\]\[4\] = \{(.*?)\n\};", ui, re.S).group(1))
     order = [p.strip() for p in re.search(r"PG_ORDER\[PG_NORD\] = \{(.*?)\};", ui, re.S).group(1).split(",")]
     assert len(titles) == len(pg_enum) == len(rows_s) == len(rows_l), "ui.c's page tables disagree"
-    lab_tok = {"UI_TRS_LAB": "TRS IN", "UI_LEDS_LAB": "LEDS"}      # (the FM-1's: the SMK-37 leaves them empty)
-    slot_tok = {"UI_TRS": "S_TRS", "UI_LEDS": "S_LEDS"}
+    lab_tok = {"UI_TRS_LAB": "TRS IN", "UI_LEDS_LAB": "LEDS", "UI_SUSLED_LAB": "SUSTAIN LEDS"}      # (the FM-1's: the SMK-37 leaves them empty)
+    slot_tok = {"UI_TRS": "S_TRS", "UI_LEDS": "S_LEDS", "UI_SUSLED": "S_SUSLED"}
     pages = {}
     for i, pg in enumerate(pg_enum):
         cards = [slot_tok.get(t.strip(), t.strip()) for t in rows_s[i].split(",")]
@@ -321,6 +334,11 @@ def model():
         for t in re.findall(r'"[^"]*"|\w+', rows_l[i]):
             labs.append(t[1:-1] if t.startswith('"') else lab_tok[t])
         pages[pg] = {"title": titles[i], "cards": cards, "labs": labs}
+    # the velocity page (0.9.10): every engine's last VOICE page on the FM-1 (ui.c VEL_S / VEL_LAB); the Move keeps
+    # RESPONSE of it (TOUCH and KEY VEL are the FM-1's own keys: FM1_ONLY_SLOTS)
+    vel_s = [t.strip() for t in re.search(r"VEL_S\[4\] = \{([^}]*)\};", ui).group(1).split(",")]
+    vel_l = re.findall(r'"([^"]*)"', re.search(r"VEL_LAB\[4\] = \{([^}]*)\};", ui).group(1))
+    pages["PG_VEL"] = {"title": "VELOCITY", "cards": vel_s, "labs": vel_l}
     sv = re.search(r"static int32_t slot_val\(uint32_t s, int32_t \*hi\)\n\{(.*?)\n\}", ui, re.S).group(1)
     slot_hi = {}
     for m in re.finditer(r"case (S_\w+): \*hi = ([^;]+);", sv):
@@ -447,6 +465,8 @@ def key_def(m, slot, label, key=None, bip=True):
     off, scale = sd.get("off", 0), sd.get("scale", 1)
     if "names" in sd or "options" in sd:
         opts = sd["options"] if "options" in sd else m["names"][sd["names"]]
+        if sd.get("first"):                     # (a table ahead of the slot's range: its first hi + 1 names)
+            opts = opts[:hi + 1]
         assert len(opts) == hi + 1, (slot, hi, opts)
         item.update({"type": "enum", "options": [short_value(o) for o in opts]})
     elif scale != 1:
@@ -515,7 +535,7 @@ def build(m):
     def page_cards(lvl, title):
         pg = page_of[title]
         for k, slot in enumerate(m["pages"][pg]["cards"]):
-            if slot == "S_NONE" or slot in FM1_ONLY_SLOTS or slot in MOVE_OWNS_SLOTS:
+            if slot in ("S_NONE", "S_VERSION") or slot in FM1_ONLY_SLOTS or slot in MOVE_OWNS_SLOTS:   # (VERSION: MAPPINGS)
                 continue
             item, row = key_def(m, slot, card_label(m, pg, k))
             add(lvl, item, row, lvl["name"])
@@ -529,10 +549,10 @@ def build(m):
                 lvl["params"].append(dict(SCREEN))
                 lvl["knobs"].append(k)
                 continue
-            if k in METER:                         # the GR meter's cells: a hierarchy item + chain_params (no C row)
-                lvl["params"].append(dict(METER[k]))
+            if k in READ_KEYS:                     # the GR meter's cells, VERSION: a hierarchy item + chain_params (no C row)
+                lvl["params"].append(dict(READ_KEYS[k]))
                 lvl["knobs"].append(k)
-                chain.append(dict(METER[k]))
+                chain.append(dict(READ_KEYS[k]))
                 continue
             if k in EXTRA:
                 item, row = extra_def(k)
@@ -793,6 +813,9 @@ def screen_pages(levels):
             if it["type"] == "canvas" and lk == "root":   # (the preset in the PAGES cell's place: knob 5 on both)
                 ks.append({"key": "preset", "name": "PRESET", "type": "preset"})
                 continue
+            if key in VERSION_KEY:                   # (VERSION: a card of text, no bar, a turn does nothing)
+                ks.append({"key": key, "name": it["name"], "type": "text"})
+                continue
             if it["type"] == "canvas" or it.get("access") == "read":   # (the GR cells: the screen draws its own meter)
                 continue
             k = {"key": key, "name": it["name"], "type": it["type"]}
@@ -875,7 +898,7 @@ SCREEN_READER_MJS = "/data/UserData/schwung/shared/screen_reader.mjs"        # i
 # A new control on a page fails the generator until it is named here.
 SAY_NAMES = {
     "p_type": "Type", "p_spread": "Spread", "s_sustain": "Sustain", "s_fx": "Effects", "preset": "Preset",
-    "p_delay": "Delay mix",
+    "p_delay": "Delay mix", "r_version": "Version",
     "p_tone": "Tone", "p_bark": "Bark", "p_bell": "Bell", "p_hammer": "Hammer", "p_decay": "Decay",
     "p_release": "Release", "p_noise": "Noise", "s_tune": "Tune",
     "p_strike": "Strike", "p_mallet": "Mallet", "p_tube": "Tube", "p_weight": "Weight", "p_ring": "Ring",
@@ -896,7 +919,7 @@ SAY_NAMES = {
     "p_tw_sync": "Tremolo sync", "p_ph_sync": "Phaser sync", "p_dl_sync": "Delay sync",
     "s_arpmode": "Mode", "s_arprate": "Rate", "s_arpoct": "Octaves", "s_arpgate": "Gate", "s_arphold": "Hold",
     "p_lfo_shape": "LFO shape", "p_lfo_rate": "LFO rate", "p_lfo_sync": "LFO sync", "p_lfo_retrig": "LFO retrigger",
-    "p_dl_tone": "Delay tone", "p_level": "Level", "s_mch": "MIDI channel",
+    "p_dl_tone": "Delay tone", "p_level": "Level", "s_mch": "MIDI channel", "s_vresp": "Velocity response",
     "m_at_cc": "Aftertouch CC", "m_at_lo": "Aftertouch low", "m_at_hi": "Aftertouch high",
     "m_pa_cc": "Poly pressure CC", "m_pa_lo": "Poly pressure low", "m_pa_hi": "Poly pressure high",
 }

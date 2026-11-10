@@ -70,7 +70,9 @@ RULES = [
     # proves every render byte-identical, so the full scans wait for a DSP change)
     ("app", ["firmware/src/frodhes.c", "firmware/src/frodhes_smk.h", "firmware/src/libc.c", "firmware/src/fr_cold.h"], ALL, (), (USB2,),
      "the app's glue: the audio ISR's wiring, the main loop, the MIDI CC map"),
-    ("engine:rhodes", ["firmware/src/rhodes.c", "firmware/gen/rhodes_tables.h", "firmware/gen/rhodes_phim.h", "firmware/gen/rh_tone_g.h"], ALL, ("rhodes",), (),
+    ("engine:rhodes", ["firmware/src/rhodes.c", "firmware/gen/rhodes_tables.h", "firmware/gen/rhodes_phim.h", "firmware/gen/rh_tone_g.h",
+                       "firmware/gen/rh_tone_b.h", "firmware/gen/rh_velmap.h", "firmware/gen/rh_velmap_mk.h", "firmware/gen/rh_drive_mk.h",
+                       "firmware/gen/rh_top.h"], ALL, ("rhodes",), (),
      "the Rhodes engine (its DSP or tables)"),
     ("engine:bars", ["firmware/src/bars.c", "firmware/src/bars.h", "firmware/gen/bars_tables.h"], ALL,
      ("vibes", "marimba"), (), "the bar engine (VIBES, MARIMBA: its DSP or tables)"),
@@ -96,6 +98,8 @@ RULES = [
     ("build", ["build.sh", "tools/build.py"], ALL, (), (), "the firmware build itself (flags, sections, checks)"),
     ("package", ["tools/fm1pkg_make.py", "tools/lz4blk.py"], (5,), (), (),
      "the package builder (what the update installs)"),
+    ("c1:host", ["firmware/src/c1_host.h"], (), (), (),
+     "the second core's host twin (FR_C1 host builds only: tests/py/test_c1_pipeline.py; never in a firmware image)"),
     ("engine:hq", ["firmware/src/hq/*", "firmware/gen/hq/*"], (), (), (),
      "the Move's HQ Rhodes (FR_HQ only, never in the FM-1 / SMK builds: float_check; Gate H, make test-move)"),
     ("firmware:unknown", ["firmware/*"], ALL, ENGINES_T2 + ("effects",), (USB2,),
@@ -134,7 +138,7 @@ def analyze(files):
 
 PER_TARGET = ("fm1", "smk", "move", "hq")
 TARGET_TESTS = {
-    "smk": (["make test-smk (the host build, 7 voices)", "the SMK packages build (./build.sh --board smk37)"],
+    "smk": (["make test-smk (the host build, 10 voices)", "the SMK packages build (./build.sh --board smk37)"],
             "none (no SMK-37 here: the host build)"),
     "move": (["tools/ci_move.sh (Gate U, the Move tests)", "make test-move", "Gate M (the host render nulls the Move build)"],
              "tools/move_hil.py cpu + crackle, tools/device_null.py (Classic)"),
@@ -219,6 +223,21 @@ def changed_since(tag, root=ROOT):
     return [l for l in p.stdout.splitlines() if l.strip()]
 
 
+# The Move tier of `make pytest` (coordinator, 2026-11-08): tests/py/test_move_*.py run whenever anything the Move
+# build compiles or its tests read changes (the firmware's sources and tables, move/, the host harness, the Move's
+# tools: tools/move*, ci_move.sh, target_closure.py, and every tool those tests import, which conftest.py follows),
+# so an FM-1 engine change still runs them and a docs-, UI-doc- or plugin-only change skips them. Locally conftest.py's
+# memo keys them on these inputs (skipped while unchanged since they passed); CI runs them on every push.
+MOVE_TIER_TESTS = "tests/py/test_move_*.py"
+MOVE_TIER_INPUTS = ("firmware", "move", "tests/host.c", "tests/*.c", "tests/*.h", "Makefile", "tools/move*",
+                    "tools/ci_move.sh", "tools/target_closure.py")
+
+
+def move_tier_needed(files):
+    """the changed files that make the Move tier run ([] = it may skip)"""
+    return [f for f in files if any(f == p or f.startswith(p + "/") or fnmatch.fnmatch(f, p) for p in MOVE_TIER_INPUTS)]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="the test tiers a change needs (T0 host, T1 must-pass, T2 full scans)")
     ap.add_argument("files", nargs="*", help="the changed files (default: git diff --name-only TAG..HEAD)")
@@ -235,6 +254,8 @@ def main(argv=None):
         files, src = changed_since(tag), f"git diff {tag}..HEAD ({{}} file(s))"
         src = src.format(len(files))
     res = analyze(files)
+    mv = move_tier_needed(files)
+    res["move_tier"] = {"tests": MOVE_TIER_TESTS, "run": bool(mv), "because": mv[:20]}
     pt = None
     if not a.no_targets:
         try:
@@ -248,6 +269,8 @@ def main(argv=None):
     else:
         print(src + ":")
         print("\n".join(reason(res)))
+        print(f"Move tier ({MOVE_TIER_TESTS}): " + (f"run ({len(mv)} file(s): {', '.join(mv[:5])}"
+                                                    f"{' ...' if len(mv) > 5 else ''})" if mv else "may skip"))
         if pt is not None:
             print("\n".join(target_lines(pt)))
     return 0

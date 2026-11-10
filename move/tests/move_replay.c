@@ -2,6 +2,7 @@
 /* The replay harness (M1-09): a host script's MIDI replayed through the Move plugin, written as the host build's WAV.
  *   move_replay DSP SCRIPT OUT.wav
  * dlopens DSP (build/move/frodhes/dsp.so), creates the instance in a fresh empty data folder (build/move/t/run.XXXXXX,
+ * or $MOVE_REPLAY_TMP/run.XXXXXX: Gate M's own, so test-move's cleanup of build/move/t/run.* never removes it mid-run;
  * so no saved file changes the sound; the caller removes it), waits for the worker's boot, queues every
  * "T midi ST D1 D2" line as a message
  * due at host ms T (set_param "dev_midi", the bridge's harness key), renders 128-frame blocks and writes the same WAV
@@ -43,7 +44,7 @@ static void put32(FILE *f, uint32_t v) { fwrite(&v, 4, 1, f); }
 
 int main(int argc, char **argv)
 {
-    char line[256], ev[96], what[16], tmpl[64], r[8];
+    char line[256], ev[96], what[16], tmpl[512], r[8];
     unsigned end = END_DEFAULT, nev = 0, due = 0;
     uint32_t frames, done = 0, i;
     int16_t *pcm;
@@ -66,8 +67,16 @@ int main(int argc, char **argv)
     if (!(h = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL))) { printf("FAIL dlopen %s: %s\n", argv[1], dlerror()); return 1; }
     if (!(init = (move_plugin_init_v2_fn)dlsym(h, MOVE_PLUGIN_INIT_V2_SYMBOL))) { printf("FAIL no entry\n"); return 1; }
     api = init(&host);
-    mkdir("build", 0755); mkdir("build/move", 0755); mkdir("build/move/t", 0755);
-    snprintf(tmpl, sizeof tmpl, "build/move/t/run.XXXXXX");
+    {
+        const char *td = getenv("MOVE_REPLAY_TMP");
+        if (td && *td) {
+            mkdir(td, 0755);
+            snprintf(tmpl, sizeof tmpl, "%s/run.XXXXXX", td);
+        } else {
+            mkdir("build", 0755); mkdir("build/move", 0755); mkdir("build/move/t", 0755);
+            snprintf(tmpl, sizeof tmpl, "build/move/t/run.XXXXXX");
+        }
+    }
     if (!mkdtemp(tmpl)) { printf("FAIL mkdtemp\n"); return 1; }
     if (!(in = api->create_instance(tmpl, NULL))) { printf("FAIL create\n"); return 1; }
     for (i = 0;; i++) {                 /* the worker boots the app; the host would play silence meanwhile */

@@ -176,6 +176,7 @@ function rvWord(st, k, v, card) {
 // the value as its knob card shows it: an option name, a number, the tempo with one decimal; "--" when unknown
 // (card: the overview's 5-character card)
 function valueText(st, k, card) {
+    if (k.type === "text") return st.vals[k.key] ? String(st.vals[k.key]) : "--";   // (VERSION: the plugin's text)
     if (k.type === "preset") {
         const nm = st.presetName ? String(st.presetName) : "";
         return nm ? nm.split(" ")[0] : "--";
@@ -197,6 +198,7 @@ function fmtOf(k) { return k.fmt && FR_CONF.fmt && FR_CONF.fmt[k.fmt] ? FR_CONF.
 
 // where the bar stands: 0..1, or null when the value is unknown
 function fraction(st, k) {
+    if (k.type === "text") return null;
     const v = k.type === "preset" ? st.preset : st.vals[k.key];
     if (v === null || v === undefined) return null;
     const lo = k.type === "enum" ? 0 : k.min, hi = k.type === "enum" ? k.options.length - 1 : k.max;
@@ -224,6 +226,11 @@ function readKey(ctx, st, k) {
     if (k.type === "preset") {
         st.preset = asNum(ctx.getParam("preset"));
         st.presetName = ctx.getParam("preset_name");
+        return;
+    }
+    if (k.type === "text") {                          // (VERSION: read only, a text)
+        const t = ctx.getParam(k.key);
+        st.vals[k.key] = t === null || t === undefined || t === "" ? null : String(t);
         return;
     }
     const v = asNum(ctx.getParam(k.key));
@@ -275,7 +282,7 @@ function write(ctx, st, k, v) {
 // of a tempo; a fast turn of a wide range moves faster), a trigger (CLEAR, UNDO) fires on a turn to the right.
 function turn(ctx, st, slot, d) {
     const ks = knobs(st);
-    if (slot >= ks.length || !d || !ks[slot]) return;
+    if (slot >= ks.length || !d || !ks[slot] || ks[slot].type === "text") return;   // (VERSION: a turn does nothing)
     const k = ks[slot];
     const t = nowOf(ctx);
     const fast = st.lastTurn[slot] !== undefined && t - st.lastTurn[slot] < FR_CONF.fast_ms;
@@ -306,7 +313,7 @@ function turn(ctx, st, slot, d) {
 // a knob back to its default (FR_PAGES' def; a trigger, the preset and a key without one are left alone)
 function reset(ctx, st, slot) {
     const k = knobs(st)[slot];
-    if (!k || k.write || k.type === "preset" || k.def === undefined) return false;
+    if (!k || k.write || k.type === "preset" || k.type === "text" || k.def === undefined) return false;
     write(ctx, st, k, k.def);
     toast(ctx, st, (k.short || k.name) + " RESET", sayName(k) + " reset");
     return true;
@@ -423,6 +430,7 @@ function sayPreset(nm) {
 // a knob's value as the large card shows it, in words (an option's name, SUSTAIN / FREEZE, a number)
 function sayValue(st, k) {
     if (k.type === "preset") return sayPreset(st.presetName) || "not read yet";
+    if (k.type === "text") return st.vals[k.key] ? String(st.vals[k.key]) : "not read yet";
     if (st.flash && st.flash.key === k.key) return sayWord(k.options[1]);
     const v = st.vals[k.key];
     if (v === null || v === undefined) return "not read yet";
@@ -535,8 +543,8 @@ function drawOverview(ctx, st) {
         }
         text(ctx, x, y + 1, k.short || k.name);
         text(ctx, x, y + 11, k.type === "preset" ? (st.presetName ? String(st.presetName) : "--") : valueText(st, k, true));
-        // the bar: 5 px (rows y+19..y+23, a row clear of the value)
-        bar(ctx, st, k, x, y + 19, x + wide, y + 23);
+        // the bar: 5 px (rows y+19..y+23, a row clear of the value); none under a text (VERSION)
+        if (k.type !== "text") bar(ctx, st, k, x, y + 19, x + wide, y + 23);
     });
     if (p.knobs.length > 4) hdots(ctx, 0, 127, 36);
     if (isComp(st)) drawGr(ctx, st);
@@ -589,8 +597,8 @@ function drawFocus(ctx, st) {
     const val = flash ? k.options[1] : valueText(st, k);
     if (textW(val, 3) <= 124) textR(ctx, 125, 26, val, 3);
     else textR(ctx, 125, 30, val, 2);
-    // the bar: 6 px (rows 49..54; two rows clear of the value above, three of the knob marks below)
-    bar(ctx, st, k, 0, 49, 127, 54);
+    // the bar: 6 px (rows 49..54; two rows clear of the value above, three of the knob marks below); none under a text
+    if (k.type !== "text") bar(ctx, st, k, 0, 49, 127, 54);
     for (let i = 0; i < p.knobs.length; i++) {
         const x = 2 + i * 16;
         if (i === st.focus) ctx.fillRect(x, 58, 12, 6, 1);

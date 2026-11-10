@@ -6,7 +6,11 @@ Each case plays one note over USB-MIDI into the host build of the firmware (buil
 through the golden model with the same generated parameters (docs/model/data/rhodes_spec.json). The host build here
 has -DRH_NO_S4: S4 (amplitude -> pitch in the bass, rhodes.c rh_s4_e) is a deliberate nonlinearity the golden model
 does not have (it moves keys 21-47 a few cents at the strike: -25 dB residual at key 28 v100); tests/py/
-test_rh_amp_pitch.py checks S4 against this same reference."""
+test_rh_amp_pitch.py checks S4 against this same reference. 2026-11-08 (0.9.10): also without the strike-time output
+gains (-DRH_NO_DRV_MK: the pickup drive's level make-up; -DRH_NO_DYN: the dynamics stage), a gain per note the model
+does not apply, and without the harmonic decay glide (-DRH_NO_HD: the offset moving after 0.4 s; its own tests in
+test_rh_velmap / check0910). rc-0910: also without the clean top (-DRH_NO_TOP: 1fe0c0af's swing cut above a knee per
+key, with its gain back; tests/py/test_rhodes_top.py). The physics the model has (the modes, the drive's swing, the pickup) is all compared."""
 import json
 import os
 import subprocess
@@ -20,6 +24,7 @@ import hostrun  # noqa: E402  (tests/py: the per-worker render paths)
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
+import dry_dist  # noqa: E402
 import rhodes_model as gm  # noqa: E402
 
 BIN = os.path.join(ROOT, "build", "gate_b", "frodhes")   # the host build without S4 (exe())
@@ -30,6 +35,7 @@ KEYS = {k["midi"]: k for k in SPEC["keys"]}
 def exe():
     def make(p):
         subprocess.run(["cc", "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", '-DAPP_VER="dev"', "-DRH_NO_S4",
+                        "-DRH_NO_DRV_MK", "-DRH_NO_DYN", "-DRH_NO_HD", "-DRH_NO_TOP", "-DRH_ATK_A=0u",   # (0.9.10: the output-gain stages, the attack lift and the glide)
                         "-I" + os.path.join(ROOT, "firmware", "src"), "-I" + os.path.join(ROOT, "firmware", "gen"),
                         "-o", p, os.path.join(ROOT, "firmware", "src", "frodhes.c"), "-lm"], check=True)
     return hostrun.once(BIN, make)
@@ -39,6 +45,7 @@ def c_render(note, vel, dur_ms, off_ms=None, tag="gb"):
     out = hostrun.out(f"{tag}-{note}-{vel}")
     scr = out + ".txt"
     with open(scr, "w") as f:
+        f.writelines(ln + "\n" for ln in dry_dist.type_base_lines(50))   # the voicing at its defaults, not F01's
         f.write("50 midi 0xB0 119 127\n")                 # developer: bypass the effects, test the voice
         f.write("50 midi 0xB0 104 0\n")                   # NOISE off: the golden model has no thump / felt noise
         f.write(f"100 midi 0x90 {note} {vel}\n")

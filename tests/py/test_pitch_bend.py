@@ -122,7 +122,9 @@ def test_sweep_no_click_level_back(name, b):
     r = take(f"sweep-{name}-{b}", n, sweep(T_BEND, 0, b) + [f"{T_BEND + 1100} expect state bend 0"])
     win = (T_BEND / 1000 - 0.05, T_BEND / 1000 + 1.1)
     s_ref, s = max_step(a.seg(*win)), max_step(r.seg(*win))
-    lim = s_ref * max(1.0, ratio(b)) * 1.01 + 1
+    # THRESHOLD: 1.04 (was 1.01; coordinator sign-off 2026-11-09): a bent note plays +3.1 % H1 / +0.8 dB H2 over the
+    # unbent one (C4 at the bend's peak, FFT), the same on 0.9.9: the retune's own, not a click
+    lim = s_ref * max(1.0, ratio(b)) * 1.04 + 1
     assert s <= lim, f"{name} sweep to {b}: max step {s:.0f} vs unbent {s_ref:.0f} (limit {lim:.0f})"
     lv = 20 * np.log10(np.sqrt(np.mean(r.seg(2.5, 3.5) ** 2)) / np.sqrt(np.mean(a.seg(2.5, 3.5) ** 2)))
     assert abs(lv) < 0.1, f"{name} after the sweep to {b}: level {lv:+.3f} dB"

@@ -96,7 +96,9 @@ class _Fallback:
 
     def __init__(self, secs, line, code):
         print(f"(watchdog {secs:g} s; on a hang: {line})", file=sys.stderr, flush=True)
-        faulthandler.dump_traceback_later(secs, exit=True)
+        # (the process' own stderr: faulthandler needs a real file descriptor, and a captured sys.stderr, pytest's
+        # capsys, has none: 'io.UnsupportedOperation: fileno' on Linux)
+        faulthandler.dump_traceback_later(secs, exit=True, file=sys.__stderr__ or sys.stderr)
 
     def cancel(self):
         faulthandler.cancel_dump_traceback_later()

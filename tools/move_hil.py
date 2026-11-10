@@ -427,7 +427,8 @@ class FakeRig(UsbRig):
                 ph = tt / 0.25
             x *= 1 - st.get(18, 0) / 127 * (0.5 + 0.5 * np.cos(2 * np.pi * ph))
         x *= 0.25 if self.state.get(110, 64) == 0 else 1.0                # LEVEL (CC 110 0: -12 dB)
-        x = 24000 * np.tanh(x / 24000)                                    # (the app's limiter, softly)
+        x = 24000 * np.tanh(x / 24000)                                    # (the app's limiter, softly: fx.c LIM_T;
+        #                                                                     29204 in the 0.9.10 RCs, reverted 2026-11-08)
         clean = np.stack([x, 0.9 * x], 1)
         # (the tap: the plugin's own output, before the Move's trim and mix, FAKE_TAP_LEAD s ahead of the take)
         self.tap = np.concatenate([np.zeros((int(FAKE_TAP_LEAD * FS), 2)), np.round(clean / FAKE_MIX),
@@ -772,6 +773,37 @@ ENGINE_CCS = {"rhodes": (), "vibes": ((79, 0), (47, 0)), "marimba": ((79, 127),)
 # the tests read; usb-host plays the presets, F13 with its motor)
 
 
+USB_C_CC_LOST = {103: "p_release"}   # CCs that do not reach a slot from USB-C (the 0.9.9 d2, 2026-11-08: CC 103,
+#                                       MARIMBA's MUTE, left the hand off), with the key that sets it over Schwung
+USB_C_CC_BELT = {47: "p_mot_on"}     # CCs a verdict depends on, set over Schwung too when there is a WebSocket
+
+
+def ws_setter(url, slot=0, settle=0.5):
+    """r.ws_set for the USB-C rig: set(key, value) writes synth:<key> over a connection of its own and waits settle s
+    for the manager's re-read (closed in the middle of it, the next connection is cut, 2026-10-29)"""
+    def set_(key, value):
+        import move_ws
+        with move_ws.Remote(url) as w:
+            w.subscribe(slot)
+            w.set_param(slot, COMP_KEY + key, value)
+            w.pump(settle)
+    return set_
+
+
+def cc_param(r, cc, value):
+    """CC cc to value as the slot sees it: the CC, and over USB-C, for a CC in USB_C_CC_LOST or USB_C_CC_BELT, the
+    key over Schwung's WebSocket too (r.ws_set). False when the CC does not reach the slot from USB-C and there is no
+    WebSocket to set it (the verdict that needs it says so)"""
+    r._send("cc", cc, value)
+    if isinstance(r, TapRig) or r.fake and not callable(getattr(r, "ws_set", None)):
+        return True                              # (the tap: the bridge plays the CC itself; the fake: no USB-C)
+    key = USB_C_CC_LOST.get(cc) or USB_C_CC_BELT.get(cc)
+    if key and callable(getattr(r, "ws_set", None)):
+        r.ws_set(key, value)
+        return True
+    return cc not in USB_C_CC_LOST
+
+
 def _prep(r, engine=None, **cc):
     """hil_scan's dry state (every parameter at its default, no effects), the engine, then cc (name or number: value)"""
     r.dry()
@@ -797,6 +829,9 @@ def usb_note(r, d, note=60, vel=100, engine=None, name="note", out=print):
     body = _mono(_seg(x, sr, on + 0.05, on + 0.45))
     f = _f0(_mono(_seg(x, sr, on + 0.2, on + 0.7)), sr, note_hz(note))   # (the steady part: the attack's pitch moves)
     cents = 1200 * np.log2(f / note_hz(note)) if f else None
+    tune = getattr(r, "tune", None)              # (the slot's TUNE, as read: the pitch is judged against it)
+    rep["tune"] = tune
+    off_c = None if cents is None else cents - (tune or 0)
     pre_off = hs.db(_seg(x, sr, 1.5 + (on - 0.2), 1.6 + (on - 0.2)))
     tail = hs.db(_seg(x, sr, 2.6 + (on - 0.2), 3.0 + (on - 0.2)))
     g = glitches(x, sr, ev)
@@ -805,8 +840,9 @@ def usb_note(r, d, note=60, vel=100, engine=None, name="note", out=print):
                centroid_hz=round(_centroid(body, sr)), before_off_db=round(pre_off, 1),
                tail_db=round(tail, 1), glitches=g)
     bad = []
-    if cents is None or abs(cents) > 10:
-        bad.append("pitch %s cents" % rep["cents"])
+    if off_c is None or abs(off_c) > 10:
+        bad.append("pitch %s cents%s" % (rep["cents"], "" if not tune else " (TUNE %+d c: %+.1f c off it)" % (
+            tune, off_c if off_c is not None else float("nan"))))
     if tail > pre_off - 30 and tail > -90:      # (a bar note that has died before key-up: silent at both)
         bad.append("the note does not die after key-up (%.1f dB under)" % (pre_off - tail))
     if g:
@@ -814,9 +850,10 @@ def usb_note(r, d, note=60, vel=100, engine=None, name="note", out=print):
     if tk["xruns"]:
         bad.append("recorder xruns %s" % tk["xruns"])
     rep["verdict"] = "FAIL: " + "; ".join(bad) if bad else "PASS"
-    out("note %d v%d: onset %.1f ms (MIDI + USB + capture), RMS %.1f dBFS, f0 %.2f Hz (%+.1f c), centroid %d Hz, "
+    out("note %d v%d: onset %.1f ms (MIDI + USB + capture), RMS %.1f dBFS, f0 %.2f Hz (%+.1f c, TUNE %s), centroid %d Hz, "
         "after key-up %.1f dB down, %d glitch(es): %s" % (note, vel, rep["onset_ms"], rep["rms_db"], f,
-                                                         cents or 0, rep["centroid_hz"], pre_off - tail, len(g),
+                                                         cents or 0, "-" if tune is None else "%+d" % tune,
+                                                         rep["centroid_hz"], pre_off - tail, len(g),
                                                          rep["verdict"]))
     return not bad, rep
 
@@ -905,9 +942,20 @@ def usb_sus(r, d, note=60, vel=100, engine=None, out=print):
     (b) at the window after key-up is >= 20 dB over (a) there (and, where notes ring for seconds, within hold_db of
     its level before key-up); SUS[engine] gives the times"""
     c = SUS[engine or "rhodes"]
+    _prep(r, engine)
+    lost = [k for k, v in c["cc"] if not cc_param(r, k, v)]
+    try:
+        return _usb_sus(r, d, note, vel, c, {"engine": engine or "rhodes"}, [], lost, out)
+    finally:                                     # (a key set over the WebSocket: back to its default, as the CC
+        for k, _ in c["cc"]:                     # reset the next test sends cannot reach it)
+            if k in USB_C_CC_LOST and callable(getattr(r, "ws_set", None)) and not isinstance(r, TapRig):
+                r.ws_set(USB_C_CC_LOST[k], dict(hs.param_defaults()).get(k, 0))
+
+
+def _usb_sus(r, d, note, vel, c, rep, bad, lost, out):
     off, (w0, w1), up, (g0, g1) = c["off"], c["win"], c["up"], c["gone"]
-    rep, bad = {"engine": engine or "rhodes"}, []
-    _prep(r, engine, **{"c%d" % k: v for k, v in c["cc"]})
+    if lost:
+        rep["lost_cc"] = lost
     ev = [(0.2, "on", note, vel), (off, "off", note, 0)]
     a = r.rec(c["dur"][0], ev)
     _save(d, "sus-a-damped", a)
@@ -951,6 +999,11 @@ def usb_sus(r, d, note=60, vel=100, engine=None, out=print):
     if g:
         bad.append("%d glitch(es) in (a)" % len(g))
     rep["verdict"] = "FAIL: " + "; ".join(bad) if bad else "PASS"
+    if lost and bad:
+        rep["verdict"] = ("NOT JUDGED: CC %s (%s) does not reach the slot from USB-C and there is no WebSocket to set "
+                          "it (--ws): the pedal is judged while the hand stops the bar; %s" % (
+                              "/".join(str(k) for k in lost), ", ".join(USB_C_CC_LOST[k] for k in lost),
+                              rep["verdict"]))
     rep = _plain(rep)
     out("damped %s | pedal %s | catch %s: %s" % (rep["damped"], rep["pedal"], rep["catch"], rep["verdict"]))
     return not bad, rep
@@ -1454,20 +1507,22 @@ def host_binary(hq=None):
     return hostrun.build(MOVE_HOST % h, extra=MOVE_HOST_DEFS + ["-DHQ_DEFAULT=%d" % h])
 
 
-def host_phrase(ev, dur, program=0, hq=None, lead=(), after=()):
+def host_phrase(ev, dur, program=0, hq=None, lead=(), after=(), tune=0):
     """the host build (tests/host.c) playing the events after program change program (F01 = 0): (n, 2) LSB at 44.1;
     hq: 0 Classic, else (1, None: as the plugin loads) the HQ Rhodes' build (host_binary); lead: [(cc, value)] at 1 ms, before the program change, as the take
     has them (a pedal let up at boot is not nothing: CC 64 0 moves a later note by a few LSB); after: [(cc, value)] at
-    6 ms, after the program change (the values Schwung's scene locks hold on the Move: held_reader)"""
+    6 ms, after the program change (the values Schwung's scene locks hold on the Move: held_reader); tune: the
+    slot's TUNE in cents (s_tune, no CC: tests/host.c "T tune" at 2 ms)"""
     sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
     import hostrun
     pre = 500
-    lines = (["1 midi 0xB0 %d %d" % cv for cv in lead] + ["5 midi 0xC0 %d" % program] +
+    lines = (["1 midi 0xB0 %d %d" % cv for cv in lead] + (["2 tune %d" % int(tune)] if tune else []) +
+             ["5 midi 0xC0 %d" % program] +
              ["6 midi 0xB0 %d %d" % cv for cv in after])
     for t, k, a, b in ev:
         ms = pre + int(round(1000 * t))
         lines.append("%d midi 0x%02X %d %d" % (ms, {"on": 0x90, "off": 0x80, "cc": 0xB0}[k], a, b))
-    run = hostrun.run("move-same-as-host" + ("" if hq == 0 else "-hq"), lines, pre + int(1000 * dur) + 20,
+    run = hostrun.run("move-same-as-host" + ("" if hq == 0 else "-hq") + ("-t%+d" % tune if tune else ""), lines, pre + int(1000 * dur) + 20,
                       binary=host_binary(hq))
     i0 = int(pre * hostrun.FS / 1000)
     return np.stack([np.asarray(run.L[i0:], float), np.asarray(run.R[i0:], float)], 1)
@@ -1575,14 +1630,108 @@ HQ_RESOLVE_DB = 3.0        # usb-host: the HQ probe judges Classic only when the
 TAIL_JUDGED_DBFS = -60.0   # usb-host: a note whose tail (0.5-1.0 s, the host's, after the gain) is quieter is not
                            # judged on its residual: a short bar note (MARIMBA 84 v40) has died there, the floor
                            # and the rounding are all that is left
+TAKE_FLOOR_LSB = 0.5       # usb-host: the take's own rounding floor (whole LSB with TPDF dither: 0.5 LSB RMS)
+JUDGE_OVER_FLOOR_DB = 40.0 # and a note is judged only when its tail (after the gain, in the take's LSB) is this far
+                           # over it: the residual's -40 dB limit, so the floor alone can never fail a note (the
+                           # quiet-mix take, 2026-11-09: 96 v90's tail at -59.6 dBFS left -39.7 dB of pure rounding)
 
 
-def usb_host(r, d, program=0, out=print):
+TUNE_MEASURED_MIN_C = 2.0  # usb-host: with the slot's TUNE unknown (no WebSocket, a saved take), a Move that plays
+                           # this far (cents, the notes' median) off the host's TUNE 0 render is rendered again at
+                           # that TUNE (the 2026-11-08 USB-C run: every note -8 c, the slot saved at TUNE -8)
+TUNE_LEFT_C = 3.0          # ... and a pitch offset still this large after the host's TUNE is named in the verdict
+
+
+# usb-host, TAPE (DELAY TAPE with DEPTH > 0): its wow and flutter (fx.c, ~0.7 Hz and ~7 Hz) restart at CC 10, so the
+# echoes depend on how long after CC 10 a note lands, and MIDI over USB plus the Move's own blocks move that by a few
+# ms: the host's own TAPE renders with the notes one or two blocks later differ by -16 .. -22 dB residual (up to the
+# device's -22.8 .. -32 dB, 663 LSB, 2026-11-10), where DIG, the reverb and DEPTH 0 stay exact (-53 dB and under).
+# Such a note is judged on its level and its critical-band spectrum against the host's, not on the sample residual.
+# THRESHOLD (2026-11-10, coordinator): TAPE notes within TAPE_LEVEL_DB in level and TAPE_CB_DB in every critical band
+# (bands within TAPE_CB_RANGE_DB of the note's loudest) in place of the -40 dB residual; reason: the residual reads the
+# wow's phase, not the sound. The host's shifted renders: level <= 0.25 dB, bands <= 1.02 dB (F12, F14, F17, F19)
+TAPE_LEVEL_DB = 0.5
+TAPE_CB_DB = 1.5
+TAPE_CB_RANGE_DB = 50.0
+CB_EDGES = (20, 100, 200, 300, 400, 510, 630, 770, 920, 1080, 1270, 1480, 1720, 2000, 2320, 2700, 3150, 3700, 4400,
+            5300, 6400, 7700, 9500, 12000, 15500, 20000)    # (the critical bands' edges, Hz: tools/engine_ab.py's)
+TAPE_CC_SW, TAPE_CC_DEPTH = 88, 89                          # (DELAY's type and DEPTH; type: 0..127 over OFF DIG ANA TAPE)
+
+
+def program_preset(program):
+    """the factory preset a program change loads (presets.c preset_of_pc): 0..15 F01..F16, 32.. F17..; else None"""
+    if 0 <= program < 16:
+        return program + 1
+    return program - 32 + 17 if program >= 32 else None
+
+
+def take_tape(program, after=()):
+    """True when the take plays DELAY TAPE with DEPTH > 0: the preset's record (F01..F19 presets.c's, F20.. the Move's
+    variants, move/presets/proposed_records.txt), then the CCs the take sends after the program change (after)"""
+    import gen_move_presets as gp
+    f = program_preset(program)
+    if f is None:
+        return False
+    key = ("F%02d" % f, "A") if f < gp.FIRST else ("F%02d" % ((f - gp.FIRST) // 2 + 1), "BC"[(f - gp.FIRST) % 2])
+    rec = gp.records().get(key)
+    if rec is None:
+        return False
+    p = {n: v for n, _, v in rec[1]}
+    sw, dp = p.get("P_DL_SW", 0), p.get("P_DL_DEPTH", 0)
+    for cc, v in after:
+        if cc == TAPE_CC_SW:
+            sw = v * 4 // 128
+        elif cc == TAPE_CC_DEPTH:
+            dp = v
+    return sw == 3 and dp > 0
+
+
+def cb_levels(x, sr):
+    """x's power per critical band (dB, Hann window over the whole of x)"""
+    X = np.abs(np.fft.rfft(np.asarray(x, float) * np.hanning(len(x)))) ** 2
+    f = np.fft.rfftfreq(len(x), 1 / sr)
+    return np.array([10 * np.log10(X[(f >= lo) & (f < hi)].sum() + 1e-30) for lo, hi in zip(CB_EDGES[:-1], CB_EDGES[1:])])
+
+
+def tape_judge(mm, ghm, sr):
+    """(level dB, the largest critical-band difference dB) of the take's note against the host's (after the gain)"""
+    lv = 10 * np.log10((float(np.mean(mm ** 2)) + 1e-18) / (float(np.mean(ghm ** 2)) + 1e-18))
+    cm, ch = cb_levels(mm, sr), cb_levels(ghm, sr)
+    keep = ch > ch.max() - TAPE_CB_RANGE_DB
+    return float(lv), float(np.abs(cm - ch)[keep].max())
+
+
+def pitch_offset_c(mv, h, marks, sr):
+    """the Move's pitch against the host's (cents, the median over the notes' steady part, 0.25-0.75 s: no alignment
+    needed, the lag is a few ms), None when no note gives both"""
+    cs = []
+    for _, t, n in marks:
+        st = slice(int((t + 0.25) * sr), int((t + 0.75) * sr))
+        fm, fh = _f0(_mono(mv[st]), sr, note_hz(n)), _f0(_mono(h[st]), sr, note_hz(n))
+        if fm and fh:
+            cs.append(1200 * np.log2(fm / fh))
+    return round(float(np.median(cs)), 2) if cs else None
+
+
+def tune_for(known, offset):
+    """(tune, source): the slot's TUNE as read (known, "slot"), else the measured offset rounded when it is
+    TUNE_MEASURED_MIN_C or more ("measured"), else (0, "none")"""
+    if known is not None:
+        return max(-50, min(50, int(round(float(known))))), "slot"
+    if offset is not None and abs(offset) >= TUNE_MEASURED_MIN_C:
+        return max(-50, min(50, int(round(offset)))), "measured"
+    return 0, "none"
+
+
+def usb_host(r, d, program=0, out=print, motor_off=False):
     """the same phrase on the Move and on the host build (program change program, CC 10): one gain for the whole
     take, each note aligned on its own (MIDI over USB lands up to a ms or two apart), then per note: the residual
     after the gain (dB under the note), f0 (cents, the steady part), the time to -20 dB, the centroid, the third-
-    octave bands' largest difference. A note whose tail is under TAIL_JUDGED_DBFS is not judged on its residual. Classic is the host's code: the residual should be at the floor, the gain
-    the Move's volume"""
+    octave bands' largest difference. A note whose tail is under TAIL_JUDGED_DBFS, or under JUDGE_OVER_FLOOR_DB over the
+    take's rounding floor (TAKE_FLOOR_LSB), is not judged on its residual. Classic is the host's code: the residual should be at the floor, the gain
+    the Move's volume. motor_off: VIBES' motor off after the program change, both sides (CC 47 0, and p_mot_on over
+    Schwung on USB-C): its phase runs from the plugin's load on the Move, from boot on the host (F13's free motor
+    left a -31 dB residual on every note, the 0.9.9 d2)"""
     ev, marks, dur = phrase_events()
     r._send("cc", 123, 0)
     for c, v in GLOBAL_CCS:                     # (the host boots with these off; the Move keeps what was saved)
@@ -1590,11 +1739,15 @@ def usb_host(r, d, program=0, out=print):
     if hasattr(r, "boot_settings"):
         r.boot_settings()
     r._send("pc", program, 0)
+    if motor_off:
+        cc_param(r, 47, 0)
     time.sleep(0.5)
     # (Schwung's scene locks (the set's scenes.json) put their parameters back after the program change: the take
     # plays the held values, so the host gets them too. F13's BARK 52 played as the held 64: DIFFERS, 2026-10-30)
     locked = r.held() if callable(getattr(r, "held", None)) else {}
     after = [(cc, v) for _, (cc, v) in sorted(locked.items()) if cc]
+    if motor_off and not any(cc == 47 for cc, _ in after):     # (a scene lock on the motor wins on the Move)
+        after.append((47, 0))
     tk = r.rec(dur, ev)
     _save(d, "move-phrase", tk)
     if locked:
@@ -1602,8 +1755,16 @@ def usb_host(r, d, program=0, out=print):
         json.dump({k: list(v) for k, v in locked.items()}, open(os.path.join(d, "held.json"), "w"))
     mv, sr = tk["x"], tk["sr"]
     hq = getattr(r, "hq", None)
-    h = host_phrase(ev, dur, program, hq, GLOBAL_CCS, after)
+    # (the slot's TUNE (s_tune: no CC, saved with the slot) moves every note: the host gets the same. r.tune: as read
+    # over Schwung's WebSocket (d2, usb-* with --ws); unknown, the take's own offset against TUNE 0 decides)
+    known = getattr(r, "tune", None)
+    h = host_phrase(ev, dur, program, hq, GLOBAL_CCS, after, tune=0 if known is None else tune_for(known, None)[0])
+    tune, tune_src = tune_for(known, None if known is not None else pitch_offset_c(mv, h, marks, sr))
+    if known is None and tune:
+        h = host_phrase(ev, dur, program, hq, GLOBAL_CCS, after, tune=tune)
+    left_c = pitch_offset_c(mv, h, marks, sr)
     _save(d, "host-phrase", {"x": h, "sr": 44100})
+    tape = take_tape(program, after)
     rows, segs = [], []
     maxlag = int(0.08 * sr)
     for name, t, n in marks:
@@ -1620,11 +1781,19 @@ def usb_host(r, d, program=0, out=print):
         hm = _mono(h[a:b])
         segs.append((name, n, mm, hm, lag, corr))
     nt = int(0.5 * sr)
+    # the take's own floor (its mono power in the silence before the first note, 0.1-0.35 s: CC 10 at 0.05 s, the
+    # first note at 0.4 s): the residual is judged net of it. 2026-11-08 (THRESHOLD): a note just over
+    # TAIL_JUDGED_DBFS read its floor as a difference. The clean Rhodes' 96 v90 tail is -59.6 dBFS through the quiet
+    # mix (Main Out 17.1 dB down, 1 LSB TPDF; 568fe9d6: -57.6), and that mix's floor (-99.3 dBFS) is 39.7 dB under it:
+    # "DIFFERS" with nothing but the floor. A sound on top of the floor adds its power as before
+    pre = _mono(mv[int(0.1 * sr):int(0.35 * sr)])
+    floor_p = float(np.mean(pre ** 2)) if len(pre) else 0.0
     gs = [float(np.dot(m[-nt:], hh[-nt:]) / (np.dot(hh[-nt:], hh[-nt:]) + 1e-9)) for _, _, m, hh, _, _ in segs]
     g = float(np.median(gs)) if gs else 0.0          # (one gain: the notes' median, so one spoilt note cannot move it)
     for name, n, mm, hm, lag, corr in segs:
         res = mm - g * hm
         rd = 20 * np.log10((np.sqrt(np.mean(res[-nt:] ** 2)) + 1e-9) / (np.sqrt(np.mean(mm[-nt:] ** 2)) + 1e-9))
+        rn = 10 * np.log10((max(float(np.mean(res[-nt:] ** 2)) - floor_p, 0.0) + 1e-18) / (float(np.mean(mm[-nt:] ** 2)) + 1e-18))
         held = slice(0, int(NOTE_S * sr))
         ex = res[held]
         ex_db = 20 * np.log10((np.sqrt(np.mean(ex ** 2)) + 1e-9) / (np.sqrt(np.mean((g * hm[held]) ** 2)) + 1e-9))
@@ -1638,19 +1807,26 @@ def usb_host(r, d, program=0, out=print):
                 break
         st = slice(int(0.25 * sr), int(0.75 * sr))
         fm, fh = _f0(mm[st], sr, note_hz(n)), _f0(hm[st], sr, note_hz(n))
-        tail = 20 * np.log10((np.sqrt(np.mean((g * hm[-nt:]) ** 2)) + 1e-9) / 32768)
+        tail_lsb = float(np.sqrt(np.mean((g * hm[-nt:]) ** 2)))
+        tail = 20 * np.log10((tail_lsb + 1e-9) / 32768)
+        over_floor = 20 * np.log10((tail_lsb + 1e-9) / TAKE_FLOOR_LSB)
         hs_ = _strikes(hm[held], sr)
         again = [t for t in _strikes(mm[held], sr) if all(abs(t - u) > 15 for u in hs_)]
         rows.append({"note": name, "lag_ms": round(1000 * lag / sr, 2), "tail_corr": round(corr, 4), "again_ms": again,
-                     "residual_db": round(float(rd), 1), "tail_dbfs": round(float(tail), 1),
-                     "judged": bool(tail >= TAIL_JUDGED_DBFS), "extra_db": round(float(ex_db), 1), "extra_hz": peaks,
+                     "residual_db": round(float(rd), 1), "residual_net_db": round(float(rn), 1),
+                     "floor_dbfs": round(float(10 * np.log10(floor_p + 1e-18) - 20 * np.log10(32768)), 1),
+                     "tail_dbfs": round(float(tail), 1), "over_floor_db": round(float(over_floor), 1),
+                     "judged": bool(tail >= TAIL_JUDGED_DBFS and over_floor >= JUDGE_OVER_FLOOR_DB), "extra_db": round(float(ex_db), 1), "extra_hz": peaks,
                      "f0_move_c": round(1200 * np.log2(fm / note_hz(n)), 2) if fm else None,
                      "f0_host_c": round(1200 * np.log2(fh / note_hz(n)), 2) if fh else None,
                      "decay_move_s": _decay_s(mm, sr), "decay_host_s": _decay_s(hm, sr),
                      "centroid_move": round(_centroid(mm[st], sr)), "centroid_host": round(_centroid(hm[st], sr))})
+        if tape:                                 # (TAPE: level and spectrum over the held second, not the residual)
+            lv, cbd = tape_judge(mm[held], g * hm[held], sr)
+            rows[-1].update(tape=True, level_db=round(lv, 2), cb_max_db=round(cbd, 2))
     classic_db, classic_res_db = None, None
     if hq != 0:                                  # (HQ, the load's or asked: the take must not be Classic where only HQ
-        c = host_phrase(ev, dur, program, 0, GLOBAL_CCS, after)    # differs)
+        c = host_phrase(ev, dur, program, 0, GLOBAL_CCS, after, tune=tune)    # differs)
         for name, t, n in marks:
             if name == HQ_PROBE:
                 a, b = int(t * sr), int((t + NOTE_S) * sr)
@@ -1681,12 +1857,16 @@ def usb_host(r, d, program=0, out=print):
                                            np.sqrt(np.mean(dc ** 2)) / (np.sqrt(np.mean(mc ** 2)) + 1e-9))) + 1e-12)
                 probe = {"hq_classic_db": round(float(hc_db), 1), "floor_db": round(float(fl_db), 1),
                          "resolved": bool(fl_db < hc_db - HQ_RESOLVE_DB)}
-    rep = {"program": program, "hq": hq, "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
-           "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max())}
+    rep = {"program": program, "hq": hq, "motor_off": bool(motor_off), "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
+           "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max()),
+           "tune": tune, "tune_source": tune_src, "pitch_left_c": left_c}
     if locked:
         rep["held"] = {k: v for k, (_, v) in locked.items()}
-    bad = [w["note"] for w in rows if w["residual_db"] > -40 and w["judged"]]
-    extra = [w["note"] for w in rows if w["extra_db"] > -30]
+    bad = [w["note"] for w in rows if w["residual_net_db"] > -40 and w["judged"] and not w.get("tape")]
+    extra = [w["note"] for w in rows if w["extra_db"] > -30 and not w.get("tape")]
+    bad_tape = [w["note"] for w in rows if w.get("tape") and w["judged"] and
+                (abs(w["level_db"]) > TAPE_LEVEL_DB or w["cb_max_db"] > TAPE_CB_DB)]
+    rep["tape"] = bool(tape)
     again = ["%s +%s ms" % (w["note"], "/".join(str(t) for t in w["again_ms"])) for w in rows if w["again_ms"]]
     classic = False
     if hq != 0:
@@ -1706,7 +1886,12 @@ def usb_host(r, d, program=0, out=print):
                       "STRUCK AGAIN: %s (a note the host strikes once comes again while it is held: the "
                       "arpeggiator or chord mode on (a build without MB_CC_DROP), or the schedule played twice)" % ", ".join(again)
                       if again else
-                      "PASS: the host's sound (one gain %.2f dB)" % rep["gain_db"] if not bad and not extra else
+                      "DIFFERS (TAPE) at %s (level over %.1f dB or a critical band over %.1f dB: TAPE is judged on "
+                      "its level and spectrum, its wow's phase moves the residual)" % (bad_tape, TAPE_LEVEL_DB, TAPE_CB_DB)
+                      if bad_tape else
+                      "PASS: the host's sound (one gain %.2f dB%s)" % (
+                          rep["gain_db"], "; TAPE: level and spectrum, not the residual" if tape else "")
+                      if not bad and not extra else
                       "DIFFERS at %s (residual over -40 dB after one gain, 0.5-1.0 s into the note)" % bad if bad else
                       "FRODHES = the host (tails), but ANOTHER SOUND plays with the keys at %s (a Move instrument "
                       "on the track, or another slot): silence it and rerun" % extra)
@@ -1714,11 +1899,17 @@ def usb_host(r, d, program=0, out=print):
         rep["verdict"] += ("; HQ against Classic not resolved at this level (the take's floor %.1f dB, HQ and Classic "
                            "%.1f dB apart at %s): the tap path checks it" % (rep["hq_probe"]["floor_db"],
                                                                          rep["hq_probe"]["hq_classic_db"], HQ_PROBE))
+    if tune_src != "none":
+        rep["verdict"] += "; the host at TUNE %+d c (%s)" % (tune, "the slot's" if tune_src == "slot" else
+                                                            "the take's measured offset: the slot's TUNE not read")
+    if left_c is not None and abs(left_c) >= TUNE_LEFT_C:
+        rep["verdict"] += "; the Move still %+.1f c off the host (the slot's TUNE, or its sample rate?)" % left_c
     if locked:
         rep["verdict"] += ("; Schwung's scene locks hold %s over the program change: the host plays the held values"
                            % ", ".join("%s (CC %d %d)" % (k, cc, v) if cc else "%s (no CC: not in the host)" % k
                                        for k, (cc, v) in sorted(locked.items())))
-    out("gain Move/host %.2f dB (peak Move %d, host %d LSB)" % (rep["gain_db"], rep["peak_move"], rep["peak_host"]))
+    out("gain Move/host %.2f dB (peak Move %d, host %d LSB); host TUNE %+d c (%s), left %s c" % (
+        rep["gain_db"], rep["peak_move"], rep["peak_host"], tune, tune_src, left_c))
     for w in rows:
         out("%-8s lag %6.2f ms (tail corr %.4f)  tail residual %6.1f dB  extra %6.1f dB %s  f0 %+6.2f / %+6.2f c  "
             "decay %s / %s s  centroid %d / %d Hz" % (
@@ -1726,11 +1917,13 @@ def usb_host(r, d, program=0, out=print):
                 w["f0_move_c"] or 0, w["f0_host_c"] or 0, w["decay_move_s"], w["decay_host_s"],
                 w["centroid_move"], w["centroid_host"]))
     out(rep["verdict"])
-    return not bad and not extra and not again and not classic, rep
+    return not bad and not extra and not bad_tape and not again and not classic, rep
 
 
-def usb_host_file(d, out=print):
-    """usb-host's analysis again on a saved run (move-phrase.wav, host-phrase.wav in d)"""
+def usb_host_file(d, out=print, tune=None, program=None):
+    """usb-host's analysis again on a saved run (move-phrase.wav, host-phrase.wav in d; held.json and report.json
+    when there: the scene locks, the program and the slot's TUNE as the run read them). tune: the slot's TUNE (None:
+    the saved report's, else the take's measured offset); program: None = the saved report's (else F01)"""
     import wave
 
     def rd(p):
@@ -1745,6 +1938,13 @@ def usb_host_file(d, out=print):
         kept = {k: tuple(v) for k, v in json.load(open(os.path.join(d, "held.json"))).items()}
     except OSError:
         kept = {}
+    try:
+        saved = json.load(open(os.path.join(d, "report.json")))
+    except (OSError, ValueError):
+        saved = {}
+    if tune is None and saved.get("tune_source") == "slot":     # (the slot's TUNE, as the run read it)
+        tune = saved.get("tune")
+    saved_tune = saved.get("tune") or 0                           # (the TUNE the saved host was rendered at)
 
     class Saved(FakeRig):
         def rec(self, dur, events):
@@ -1752,13 +1952,17 @@ def usb_host_file(d, out=print):
 
         def held(self):
             return kept
+    rig = Saved()
+    rig.tune = tune
     global host_phrase
     keep = host_phrase
-    # (the saved host is the one the take was compared with; the HQ probe's Classic host is rendered again)
-    host_phrase = lambda ev, dur, program=0, hq=None, lead=(), after=(): (   # noqa: E731
-        keep(ev, dur, program, 0, lead, after) if hq == 0 else h)
+    # (the saved host is the one the take was compared with, at its TUNE; the HQ probe's Classic host and a host at
+    # another TUNE are rendered again)
+    host_phrase = lambda ev, dur, program=0, hq=None, lead=(), after=(), tune=0: (   # noqa: E731
+        keep(ev, dur, program, hq, lead, after, tune) if hq == 0 or tune != saved_tune else h)
     try:
-        return usb_host(Saved(), os.path.join(d, "reanalysis"), out=out)
+        return usb_host(rig, os.path.join(d, "reanalysis"), program=saved.get("program", 0) if program is None
+                        else program, out=out)
     finally:
         host_phrase = keep
 
@@ -2254,6 +2458,9 @@ def preflight_cmd(a, d, chan, rep, out=print, u=None):
         u = u if isinstance(u, FakeRig) else FakeRig(inject=inj)
         tap = u
     else:
+        if chan.get("stop") or chan.get("send") is None:   # (resolve_channel stopped: no channel to send on)
+            return False, {"verdict": "STOP: %s" % (chan.get("stop") or "no channel to send on (pass --ch N)"),
+                           "channel": _plain(chan)}
         u = u or UsbRig(a.midi, a.audio, chan["send"])
         if a.ws == "none":
             return False, {"verdict": "FAIL: the preflight needs Schwung's WebSocket for the tap (--ws), or "
@@ -2286,10 +2493,21 @@ def clock_rig(a, r, d, chan):
     return TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), chan["plugin"])
 
 
+def rig_ws(a, r, srep):
+    """what the rig takes from Schwung's WebSocket (--ws): the scene locks' live values (r.held: usb-host gives the
+    host them, held.json) and, over USB-C, the setter for the CCs that do not reach the slot (r.ws_set)"""
+    if r.fake or a.ws == "none":
+        return
+    if srep.get("locks"):
+        r.held = held_reader(a.ws, 0, srep["locks"])
+    if not isinstance(r, TapRig):
+        r.ws_set = ws_setter(a.ws, 0)
+
+
 def usb_main(a):
     import json
     if a.cmd == "usb-host" and a.analyze:            # (a saved run, offline: no device)
-        ok, _ = usb_host_file(a.analyze)
+        ok, _ = usb_host_file(a.analyze, tune=a.tune, program=a.program or None)   # (0: the saved report's)
         return 0 if ok else 1
     if a.cmd == "usb-devices" and not a.fake:
         return usb_devices(a.midi, a.audio)
@@ -2312,8 +2530,7 @@ def usb_main(a):
         r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), chan["plugin"])
     else:
         r = UsbRig(a.midi, a.audio, chan["send"])
-    if not r.fake and a.ws != "none" and srep.get("locks"):
-        r.held = held_reader(a.ws, 0, srep["locks"])
+    rig_ws(a, r, srep)
     print("MIDI %s (channel %d), audio %s; takes -> %s" % (r.port_name, r.ch, r.audio_name, d), flush=True)
     e = a.engine if a.engine in ENGINE_CCS else None
     cr = clock_rig(a, r, d, chan) if a.cmd == "usb-clock" else r
@@ -2336,6 +2553,7 @@ def usb_main(a):
         ok, rep = run()
     else:
         with ks:                               # (the plugin's state as it was, also on a failure or ctrl-C)
+            r.tune = slot_tune(ks.before)
             ok, rep = run()
         rep["state"] = ks.report
         ok = ok if ok is None else ok and ks.report["verdict"] == "PASS"
@@ -2353,6 +2571,14 @@ def usb_main(a):
 # the user's report of 2026-10-28)
 STATE_SKIP = ("preset_count", "preset_name", "s_susbtn", "r_cmp_gr", "r_cmp_pk")   # (meta; momentary: a write is a
 #   press; the GR meter's read-only cells move with the sound)
+
+
+def slot_tune(state):
+    """the slot's TUNE in cents (s_tune, as state_read gives it), None when it is not there"""
+    try:
+        return max(-50, min(50, int(round(float(state["s_tune"])))))
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def _same(a, b):
@@ -2498,8 +2724,10 @@ class FakeEchoRig(FakeRig):
         if sorted(events) == sorted(ev):
             for _, kind, a, b in events:
                 self.log.append((kind, a, b))
-            prog = next((a for k, a, b in reversed(self.log) if k == "pc"), 0)
-            h = host_phrase(events, dur, prog)
+            i = max((j for j, (k, _, _) in enumerate(self.log) if k == "pc"), default=-1)
+            prog = self.log[i][1] if i >= 0 else 0
+            after = [(a, b) for k, a, b in self.log[i + 1:] if k == "cc" and a == 47]   # (usb-host's motor off)
+            h = host_phrase(events, dur, prog, after=after, tune=getattr(self, "tune", None) or 0)
             x = np.zeros_like(h)
             x[300:] = 0.5 * h[:-300]
             return {"x": np.round(x), "sr": self.sr, "xruns": []}
@@ -2523,13 +2751,18 @@ def _num(rep, test):
                 rep.get("params", "-"), len(rep.get("written", [])), len(rep.get("bad", {})))
         if test == "usb-host":
             w = rep["rows"]
-            j = [x["residual_db"] for x in w if x.get("judged", True)]
-            return "gain %.2f dB, residual max %s dB (%d of %d notes judged), extra max %.1f dB, %d struck again%s" % (
-                rep["gain_db"], "%.1f" % max(j) if j else "-", len(j), len(w), max(x["extra_db"] for x in w),
-                sum(1 for x in w if x.get("again_ms")), {None: "", 0: ", HQ off", 1: ", HQ on"}[rep.get("hq")])
+            j = [x.get("residual_net_db", x["residual_db"]) for x in w if x.get("judged", True)]
+            return ("gain %.2f dB, residual max %s dB (%d of %d notes judged), extra max %.1f dB, %d struck again%s%s"
+                    "%s" % (
+                        rep["gain_db"], "%.1f" % max(j) if j else "-", len(j), len(w), max(x["extra_db"] for x in w),
+                        sum(1 for x in w if x.get("again_ms")), {None: "", 0: ", HQ off", 1: ", HQ on"}[rep.get("hq")],
+                        "" if rep.get("tune_source", "none") == "none" else ", host TUNE %+d c (%s)" % (
+                            rep["tune"], rep["tune_source"]),
+                        ", motor off" if rep.get("motor_off") else ""))
         if test.startswith("usb-note"):
-            return "%d v%d: %s c, RMS %s dBFS, onset %s ms, %d glitch(es)" % (
-                rep["note"], rep["vel"], rep.get("cents"), rep.get("rms_db"), rep.get("onset_ms"),
+            return "%d v%d: %s c%s, RMS %s dBFS, onset %s ms, %d glitch(es)" % (
+                rep["note"], rep["vel"], rep.get("cents"),
+                "" if rep.get("tune") is None else " (TUNE %+d)" % rep["tune"], rep.get("rms_db"), rep.get("onset_ms"),
                 len(rep.get("glitches") or []))
         if test == "usb-vel":
             return "range %s dB, %d glitch(es)" % (rep["range_db"], len(rep["glitches"]))
@@ -2620,6 +2853,7 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=100.0, hq=None, 
     if ws:                                             # (the plugin's state read first, written back at the end)
         try:
             ks = KeptState(ws, 0, out=quiet).__enter__()
+            r.tune = slot_tune(ks.before)
         except Exception as x:                         # (OSError, a timeout, the manager's error, a cut socket)
             note("all", "state", False, {"verdict": "FAIL: the state could not be read first: %s: %s" % (
                 type(x).__name__, x)})
@@ -2654,7 +2888,8 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=100.0, hq=None, 
                 r.defaults = hs.param_defaults()
             for c, v in r.defaults:
                 r._send("cc", c, v)
-            tests = [("usb-host", lambda: usb_host(r, sub("usb-host"), D2_PRESET[e], out=quiet))]
+            tests = [("usb-host", lambda: usb_host(r, sub("usb-host"), D2_PRESET[e], out=quiet,
+                                                   motor_off=e == "vibes"))]
             for n in D2_NOTES[e]:
                 tests.append(("usb-note-%d" % n, lambda n=n: usb_note(r, sub("usb-note-%d" % n), n, 100, e, out=quiet)))
             tests += [("usb-vel", lambda: usb_vel(r, sub("usb-vel"), engine=e, out=quiet)),
@@ -2699,12 +2934,15 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=100.0, hq=None, 
         code = 2
     elif not all(w["ok"] for w in rows):
         code = 1
-    rig = {"midi": r.port_name, "audio": r.audio_name, "ch": r.ch, "fake": r.fake}
+    rig = {"midi": r.port_name, "audio": r.audio_name, "ch": r.ch, "fake": r.fake, "tune": getattr(r, "tune", None)}
     md = ["# Move D2 over %s: %s" % ("the tap" if isinstance(r, TapRig) else "USB-C",
                                      "PASS" if code == 0 else "FAIL" if code == 1 else "STOPPED"), "",
           "%s; MIDI %s (channel %d), audio %s%s; Schwung WebSocket %s" % (
               time.strftime("%Y-%m-%d %H:%M:%S"), rig["midi"], rig["ch"], rig["audio"], " (FAKE)" if r.fake else "",
-              ws or "not used"), ""]
+              ws or "not used"), "",
+          "Slot TUNE: %s" % ("not read (the host phrase takes the take's measured offset)" if getattr(r, "tune", None)
+                             is None else "%+d c (the host phrase plays at it, the notes' pitch is judged against it)"
+                             % r.tune), ""]
     if stopped:
         md += ["**Stopped:** " + stopped, ""]
     md += ["| Engine | Test | Result | Key numbers |", "| --- | --- | --- | --- |"]
@@ -2920,6 +3158,8 @@ def main(argv=None):
                     "1-16 (default: slot 1's receive channel, read over Schwung)")
     ap.add_argument("--note", type=int, default=60)
     ap.add_argument("--program", type=int, default=0, help="usb-host: the program change first (0 = F01)")
+    ap.add_argument("--tune", type=int, default=None, help="usb-host --analyze: the slot's TUNE in cents (default: "
+                    "the saved report's, else the take's measured offset)")
     ap.add_argument("--vel", type=int, default=100)
     ap.add_argument("--bpm", type=float, default=0.0, help="usb-clock (default 100), usb-stress (0: no clock)")
     ap.add_argument("--secs", type=float, default=60.0, help="usb-stress: the take's length")
@@ -2981,6 +3221,7 @@ def _main(a):
             r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), chan["plugin"], cpu=scp_cpu(a.host))
         else:
             r = UsbRig(a.midi, a.audio, chan["send"])
+        rig_ws(a, r, srep)
         only = [x for x in (a.tests or "").split(",") if x] or None
         pre = None if a.no_preflight else (lambda: preflight_cmd(a, os.path.join(d, "preflight"), chan, srep,
                                                                  u=r if not isinstance(r, TapRig) else None))
@@ -3001,6 +3242,11 @@ def _main(a):
     if a.cmd == "preflight":
         d = a.out or os.path.join(OUT, stamp() + "-preflight")
         chan, srep = channel_for(a)
+        if chan.get("stop"):                    # (no channel to send on: the slot's report and the reason, exit 2)
+            for line in report_lines(srep, chan):
+                print(line)
+            print("STOP: " + chan["stop"])
+            return 2
         if a.fake or a.ws == "none":
             ok, rep = preflight_cmd(a, d, chan, srep)
         else:

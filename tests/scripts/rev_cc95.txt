@@ -3,6 +3,30 @@
 # 100 on CC 91): 400 ms after the keys let go a TYPE still sounds (> -60 dBFS), OFF has only the piano's release
 # (< -70; first, before any tail: OFF lets a ringing tail ring out). The band edges, both ways; the default (HALL)
 # first. tests/py/test_rev_types.py tests the sound itself.
+# (2026-11-10) the boot preset's voicing, compressor, reverb and LEVEL as this script was written for (F01 before the
+# proposed 19; dry_dist.TYPE_BASE): the script tests its feature, not F01's record
+20 midi 0xB0 28 64
+20 midi 0xB0 29 64
+20 midi 0xB0 30 64
+20 midi 0xB0 31 64
+20 midi 0xB0 102 64
+20 midi 0xB0 103 64
+20 midi 0xB0 104 48
+20 midi 0xB0 105 0
+20 midi 0xB0 107 50
+20 midi 0xB0 112 16
+20 midi 0xB0 108 80
+20 midi 0xB0 109 72
+20 midi 0xB0 113 8
+20 midi 0xB0 91 18
+20 midi 0xB0 95 32
+20 midi 0xB0 69 70
+20 midi 0xB0 92 64
+20 midi 0xB0 93 64
+20 midi 0xB0 94 0
+20 midi 0xB0 73 0
+20 midi 0xB0 68 64
+20 midi 0xB0 110 52
 50 expect state p.59 1
 100 midi 0xB0 95 0
 102 expect state p.59 0

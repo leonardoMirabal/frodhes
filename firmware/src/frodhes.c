@@ -22,15 +22,94 @@
 #define FR_RAM
 #define FR_FAR(fn) fn
 #else
+#if defined(FR_C1) && FR_C1
+#define FR_RAM                  /* two cores: core 0's hot loops run from flash too (with both cores busy, code read from
+                                 * RAM glitches on this chip: single high-bit flips, the stored code intact; the 0.9.10
+                                 * RC soak's core-0 faults in rh_hd_step). tools/build.py --c1 checks .ram_text */
+#else
 #define FR_RAM __attribute__((section(".ram_text.fr")))
+#endif
 #include "fm1_keep.h"   /* hal/: the empty asm */
 /* XIP (0x02xxxxxx) -> RAM (0x01C0xxxx) is beyond the 23-bit call range (as fm1_flash.h FL_FAR): an FR_RAM function is
  * called through its address in a register the compiler cannot fold back (one instruction more a call) */
 #define FR_FAR(fn) (__extension__({ __typeof__(&fn) p_ = &fn; HAL_KEEP_REG(p_); p_; }))
 #endif
+/* FR_C1 (a build switch, off by default: ./build.sh with APP_DEFS=-DFR_C1=1, tools/build.py --c1): two cores. Core 0
+ * renders the voices (14 by default, FR_VOICES), core 1 the whole effects chain and the master stage (fx_process, the
+ * full-rate REVERB TYPEs, FR_REV_HQ), the block in C1_SUB chunks (app_audio below): core 1 runs chunk j - 1's effects
+ * while core 0 renders chunk j's voices, so no latency over one core; no voice ever on core 1 (core 1 faulted in the
+ * voice loops while core 0 multiplied, 2026-11-01). Every
+ * function core 1 reaches runs from flash (FX_RAM empty): the two cores never fetch code from RAM at once. Core 1 refuses a job it read wrong (core 0 renders it, core 1 stays on); a late job, refusals too often or
+ * a fault of core 1 hold it for good: one core from then on, at FR_C1_NV1 voices (the effects from flash, the shedder
+ * as the last guard). hal/fm1_core1.h (the FM-1), c1_host.h (the host's twin), app_audio below. The FM-1 firmware and
+ * the host only: not the SMK-37, not the Move, not the web emulator. */
+#ifndef FR_C1
+#define FR_C1 0
+#endif
+#if FR_C1
+#if (defined(BOARD_SMK37) && BOARD_SMK37) || defined(FR_HQ) || defined(DINGHY_WEB)
+#error "FR_C1: the FM-1 firmware and its host build only"
+#endif
+#ifndef FR_VOICES
+#define FR_VOICES 14u
+#endif
+#ifndef FR_REV_HQ
+#define FR_REV_HQ 1
+#endif
+#ifndef FR_C1_NV1
+#define FR_C1_NV1 10u                           /* the voices a strike may take once core 1 is held (one core) */
+#endif
+#ifndef FR_C1_FX_US
+#define FR_C1_FX_US 40u                         /* core 0's share of the effects while core 1 runs them (the hand-off,
+                                                 * the side's copy): the bar engine's cost model (bars.c FX_COST_C0) */
+#endif
+#define FX_RAM                                  /* the effects from flash (XIP): core 1 runs them */
+#define FX_PROC_ATTR static __attribute__((noinline))
+#define RH_NA c1_nv
+#define BAR_NA c1_nv
+#define FX_COST_C0() (c1_nv > FR_C1_NV1 ? FR_C1_FX_US : fx_cost_us())
+#include <stdint.h>
+static uint32_t c1_nv = FR_VOICES;              /* the voices a strike may take: FR_VOICES with core 1 live */
+#if defined(DINGHY_HOST)
+#define FX_XFD_SEC
+#include "c1_host.h"
+#else
+#define FX_XFD_SEC __attribute__((section(".noinit.fx")))   /* fx.c xf_d (2 KB of scratch, written before it is read):
+                                                 * the pool's room for the full-rate REVERB TYPEs */
+#include "fm1_core1.h"
+/* .ramx (tools/build.py --c1): RAMTEXT's room past .ram_text, NOLOAD; zeroed here, before core 1 starts and before
+ * the audio (as .bss would be). Core 0's data only: rhodes.c rh_cc (14 KB, the note-on cache: the main loop fills it,
+ * the ISR reads it) and seq.c sq_ev (3.5 KB, the pattern); no core 1 job touches .ramx */
+#define RH_CC_SEC ".ramx.rh_cc"
+#define BAR_CC_SEC ".ramx.bar_cc"                  /* (bars.c: the strike coefficient cache, 4.6 KB) */
+#define SQ_EV_SEC __attribute__((section(".ramx.sq_ev")))
+static void fr_ramx_clear(void)
+{
+    extern uint32_t _ramx_start[], _ramx_end[];
+    uint32_t *d;
+    for (d = _ramx_start; d < _ramx_end; d++) *d = 0;
+}
+#define APP_EARLY() (fr_ramx_clear(), (void)fr_c1_boot())
+#endif
+#else
+#define FX_RAM FR_RAM
+#endif
 #include "fr_cold.h"     /* FR_COLD: the cold code built for flash, not speed */
 #include "frodhes_store.h"   /* the flash Frodhes writes, per board, and its allow-list APP_FL_RANGE (store.h) */
 #include "keyvel.h"     /* key velocity's interfaces: first, so the scan tick (platform.c) can reach its hooks */
+#if FR_C1 && !defined(DINGHY_HOST)
+static int fr_wd_c1_ok(uint32_t now)            /* the watchdog (platform.c wd_poll): core 1's jobs move while it is on */
+{
+    static uint32_t j, t;
+    if (c1.st != C1_ON || c1.jobs != j) { j = c1.jobs; t = now; return 1; }
+    return now - t < 3000000u * FM1_TICKS_PER_US;
+}
+#define APP_WD_OK(now) fr_wd_c1_ok(now)
+#ifndef FR_TAIL_EARLY
+#define FR_TAIL_EARLY 1                         /* the ISR tail's pieces while core 0 waits for core 1 (app_audio) */
+#endif
+#define APP_TAIL_EARLY FR_TAIL_EARLY
+#endif
 #include "platform.c"
 #if defined(DINGHY_HOST) && !defined(HOST_FL_CHECK)
 /* (the web build: no flash log; a place the firmware's allow-list refuses fails as on the device) */
@@ -53,13 +132,36 @@ static uint32_t smk_btn_leds;                   /* the SMK's own buttons' LEDs (
  * PROF_STAMP(i) charges the 24 MHz ticks since the previous stamp to stage i (its maximum since the last CC 116
  * query); app_audio stamps 1 after the engine and 15 at the end, fx_process may stamp 2..14 between its stages.
  * tools/hil_cpu.py --stages reads them (CC 116 replies also CC 97 = stage, CC 98 / 99 = us MSB / LSB). */
+#if FR_C1 && defined(C1_PROF)
+/* and the two cores' timeline (APP_DEFS="-DRH_PROF_STAGES -DC1_PROF" ./build.sh --c1): C1PF(i, ticks) keeps item i's
+ * maximum, written by either core (a lost maximum at the query's reset is fine here). Since the block's start: 16
+ * core 0's voices done (the last chunk's, eng_end); 17 core 0's voice time in a block (the waits out); 18 core 1's block-start job (c1_pre_job); 19 its last wait,
+ * 20 the waits before it summed; 21 core 0's wait with the tail's pieces (C1_STREAM, APP_TAIL_EARLY: before item 19's,
+ * which then is only the rest), 22 core 1's last frame done (C1_STREAM, since the block's start); 23 the last chunk's effects, 24 the first's, 25 a middle one's; each stage's time in a
+ * block (its chunks summed): 26 COMP, 27 EQ, 28 DRIVE, 29 FILTER, 30 TREM / WAH, 31 SPREAD + PHASER, 32 the delay
+ * (chorus too), 33 the reverb, 34 fx_out; 35-43 the same stages in the first chunk alone; 44 (C1_PRE_C0) the chunks
+ * whose front core 0 ran in a block (a count, not us); 45 core 0's eng_begin (the block's note starts, before its
+ * first chunk). 46-51 one block's own values, not maxima: the block whose app_audio ended latest since the block's
+ * start (46, that end) and in it 47 core 0's voices done @, 48 core 0's voice time, 49 its eng_begin, 50 core 1's last
+ * frame done @, 51 the blocks since the last Program Change (presets.c preset_load; a count, not us) */
+#define PROF_NST 52u
+static volatile uint32_t c1_pf_t0;
+static volatile uint32_t c1_pf_d22;                 /* core 1: this block's item 22 (the snapshot's 50) */
+static volatile uint8_t c1_pf_pc;                   /* the main loop: a Program Change was loaded (preset_load) */
+#define C1PF_ON 1
+#define C1PF(i, d) do { uint32_t d2_ = (d); if (d2_ > prof_st_max[i]) prof_st_max[i] = d2_; } while (0)
+#else
 #define PROF_NST 16u
+#endif
 static uint32_t prof_st_t __attribute__((section(".bss.prof_t")));     /* own sections: out of the global merge */
-static uint32_t prof_st_max[PROF_NST] __attribute__((section(".bss.prof_st")));     /* (engine.c eq) */
+static volatile uint32_t prof_st_max[PROF_NST] __attribute__((section(".bss.prof_st")));     /* (engine.c eq) */
 #define PROF_STAMP(i) do { uint32_t t_ = fm1_ticks(), d_ = t_ - prof_st_t; prof_st_t = t_; \
                            if (d_ > prof_st_max[i]) prof_st_max[i] = d_; } while (0)
 #else
 #define PROF_STAMP(i) ((void)0)
+#endif
+#ifndef C1PF
+#define C1PF(i, d) ((void)0)
 #endif
 #include "engine.c"     /* the voice engines: rhodes.c (the Rhodes), bars.c (VIBES + MARIMBA), and the dispatcher */
 #include "fx.c"
@@ -156,7 +258,184 @@ FR_COLD static int usb_link(void) { return host_usb_link; }
 #include "presets.c"
 #include "bars.c"       /* last: the bar engine's code (see bars.c) */
 
+#if FR_C1
+/* two cores (FR_C1): each block in C1_SUB chunks of 256 / C1_SUB frames. Core 0 renders chunk j's voices (eng_chunk)
+ * while core 1 runs the effects on chunk j - 1 (fx_process on fxc_o .. fxc_e, fx.c); core 0 waits for the last chunk's
+ * effects before the block ends, so out holds this block's voices through every effect: no latency over one core.
+ * The chunks render the one-block integers exactly (fx.c FXC_1 / FXC_Z, engine.c eng_chunk; the two-core build = the
+ * one-core 14-voice build, sample for sample: tests/py/test_c1_subblock.py). Each chunk's effects start only once the
+ * one before them is done (or done by core 0: refused, late, one core). A block the developer's CC 10 resets
+ * (fx_reset_state ends the voices, touches the engines) and every block with core 1 held run on core 0, whole */
+#ifndef C1_STREAM
+#define C1_STREAM 1                             /* one job a block, core 1 takes the frames as they are ready (0: a job a
+                                                 * chunk, lockstep: C1_SUB / C1_EDGES) */
+#endif
+#ifndef C1_SUB
+#define C1_SUB 8u                               /* chunks a block: 8 (32 frames) or 4 (64) */
+#endif
+_Static_assert(C1_SUB == 1u || C1_SUB == 2u || C1_SUB == 4u || C1_SUB == 8u, "C1_SUB: 1, 2, 4 or 8 chunks a block");
+#if C1_PRE_C0 && !C1_STREAM
+#error "C1_PRE_C0: the C1_STREAM job only"
+#endif
+#ifdef C1_EDGES
+/* uneven chunks (experiment: APP_DEFS=-DC1_EDGES=32,128,224): the inner edges of a 256-frame block, each a multiple of 32
+ * (every effect's sub-block), rising */
+static const uint16_t c1_ed[] = {0u, C1_EDGES, 256u};
+#define C1_NED ((uint32_t)(sizeof c1_ed / sizeof c1_ed[0]) - 1u)
+#endif
+static int32_t c1_mono[256];
+static struct { const int32_t *mono; int32_t *out; uint32_t n, o, e; } c1_job;
+static void c1_fx_job(uint32_t a)               /* core 1 (or core 0: refused, late, one core) */
+{
+    (void)a;
+#if defined(C1PF_ON)
+    uint32_t a0 = fm1_ticks(), a1;
+#endif
+    fxc_o = c1_job.o; fxc_e = c1_job.e; fxc_n = c1_job.n;
+    fx_process(c1_job.mono, c1_job.out, c1_job.n);
+#if defined(C1PF_ON)
+    a1 = fm1_ticks();
+    if (fxc_e == fxc_n) C1PF(23, a1 - a0);
+    else if (!fxc_o) C1PF(24, a1 - a0);
+    else C1PF(25, a1 - a0);
+#endif
+}
+/* the block's start (core 1, while core 0 renders chunk 0's voices): the work left from the block before that no
+ * chunk needs to wait for (fx.c fx_pre_c). Run again by core 0 (refused, late) it finds it done */
+static void c1_pre_job(uint32_t a)
+{
+    (void)a;
+#if defined(C1PF_ON)
+    uint32_t a0 = fm1_ticks();
+#endif
+    fx_pre_c();
+#if defined(C1PF_ON)
+    C1PF(18, fm1_ticks() - a0);
+#endif
+}
+#if C1_STREAM
+/* C1_STREAM: one job a block. Core 0 renders the voices chunk by chunk and raises c1_rdy (the frames ready); core 1
+ * runs the block-start work, then the effects over every frame ready and not done yet, as one range (c1_fxd: done up
+ * to), until the block's end: it never waits for a post, core 0 never waits for it before the block's end. Each word
+ * read twice (a word read wrong once is not believed), checked (a multiple of 32, rising, within the block) */
+static volatile uint32_t c1_rdy, c1_fxd;
+#if C1_PRE_C0
+/* C1_PRE_C0: core 0 runs chunk j's front itself (fx.c fx_front) when core 1 has no front left before it and is still
+ * on the chunks handed before (behind: the effects are the longer path now), else core 1 does (fx_process). The
+ * output is the same either way (tests/py/test_c1_pre_c0.py: forced placements); the host's FRODHES_C1 front=N forces
+ * one: 1 core 0 always, 2 core 1 always, 3 alternating blocks, 4 random blocks, 5 random chunks (0: as on the FM-1) */
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+#define FR_C1_FRONT() c1h.front
+#else
+#define FR_C1_FRONT() 0u
+#endif
+static int c1_front_take(uint32_t j, uint32_t k)
+{
+    uint32_t x, y;
+    if (fxf_rd() != j * k) return 0;            /* (a chunk before it still core 1's) */
+    switch (FR_C1_FRONT()) {
+    case 1u: return 1;
+    case 2u: return 0;
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    case 3u: return (int)(blk_n & 1u);
+    case 4u: { static uint32_t b = 0xFFFFFFFFu, v; if (b != blk_n) { b = blk_n; c1h.rnd = c1h.rnd * 1664525u + 1013904223u; v = c1h.rnd >> 31; } return (int)v; }
+    case 5u: c1h.rnd = c1h.rnd * 1664525u + 1013904223u; return (int)(c1h.rnd >> 31);
+#endif
+    default: break;
+    }
+    fr_c1_sync(); x = c1_fxd; fr_c1_sync(); y = c1_fxd;
+    return x == y && x < j * k;                 /* core 1 behind: still on the chunks before */
+}
+#endif
+static int c1_stream_step(void)                 /* the frames ready, not done: their effects (1), or none ready (0) */
+{
+    uint32_t r, o = c1_fxd, n = c1_job.n;
+    fr_c1_sync();
+    r = c1_rdy;
+    fr_c1_sync();
+    if (r != c1_rdy || r <= o || r > n || (r & 31u)) return 0;
+    fxc_o = o; fxc_e = r; fxc_n = n;
+    fx_process(c1_job.mono, c1_job.out, n);
+    fr_c1_sync();
+    c1_fxd = r;
+    fr_c1_sync();
+    return 1;
+}
+#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)
+/* FR_FAULT (a diag build: APP_DEFS=-DFR_FAULT): extra load on demand, live, to find where the two-core build breaks.
+ * CC 117 = core 0, CC 118 = core 1: value & 15 = the extra time in 100 us steps (0-1500 us a block), value & 64 =
+ * the kind: 0 a spin on the timer, 64 reads over a 32 KB table in flash (XIP: the shared cache and the flash bus, as
+ * the effects' and voices' own code) plus writes to RAM. Core 0 burns at app_audio's start, core 1 at its job's
+ * start. Never in a release build (tools/build.py: no FR_FAULT without APP_DEFS). */
+static volatile uint8_t flt_c0, flt_c1;
+static uint32_t flt_sink[64];
+static const uint32_t flt_tab[8192] = {1u, 2u, 3u};
+static inline __attribute__((always_inline)) void flt_burn(uint32_t k)
+{
+    uint32_t us = (k & 15u) * 100u, t0, i = 0, a = 0;
+    if (!us) return;
+    t0 = fm1_ticks();
+    while (fm1_ticks() - t0 < us * FM1_TICKS_PER_US)
+        if (k & 64u) {
+            a += *(volatile const uint32_t *)&flt_tab[i];
+            flt_sink[i >> 3 & 63u] = a;
+            i = (i + 8u) & 8191u;                      /* (one 32-byte line a read: every line of the table in turn) */
+        }
+}
+#define FLT_BURN(k) flt_burn(k)
+/* core 1's real work in a block (FR_FAULT): its job's time less the time it waited for core 0's frames (the job's
+ * time, core 1's "busy", includes those waits: it ends with core 0's last chunk); the most since the last read, and
+ * the least wait. The CC 116 = 30 reply's items 48 / 49 (us) */
+static volatile uint32_t flt_work_max, flt_idle_min = 0xFFFFFFFFu;
+#else
+#define FLT_BURN(k) ((void)0)
+#endif
+static void c1_stream_job(uint32_t a)
+{
+    (void)a;
+#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)
+    uint32_t j0 = fm1_ticks(), idle = 0, p0, w;
+    FLT_BURN(flt_c1);
+    fx_pre_c();
+    while (c1_fxd < c1_job.n)
+        if (!c1_stream_step()) { p0 = fm1_ticks(); fr_c1_pause(); idle += fm1_ticks() - p0; }
+    w = fm1_ticks() - j0 - idle;
+    if (w > flt_work_max) flt_work_max = w;
+    if (idle < flt_idle_min) flt_idle_min = idle;
+    fr_c1_sync();
+#else
+    FLT_BURN(flt_c1);
+    fx_pre_c();
+#endif
+#if !defined(DINGHY_HOST) && !(defined(FR_FAULT) && FR_C1)
+    while (c1_fxd < c1_job.n)                   /* (core 0's wait holds core 1 if this runs late: fr_c1_wait_us) */
+        if (!c1_stream_step()) fr_c1_pause();
+    C1PF(22, fm1_ticks() - c1_pf_t0);           /* (C1_PROF: core 1's last frame done, since the block's start) */
+#if defined(C1PF_ON)
+    c1_pf_d22 = fm1_ticks() - c1_pf_t0;         /* (this block's: the snapshot, item 50) */
+#endif
+#elif defined(DINGHY_HOST)
+    c1_stream_step();                           /* (the host twin: the rest at core 0's ticks and its wait) */
+#endif
+}
+#endif
+/* core 1 held for good: from now on strikes take FR_C1_NV1 voices, the ones above fade out as a steal */
+static void c1_one_core(void)
+{
+    uint32_t i;
+    if (c1_nv <= FR_C1_NV1) return;
+    c1_nv = FR_C1_NV1;
+    for (i = FR_C1_NV1; i < RH_NV; i++)
+        if (rv[i].alive) { if (rv[i].fade == 32768) rv[i].fade = 32767; rv[i].pend = 0; }
+    for (i = FR_C1_NV1; i < BAR_NV; i++)
+        if (bv[i].alive) { if (bv[i].fade == 32768) bv[i].fade = 32767; bv[i].pend = 0; }
+}
+#define C1_DEADLINE_US 5100u                    /* a job not done this long after the block's start is late (the user
+                                                 * 2026-11-09: 5100, it was 4600; the block 5805: a late job's one
+                                                 * chunk of effects redone on core 0 + the tail still fit) */
+#else
 static int32_t voice_mono[256];
+#endif
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
 /* host only (tests/py/test_race_fuzz.py): after each block, with nothing in flight (both rings empty, no TYPE change
  * pending), every voice held down must be a note the notes layer wants sounding (a source's pitch sent to the engine,
@@ -187,15 +466,234 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #ifndef DINGHY_HOST
     uint32_t t0 = fm1_ticks(), us;
 #endif
+#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)
+    FLT_BURN(flt_c0);                              /* (FR_FAULT: core 0's extra load, CC 117; inside the measured ISR) */
+#endif
 #if defined(RH_PROF_STAGES) && !defined(DINGHY_HOST)
     prof_st_t = t0;
 #endif
+#if FR_C1
+    if (fx_reset_req || !fr_c1_live()) {         /* CC 10's block, or one core: core 0, whole */
+        int rst = fx_reset_req;
+        eng_render(c1_mono, n);
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+        host_race_check();
+#endif
+        PROF_STAMP(1);
+        c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n; c1_job.o = 0; c1_job.e = n;
+#if C1_PRE_C0
+        fxc_front_whole = 1;                    /* (the whole chain here, the front over the block at once, as before) */
+#endif
+        c1_fx_job(0);
+        if (rst) rh_side_on = 0;                /* (the voices CC 10 ended: as one core) */
+    }
+#if C1_STREAM
+    else {
+        uint32_t j, k = n / C1_SUB, solo = 0, d;
+        int r;
+#if APP_TAIL_EARLY
+        /* the tail's pieces early (platform.c tail_early) only on frames no later effect touches: the silence gate
+         * (fx.c fx_out, at the block's end over all of out) stays out of this block: open, not falling, and its hold
+         * at least two blocks away (read before core 1 starts: only its block end writes them) */
+        uint32_t tail_ok = gate_g == 32768 && gate_tgt == 32768 && gate_quiet + 1u < GATE_HOLD && !fx_p[FXP_RAW];
+#endif
+        c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n;
+        c1_rdy = 0; c1_fxd = 0;
+#if defined(C1PF_ON)
+        c1_pf_t0 = t0;
+#endif
+#if C1_PRE_C0
+        fxc_front_whole = 0; fxf_done = 0; fxf_k = k;   /* (each chunk's front on either core: c1_front_take) */
+        uint32_t ftk = 0;
+#endif
+        fr_c1_sync();
+        if (!fr_c1_run(c1_stream_job, 0)) { solo = 1; fx_pre_c(); }
+#if defined(C1PF_ON)
+        uint32_t pv = 0, pt, eb, c0d = 0;
+        pt = fm1_ticks();
+#endif
+        eng_begin(n);
+#if defined(C1PF_ON)
+        eb = fm1_ticks() - pt;
+        C1PF(45, eb);
+#endif
+        for (j = 0; j < C1_SUB; j++) {
+#if defined(C1PF_ON)
+            pt = fm1_ticks();
+#endif
+            eng_chunk(c1_mono, j * k, j * k + k);   /* core 0: chunk j's voices */
+            if (j + 1u == C1_SUB) {
+                eng_end(c1_mono, n);
+#if defined(C1PF_ON)
+                c0d = fm1_ticks() - t0;
+#endif
+                C1PF(16, fm1_ticks() - t0);
+            }
+#if defined(C1PF_ON)
+            pv += fm1_ticks() - pt;
+#endif
+#if C1_PRE_C0
+            if (!solo && c1_front_take(j, k)) { fxf_chunk(c1_mono, j * k, j * k + k, n); ftk++; }   /* core 0: chunk
+                                                 * j's COMP, EQ, DRIVE, FILTER (fx.c C1_PRE_C0); else core 1's */
+#endif
+#ifndef DINGHY_HOST
+            if (!solo && !fr_c1_busy()) {       /* (the job over before the block's end: refused, or core 1 held)
+                                                 * core 0 does the rest */
+                r = fr_c1_wait_us(200u);
+                (void)r;
+                solo = 1;
+            }
+#endif
+            if (solo) {
+                fr_c1_sync();
+                d = c1_fxd;
+                if (d < j * k + k) { c1_job.o = d; c1_job.e = j * k + k; c1_fx_job(0); c1_fxd = j * k + k; }
+            } else {
+                fr_c1_sync();
+                c1_rdy = j * k + k;             /* core 1: these frames are ready */
+                fr_c1_sync();
+#ifdef DINGHY_HOST
+                if (fr_c1_host_tick()) c1_stream_step();
+#endif
+            }
+        }
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+        host_race_check();
+#endif
+        PROF_STAMP(1);
+        C1PF(17, pv);
+#if C1_PRE_C0
+        C1PF(44, ftk * 24u);                    /* (C1_PROF: the chunks whose front core 0 ran, as "us") */
+        (void)ftk;
+#endif
+        if (!solo) {
+#ifndef DINGHY_HOST
+            uint32_t el = (fm1_ticks() - t0) / 24u, wu = el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u;
+#if APP_TAIL_EARLY
+            if (tail_ok) {                      /* core 0's wait: the tail of each chunk core 1 has finished */
+                uint32_t tw = fm1_ticks(), dl = wu * FM1_TICKS_PER_US, sp;
+                uint32_t done = 0, x;
+                while (fr_c1_busy() && fm1_ticks() - tw < dl) {
+                    fr_c1_sync();
+                    x = c1_fxd;
+                    fr_c1_sync();
+                    if (x == c1_fxd && x > done && x <= n && !(x & 31u)) { tail_early(x); done = x; }   /* (read twice) */
+                    else fr_c1_pause();
+                }
+                sp = (fm1_ticks() - tw) / FM1_TICKS_PER_US;
+                C1PF(21, fm1_ticks() - tw);     /* (C1_PROF: this wait, item 19 the one after it) */
+                wu = sp < wu ? wu - sp : 1u;    /* (the wait's rest: late at the same time as without the pieces) */
+            }
+#endif
+#if defined(C1PF_ON)
+            pt = fm1_ticks();
+#endif
+            r = fr_c1_wait_us(wu);
+#if defined(C1PF_ON)
+            C1PF(19, fm1_ticks() - pt);
+#endif
+#else
+            r = fr_c1_wait_us(C1_DEADLINE_US);
+            if (!r) while (c1_fxd < n) c1_stream_step();   /* (the host twin: core 1's rest) */
+#endif
+            fr_c1_sync();
+            d = c1_fxd;
+            if (r && d < n) { c1_job.o = d; c1_job.e = n; c1_fx_job(0); c1_fxd = n; }   /* (refused / late: core 0) */
+        }
+#if defined(C1PF_ON)
+        {   /* the snapshot (items 46-51): this block's own values, kept when it ended later than the one kept */
+            static uint32_t pc_blk = 0xFFFFu;
+            uint32_t end = fm1_ticks() - t0;
+            if (c1_pf_pc) { c1_pf_pc = 0; pc_blk = 0; } else if (pc_blk < 0xFFFFu) pc_blk++;
+            if (end > prof_st_max[46]) {
+                prof_st_max[46] = end; prof_st_max[47] = c0d; prof_st_max[48] = pv; prof_st_max[49] = eb;
+                prof_st_max[50] = solo ? 1u : c1_pf_d22; prof_st_max[51] = (pc_blk < 600u ? pc_blk : 600u) * 24u + 24u;
+            }
+        }
+#endif
+    }
+#else
+    else {
+        uint32_t j, k = n / C1_SUB, posted = 0, nch = C1_SUB, co, ce;
+#ifdef C1_EDGES
+        if (n == 256u) nch = C1_NED;            /* (uneven chunks: c1_ed's edges) */
+#endif
+#if defined(C1PF_ON)
+        uint32_t pw = 0, pv = 0, pt;
+        c1_pf_t0 = t0;
+#endif
+        void (*jf)(uint32_t) = c1_pre_job;      /* (the job posted: what core 0 runs if it is refused or late) */
+        c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n;
+        posted = fr_c1_run(c1_pre_job, 0);
+        if (!posted) c1_pre_job(0);
+        eng_begin(n);
+        for (j = 0; j < nch; j++) {
+#ifdef C1_EDGES
+            if (n == 256u) { co = c1_ed[j]; ce = c1_ed[j + 1u]; } else
+#endif
+            { co = j * k; ce = co + k; }
+#if defined(C1PF_ON)
+            pt = fm1_ticks();
+#endif
+            eng_chunk(c1_mono, co, ce);         /* core 0: chunk j's voices */
+            if (j + 1u == nch) { eng_end(c1_mono, n); C1PF(16, fm1_ticks() - t0); }
+#if defined(C1PF_ON)
+            pv += fm1_ticks() - pt;
+#endif
+            if (posted) {                       /* chunk j - 1's effects: done, or core 0 does them */
+                int r;
+#ifndef DINGHY_HOST
+                uint32_t el = (fm1_ticks() - t0) / 24u;
+#if defined(C1PF_ON)
+                pt = fm1_ticks();
+                r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+                pw += fm1_ticks() - pt;
+#else
+                r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+#endif
+#else
+                r = fr_c1_wait_us(C1_DEADLINE_US);
+#endif
+                if (r) jf(0);                   /* (refused -2: core 1 stays on; late / held -1) */
+            }
+            c1_job.o = co; c1_job.e = ce;
+            jf = c1_fx_job;
+            posted = fr_c1_run(c1_fx_job, 0);   /* core 1: chunk j's effects, from now */
+            if (!posted) c1_fx_job(0);
+        }
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+        host_race_check();
+#endif
+        PROF_STAMP(1);
+        C1PF(20, pw); C1PF(17, pv);
+        if (posted) {
+            int r;
+#ifndef DINGHY_HOST
+            uint32_t el = (fm1_ticks() - t0) / 24u;
+#if defined(C1PF_ON)
+            pt = fm1_ticks();
+            r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+            C1PF(19, fm1_ticks() - pt);
+#else
+            r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+#endif
+#else
+            r = fr_c1_wait_us(C1_DEADLINE_US);
+#endif
+            if (r) c1_fx_job(0);
+        }
+    }
+#endif
+    if (c1_nv > FR_C1_NV1 && !fr_c1_live()) c1_one_core();
+    fr_c1_block_end();
+#else
     eng_render(voice_mono, n);
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
     host_race_check();
 #endif
     PROF_STAMP(1);
     fx_process(voice_mono, out, n);
+#endif
     PROF_STAMP(15);
 #if FELUCCA_UAC_TONE == 2
     {   /* bench (BUGHUNT #24, builds with APP_DEFS=-DFELUCCA_UAC_TONE=2 only): the app's output replaced by triangles of
@@ -284,7 +782,15 @@ FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
     }
     if (cc == 8u) { batt_sim = (uint8_t)v; return; }           /* developer: a simulated battery reading (v x 8; 0 = the ADC) */
     if (cc == KV_CC_MODE || cc == KV_CC_QUERY) { kv_dev_cc(cc, v); return; }   /* developer: key velocity (keyvel.h) */
+#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)
+    if (cc == 117u) { flt_c0 = (uint8_t)v; return; }    /* FR_FAULT: core 0's extra load (value & 15 x 100 us, & 64 flash) */
+    if (cc == 118u) { flt_c1 = (uint8_t)v; return; }    /* FR_FAULT: core 1's extra load, a block */
+#endif
     if (cc == 111u) { fx_bypass = v >= 64u; ui_mark(E_HEADER); return; }    /* the FX button's bypass (0.8) */
+    if (cc == 40u) { vresp_set(v * VRESP_N >> 7); ui_mark(E_CARDS); return; }   /* MIDI RESPONSE, the velocity
+                                                        * response in VRESP_N bands (two: 0-63 A, 64-127 B; three: 0-42,
+                                                        * 43-85, 86-127; params.c N_VRESP): the next strike; saved with the
+                                                        * settings */
     if (cc == 114u) { set.usb_fixed = v >= 64u; usb_pre_master = set.usb_fixed; set_dirty = 1; ui_mark(E_CARDS); return; }   /* USB VOL */
 #if FELUCCA_UAC_LOCK == 1 && !defined(DINGHY_HOST)
     if (cc == 116u && v == 22u) {                      /* the USB lock's query (CC 116 = 22): item 22 alone, the clock
@@ -292,6 +798,67 @@ FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
                                                         * out ring holds 64) */
         uint32_t u = (uint32_t)(uac.lk_u10 + 8192);
         usb_health_send(22, u > 16383u ? 16383u : u);
+        return;
+    }
+#endif
+#if FR_C1 && !defined(DINGHY_HOST)
+    if (cc == 116u && (v == 30u || v == 31u)) {        /* FR_C1: core 1's items (hal/fm1_core1.h fr_c1_info), CC 100 id
+                                                        * / 101-102 value as usb_health_reply's, each waiting (up to
+                                                        * 50 ms) for room in the 64-message MIDI out ring. 30: the status,
+                                                        * items 30 + FR_C1_INFO_* (30 the state: 0 never started, 1 live,
+                                                        * held for good: 2 refusals too often, 3 a late job, 4 no answer
+                                                        * at start, 5 the rails not raised, 6 a fault of core 1, 7 parked,
+                                                        * 8 the mailbox not as left; 31 / 32 jobs done low / high 14 bits,
+                                                        * 33 jobs refused (core 0 did them), 34 core 1's bad reads, 35 the
+                                                        * longest wait (us), 36 / 37 VDC14 / SYSVDD as the boot loader left
+                                                        * them, 38 / 39 now, 40 core 1's fault vector + 1, 41 its stack's
+                                                        * deepest (B), 42 / 43 read-again recoveries on core 1 / core 0,
+                                                        * 44 late jobs, 45 holds for good, 46 core 1's busiest block (us),
+                                                        * 47 the voices a strike may take); 31: core 1's fault record
+                                                        * after a fault of its own (items 50 on, each word as 3 items) */
+        uint32_t k, k0 = v == 30u ? 0u : FR_C1_INFO_N, k1 = v == 30u ? FR_C1_INFO_N + 1u : fr_c1_info_n(), t1;
+        for (k = k0; k < k1; k++) {
+            t1 = fm1_ticks();
+            while (usb.config && mo_w - mo_r > MQ - 3u && fm1_ticks() - t1 < 50000u * FM1_TICKS_PER_US)
+                fm1_wdt_feed();
+            if (v == 30u) usb_health_send(30u + k, k < FR_C1_INFO_N ? fr_c1_info(k) : c1_nv);
+            else usb_health_send(50u + k - FR_C1_INFO_N, fr_c1_info(k));
+        }
+#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)
+        if (v == 30u) {                                /* FR_FAULT: 48 core 1's most work in a block, 49 its least
+                                                        * wait (us; since the last read) */
+            uint32_t wm = flt_work_max / FM1_TICKS_PER_US, im = flt_idle_min;
+            flt_work_max = 0; flt_idle_min = 0xFFFFFFFFu;
+            im = im == 0xFFFFFFFFu ? 16383u : im / FM1_TICKS_PER_US;
+            for (k = 0; k < 2u; k++) {
+                t1 = fm1_ticks();
+                while (usb.config && mo_w - mo_r > MQ - 3u && fm1_ticks() - t1 < 50000u * FM1_TICKS_PER_US)
+                    fm1_wdt_feed();
+                usb_health_send(48u + k, k ? (im > 16383u ? 16383u : im) : (wm > 16383u ? 16383u : wm));
+            }
+        }
+#endif
+        return;
+    }
+    if (cc == 116u && v == 32u) {                      /* the last boot's reason and core 0's last crash (hal/fm1_irq.h
+                                                        * fm1_crash, kept in .noinit over the reboot; 0 without one): 14
+                                                        * words, each as 3 items of 14 bits from item 86 (CC 100 / 101-102
+                                                        * as above): the P33 reset source (bit 2 the watchdog, 6 soft),
+                                                        * RST_SRC, the crashes counted, the vector, pc, rets, sp, emu,
+                                                        * dbg, the uptime (ms), the branch trace (4). tools/hil_c1_soak.py
+                                                        * reads it after a reset */
+        uint32_t w[14], k, t1, ok = fm1_crash.magic == FM1_CRASH_MAGIC;
+        w[0] = fm1_boot.p3_rst; w[1] = fm1_boot.rst_src;
+        w[2] = ok ? fm1_crash.count : 0u; w[3] = ok ? fm1_crash.vec : 0u; w[4] = ok ? fm1_crash.pc : 0u;
+        w[5] = ok ? fm1_crash.rets : 0u; w[6] = ok ? fm1_crash.sp : 0u; w[7] = ok ? fm1_crash.emu : 0u;
+        w[8] = ok ? fm1_crash.dbg : 0u; w[9] = ok ? fm1_crash.uptime_ms : 0u;
+        for (k = 0; k < 4u; k++) w[10u + k] = ok ? fm1_crash.etm[k] : 0u;
+        for (k = 0; k < 42u; k++) {
+            t1 = fm1_ticks();
+            while (usb.config && mo_w - mo_r > MQ - 3u && fm1_ticks() - t1 < 50000u * FM1_TICKS_PER_US)
+                fm1_wdt_feed();
+            usb_health_send(86u + k, w[k / 3u] >> (14u * (k % 3u)) & 16383u);
+        }
         return;
     }
 #endif
@@ -313,6 +880,10 @@ FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
         for (id = 1; id < PROF_NST; id++) {           /* the stage maxima (us), then they reset */
             uint32_t su = prof_st_max[id] / 24u;
             if (!prof_st_max[id]) continue;           /* a stage without a stamp (the MIDI out ring holds 64) */
+#if defined(C1PF_ON)
+            { uint32_t t1 = fm1_ticks();             /* (more stages than the ring holds: room for each) */
+              while (usb.config && mo_w - mo_r > MQ - 3u && fm1_ticks() - t1 < 50000u * FM1_TICKS_PER_US) fm1_wdt_feed(); }
+#endif
             if (su > 16383u) su = 16383u;
             midi_send(0xB0, 97, id); midi_send(0xB0, 98, su >> 7); midi_send(0xB0, 99, su & 127u);
             prof_st_max[id] = 0;
@@ -594,11 +1165,13 @@ FR_COLD static void app_main(void)
 
         for (k = 0; k < NKEYS; k++)             /* LEDs per key: held (the FM-1's key, or its note over MIDI), or its
                                                  * note still rings under the sustain (0.9.4: MIDI notes too; only
-                                                 * a note the pedal holds, not one let go before it went down) */
+                                                 * a note the pedal holds, not one let go before it went down).
+                                                 * SUSTAIN LEDS LIT (DISPLAY, issue #35): under LEDS ALL / SCALE a key
+                                                 * let go shows the map again though its note rings on */
             if (src_active[SRC_KEYS + k]) lit |= 1u << k;
             else {
                 uint32_t n = scale_key_note(k);
-                if ((n < 128u && src_active[SRC_MIDI + n]) || note_sustained(n)) lit |= 1u << k;
+                if ((n < 128u && src_active[SRC_MIDI + n]) || (note_sustained(n) && !leds_sus_lit())) lit |= 1u << k;
             }
         tempo_lock_poll();                      /* (tempo.c: the synced LFOs locked to the clock's beats) */
         src_poll();
@@ -627,6 +1200,11 @@ EMSCRIPTEN_KEEPALIVE const char *web_page(void) { return PAGE_TITLE[ui_page]; }
 
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
 FR_COLD static void host_shed(void) { eng_shed_req = 1; }   /* tests/host.c "T shed": as app_audio asks it on the FM-1 */
+FR_COLD static void host_tune(int c)                          /* tests/host.c "T tune": as ui.c S_TUNE sets it */
+{
+    set.tune = (int8_t)clampi(c, -50, 50);
+    rh_tune_t = TUNE_T[set.tune + 50];
+}
 
 /* tests/host.c "expect preset": the panel equals what the preset the header names sets (presets.c preset_load) */
 FR_COLD static int host_preset_check(char *msg, unsigned n)
@@ -712,6 +1290,7 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "preset")) snprintf(v, n, "%u", set.preset);
     else if (!strcmp(key, "bpm10")) snprintf(v, n, "%u", tempo_bpm10());          /* the tempo shown (tempo.c) */
     else if (!strcmp(key, "setbpm")) snprintf(v, n, "%u", set.bpm10);             /* the tempo setting */
+    else if (!strcmp(key, "vresp")) snprintf(v, n, "%u/%u", set.vel_resp, rh_touch_mode);   /* RESPONSE: the setting, the engine's */
     else if (!strcmp(key, "pubs")) snprintf(v, n, "%u", tempo_pubs);              /* the clock's tempo publishes */
     else if (!strcmp(key, "sqtick")) snprintf(v, n, "%u %u %u %u", sq_tick(), clk_sp, clk_k, sq_k0);   /* (seq.c) */
     else if (!strcmp(key, "twinc")) snprintf(v, n, "%u %u", fx_tw_sync_inc, lk_nom[LK_TW]);   /* the tremolo's rate, nominal */
@@ -738,7 +1317,7 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "vpage")) { if (ui_page == PG_VOICE) snprintf(v, n, "%u/%u", ui_vp_ok() + 1u, vp_count()); }   /* VOICE n/m */
     else if (sscanf(key, "vcard.%u.%u", &a, &b) == 2 && a < ENG_VP_MAX && b < 4u) { slot_text(slot_at_v(PG_VOICE, a, b), t); snprintf(v, n, "%s", t); }
     else if (sscanf(key, "vlabel.%u.%u", &a, &b) == 2 && a < ENG_VP_MAX && b < 4u) snprintf(v, n, "%s", slot_label_v(PG_VOICE, a, b));
-    else if (sscanf(key, "vhint.%u", &a) == 1) snprintf(v, n, "%s", a < vp_count() ? eng_ui()->hint[a] : "");
+    else if (sscanf(key, "vhint.%u", &a) == 1) snprintf(v, n, "%s", a < vp_eng() ? eng_ui()->hint[a] : a < vp_count() ? ui_text(VEL_HINT) : "");
     else if (!strcmp(key, "vpages")) snprintf(v, n, "%u", vp_count());
     else if (!strcmp(key, "cards")) snprintf(v, n, "%u", ui_cards);   /* the rows' design variant (CC 11) */
     else if (sscanf(key, "rowbox%u", &a) == 1 && a < 4u)   /* the variants' row a: FIT SHORT FW VX0 VX1 UX0 UX1 LX1 BASE
@@ -829,6 +1408,11 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "quiet")) snprintf(v, n, "%d", eng_quiet() && fx_quiet());
     else if (!strcmp(key, "batt")) snprintf(v, n, "%u", batt_shown());
     else if (!strcmp(key, "battraw")) snprintf(v, n, "%d", batt_raw());
+    else if (!strcmp(key, "engvel")) snprintf(v, n, "%u", (unsigned)rh_host_vel);   /* the velocity of the Rhodes's
+                                                         * last strike: what reached the engine (RESPONSE is a gain,
+                                                         * rhodes.c rh_dyn, never a new velocity) */
+    else if (!strcmp(key, "sqvel")) snprintf(v, n, "%u", sq_n ? (unsigned)sq_ev[sq_n - 1u].vel : 0u);   /* the velocity
+                                                         * the sequencer recorded last */
     else if (!strcmp(key, "lastvel")) snprintf(v, n, "%u", (unsigned)kv_last_vel());   /* the last FM-1 key's velocity */
     else if (!strcmp(key, "touch")) snprintf(v, n, "%s", KV_TOUCH_NAME[kv_touch()]);   /* SETUP TOUCH */
     else if (!strcmp(key, "drops")) snprintf(v, n, "%u", (unsigned)(eq_drop + ev_drop + engq_drop));   /* events lost */
@@ -843,7 +1427,7 @@ FR_COLD static void host_dump(void)
     static const char *const K[] = {"header", "preset", "page", "vpage", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
                                     "arpn", "arpv", "arpends", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "fxdrv", "label0", "card0", "label1", "card1", "label2", "card2",
-                                    "label3", "card3", "bpm10", "setbpm", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
+                                    "label3", "card3", "bpm10", "setbpm", "vresp", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
     char key[24], v[64];
     uint32_t i, k;
     for (i = 0; i < sizeof K / sizeof K[0]; i++) { host_state(K[i], v, sizeof v); printf("@ %u %s %s\n", fm1_ms, K[i], v); }

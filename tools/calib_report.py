@@ -35,6 +35,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
+import dry_dist               # noqa: E402
 import rhodes_dsp as dsp      # noqa: E402
 import rhodes_model as gm     # noqa: E402
 
@@ -227,7 +228,8 @@ def host_types(keys, vel=100):
     gap = 1.2
     for ti, name in enumerate(TYPES):
         out = os.path.join(ROOT, "build", "calib", f"types-{name}-{vel}")
-        lines = ["20 midi 0xB0 119 127", "30 midi 0xB0 104 0", f"40 midi 0xB0 80 {ti * 32}"]
+        lines = dry_dist.type_base_lines(10) + ["20 midi 0xB0 119 127", "30 midi 0xB0 104 0",   # (the voicing at its
+                                                 f"40 midi 0xB0 80 {ti * 32}"]               # defaults, not F01's)
         t0 = 200
         starts = []
         for i, n in enumerate(keys):

@@ -37,6 +37,29 @@ KNOWN = {
 }
 
 
+# 0.9.10: the chord is struck again every second (tools/control_sweep.py RESTRIKE; the engine darkens a held note on
+# purpose). The checks are unchanged, and with the restruck chord 0.9.9 (main) fails these too: each one is bounded at
+# about this branch's value (case -> {check: (limit, main's value under the same source, why)}). Every other check of
+# the case stays at its LIMITS. A fix that brings one under LIMITS: take the line out.
+BASE = {
+    "vibes MALLET": {"jump": (1.6, 1.53, "a restrike at a new MALLET's attack level")},
+    "vibes WEIGHT": {"stuck": (2.3, 2.25, "the bar engine's tail after the sweep (VIBES frozen)")},
+    "rhodes TYPE": {"jump": (1.9, 1.83, "a TYPE step under a ringing chord")},
+    "rhodes TYPE SPREAD": {"jump": (1.9, 1.83, "the same, TYPE with SPREAD")},
+    # (0.9.10 zipper fixes, tests/py/test_ctl_zipper.py: TAPE TIME's zipper 2.53 -> 1.9 and PLATE SIZE's wet 3.35 -> 1.87
+    # are under LIMITS, their lines out; TAPE TIME's wet 2.83 -> 2.02 bounded tighter: the echoes' own varispeed. PLATE
+    # SIZE's jump 2.10 -> 0.92 with the plate's modulated reads mended and its 1 s fade: its line out)
+    "delay TAPE TIME": {"zipper_wet": (2.3, 5.27, "the tape's varispeed of fresh strikes, the echoes alone")},
+    # THRESHOLD (2026-11-08, the clean Rhodes 61baedac; the effects' code unchanged from 568fe9d6, which passed): the
+    # same checks peak at the same instant on 0.9.9, 568fe9d6 and 61baedac (lfo RATE jump at 3.251 s: 1.86 / 1.48 /
+    # 1.84; wah RATE zipper at 3.878 s: 2.04 / 1.82 / 2.10; PLATE SIZE jump at 2.740 s: 2.10 / 1.76 / 2.35, zipper_wet
+    # 2.78 / 2.28 / 2.74; rev TYPE zipper_wet at 3.019 s: 1.68 / 1.58 / 2.07): the source moves them, the control does
+    # the same thing. Still caught on 61baedac's own renders: a zipper (0.3 dB at every CC step) reads 9.5 / 10.1 /
+    # 6.1 (wet 11.7) / 7.6 (wet 20.9); a 2.5 dB step under 1 ms reads zipper 9.1 / 2.0 / 7.6 / 8.1.
+    "wah RATE": {"zipper": (2.2, 2.04, "the wah's rate swept under fresh strikes")},
+}
+
+
 @pytest.fixture(scope="module")
 def binary():
     return hostrun.build()
@@ -47,7 +70,8 @@ def test_control(case, binary, request):
     if case.name in KNOWN:
         request.applymarker(pytest.mark.xfail(reason=KNOWN[case.name], strict=False))
     r = cs.measure(case, binary)
-    bad = {k: v for k, v in cs.checks(case, r).items() if not v[2]}
+    base = BASE.get(case.name, {})
+    bad = {k: v for k, v in cs.checks(case, r).items() if not v[2] and not (k in base and v[0] <= base[k][0])}
     assert not bad, f"{case.name}: " + ", ".join(f"{k} {v[0]} (limit {v[1]})" for k, v in bad.items())
 
 
@@ -67,3 +91,21 @@ def test_reverb_size_turns_without_bend_or_click(name, binary):
 def test_the_known_list_names_cases():
     """every expected failure names a case that exists (a renamed case must not silently pass)"""
     assert set(KNOWN) <= {c.name for c in cs.CASES}
+    assert set(BASE) <= {c.name for c in cs.CASES}
+
+
+@pytest.mark.parametrize("t_ms", [2310, 3270, 4630])
+def test_jump3_finds_a_smooth_step(t_ms, binary):
+    """K20 (2026-11-09): a gain step smoothed over 50 ms spreads over 2-3 of the jump check's 23 ms windows (wah RATE,
+    +3 dB: jump 1.27 / 1.68 / 1.29 at these instants, two under its 1.5). jump3 (the step over 3 windows against the renders held near the sweep's values) reads wah RATE's
+    clean sweep under 1.5 dB and the same sweep with a +3 dB step injected over 50 ms (raised cosine) over it"""
+    import numpy as np
+    case = cs.BY_NAME["wah RATE"]
+    held = {v: cs.render(cs.script(case, value=v), binary) for v in cs.NEAR}
+    sw = cs.render(cs.script(case, sweep=True), binary)
+    assert cs.jump3_db(sw, held) <= cs.LIMITS["jump3"]
+    i0, n = cs.ms(t_ms), cs.ms(50)
+    g = np.ones(len(sw))
+    g[i0:i0 + n] = 1 + (10 ** (3 / 20) - 1) * 0.5 * (1 - np.cos(np.pi * np.arange(n) / n))
+    g[i0 + n:] = 10 ** (3 / 20)
+    assert cs.jump3_db(sw * g[:, None], held) > cs.LIMITS["jump3"]

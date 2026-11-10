@@ -25,7 +25,9 @@
 #define APP_VER "web"
 #endif
 #define FS 44100u
+#ifndef HALF_FRAMES                             /* (Frodhes: the app may set it, frodhes.c FR_LAT_HALF) */
 #define HALF_FRAMES 256u
+#endif
 
 static volatile uint32_t fm1_ms;
 static struct { uint32_t notes, buttons; } fm1_in;
@@ -122,9 +124,21 @@ static __attribute__((unused)) int settings_check(void) { return 0; }
 /* USB-MIDI in (Web MIDI or the page); MIDI out is dropped */
 static uint8_t mq[64][3];
 static uint32_t mq_w, mq_r;
+#ifdef DINGHY_PLUGIN
+/* the desktop plugin (plugin/src/slot_bridge.h): each message's place in the 256-frame block it lands in, in 1/256
+ * of a sample (web_midi takes web_ofs_next; midi_get hands it on in fr_ev_ofs, 0 once the ring is empty, so the
+ * events the main loop posts on its own, the arpeggiator's, the sequencer's, start at the block's start) */
+static uint16_t mq_ofs[64];
+static uint16_t web_ofs_next, fr_ev_ofs;
+#endif
 static int midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2)
 {
+#ifdef DINGHY_PLUGIN
+    if (mq_r == mq_w) { fr_ev_ofs = 0; return 0; }
+    fr_ev_ofs = mq_ofs[mq_r % 64u];
+#else
     if (mq_r == mq_w) return 0;
+#endif
     *st = mq[mq_r % 64u][0]; *d1 = mq[mq_r % 64u][1]; *d2 = mq[mq_r % 64u][2];
     mq_r++;
     return 1;
@@ -175,6 +189,9 @@ EMSCRIPTEN_KEEPALIVE void web_midi(uint32_t st, uint32_t d1, uint32_t d2)
 {
     if (mq_w - mq_r >= 64u) return;
     mq[mq_w % 64u][0] = (uint8_t)st; mq[mq_w % 64u][1] = (uint8_t)d1; mq[mq_w % 64u][2] = (uint8_t)d2;
+#ifdef DINGHY_PLUGIN
+    mq_ofs[mq_w % 64u] = web_ofs_next;
+#endif
     if (st >= 0xF8u) {                          /* its arrival and the pulse count (tempo.c, as usb.c stamps them) */
         static uint8_t clk_n;
         uint32_t stamp;

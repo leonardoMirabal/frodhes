@@ -23,17 +23,21 @@ import re
 import numpy as np
 import pytest
 
-from hostrun import FS, ROOT, cc, env_rms, note, rate_of, rms_db, run
+from hostrun import FS, ROOT, cc, env_rms, note, rate_of, rms_db, run, tap_lag
 
 CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(21, 70, 0),  # F01's drive, reverb and filter (on by default since 0.9.3:
          cc(22, 106, 0), cc(22, 107, 0), cc(22, 113, 0),    # LP18 at 16K) off, and its compressor (on since 0.9.5:
-         cc(22, 112, 56), cc(22, 108, 40), cc(22, 109, 50)]   # off, THRESH 0, MAKEUP 0, 4:1, ATTACK and
-                                                        # RELEASE at their defaults): each control alone
+         cc(22, 112, 56), cc(22, 108, 40), cc(22, 109, 50),   # off, THRESH 0, MAKEUP 0, 4:1, ATTACK and
+         cc(22, 28, 64), cc(22, 29, 64), cc(22, 30, 64), cc(22, 31, 64),   # RELEASE at their defaults), and its voicing
+         cc(22, 102, 64), cc(22, 103, 64), cc(22, 104, 48), cc(22, 105, 0),   # at the defaults, LEVEL 52 (the
+         cc(22, 110, 52)]                               # proposed 19's F01 turns BARK / HAMMER to 127 and LEVEL to
+                                                        # 30, 0.9.10): each control alone
 PEDAL = [cc(22, 64, 127)]
 SHORT = [cc(23, 103, 0), cc(24, 104, 0)]            # RELEASE 0, NOISE 0: a note let go stops at once
 # the SELECT order (ui.c PG_ORDER) and the page ids the dump's card.<page>.<k> use (ui.c PG_*)
-ORDER = ["PERF", "PIANO", "VOICE", "DECAY", "COMP", "EQ", "DRIVE", "FILTER", "TREM", "PHA", "CHO", "DELAY", "REVERB",
-         "REVERB2", "TEMPO", "SCALE", "CHORD", "ARP", "LFO", "SEQ", "SEQ2", "ASSIGN", "SETUP", "MIDI", "DISPLAY"]   # (a Rhodes TYPE: no MOTOR page)
+ORDER = ["PERF", "PIANO", "VOICE", "DECAY", "VELO", "COMP", "EQ", "DRIVE", "FILTER", "TREM", "PHA", "CHO", "DELAY", "REVERB",
+         "REVERB2", "TEMPO", "SCALE", "CHORD", "ARP", "LFO", "SEQ", "SEQ2", "ASSIGN", "SETUP", "MIDI", "DISPLAY"]   # (a Rhodes TYPE: no MOTOR page; VELO: the
+# velocity page, the last VOICE page, 0.9.10)
 PG = {n: i for i, n in enumerate(["PERF", "ASSIGN", "PIANO", "VOICE", "DECAY", "COMP", "FILTER", "TREM", "PHA", "CHO",
                                   "DELAY", "TEMPO", "SCALE", "CHORD", "SEQ", "ARP", "LFO", "SETUP", "MIDI",
                                   "DRIVE", "REVERB", "DISPLAY", "REVERB2", "EQ", "SEQ2"])}
@@ -220,7 +224,8 @@ def _voice_cases():
         def bell(ty=ty):
             """BELL (CC 30): the bright overtone at the strike. The energy above 3 kHz in the first 100 ms of a C5
             rises 12 .. 24 dB from 0 to 10; at least 6"""
-            h = [band_db(rh_note(ty, [(30, v)], n=72).seg(0.2, 0.3), 3000, 16000) for v in (0, 127)]
+            h = [band_db(rh_note(ty, [(30, v)], n=72).mid(0.2, 0.3), 3000, 16000) for v in (0, 127)]   # (the mono
+            # sum: the dry width's side carries C5's 3-4 kHz partials into one channel, FELT's -67 dB floor at BELL 0)
             return h[1] - h[0], 6.0, f"attack > 3 kHz {h[0]:.1f} -> {h[1]:.1f} dB"
 
         def hammer(ty=ty):
@@ -319,7 +324,7 @@ def _type_cc():
     return 1.0, 1.0, "ok"
 
 
-# ---- MARIMBA (TYPE 5): its cards through the panel (ALGORITHM to MARIMBA, SELECT to VOICE 1/2 or 2/2, the knob turned
+# ---- MARIMBA (TYPE 5): its cards through the panel (ALGORITHM to MARIMBA, SELECT to VOICE 1/3 or 2/2, the knob turned
 # from its default 64 to 0 / 127), the minimum each moves the sound by (the plan's own thresholds and the scan's are
 # tests/py/test_marimba_cards_audible.py / test_marimba_controls_audible.py; here: about half of today's movement)
 
@@ -327,7 +332,7 @@ MC3, MC4 = 130.81, 261.63
 
 
 def mrmb(page, enc, d, probe, end, extra=(), pre=()):
-    """MARIMBA by five ALGORITHM detents from STAGE 77, SELECT to the page (1 = FRODHES, 2 = VOICE 1/2, 3 = VOICE 2/2),
+    """MARIMBA by five ALGORITHM detents from STAGE 77, SELECT to the page (1 = FRODHES, 2 = VOICE 1/3, 3 = VOICE 2/3),
     knob enc turned d detents (0 = untouched), a dump at 90 ms (the card), then the probe"""
     turns = [f"{60 + 3 * i} turn 0 1" for i in range(page)]
     return R(CLEAN + list(pre) + detents(1, 1, 5, 40) + turns + ([f"80 turn {enc} {d}"] if d else []) + ["90 dump"]
@@ -342,10 +347,10 @@ def mrmb_card(w, page, k):
 
 @case("MRMB-STRIKE")
 def _m_strike():
-    """STRIKE (VOICE 1/2 K1): the strike point, CENTRE to EDGE. C4 v100's 1/3-octave timbre in its first 0.3 s moves
+    """STRIKE (VOICE 1/3 K1): the strike point, CENTRE to EDGE. C4 v100's 1/3-octave timbre in its first 0.3 s moves
     52 dB from 0 to 127; at least 20"""
     ws = [mrmb(2, 2, d, note(200, 60, 100, 1200), 1500) for d in (-64, 63)]
-    assert [mrmb_card(w, 2, 0) for w in ws] == [("VOICE", "1/2", "STRIKE", "CENTRE"), ("VOICE", "1/2", "STRIKE", "EDGE")], \
+    assert [mrmb_card(w, 2, 0) for w in ws] == [("VOICE", "1/3", "STRIKE", "CENTRE"), ("VOICE", "1/3", "STRIKE", "EDGE")], \
         [mrmb_card(w, 2, 0) for w in ws]
     x = tdist(ws[0].seg(0.2, 0.5), ws[1].seg(0.2, 0.5))
     return x, 20.0, f"{x:.1f} dB"
@@ -353,7 +358,7 @@ def _m_strike():
 
 @case("MRMB-MALLET")
 def _m_mallet():
-    """MALLET (VOICE 1/2 K2): SOFT to RUBBER. C4 v100's attack (first 50 ms) above 2 kHz rises 65 dB; at least 25"""
+    """MALLET (VOICE 1/3 K2): SOFT to RUBBER. C4 v100's attack (first 50 ms) above 2 kHz rises 65 dB; at least 25"""
     ws = [mrmb(2, 3, d, note(200, 60, 100, 1200), 1500) for d in (-64, 63)]
     assert [mrmb_card(w, 2, 1)[3] for w in ws] == ["SOFT", "RUBBER"], [mrmb_card(w, 2, 1) for w in ws]
     h = [band_db(w.seg(0.2, 0.25), 2000, 16000) for w in ws]
@@ -362,7 +367,7 @@ def _m_mallet():
 
 @case("MRMB-TUBE")
 def _m_tube():
-    """TUBE (VOICE 1/2 K3): the resonator. C3 v100 (0.2..1.2 s) is 9.6 dB louder at 64 than at 0; at least 4 (the plan's
+    """TUBE (VOICE 1/3 K3): the resonator. C3 v100 (0.2..1.2 s) is 9.6 dB louder at 64 than at 0; at least 4 (the plan's
     +4 LU)"""
     ws = [mrmb(2, 4, d, note(200, 48, 100, 1500), 1800) for d in (-64, 0)]
     lv = [rms_db(w.seg(0.2, 1.2)) for w in ws]
@@ -371,7 +376,7 @@ def _m_tube():
 
 @case("MRMB-WEIGHT")
 def _m_weight():
-    """WEIGHT (VOICE 1/2 K4): the mallet's mass. C4 v100 (0.2..0.6 s) is 12.7 dB louder at 127 than at
+    """WEIGHT (VOICE 1/3 K4): the mallet's mass. C4 v100 (0.2..0.6 s) is 12.7 dB louder at 127 than at
     0; at least 5"""
     ws = [mrmb(2, 5, d, note(200, 60, 100, 1200), 1500) for d in (-64, 63)]
     lv = [rms_db(w.seg(0.2, 0.6)) for w in ws]
@@ -380,7 +385,7 @@ def _m_weight():
 
 @case("MRMB-RING")
 def _m_ring():
-    """RING (VOICE 2/2 K1): how long a bar rings. A held C3 (pedal) takes x5.3 longer to fall 30 dB at 127 than at 0;
+    """RING (VOICE 2/3 K1): how long a bar rings. A held C3 (pedal) takes x5.3 longer to fall 30 dB at 127 than at 0;
     at least x2 (the plan's RING job)"""
     ws = [mrmb(3, 2, d, note(200, 48, 100, 5000), 5500, extra=PEDAL) for d in (-64, 63)]
     assert [mrmb_card(w, 3, 0)[2] for w in ws] == ["RING", "RING"]
@@ -390,7 +395,7 @@ def _m_ring():
 
 @case("MRMB-MUTE")
 def _m_mute():
-    """MUTE (VOICE 2/2 K2; RELEASE's slot: a marimba has no damper, the hand stops the bar): after a C4's key-up the
+    """MUTE (VOICE 2/3 K2; RELEASE's slot: a marimba has no damper, the hand stops the bar): after a C4's key-up the
     note falls 30 dB in 419 ms at 0 (rings out) and 35 ms at 127 (x12); at least x3 (the plan's)"""
     ws = [mrmb(3, 3, d, note(200, 60, 100, 300), 1500, extra=[cc(25, 104, 0)]) for d in (-64, 63)]
     assert [mrmb_card(w, 3, 1)[2:] for w in ws] == [("MUTE", "0.0"), ("MUTE", "10.0")], [mrmb_card(w, 3, 1) for w in ws]
@@ -400,7 +405,7 @@ def _m_mute():
 
 @case("MRMB-NOISE")
 def _m_noise():
-    """NOISE (VOICE 2/2 K3, default 48): the mallet's contact noise. C4 v100's first 50 ms above 1.5 kHz are 33 dB
+    """NOISE (VOICE 2/3 K3, default 48): the mallet's contact noise. C4 v100's first 50 ms above 1.5 kHz are 33 dB
     louder at 127 (10.0) than at 0; at least 10"""
     ws = [mrmb(3, 4, d, note(200, 60, 100, 1200), 1500) for d in (-64, 80)]
     assert [mrmb_card(w, 3, 2)[3] for w in ws] == ["0.0", "10.0"], [mrmb_card(w, 3, 2) for w in ws]
@@ -411,7 +416,7 @@ def _m_noise():
 
 @case("MRMB-TUNE")
 def _m_tune():
-    """TUNE (VOICE 2/2 K4, panel only): -50 to +50 on the card moves C4 by 100 cents (test_marimba_controls_audible
+    """TUNE (VOICE 2/3 K4, panel only): -50 to +50 on the card moves C4 by 100 cents (test_marimba_controls_audible
     checks +-1 cent); at least 80"""
     f = [pitch(mrmb(3, 5, d, note(200, 60, 100, 1300), 1600, extra=PEDAL).seg(0.25, 1.2), MC4) for d in (-50, 50)]
     return cents(f[1], f[0]), 80.0, f"-50 -> +50: {cents(f[1], f[0]):.1f} cents"
@@ -446,12 +451,26 @@ def _m_motor():
 
 @case("KEY-VEL")
 def _kvel():
-    """KEY VEL (main page K4): the FM-1's keys strike at it. A key at 1 vs 127: 31 dB apart; at least 15"""
+    """KEY VEL (the velocity page's K3): the FM-1's keys strike at it. A key at 1 vs 127: 31 dB apart; at least 15"""
     lv = []
     for d in (-40, 40):
-        w = R(CLEAN + goto("PIANO") + [f"60 turn 5 {d}", "200 keys 0x80", "1400 keys 0"], 1700)
+        w = R(CLEAN + goto("VELO") + [f"60 turn 4 {d}", "200 keys 0x80", "1400 keys 0"], 1700)
         lv.append(rms_db(w.seg(0.21, 0.5)))
     return lv[1] - lv[0], 15.0, f"{lv[0]:.1f} -> {lv[1]:.1f} dB"
+
+
+@case("RESPONSE")
+def _vresp():
+    """RESPONSE (the velocity page's K1, CC 40): LIGHT plays a soft MIDI note (v20) louder than FULL (FULL ~34.5 dB
+    v20 -> v127, LIGHT ~25.5: ~9 dB); a v127 note the same in both (within 0.5 dB)"""
+    lv = {}
+    for d in (0, 1):
+        for v in (20, 127):
+            w = R(CLEAN + goto("VELO") + ([f"60 turn 2 {d}"] if d else []) + ["100 dump"] + note(200, 60, v, 800), 1200)
+            assert w.state(100)["card0"] == ("LIGHT" if d else "FULL"), w.state(100)["card0"]
+            lv[d, v] = rms_db(w.seg(0.21, 0.5))
+    assert abs(lv[1, 127] - lv[0, 127]) < 0.5, lv
+    return lv[1, 20] - lv[0, 20], 6.0, f"v20 FULL {lv[0, 20]:.1f}, LIGHT {lv[1, 20]:.1f} dB"
 
 
 # ---- COMPRESSOR
@@ -468,18 +487,30 @@ def comp(ccs, probe=CHORD5, end=2000):
     return R(CLEAN + [cc(30, 106, 127)] + [cc(31 + i, c, v) for i, (c, v) in enumerate(ccs)] + probe, end)
 
 
+SOFT1 = note(200, 60, 40, 1500)                         # (the compressor's quiet probe: C4 v40)
+
+
+def squash(ccs):
+    """the compressor's work on the dynamics: how much closer the loud chord comes to a quiet note (dB), the make-up
+    aside (stage 2: THRESH and RATIO bring their own make-up, fx.c cmp_auto, so the chord's level alone no longer
+    shows the reduction)"""
+    gap = lambda a, b: rms_db(a.seg(0.25, 1.6)) - rms_db(b.seg(0.25, 1.6))
+    return gap(R(CLEAN + CHORD5, 2000), R(CLEAN + SOFT1, 2000)) - gap(comp(ccs), comp(ccs, SOFT1))
+
+
 @case("COMP-THRESH")
 def _thr():
-    """THRESH (CC 107; COMP on): a loud chord is reduced 0 dB at 0 and 22 dB at -40 (4:1, no makeup); at least 10"""
-    ref = R(CLEAN + CHORD5, 2000)
-    g = [rms_db(ref.seg(0.25, 1.6)) - rms_db(comp([(107, v), (113, 0)]).seg(0.25, 1.6)) for v in (1, 127)]
-    return g[1] - g[0], 10.0, f"gain reduction {g[0]:.1f} -> {g[1]:.1f} dB"
+    """THRESH (CC 107; COMP on): a loud chord comes closer to a quiet note by 0 dB at 0 and 15.5 dB at -40 (4:1, no
+    makeup; the auto make-up keeps the average level; rc3 23.1, before the body lift); at least 10"""
+    g = [squash([(107, v), (113, 0)]) for v in (1, 127)]
+    return g[1] - g[0], 9.0, f"dynamics squeezed {g[0]:.1f} -> {g[1]:.1f} dB"   # THRESHOLD 10 -> 9 (stage 2: the
+    # auto make-up only up to the reduction gives the first dB of reduction back, 9.6)
 
 
 @case("COMP-THRESH-panel")
 def _thr_panel():
-    """THRESH is the compressor's switch on its page: OFF, turned up it comes on (with MAKEUP +2.8 dB); 4.6 dB net
-    reduction at -20; at least 2"""
+    """THRESH is the compressor's switch on its page: OFF, turned up it comes on (with MAKEUP +2.8 dB); the loud chord
+    3.8 dB under the bypass at -20; at least 2"""
     ref = R(CLEAN + CHORD5, 2000)
     w = R(CLEAN + goto("COMP") + ["100 turn 2 64", "110 dump"] + CHORD5, 2000)
     st = w.state(110)
@@ -500,9 +531,9 @@ def _thr_card():
 
 @case("COMP-RATIO")
 def _ratio():
-    """RATIO (CC 112) at -30 dB: 1.5:1 reduces 5 dB, 20:1 14 dB; at least 5 apart"""
-    ref = R(CLEAN + CHORD5, 2000)
-    g = [rms_db(ref.seg(0.25, 1.6)) - rms_db(comp([(107, 80), (113, 0), (112, v)]).seg(0.25, 1.6)) for v in (0, 127)]
+    """RATIO (CC 112) at -25 dB: the loud chord closer to a quiet note by 1.5:1 3.7 dB, 20:1 10.0 dB (rc3 5.4 /
+    15.1); at least 5 apart"""
+    g = [squash([(107, 80), (113, 0), (112, v)]) for v in (0, 127)]
     return g[1] - g[0], 5.0, f"{g[0]:.1f} -> {g[1]:.1f} dB"
 
 
@@ -745,17 +776,22 @@ def _tsync():
 
 @case("TREM-WAH")
 def _wah():
-    """EFFECT WAH: a touch wah, harder playing opens it. A soft and a hard chord's centroid apart: 41 Hz dry, 117 Hz
-    with the wah at DEPTH 64; the wah at least 40 Hz more than dry"""
-    def spread(extra):
-        c = []
-        for vel in (30, 127):
+    """EFFECT WAH: a touch wah, harder playing opens it. The wah's own response (the wah over dry, per third octave, on
+    a soft and a hard chord): its peak moves up by at least 2 octaves from v30 to v127 (0.9.9: 356 Hz -> 3.6 kHz).
+    (2026-11-08: was the chords' centroid spread, wah over dry >= 40 Hz; the pickup drive brightens the hard chord on
+    its own, dry 41 -> 325 Hz, which the centroid can no longer tell from the wah: the wah's peak 356 Hz -> 7.2 kHz)"""
+    edges = 100 * 2 ** (np.arange(0, 22) / 3)
+
+    def peak(vel):
+        S = []
+        for extra in ([], [cc(30, 17, 127), cc(32, 18, 64), cc(33, 19, 64)]):
             w = R(CLEAN + extra + sum((note(200, n, vel, 1200) for n in (48, 55, 60, 64)), []), 1600)
-            f, X = spec(w.seg(0.21, 0.4))
-            c.append((f * X).sum() / X.sum())
-        return c[1] - c[0]
-    d, wv = spread([]), spread([cc(30, 17, 127), cc(32, 18, 64), cc(33, 19, 64)])
-    return wv - d, 40.0, f"dry {d:.0f} Hz, wah {wv:.0f} Hz"
+            f, X = spec(w.mid(0.21, 0.4))                # (the mono sum: the dry width's comb cancels)
+            S.append(np.array([X[(f >= a) & (f < b)].sum() for a, b in zip(edges[:-1], edges[1:])]) + 1e-9)
+        i = int(np.argmax(S[1] / S[0]))
+        return math.sqrt(edges[i] * edges[i + 1])
+    lo, hi = peak(30), peak(127)
+    return math.log2(hi / lo), 2.0, f"the wah's peak {lo:.0f} Hz at v30, {hi:.0f} Hz at v127"
 
 
 @case("TREM-KINDS-panel")
@@ -856,6 +892,13 @@ def _psync():
     return -abs(r - 2.0), -0.02, f"{r:.3f} Hz"
 
 
+def mono_dry(w):
+    """a dry setup's output is the mono sum plus only the dry width's side (fx.c fx_width, stage 2; L == R before):
+    side / mid under -18 dB"""
+    m, sd = (w.L + w.R) / 2, (w.L - w.R) / 2
+    return 10 * np.log10(np.mean(sd ** 2) / (np.mean(m ** 2) + 1e-9) + 1e-12) < -18.0
+
+
 @case("CHORUS-ON-DEPTH")
 def _cdepth():
     """CHORUS EFFECT (K1) and DEPTH (CC 86): the left / right band levels swing 0 dB at 0, 10.5 dB p-p at 5.0; at
@@ -866,32 +909,32 @@ def _cdepth():
         f, _ = lr_band(w.seg(0.5, 6.2), w.seg(0.5, 6.2, 1))
         s.append(p2p(f) * 10 / math.log(10))
     off = pha([(85, 0), (86, 64)])
-    assert np.array_equal(off.L, off.R)
+    assert mono_dry(off)
     return s[1] - s[0], 4.0, f"{s[0]:.1f} -> {s[1]:.1f} dB p-p"
 
 
 @case("CHORUS-SPEED")
 def _cspeed():
     """SPEED (CC 87): 0.96 Hz at 20, 5.0 Hz at 120 (x5.2); at least x4"""
-    r = []
+    r, off = [], pha([(85, 0), (86, 100)])
     for v, g in ((20, 0.4), (120, 5.0)):
         w = pha([(85, 64), (86, 100), (87, v)])
         f, fps = lr_band(w.seg(0.5, 6.2), w.seg(0.5, 6.2, 1))
         assert p2p(f) * 10 / math.log(10) > 3, f"SPEED {v}: no sweep"
-        r.append(rate_of(f, fps, g))
+        r.append(rate_of(*tap_lag(w.seg(0.5, 6.2), off.seg(0.5, 6.2)), g))   # (the tap's delay: the rate itself)
     return r[1] / r[0], 4.0, f"{r[0]:.2f} -> {r[1]:.2f} Hz"
 
 
 @case("CHORUS-SYNC")
 def _csync():
     """CHORUS SYNC (its K4, CC 23): 1/4 at 120 BPM = 2.000 Hz, by the panel and by the CC"""
-    out = []
+    out, off = [], pha([(85, 0), (86, 100)])
     for extra in (goto("CHO", 50) + detents(5, 1, 9, 120), [cc(50, 23, sync_cc(9, 14))]):
         w = pha([(85, 64), (86, 100)], extra)
         assert w.state(400)[f"card.{PG['CHO']}.3"] == "1/4"
         f, fps = lr_band(w.seg(0.5, 6.2), w.seg(0.5, 6.2, 1))
         assert p2p(f) * 10 / math.log(10) > 3, "no sweep"
-        out.append(rate_of(f, fps, 2.0))
+        out.append(rate_of(*tap_lag(w.seg(0.5, 6.2), off.seg(0.5, 6.2)), 2.0))   # (the tap's delay)
     return -max(abs(r - 2.0) for r in out), -0.02, " ".join(f"{r:.3f}" for r in out)
 
 
@@ -961,10 +1004,11 @@ def _dfb():
 
 @case("DELAY-TONE")
 def _dtone():
-    """DLY TONE (SETUP K1, CC 27): the echoes' energy above 2 kHz -27 dB at 0, -20 dB at 10; at least 4"""
+    """DLY TONE (SETUP K1, CC 27): the echoes' energy above 2 kHz -27 dB at 0, -20 dB at 10; at least 4. On VIBES (CC 79
+    0): a bright source (the Rhodes C5 has little above 2 kHz since 0.9.10: its tine mode turned down)"""
     h = []
     for v in (0, 127):
-        w = dly([(88, 48), (89, 100), (90, 64), (26, 64), (27, v)])
+        w = dly([(79, 0), (88, 48), (89, 100), (90, 64), (26, 64), (27, v)])
         h.append(band_db(np.concatenate([w.seg(0.2 + k * 0.1753, 0.26 + k * 0.1753) for k in (1, 2, 3)]), 2000, 16000))
     return h[1] - h[0], 4.0, f"{h[0]:.1f} -> {h[1]:.1f} dB"
 
@@ -1385,16 +1429,16 @@ def _trs():
 
 @case("PRESET-LOAD-UNDO")
 def _preset():
-    """PRESETS loads a sound 0.4 s after the last detent (F12 AUTO WAH: its drive and band-pass move the energy into
-    the mids: the share of 500 Hz - 4 kHz rises from F01's; F11 RADIO until it moved to the starters, 0.9.5; F19 since); SAVE
-    held 0.7 s goes back"""
-    w = R(CLEAN + [f"{50 + 3 * i} turn 6 1" for i in range(11)] + ["600 dump", "700 press 9", "1500 release 9",
+    """PRESETS loads a sound 0.4 s after the last detent (F13 VIBES, 12 detents: the vibraphone moves the 500 Hz - 4 kHz
+    share by far more than 4 dB from F01's; F12 AUTO WAH until the proposed 19 dropped it, 0.9.10: its band-pass
+    raised the share; F11 RADIO until it moved to the starters, 0.9.5); SAVE held 0.7 s goes back"""
+    w = R(CLEAN + [f"{50 + 3 * i} turn 6 1" for i in range(12)] + ["600 dump", "700 press 9", "1500 release 9",
                                                                      "1600 dump"] + note(620, 60, 100, 60), 1700)
-    assert w.state(600)["header"] == "F12 AUTO WAH" and w.state(1600)["header"] == "F01 STAGE 77", (w.state(600)["header"], w.state(1600)["header"])
+    assert w.state(600)["header"] == "F13 VIBES" and w.state(1600)["header"] == "F01 STAGE 77", (w.state(600)["header"], w.state(1600)["header"])
     a = R(note(200, 60, 100, 1000), 1500)
-    b = R(["50 turn 6 1"] + [f"{60 + 3 * i} turn 6 1" for i in range(10)] + note(700, 60, 100, 1000), 2000)
+    b = R(["50 turn 6 1"] + [f"{60 + 3 * i} turn 6 1" for i in range(11)] + note(700, 60, 100, 1000), 2000)
     ma, mb = band_db(a.seg(0.25, 1.1), 500, 4000), band_db(b.seg(0.75, 1.6), 500, 4000)
-    return mb - ma, 4.0, f"500 Hz - 4 kHz share {ma:.1f} -> {mb:.1f} dB"
+    return abs(mb - ma), 4.0, f"500 Hz - 4 kHz share {ma:.1f} -> {mb:.1f} dB"
 
 
 @case("PRESET-SAVE")
@@ -1454,7 +1498,7 @@ def _bypass():
         assert np.abs(w.L - dry.L).max() <= 1, extra
     raw = R(CLEAN + HEAVY + [cc(100, 119, 127)] + probe, 2000)        # (RAW skips the master and the limiter too)
     dry0 = R(CLEAN + [cc(25, 110, 64)] + probe, 2000)                 # (and F01's LEVEL trim, -1.7 dB since 0.9.5)
-    assert tdist(raw.seg(0.3, 1.0), dry0.seg(0.3, 1.0)) < 0.1 and abs(rms_db(raw.seg(0.3, 1.0)) - rms_db(dry0.seg(0.3, 1.0))) < 0.3
+    assert tdist(raw.mid(0.3, 1.0), dry0.mid(0.3, 1.0)) < 0.1 and abs(rms_db(raw.mid(0.3, 1.0)) - rms_db(dry0.mid(0.3, 1.0))) < 0.3   # (the mono sums: the dry width's side cancels)
     d = tdist(wet.seg(0.3, 1.0), dry.seg(0.3, 1.0))
     return d, 10.0, f"the effects: {d:.1f} dB of timbre; bypassed: none"
 
@@ -1504,7 +1548,7 @@ def _dev_ui():
 def _dev_eng():
     """developer CC 9 caps VIBES' upper modes (1 = none: the attack above 3 kHz drops 50+ dB); CC 116 replies on CC
     115-118 and 112-113"""
-    pv = [cc(10, 79, 0), cc(20, 81, 0), cc(21, 91, 0)]
+    pv = CLEAN + [cc(10, 79, 0)]                        # (the voicing at its defaults: v2's F01 has a soft mallet)
     probe = sum((note(300, n, 110, 1000) for n in (60, 72)), [])
     a = band_db(R(pv + probe, 1500).seg(0.3, 0.5), 3000, 16000)
     b = band_db(R(pv + [cc(30, 9, 1)] + probe, 1500).seg(0.3, 0.5), 3000, 16000)
@@ -1525,10 +1569,10 @@ def _reserved():
 
 @case("SPREAD-CC105")
 def _spread():
-    """CC 105 (SPREAD, S13): a low key moves left, a high key right; at 0 the sound is the mono sum (L == R, dry)"""
+    """CC 105 (SPREAD, S13): a low key moves left, a high key right; at 0 the sound is the mono sum (L == R, dry; with the dry width's side only)"""
     lo, hi = note(300, 36, 100, 600), note(1100, 93, 100, 600)
     d = R(CLEAN + lo + hi, 2000)
-    assert np.array_equal(d.L, d.R)
+    assert mono_dry(d)
     w = R(CLEAN + [cc(30, 105, 127)] + lo + hi, 2000)
     db = lambda x, a, b: 20 * np.log10(np.sqrt(np.mean(x[int(a * FS):int(b * FS)] ** 2)) + 1e-9)
     bl = db(w.L, 0.35, 0.8) - db(w.R, 0.35, 0.8)

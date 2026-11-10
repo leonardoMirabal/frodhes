@@ -98,7 +98,9 @@ def test_phaser_sync_runs_at_the_note_values(bpm):
             want = bpm / 60 / beats
             got = h.lfo_rate(d, fps, 0.25, 10)
             assert abs(got / want - 1) <= 0.005, (bpm, q, k, want, got)
-            if bpm == 69 and k == "1/4":
+            # THRESHOLD (stage 2, 2026-11-10): the flag reproduced on the left (usb) side only. With the dry width L != R:
+            # the old measure reads 1.73 Hz on L, 1.15 on R (the right rate); the new measure 1.152 on both
+            if bpm == 69 and k == "1/4" and q == "usb":
                 assert old_phrate(d, fps, 2, 0.2, 5) > 1.3 * want      # the flag, reproduced
 
 

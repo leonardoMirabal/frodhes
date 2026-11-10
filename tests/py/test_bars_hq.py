@@ -27,6 +27,7 @@ import test_release_never_louder as nl  # noqa: E402
 
 ROOT = hostrun.ROOT
 sys.path.insert(0, os.path.join(ROOT, "tools"))
+import dry_dist  # noqa: E402
 import gate_h  # noqa: E402
 
 D = os.path.join(ROOT, "build", "hq_bars_test")
@@ -85,7 +86,8 @@ def test_parity_script_peak():
 
 def strikes(ty, notes, gap_ms=600, pedal=False):
     """RAW, the motor off: each (key, vel, then (delay, vel2) or None) from silence; -> (lines, [(t2 or t, key, vel)])"""
-    L = ["0 midi 0xB0 119 127", "1 midi 0xB0 47 0", f"2 midi 0xB0 79 {ty}"] + (["3 midi 0xB0 64 127"] if pedal else [])
+    L = dry_dist.type_base_lines(0) + ["0 midi 0xB0 119 127",   # the voicing at its defaults, not F01's (dry_dist.TYPE_BASE)
+         "1 midi 0xB0 47 0", f"2 midi 0xB0 79 {ty}"] + (["3 midi 0xB0 64 127"] if pedal else [])
     t, ev = 20, []
     for k, v, re_ in notes:
         L += [f"{t} midi 0x90 {k} {v}", f"{t + 10} midi 0x80 {k} 0"]

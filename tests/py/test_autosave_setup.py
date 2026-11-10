@@ -53,7 +53,8 @@ def test_power_cycle_brings_back_the_loaded_preset_and_the_setup():
     lines = ["100 midi 0xC0 4 0"] + [l.replace(l.split()[0], str(int(l.split()[0]) + 600), 1) for l in KNOBS]
     lines += ["4000 btn 7", "4050 btn 7", "4100 btn 7", "4200 turn 2 1", "4250 turn 2 1", "4300 turn 2 1",   # MIDI CH 3
               "4400 btn 7", "4500 turn 2 1",                         # DISPLAY: COLOR one step
-              "4600 btn 7", "4700 btn 7", "4800 turn 5 1",           # TEMPO, SETUP: TOUCH HEAVY
+              "4600 btn 8", "4620 turn 0 1", "4650 turn 0 1", "4700 turn 0 1", "4750 turn 0 1",   # PERFORM, VOICE 3/3
+              "4800 turn 3 1",                                       # TOUCH HEAVY
               "8000 dump"]
     r1 = run("as-pc-1", lines, 9000, flash=fl)
     s1 = r1.state(8000)
@@ -63,9 +64,9 @@ def test_power_cycle_brings_back_the_loaded_preset_and_the_setup():
     s2 = r2.state(100)
     assert pvals(s2) == pvals(ref), {k: (ref[k], s2[k]) for k in pvals(ref) if s2[k] != ref[k]}
     assert s2["header"] == ref["header"] and s2["preset"] == "4", (s2["header"], s2["preset"])
-    for k in ("card.18.0", "card.21.0", "card.17.3"):                # CHANNEL, COLOR, TOUCH
+    for k in ("card.18.0", "card.21.0", "vcard.2.1"):                # CHANNEL, COLOR, TOUCH
         assert s2[k] == s1[k], (k, s1[k], s2[k])
-    assert (s2["card.18.0"], s2["card.17.3"]) == ("3", "HEAVY")
+    assert (s2["card.18.0"], s2["vcard.2.1"]) == ("3", "HEAVY")
 
 
 def clock(t0, t1, bpm):

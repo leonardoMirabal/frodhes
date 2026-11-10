@@ -74,7 +74,8 @@ BIN = os.path.join(ROOT, "build", "host", "frodhes")
 NAME = {"PERFORM": "perform", "FRODHES": "piano", "DECAY": "decay", "MOTOR": "motor", "COMPRESSOR": "comp", "EQ": "eq",
         "FILTER": "filter", "DRIVE": "drive", "TREM/WAH": "trem", "PHASER": "phaser", "CHORUS": "chorus",
         "DELAY": "delay", "REVERB": "reverb", "REVERB 2": "reverb2", "TEMPO": "tempo", "SCALE": "scale", "CHORD": "chord", "ARPEGGIO": "arp",
-        "LFO": "lfo", "SEQUENCER": "seq", "SEQUENCER 2": "seq2", "ASSIGN": "assign", "SETUP": "setup", "MIDI": "midi", "DISPLAY": "display"}
+        "LFO": "lfo", "SEQUENCER": "seq", "SEQUENCER 2": "seq2", "ASSIGN": "assign", "SETUP": "setup", "MIDI": "midi", "DISPLAY": "display",
+        "DISPLAY 2": "display2"}
 
 
 def walk_pages(pre=(), t0=2500, n=30):

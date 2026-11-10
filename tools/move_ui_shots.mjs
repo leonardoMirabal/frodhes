@@ -97,6 +97,7 @@ const DOC_SHOTS = {
     "vibes-voice": () => new Chain(engine(4)).page("VIBES VOICE"),
     "vibes-motor": () => new Chain(engine(4)).page("VIBES MOTOR"),
     "marimba-voice": () => new Chain(engine(5)).page("MARIMBA VOICE"),
+    "velocity": () => new Chain(engine(0)).page("VELOCITY"),
     "compressor": () => new Chain(engine(0)).page("COMPRESSOR"),
     "compressor-gr": () => new Chain((p) => { engine(0)(p); p.v.p_cmp_sw = 1; p.gr = "120 200"; }).page("COMPRESSOR").settle(),
     "eq": () => new Chain(engine(0)).page("EQ"),
@@ -130,8 +131,8 @@ const DOC_SHOTS = {
         c.touch(1, true).wait(60).touch(1, false).wait(100).touch(1, true).wait(60).touch(1, false);
         return c.wait(600);
     },
-    // the list: on the first page, the cursor four pages on (DRIVE/FILTER); then the menu below the pages
-    "pages": () => new Chain(engine(0)).click().jog(1).jog(1).jog(1).jog(1),
+    // the list: on the first page, the cursor five pages on (DRIVE/FILTER); then the menu below the pages
+    "pages": () => new Chain(engine(0)).click().jog(1).jog(1).jog(1).jog(1).jog(1),
     "menu": () => listAt("SAVE TO USER"),
     "menu-module": () => listAt("SWAP MODULE"),
     // SAVE TO USER: U03 picked (empty). (No shot after the click: the plugin names the slot from the TYPE and the

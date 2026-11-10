@@ -130,11 +130,20 @@ static __attribute__((noinline)) void rev_locut(int32_t *x, int32_t v)
 }
 /* a kernel's input: rev_hall's (rev_down: the half-band decimation, HL_IN, the DC blocker), into rv_x */
 static void rev_dec(const int32_t *in) { FR_FAR(rev_down)(in, &rv_hp, &rv_he, rv_x); }
+/* a new TYPE's input fades in (Q15, +128 a sample: 256 samples, 5.8 ms; 32768: none). 0.9.10: it started at the send's
+ * full level, mid-waveform under a ringing chord, a step into empty lines that every line then passed on for its first
+ * round: INFINITE after PLATE 2.9x a held tank's d2 for 150 ms (rev TYPE's sweep, the wet), 1.2 .. 3x by the block it
+ * started in. From silence (a preset, a TYPE set before playing) the fade passes zeros: the same output */
+static int32_t rv_xin RH_SP_SEC(".data.fx_rvxin") = 32768;
 /* TYPE t starts, its lines reading as empty; HALL left full is cleared by the main loop first (rv_cur 0 meanwhile) */
 static __attribute__((noinline)) void rev_begin(uint32_t t)
 {
+    rv_xin = 0;
     if (rv_cur == RV_HALL) rv_hall_dirty = 1;
-    memset(rv_m, 0, sizeof rv_m); memset(rv_s, 0, sizeof rv_s); rv_hp = rv_he = 0;
+    rv_hp = rv_he = 0;                                  /* (rv_m / rv_s kept: the upsampler's history is the old
+                                                         * TYPE's faded end, 0 .. 3 %, still to pass out; 0.9.10:
+                                                         * cleared, its last 1.5 % stepped to 0: HALL -> PLATE d2
+                                                         * 3x) */
     if (t == RV_HALL && rv_hall_dirty) { rv_cur = 0; return; }
     rv_cur = (uint8_t)t;
     if (t == RV_PLATE) rev_plate_start(&rev_u.p), rv_pz = -1;
@@ -163,20 +172,27 @@ static int rev_frozen(void)       /* 0, or 1 SUSTAIN (DECAY 120..126), 2 FREEZE 
 static void rev_reset_state(void)
 {
     memset(rv_m, 0, sizeof rv_m); memset(rv_s, 0, sizeof rv_s); memset(rv_inb, 0, sizeof rv_inb); rv_hp = rv_he = 0;
-    rv_lc = 0; rv_fade = 0; rv_hall_dirty = 0;
+    rv_lc = 0; rv_fade = 0; rv_hall_dirty = 0; rv_xin = 32768;
     if (!rv_cur) rv_cur = RV_HALL;
     if (rv_cur == RV_PLATE) rev_plate_start(&rev_u.p), rv_pz = -1;
     else if (rv_cur == RV_INF) rev_inf_start(&rev_u.i);
 }
 
 #define RV_RET(w) ((int32_t)(((int64_t)(w) * rk) >> 30) + (int32_t)((uint32_t)(w) >> 31))
-/* MIX moved while a tail rings (0.9.6, BUGHUNT #18: the return eases off as MIX rises, x1 .. x0.5, so MIX 127 -> 0
- * doubled the ringing tail, +5..6.6 dB, and the send stepped to 0 in one block: 41-72x a held chord's d2). The return
- * keeps the MIX the tail started with (rv_vl: latched while the reverb runs; at rest, or with the out under -66 dBFS
- * for two blocks, it follows MIX, so a MIX set in silence renders exactly as before), and the send carries the rest of the law:
- * v 258 (254 - v) / (254 - rv_vl), the same wet level for what goes in from now on; the send ramps sample by sample
- * to its new value over the block (rv_sk: the last block's), only while it moves */
-static int32_t rv_vl RH_SP_SEC(".data.fx_rvvl") = -1, rv_sk RH_SP_SEC(".bss.fx_rvsk");
+/* MIX's law: the wet level v 258 (254 - v) / 254 (the return easing off as MIX rises, x1 .. x0.5, 0.6). 0.9.10: all of
+ * it in the send, v 258 (254 - v) / 127 (RV_SEND), and the return a constant x0.5 (RV_RK): the same wet level, but the
+ * lines run (254 - v) / 127 hotter, x1.86 at MIX 18 .. x1 at 127, so their int16 rounding (the grain, partly harmonic
+ * under a held note: a soft A3's H3 / H5 through F01's HALL, the release diff) is that much further under the notes;
+ * the send never exceeds MIX 127's (32766), so no line runs hotter than it did at MIX 127. With a constant return a MIX
+ * moved while a tail rings leaves the tail as it is. INFINITE keeps the law as it was: its level guard and its held
+ * SUSTAIN level are line levels (RI_LV, RI_SUS), so a hotter line there would be a quieter return. Its return keeps
+ * the MIX the tail started with (0.9.6, BUGHUNT #18: the return eased off as MIX rose, so MIX 127 -> 0 doubled the
+ * ringing tail; rv_vl: latched while the reverb runs; at rest, or with the out under -66 dBFS for two blocks, it
+ * follows MIX), and its send carries the rest of the law: v 258 (254 - v) / (254 - rv_vl). Each send ramps sample by
+ * sample to its new value over the block (rv_sk, rv_sko: the last block's), only while it moves */
+#define RV_SEND(v) ((v) * 258 * (254 - (v)) / 127)
+#define RV_RK ((1 << 29) + 1)                          /* w / 2 exactly with RV_RET (the old law's rk at MIX 127) */
+static int32_t rv_vl RH_SP_SEC(".data.fx_rvvl") = -1, rv_sk RH_SP_SEC(".bss.fx_rvsk"), rv_sko RH_SP_SEC(".bss.fx_rvsko");
 /* MOD, gliding (0.9.6, BUGHUNT #10: HALL's read offset (md + 2) << 8 moved a whole sample every 8 MOD steps, INFINITE's
  * mean read depth and PLATE's swing followed MOD at once: MOD 0 -> 127 in one CC 32x a HALL tail's d2): HALL's md in Q8
  * (rv_md8) moves 1/8 sample a sub-block (0 -> 127 in 93 ms); the others' MOD x 16 (rv_mg) 1 a sub-block (127 in
@@ -189,56 +205,68 @@ __attribute__((noinline)) static void rv_send_ramp(const int32_t *L, const int32
     uint32_t j;
     for (j = 0; j < CTL; j++) {
         q += dq;
-        rv_in[j] = clampi((int32_t)(((int64_t)((L[j] + R[j]) >> 1) * (q >> 5)) >> 15), -131071, 131071);
+        rv_in[j] = clampi(FX_HC(1, (int32_t)(((int64_t)((L[j] + R[j]) >> 1) * (q >> 5)) >> 15), -131071, 131071), -131071, 131071);
     }
 }
+#if FR_C1
+#error "FR_C1: the full-rate REVERB TYPEs only (FR_REV_HQ 1: rev_hq.c's fx_reverb runs in chunks)"
+#endif
 static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t v = fx_p[FXP_RV_DEPTH], tgt = fx_p[FXP_RV_TYPE], zv = fx_p[FXP_RV_SIZE];
-    int32_t send = tgt ? v * 258 : 0, size = 40 + (zv ? zv : v) * 70 / 127;
+    int32_t sendn = tgt ? RV_SEND(v) : 0, sendo = tgt ? v * 258 : 0, size = 40 + (zv ? zv : v) * 70 / 127;
     int32_t dv = fx_p[FXP_RV_DECAY], tv = fx_p[FXP_RV_TONE], md = (fx_p[FXP_RV_MOD] + 4) >> 3, lcv = fx_p[FXP_RV_LOCUT];
     int32_t off = ((dv - 64) * 15) / 32;                /* -30 .. +29 size steps: x0.5 .. x1.96 in T60 */
     int32_t damp = tv >= 64 ? 60 - ((tv - 64) * 60) / 63 : 60 + ((64 - tv) * 90) / 64;   /* 150 .. 60 .. 0 */
     uint32_t sb, i, j, pd = FX_PDLY_SAMPLES(fx_p[FXP_RV_PREDLY]);
-    int32_t rk, vl, sk;
+    int32_t rko, vl, skn, sko;
     int quiet = !rv_running;
     if (tgt >= (int32_t)RV_N) tgt = RV_HALL;
-    if (!rv_running) { rv_md8 = md << 8; rv_mg = fx_p[FXP_RV_MOD] << 4; }
-    if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = send; }   /* (at rest, or the out
-                                                    * under -66 dBFS for 2 blocks, the boot's silence too: the return
-                                                    * follows MIX) */
+    if (!rv_running) { rv_md8 = md << 8; rv_mg = fx_p[FXP_RV_MOD] << 4; rv_hsz = size << 4; }
+    if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = sendn; rv_sko = sendo; }   /* (at
+                                                    * rest, or the out under -66 dBFS for 2 blocks, the boot's silence
+                                                    * too: INFINITE's return follows MIX, the sends take MIX's at once) */
     vl = rv_vl;
-    if (v != vl && send) send = (int32_t)(((int64_t)send * (254 - v)) / (254 - vl));
-    rk = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;   /* floor((254 - vl) 2^30 / 254) + 1 */
-    sk = rv_sk; rv_sk = send;
-    if (!send && !rv_running && !rv_fade) return;
+    if (v != vl && sendo) sendo = (int32_t)(((int64_t)sendo * (254 - v)) / (254 - vl));
+    rko = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;   /* floor((254 - vl) 2^30 / 254) + 1 */
+    skn = rv_sk; rv_sk = sendn; sko = rv_sko; rv_sko = sendo;
+    if (!sendn && !rv_running && !rv_fade) return;
     rv_running = 1;
     for (sb = 0; sb < n; sb += CTL) {
-        int32_t act = 0, *om = rv_m + RV_QZ, *os = rv_s + RV_QZ;
+        int32_t act = 0, *om = rv_m + RV_QZ, *os = rv_s + RV_QZ, send, sk, rk;
         uint32_t cur;
         if (tgt && (uint32_t)tgt != rv_cur && !rv_fade) {
             if (quiet || !rv_cur) rev_begin((uint32_t)tgt);
             else rv_fade = RV_FADE;
         }
-        for (j = 0; j < RV_DZ; j++) rv_inb[j] = rv_inb[CTL + j];   /* (rev_down's history) */
+        if (rv_cur == RV_INF) send = sendo, sk = sko, rk = rko;   /* (the TYPE that runs now: its law) */
+        else send = sendn, sk = skn, rk = RV_RK;
+        for (j = 0; j < RV_DZ; j++) rv_inb[j] = rv_xin ? rv_inb[CTL + j] : 0;   /* (rev_down's history; a TYPE just
+                                                        * started: none, its input fades in from 0) */
         if (sk != send)                                /* (MIX moved: the send's ramp over the block) */
             rv_send_ramp(L + sb, R + sb, sk + (int32_t)(((int64_t)(send - sk) * (int32_t)sb) / (int32_t)n),
                          sk + (int32_t)(((int64_t)(send - sk) * (int32_t)(sb + CTL)) / (int32_t)n));
         else
         for (j = 0; j < CTL; j++)                      /* 64-bit: the bus can be several times full scale here
                                                         * (feedback effects, many v127 notes: fuzz seed 95) */
-            rv_in[j] = clampi((int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15), -131071, 131071);
+            rv_in[j] = clampi(FX_HC(1, (int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15), -131071, 131071), -131071, 131071);
         if (lcv || rv_lc) rev_locut(rv_in, lcv);
         if (pd || pd_on) fx_predelay(rv_in, pd);
+        if (rv_xin < 32768)                            /* (a TYPE just started: its input fades in) */
+            for (j = 0; j < CTL; j++) {
+                rv_xin = rv_xin + 128 < 32768 ? rv_xin + 128 : 32768;
+                rv_in[j] = (int32_t)(((int64_t)rv_in[j] * rv_xin) >> 15);
+            }
         if (rv_off != off) rv_off += rv_off < off ? 1 : -1;
         if (rv_damp != damp) rv_damp += rv_damp < damp ? (damp - rv_damp > 2 ? 2 : damp - rv_damp)
                                                       : -(rv_damp - damp > 2 ? 2 : rv_damp - damp);
         if (rv_dk != dv) rv_dk += rv_dk < dv ? 1 : -1;
         if (rv_md8 != md << 8) rv_md8 += PH_CL((md << 8) - rv_md8, -32, 32);
         if (rv_mg != fx_p[FXP_RV_MOD] << 4) rv_mg += rv_mg < fx_p[FXP_RV_MOD] << 4 ? 1 : -1;
+        if (rv_hsz != size << 4) rv_hsz += PH_CL((size << 4) - rv_hsz, -4, 4);
         cur = rv_cur;
         if (cur) for (i = 0; i < RV_QZ; i++) rv_m[i] = om[HL_NC - RV_QZ + i], rv_s[i] = os[HL_NC - RV_QZ + i];
-        if (cur == RV_HALL) rev_hall(rv_in, size + rv_off, rv_damp, rv_md8, om, os);
+        if (cur == RV_HALL) rev_hall(rv_in, rv_hsz + (rv_off << 4), rv_damp, rv_md8, om, os);
         else if (cur) {
             rev_ctl_t c;
             if (cur == RV_PLATE && (rv_pz < 0 || !rev_plate_active(&rev_u.p))) rv_pz = v;   /* (AUTO: from silence) */
@@ -251,22 +279,25 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
             else FR_FAR(rev_inf_run)(&rev_u.i, rv_x, om, os, &c);
         }
         /* the 2x upsample to mid / side (RV_UPI between u[-1] and u[0], then u[0]: 2 half-rate samples late) and the
-         * return, which eases off as the send rises: x1 .. x0.5 (0.6): (w * (254 - v)) / 254 exactly, as a multiply
-         * and a shift (|w| <= 2^19 here, the half-band's overshoot included; every v and w: tests/py/test_rev_hall.py).
+         * return: x0.5 (RV_RK), or INFINITE's x1 .. x0.5 as the latched MIX rises, (w * (254 - vl)) / 254 exactly, as a
+         * multiply and a shift (|w| <= 2^19 here, the half-band's overshoot included; every v and w: tests/py/test_rev_hall.py).
          * At MIX 0 or OFF (a tail ringing out) only the tail's end matters (act: the last RV_QZ samples, which the
          * next block's output still reads, all 0) */
-        if (cur && (rv_fade || (vl && !send))) {        /* a TYPE change: the TYPE's out x (fade / 8) .. ((fade - 1) / 8),
-                                                        * in place; OFF with MIX up: the tail's end watched (act; at
-                                                        * MIX 0 the loop below watches it, as it always did) */
+        if (cur && (rv_fade || !send)) {               /* a TYPE change: the TYPE's out x (fade / 8) .. ((fade - 1) / 8),
+                                                        * in place, the step taken before each sample, so the last
+                                                        * block ends at 0 (0.9.10: it ended at 1/128, the tail's last
+                                                        * sample then stepped to the new TYPE's empty start: HALL ->
+                                                        * PLATE d2 4x a held one's); OFF or MIX 0: the tail's end
+                                                        * watched (act) */
             int32_t g = (int32_t)rv_fade << 12;
-            for (i = 0; i < HL_NC; i++, g -= 256) {
+            for (i = 0; i < HL_NC; i++) {
+                g -= 256;
                 act |= om[i] | os[i];
                 if (rv_fade) { om[i] = mul15(om[i], g); os[i] = mul15(os[i], g); }
             }
             if (rv_fade) act = 1;
         }
-        if (!cur) {}
-        else if (vl)
+        if (cur)
             for (i = 0, j = sb; i < HL_NC; i++, j += 2u) {
                 const int32_t *u = rv_m + RV_QZ - 2u + i, *q = rv_s + RV_QZ - 2u + i;
                 int32_t wm0 = RV_RET(RV_UPI(u)), ws0 = RV_RET(RV_UPI(q)), wm1 = RV_RET(u[0]), ws1 = RV_RET(q[0]);
@@ -274,16 +305,6 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
                 R[j] += wm0 - ws0;
                 L[j + 1u] += wm1 + ws1;
                 R[j + 1u] += wm1 - ws1;
-            }
-        else
-            for (i = 0, j = sb; i < HL_NC; i++, j += 2u) {
-                const int32_t *u = rv_m + RV_QZ - 2u + i, *q = rv_s + RV_QZ - 2u + i;
-                int32_t m0 = RV_UPI(u), s0 = RV_UPI(q), m1 = u[0], s1 = q[0];
-                L[j] += m0 + s0;
-                R[j] += m0 - s0;
-                L[j + 1u] += m1 + s1;
-                R[j + 1u] += m1 - s1;
-                act |= u[2] | q[2];
             }
         if (rv_fade && !--rv_fade) {                   /* faded out: the new TYPE (OFF meanwhile: the old one afresh) */
             rev_begin(tgt ? (uint32_t)tgt : cur ? cur : RV_HALL);

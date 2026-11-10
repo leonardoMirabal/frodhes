@@ -3,7 +3,8 @@
 
   - the take freezes INFINITE (DECAY 127) while its chord rings, never in the set-up: FREEZE closes the tank's input,
     so a freeze set before the notes holds nothing (the 0.9.5 final run: 60 s of exact zeros, freeze_ok passed);
-  - the hold keeps a real level (every 5 s window over -50 dBFS, within +-1 dB) and is never silent, so the settings'
+  - the hold keeps a real level (every 5 s window over -50 dBFS, its spread within the chord's own frozen by the bare
+    reverb + 0.5 dB) and is never silent, so the settings'
     autosave (2 s of silence after the set-up's changes) does not write the flash mid-hold (the final run's missed
     3-4 / overruns 2 came from such a save, then a blocking erase; the split erase, fm1_flash.h, keeps it clean now);
   - the old take (DECAY 127 in the set-up) fails both: silent, and the settings saved while the stream ran."""
@@ -58,6 +59,15 @@ def hold_db(u, music_end):
     return [rev_hil.db(h[i:i + 5 * FS]) for i in range(0, len(h) - 5 * FS + 1, 5 * FS)]
 
 
+def reference_db(ccs, events, dur):
+    """rev_hil's reference: the chord frozen by the bare reverb (its THRESHOLD: the spread <= the reference's + 0.5)"""
+    return rev_hil.freeze_reference(ccs, events, dur, dur - 60.0)
+
+
+def judge(w, ref):
+    return rev_hil.freeze_judge(w, ref)
+
+
 def test_freeze_goes_on_while_the_chord_rings(takes):
     ccs, ev, _ = takes["rhodes-infinite-freeze60"]
     dk = rev_hil.reverb()[2]["RV_DECAY"]
@@ -78,9 +88,15 @@ def test_the_freeze_holds_and_nothing_saves(takes):
     u, dirty = play(ccs, ev, dur)
     w = hold_db(u, dur - 60.0)                        # (rev_hil's judge: from 2 s after the music's end)
     assert len(w) >= 10
-    assert min(w) >= rev_hil.FREEZE_MIN_DB, f"the held freeze under -50 dBFS: {[round(x - 90.3, 1) for x in w]}"
-    assert max(w) - min(w) <= 2.0, f"the held freeze not within +-1 dB: {[round(x - 90.3, 1) for x in w]}"
+    ref = reference_db(ccs, ev, dur)
+    assert len(ref) == len(w)
+    ok, why = judge(w, ref)
+    assert ok, why
     assert dirty == "1", "the settings autosave ran while the USB stream was on"
+    # the judge's teeth: the same hold with a tank that loses 3 dB over it (a freeze that decays) fails
+    n = len(w)
+    ok, _ = judge([x - 3.0 * i / (n - 1) for i, x in enumerate(w)], ref)
+    assert not ok, "a freeze decaying 3 dB over the hold passed the judge"
 
 
 def test_the_old_take_fails(takes):

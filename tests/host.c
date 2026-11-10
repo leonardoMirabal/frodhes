@@ -263,6 +263,8 @@ static void eng_host_report(void);              /* engine.c: the engines' host c
  *                        blocks go on)
  *   T renderload MS      from now on each audio block keeps the main loop from running for MS ms more (the
  *                        FM-1's render preempts it for 2-5 ms a block)
+ *   T tune C             TUNE (the DECAY page's K4, the Move's s_tune) to C cents (-50..50): what a slot saved with
+ *                        another TUNE plays (tools/move_hil.py usb-host gives the host the slot's TUNE)
  *   T shed               the audio ran late: the next block sheds a voice, as the FM-1's ISR asks when two blocks run
  *                        over 5 ms (frodhes.c app_audio; the host has no CPU clock)
  *   T shot               a screenshot (OUT-T.ppm)
@@ -290,8 +292,9 @@ static void eng_host_report(void);              /* engine.c: the engines' host c
  * With FRODHES_FLASH=FILE the flash is kept in FILE across runs (host_flash_load / host_flash_save). */
 enum { EV_KEYS, EV_BTN, EV_PRESS, EV_RELEASE, EV_TURN, EV_MIDI, EV_SHOT, EV_EXP_LED, EV_EXP_RMS, EV_EXP_PRESET,
        EV_EXP_SOUND, EV_EXP_STATE, EV_DUMP, EV_USBREC, EV_USBLINK, EV_VKEY, EV_TRS,
-       EV_VEL, EV_XKEY, EV_PAD, EV_FADER, EV_WHEEL, EV_PEDAL, EV_STALL, EV_RLOAD, EV_SHED };
+       EV_VEL, EV_XKEY, EV_PAD, EV_FADER, EV_WHEEL, EV_PEDAL, EV_STALL, EV_RLOAD, EV_SHED, EV_TUNE };
 static void host_shed(void);                        /* frodhes.c: the overload's voice shed ("T shed") */
+static void host_tune(int c);                       /* frodhes.c: TUNE in cents ("T tune") */
 static int host_preset_check(char *msg, unsigned n);   /* frodhes.c: 0 if the panel is the shown preset */
 static int host_sound_check(char *msg, unsigned n);    /* frodhes.c: 0 if the engines run what the panel says */
 static int host_state(const char *key, char *val, unsigned n);   /* frodhes.c: 0 if K is known */
@@ -330,13 +333,13 @@ static int host_led_id(int id, int raw) { (void)raw; return id; }
 
 static void read_script(const char *path)
 {
-    static host_ev_t ev[16384];
+    static host_ev_t ev[131072];                 /* (build/soak276.py: a soak row's 400 s, ~70k events) */
     char line[256], what[16];
     FILE *f = fopen(path, "r");
     uint32_t n = 0;
     int raw = 0;                                /* "T ids smk": the SMK's own ids from here on */
     if (!f) { perror(path); exit(1); }
-    while (fgets(line, sizeof line, f) && n < 16384u) {
+    while (fgets(line, sizeof line, f) && n < sizeof ev / sizeof ev[0]) {
         host_ev_t e = {0, 0, -1, 0, 0, 0, EV_KEYS, 0, 0, 0};
         unsigned a = 0, b = 0, c = 0;
         char sub[16] = "", op[4] = "";
@@ -360,6 +363,7 @@ static void read_script(const char *path)
         else if (!strcmp(what, "stall")) { e.kind = EV_STALL; sscanf(line, "%*u %*s %d", &e.a); }
         else if (!strcmp(what, "renderload")) { e.kind = EV_RLOAD; sscanf(line, "%*u %*s %d", &e.a); }
         else if (!strcmp(what, "shed")) e.kind = EV_SHED;
+        else if (!strcmp(what, "tune")) { e.kind = EV_TUNE; sscanf(line, "%*u %*s %d", &e.a); }
         else if (!strcmp(what, "shot")) e.kind = EV_SHOT;
         else if (!strcmp(what, "dump")) e.kind = EV_DUMP;
         else if (!strcmp(what, "usblink")) { e.kind = EV_USBLINK; sscanf(line, "%*u %*s %d", &e.a); }
@@ -477,6 +481,7 @@ static void host_ms(void)
         case EV_STALL: host_stall += (uint32_t)(e->a > 0 ? e->a : 0); break;
         case EV_RLOAD: host_rload = (uint32_t)(e->a > 0 ? e->a : 0); break;
         case EV_SHED: host_shed(); break;
+        case EV_TUNE: host_tune(e->a); break;
 #if BOARD_SMK37
         case EV_VEL: { uint32_t k; for (k = 0; k < FM1_NKEY; k++) fm1_in.key_vel[k] = (uint8_t)(e->a < 1 ? 1 : e->a > 127 ? 127 : e->a); break; }
         case EV_XKEY: {

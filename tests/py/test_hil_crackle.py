@@ -50,7 +50,7 @@ def test_the_device_timing_has_teeth():
     # the old way's fixed threshold sat over the jack's first note (C2 v100): 300 LSB until 0.9.6, whose chorus no
     # longer cancels the bass (the recipe's CHORUS: C2 was -10 dB at DEPTH 64): the note now peaks ~760 LSB on the
     # simulated jack (275 before), so the threshold over it is 900 (the same miss: the second note's onset instead)
-    thr = 900
+    thr = 1400   # 2026-11-08: 0.9.10's LEVEL +14 and the level make-ups: the first note peaks ~1190 LSB (was 900 over ~760)
     old = C.analyse(u, j, 44100, ev, widen=C.DEV_JITTER, ccs=ccs, clock_usb=(C.onset_lag(u, ev, 44100, 300), 0.0),
                     clock_jack=(C.onset_lag(j, ev, 48000, thr), 0.0))
     assert C.onset_lag(j, ev, 48000, thr) > 0.1                 # (the jack's first note under thr: a later one)
@@ -251,7 +251,7 @@ def test_a_repeat_at_a_turning_point_is_no_event():
 def test_the_limiter_corner_is_information():
     """a click where the limiter works is 'click-lim' (information), not a gated click"""
     q = chord()
-    q = np.round(q * 24000 / np.abs(q).max())
+    q = np.round(q * 24000 / np.abs(q).max())                # at LIM_T 24000 (-2.7 dBFS; 29204 in the 0.9.10 RCs, reverted 2026-11-08)
     q[int(np.argmax(np.abs(q[:, 0]))) + 300] += 2000         # (just after the loudest frame: the limiter works)
     res = C.analyse(q, None, 44100, [])
     assert ("click-lim" in kinds(res)) and "click" not in kinds(res)
@@ -667,7 +667,8 @@ def test_injected_whole_frame_copies_are_found_as_before():
         ev = [p for p, _ in C.det_repeat(y)]
         found += sum(any(abs(e - p) <= 2 for e in ev) for p in marks)
         placed += len(marks)
-    assert placed == 189 and found >= 150, (found, placed)
+    assert 180 <= placed <= 200 and found >= 150, (found, placed)   # 2026-11-08: 0.9.10's louder presets: 190 places
+    # (189), 165 found; the effects' make-ups (2026-11-08): 189 places, 159 found (the places move with the sound)
 
 
 # ---- 0.9.9 (BUGHUNT #24): 2 equal frames at 48 kHz need the kink above the resampler's band -------------------------

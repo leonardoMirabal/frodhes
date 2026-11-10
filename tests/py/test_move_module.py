@@ -69,8 +69,9 @@ def test_levels_keep_the_hosts_limits():
             assert len(p["name"]) <= gen.LABEL_MAX and p["name"].isascii() and p["name"].strip(), (name, p)
             if p["type"] == "canvas":                          # (a screen the module draws: its script ships)
                 assert p["canvas_script"] in gen.FILES, (name, p)
-            elif p.get("access") == "read":                    # (the GR meter's cells: the module's widget)
-                assert p["key"] in gen.METER and name == "comp", (name, p)
+            elif p.get("access") == "read":                    # (the GR meter's cells: the module's widget; VERSION)
+                assert (p["key"] in gen.METER and name == "comp") or (p["key"] in gen.VERSION_KEY and name == "maps"), \
+                    (name, p)
             elif p["type"] == "enum":
                 assert p["options"] and all(o.isascii() and o for o in p["options"]), (name, p)
                 assert all(len(o) <= gen.VALUE_MAX for o in p["options"]), (name, p)
@@ -107,7 +108,7 @@ def test_ranges_and_options_are_the_parameters():
     rows = re.findall(r'\{"(\w+)", (\w+), (\d+), (MK_\w+), (\d+), (-?\d+)\}', OUT["move_ui.h"])
     # (the GR cells: no row; the Capture button's key: a row, no chain_params entry, which Schwung's merge would
     # turn into a knob of its own)
-    assert [r[0] for r in rows] == [c["key"] for c in CHAIN if c["key"] not in gen.METER] + gen.HIDDEN
+    assert [r[0] for r in rows] == [c["key"] for c in CHAIN if c["key"] not in gen.READ_KEYS] + gen.HIDDEN
     for key, slot, cc, kind, scale, off in rows:
         if key in gen.HIDDEN:
             assert kind == "MK_BTN" and key not in by_key
@@ -207,7 +208,7 @@ def test_every_knob_resets_to_the_firmware_default():
     tw = re.search(r"static uint32_t tw_kind\(void\)[^{]*\{(.*?)\n\}", src("ui.c"), re.S).group(1)
     assert "return sw == 2u ? 3u : sw != 1u ? 0u : m ? 2u : 1u;" in tw
     sw, mode = M["params"]["P_TW_SW"]["def"], M["params"]["P_TW_MODE"]["def"]
-    firm = {"s_tune": 0, "s_mch": 0, "s_twkind": 3 if sw == 2 else 0 if sw != 1 else 2 if mode else 1,
+    firm = {"s_tune": 0, "s_mch": 0, "s_vresp": 0, "s_twkind": 3 if sw == 2 else 0 if sw != 1 else 2 if mode else 1,
             "s_arpmode": 0, "s_arprate": int(arp["ARP_RATE"]), "s_arpoct": int(arp["ARP_OCT"]) + 1,
             "s_arpgate": int(arp["ARP_GATE"]), "s_arphold": int(arp["ARP_HOLD"]), "s_sustain": 0, "s_fx": 1}
     mapd = [int(x) for x in re.search(r"#define MB_MAP_DEFAULT \{([^}]*)\}",
@@ -216,7 +217,7 @@ def test_every_knob_resets_to_the_firmware_default():
     seen = set()
     for pg in pages:
         for k in pg["knobs"]:
-            if not k or k["type"] == "preset":
+            if not k or k["type"] in ("preset", "text"):     # (VERSION: read only, a double tap does nothing)
                 continue
             assert "def" in k, f"{pg['title']} {k['name']} ({k['key']}): no default, a double tap does nothing"
             r = rows[k["key"]]

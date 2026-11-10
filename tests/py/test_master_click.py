@@ -2,7 +2,9 @@
 """GitHub #12: on the SMK-37, turning K1 (MASTER) clicks on the 3.5 mm jack; USB stays smooth (usb_pre_master: the
 computer records before MASTER). The host build replaces platform.c, so its MASTER pass is run here through
 tests/master_click_test.c (platform.c's code copied verbatim, checked below) on the app's own output: a pedalled
-chord C2 C3 E3 G3 C4 at v110 from the SMK host build. K1 moves as smk_input.h makes it (24 of 1023 a detent): single
+chord C2 C3 E3 G3 C4 at v90 from the SMK host build (2026-11-08, 0.9.10: v110 -> v90. The brighter Rhodes raised the
+reference chord's own second difference at v110, so the self-check saw 0.9.5's 5 % detent step at only 1.8-3.0
+against its 3.0; at v90 every case reads 3.25-12, the fixed pass 0.83-1.0). K1 moves as smk_input.h makes it (24 of 1023 a detent): single
 detents and fast spins (8 detents in 100 ms), up and down, at low (k 150), mid (500) and full (1000) volume; main-loop
 passes every 0.05, 0.2 and 1 ms; USB before MASTER on and off.
 
@@ -22,6 +24,9 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 import hostrun as H  # noqa: E402
 from test_smk_host import smk_build  # noqa: E402
+
+sys.path.insert(0, os.path.join(H.ROOT, "tools"))
+import dry_dist  # noqa: E402
 
 ROOT = H.ROOT
 FS = 44100
@@ -52,9 +57,9 @@ def harness(tmp):
 @pytest.fixture(scope="module")
 def chord_raw(tmp_path_factory):
     tmp = str(tmp_path_factory.mktemp("mclick"))
-    lines = [H.cc(195, 64, 127)]
+    lines = dry_dist.type_base_lines(20) + [H.cc(195, 64, 127)]   # (the voicing at its defaults, not F01's)
     for n in (36, 48, 52, 55, 60):
-        lines += H.note(200, n, 110, 3600)
+        lines += H.note(200, n, 90, 3600)
     r = H.run("master-chord", lines, 4000, binary=smk_build())
     x = np.stack([np.asarray(r.L), np.asarray(r.R)], 1).astype(np.int16)
     raw = os.path.join(tmp, "in.raw")
@@ -93,7 +98,10 @@ def test_master_does_not_click(chord_raw, case, level, pre, pass_us):
     old = click_ratio(chord_raw, 0, pre, pass_us, LEVELS[level], ev)
     print(f"#12 {case:6s} {level:4s} pre {pre} pass {pass_us:4d} us: 0.9.5 {old:6.2f}  0.9.6 {new:6.2f}")
     assert new <= LIMIT, (case, level, pre, pass_us, old, new)
-    assert old > 2 * LIMIT, ("the check sees 0.9.5's step", case, level, old)
+    # THRESHOLD (stage 2, 2026-11-10): > 2 x LIMIT -> >= 2 x LIMIT. With the dry width (L != R) and the attack lift the
+    # reference chord's own second difference at low volume (k 150: a few LSB) puts 0.9.5's single-detent step at
+    # exactly 3.0 (pass 200 us); every other case 3.25 .. 12; the fixed pass stays <= 1.5 everywhere
+    assert old >= 2 * LIMIT, ("the check sees 0.9.5's step", case, level, old)
 
 
 @pytest.mark.parametrize("pre", [0, 1])

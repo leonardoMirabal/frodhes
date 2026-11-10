@@ -71,7 +71,8 @@ LEAD_S = 0.02                                   # the take judged from this long
 CLIP = 32767
 LAG_MAX = 0.1                                   # (s) the clock fit's lag past LEAD_S beyond which its anchor is
                                                 # wrong (25 takes on the FM-1, 2026-10-26: -0.01 .. 0.05; 1012: 0.75)
-LIM_T = 24000                                   # fx.c's limiter threshold (-2.7 dBFS)
+LIM_T = 24000                                   # fx.c's limiter threshold (-2.7 dBFS; 0.9.10 RCs: 29204, reverted 2026-11-08)
+LIM_T_OLD = 24000                               # (2026-11-08) the limiter of the firmware --old-48k judges (before 0.9.7)
 CLAMP_RUN, CLAMP_DENSE, CLAMP_LOUD = 3, 8, 8    # the 48 kHz full-scale gate (clamp_rows)
 STRICT48 = True                                 # 0.9.7 (usb.c's knee, #38b): 0 at full scale at 48 kHz too
 
@@ -206,7 +207,8 @@ def clamp_rows(xi, rate, strict48=None):
     one (fewer than CLAMP_LOUD samples >= LIM_T within 1 ms: a spike, not the overshoot of a loud passage).
     From 0.9.7 (#38b) usb.c has a knee before the clamp (above 24576 the excess halved): a passage the limiter kept
     at 24000 can no longer reach full scale, so 0 samples at full scale is the gate at 48 kHz too (strict48,
-    STRICT48; --old-48k judges a firmware before 0.9.7 as before: full scale information, the audible rows gate)"""
+    STRICT48; --old-48k judges a firmware before 0.9.7 as before: full scale information, the audible rows gate,
+    the loud samples counted at that firmware's LIM_T_OLD)"""
     x = np.asarray(xi).reshape(len(xi), -1)
     a = np.abs(x)
     nclip = int((a >= CLIP).sum())
@@ -226,13 +228,14 @@ def clamp_rows(xi, rate, strict48=None):
     rows.append(("USB clamped frames in 10 ms (most)", dense, f"<= {CLAMP_DENSE}",
                  "ok" if dense <= CLAMP_DENSE else "FAIL"))
     ms = rate // 1000
-    loud = ((a >= LIM_T) & (a < CLIP)).sum(axis=1)
+    lim = LIM_T if strict48 else LIM_T_OLD
+    loud = ((a >= lim) & (a < CLIP)).sum(axis=1)
     cl = np.concatenate(([0], np.cumsum(loud)))
     iso = 0
     for k in np.flatnonzero(hit):
         lo, hi = max(0, k - ms), min(len(hit), k + ms + 1)
         iso += int(cl[hi] - cl[lo] < CLAMP_LOUD)
-    rows.append(("USB isolated clamps (spikes)", iso, f"0 (< {CLAMP_LOUD} samples >= {LIM_T} within 1 ms)",
+    rows.append(("USB isolated clamps (spikes)", iso, f"0 (< {CLAMP_LOUD} samples >= {lim} within 1 ms)",
                  "ok" if not iso else "FAIL"))
     return rows
 
@@ -477,6 +480,9 @@ def run_take(dev, sd, usb, a, s):
     return rows, xi, ev, acc.summary()
 
 
+SETTLE_S = 35.0                                     # platform.c: a reset before 30 s up is a failed boot
+
+
 def alive_ok(dev):
     """the FM-1 still answers a CC 116 query (a failed liveness row on a device that answers: the run goes on)"""
     import hil_must as hm
@@ -534,9 +540,12 @@ def main(argv=None):
             save_take(a.out, s, rows, bad, xi, a.rate, ev, cnt)    # (silent note-ons too: kept to classify them)
             if bad:
                 verdict = "FAIL"
-                if a.stop_on_fail or any(r[0].startswith(("CC 116 answers", "frames recorded", "the probe"))
-                                         for r in bad) and not alive_ok(dev):
+                lost = any(r[0].startswith(("CC 116 answers", "frames recorded", "the probe")) for r in bad)
+                if a.stop_on_fail or lost and not alive_ok(dev):
                     break
+                if lost:                                # (a reset likely: no stimulus until the FM-1 is past the boot
+                    print(f"  a reset likely: the next take in {SETTLE_S:.0f} s (the boot guard)", flush=True)
+                    time.sleep(SETTLE_S)                # guard's 30 s; two resets before it escalate to USB RESCUE)
     finally:
         dev.close()                                 # (after the take's stream stopped and its poller joined)
     js = dict(verdict=verdict, date=time.strftime("%Y-%m-%d %H:%M"), rate=a.rate, minutes=a.minutes, takes=report)

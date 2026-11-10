@@ -71,6 +71,7 @@ report build/hil/vibes-host.md): each take a fresh host run that replays the pan
 import argparse
 import json
 import os
+import re
 import sys
 import time
 
@@ -80,7 +81,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fm1_ports  # noqa: E402  (which port / audio device is the Frodhes FM-1)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "build", "hil")
+OUT = os.environ.get("FRODHES_HIL_OUT") or os.path.join(ROOT, "build", "hil")   # (a test: its own folder)
 PORT_KEYS = fm1_ports.PORT_KEYS   # the FM-1's MIDI port / USB audio names: Frodhes, Felucca before
 FS = 48000
 A4 = 440.0
@@ -953,9 +954,12 @@ def effects(r, rep):
 
 @test
 def bypass(r, rep):
-    """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs no effects at all"""
+    """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs the compressor alone (the bypass
+    keeps the compressor: FR_BYP_KEEP_CMP, the user 2026-11-08 "leave compressor aside of the efx off button")"""
     r.dry()
     a = r.take(1.5, CHORD)
+    r.dry(CMP_SW=127, CMP_AMT=50, CMP_GAIN=15)
+    d = r.take(1.5, CHORD)
     r.dry(PH_SW=127, PH_DEPTH=80, CP_SW=64, CP_DEPTH=64, REV=50, DRIVE=30, CMP_SW=127, CMP_AMT=50, CMP_GAIN=15)
     b = r.take(2.2, CHORD)
     r.cc_raw(111, 127)
@@ -963,14 +967,19 @@ def bypass(r, rep):
     c = r.take(1.5, CHORD)
     r.cc_raw(111, 0)
     lv = []
-    for x in (a, b, c):
+    for x in (a, b, c, d):
         i = max(onset(x, t=0.05), 0)
         lv.append(lufs(x[i:i + int(1.1 * FS)] / 32768.0))
-    rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2])
+    rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2], comp_only=lv[3])
     # the compressor as the panel switches it on (THRESH up: +2.8 dB makeup); before, it ran with no makeup and the
-    # effects-on level sat 5 dB under the bypass by construction
-    ok = abs(lv[2] - lv[0]) < 0.5 and abs(lv[1] - lv[2]) < 3
-    return ok, f"no effects {lv[0]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} LUFS"
+    # effects-on level sat 5 dB under the bypass by construction.
+    # THRESHOLD (2026-11-09, coordinator sign-off 2026-11-09): the bypass is judged against the compressor alone (its settings as the effects-on row's),
+    # within 0.5 LU as before; no effects at all is information. Since b2c9ab1b the bypass keeps the compressor, so
+    # against no effects it reads its make-up: +2.2 LU on the host (the coordinator saw +0.8 on its run), by design (the
+    # user's decision 2026-11-08); bypassed re the compressor alone +0.01 LU (host)
+    ok = abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) < 3
+    return ok, (f"no effects {lv[0]:.1f}, compressor alone {lv[3]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} "
+                f"LUFS (bypassed re the compressor alone {lv[2] - lv[3]:+.2f} LU)")
 
 
 FXALL = [  # (name, settings, expected: LU re clean within +-tol)
@@ -1009,7 +1018,10 @@ FXALL = [  # (name, settings, expected: LU re clean within +-tol)
 # (Agent E's reading of the same reports, 2026-10-24, proposed all five measured values as targets +- 1 LU; taken for
 # drive 127 and phaser 32, not for the wah rows (the defect above) nor phaser 127 fb127 (its fault was the width
 # target: at 0 +- 2 it passes without a target of its own).)
-FXALL_EXPECT = {"drive 127": (-2.3, 1.0)}
+# 2026-11-08 (fx-level: no effect adds peak, tools/fx_pristine.py): 'phaser 80' -2.5 LU (the peak trim, fx.c PH_T: the
+# comb's in-phase bands had lifted a chord's attack +3.3 dB) by design. ('trem pan 127' -2.0 LU, each side capped at
+# unity, until 2026-11-09: PAN is 0.9.9's equal-power law again, judged at 0 +- 2)
+FXALL_EXPECT = {"drive 127": (-2.3, 1.0), "phaser 80": (-2.5, 1.0)}
 
 
 def lufs(x):
@@ -1096,8 +1108,13 @@ def fx_all(r, rep):
     r.settle()
     byp = med(lambda u, j: lufs(seg(u)), takes(False)) - base_u
     r.cc_raw(111, 0)
-    print(f"    {'FX bypass (all on)':28s} USB {byp:+5.1f} LU", flush=True)
-    if abs(byp) > 0.5:
+    # THRESHOLD (stage 2, 2026-11-10): the bypass against the compressor alone (the row with all on's compressor
+    # settings), not against clean: the FX button keeps the compressor (FR_BYP_KEEP_CMP), and the stage-2 compressor at
+    # -20 dB 4:1 GAIN +4.3 reads +1.4 LU over clean, so the bypass does too (0 +- 0.5 against it, as before)
+    cmp_kv = {k: v for k, v in FXALL[-1][1].items() if k.startswith("CMP_")}
+    ref = next((q["usb_lu"] for q, (_, kv) in zip(rows, FXALL) if kv == cmp_kv), 0.0)
+    print(f"    {'FX bypass (all on)':28s} USB {byp:+5.1f} LU (the compressor alone {ref:+5.1f})", flush=True)
+    if abs(byp - ref) > 0.5:
         bad.append("bypass")
     rep["fx_all"] = dict(rows=rows, bypass_lu=byp, base_usb_lufs=base_u, repeats=nrep)
     spread = max(q["usb_lu_spread"] for q in rows)
@@ -1241,8 +1258,39 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 # F12 AUTO WAH (B, the user's pick): its deep 1/4 band-pass sweep reads +1.6 LU on the chord and -2.3 on a phrase at
 # LEVEL 127 (the maximum): a documented exception, 0 +- 2.0
 # F17..F19 (TAPE ECHO, DREAM, RADIO: the starters U10..U12 until 0.9.5's RC) keep the starters' 1 LU
-PRESET_TARGET = {12: (0.0, 2.0), 13: (2.5, 1.0), 14: (2.5, 1.0), 15: (-0.2, 1.0), 16: (2.5, 1.0), 17: (0.0, 1.0), 18: (0.0, 1.0),
-                 19: (0.0, 1.0)}
+# 2026-11-08 (0.9.10's headroom rule, presets.c: every LEVEL +14, the hot ones less): F04 +3, F08 -8, F13 +5, F15 +7,
+# F16 -26 sit under F01 by their trims (host: F04 -2.2, F08 -3.6, F13 +1.0, F15 -1.5, F16 -5.0); F14 (+8) reads +1.7.
+# These five are documented exceptions (MANUAL 'Factory presets', the user's decision 2026-11-08): headroom. Each one's
+# 4-note v127 pedalled chords already peak at -1.2 .. -1.4 dBFS before the limiter (-1.0), so it cannot come up to
+# its usual target without hard playing reaching the limiter; the global level stays as loud as fits. F06 / F09 /
+# F11 / F19 came down to the target (LEVEL 54 / 62 / 23 / 80: -0.1, -0.0, +0.2, +0.1)
+# (2026-11-10, the proposed 19: the targets by preset NAME (presets.c PR_FNAME), not by slot: SUIT TREM moved F05 ->
+# F08; AUTO WAH (+2.3 +- 2.0) and RADIO (+0.6 +- 1.0) were dropped with their slots; the starters by U number)
+# (2026-11-10, FINAL19 v2: each preset at 0.9.9's preset of the same name by critical-band loudness, the limiter
+# idle, the LEVEL-cut ones under it: the targets re-measured on rc4 by name (host, re F01; F11 RESO SWEEP's +1.4 host
+# is +1.2 on the FM-1 by HOST_SHIFT). The starters U01..U09 kept their LEVELs: v2's F01 sits ~1.2 LU over them)
+PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1.8, 1.0), "RESO SWEEP": (1.2, 1.0),
+                 "VIBES": (-1.1, 1.0), "VIBES ECHO": (-0.9, 1.0), "MARIMBA": (-5.2, 1.0), "WOOD ECHO": (-8.1, 1.0),
+                 "TAPE ECHO": (-0.5, 1.0), "DREAM": (-1.0, 1.0), "U02": (-1.3, 1.0), "U03": (-1.6, 1.0),
+                 "U04": (0.5, 1.0), "U05": (-1.2, 1.0), "U06": (-1.4, 1.0), "U07": (-1.2, 1.0), "U08": (-1.9, 1.0),
+                 "U09": (-1.1, 1.0)}
+# (2026-11-09, fx-level: 0.9.9's absolute level and balance again (742a2537: every LEVEL -19, then the presets the
+# effects had made quieter back to 0.9.9's loudness): the host reads F09 +2.0, F13 +3.1, F14 +3.2, F15 +0.2, F16 -1.8,
+# F18 +1.1, U02 +0.9, U04 +1.2 re F01 (the 0.9.10 headroom trims below are superseded: F04 -0.1, F08 +1.3, U07 -0.2
+# now within the defaults); then F10 +5, F12 +9, F19 +8 steps to quick.py's v127 chord / note against 0.9.9: F12 +2.8,
+# F19 +1.3 re F01 on this suite's chord)
+# (then F01 LEVEL 50 -> 52, the TYPE panel re-derived against 0.9.9 (+0.375 dB, the minimax step over every TYPE x
+# RESPONSE v96/v127 note and chord) and F11 +2 with it: the other presets keep 0.9.9's absolute level, so each reads
+# ~0.4-0.7 lower re F01: F09 +1.4, F12 +2.3, F13 +2.4, F14 +2.6, F15 -0.4, F16 -2.4, F18 +0.5, F19 +0.6, U02 -0.3, U04 +0.7)
+# (then F16 LEVEL 41 -> 25: no limiter on normal playing, its 4-note v127 pedalled chords at most -3.2 dBFS with no gain
+# reduction (tests/expected_changes.yaml 'quick-level/*/F16/*'): F16 -5.4)
+# (and by the same rule F13 55 -> 45, F14 58 -> 48, F15 59 -> 41: F13 +0.6, F14 +0.7, F15 -3.8)
+# (F14, 0.9.10's clean Rhodes: F01 came up 0.75 dB on the chord, F14 VIBES ECHO cannot follow (its 4-note v127
+# chords at -1.28 dBFS before the limiter): +1.2 instead of +2.5, a headroom exception (MANUAL))
+# (the starters, 2026-11-08: U01..U09 each +8..+14 to F01's level, except two headroom exceptions (MANUAL): U02's hard
+# chords peaked at +0.6 dBFS before the limiter at its old LEVEL, so it came down 10 steps (-4.6 LU); U07 could come
+# up 5 steps only, to -1.3 dBFS (-1.2 LU)); U02 with the clean Rhodes (the physical swing, 0.9.9's overtone decay):
+# -3.4 LU at the same LEVEL, its typical chords -5.3 dBFS before the limiter)
 # the user bank's starters (presets.c PR_NS: U01..U09 in a bank never saved): judged on the host only (a device's bank
 # may hold the player's own presets), each within 1 LU of F01 on the chord; presets 20.. in the rows = U01..
 PR_STARTERS = 9
@@ -1260,12 +1308,25 @@ def preset_pc(p):
 # full range, no longer holds). 0.9.7: LEVEL 18, the host +0.0. 2026-10-28: the FM-1's readings moved with its saved
 # BPM (F11's LFO and echo are synced: +2.1 at LEVEL 18 at the unit's own tempo); with presets()' 120 BPM clock and
 # every take on bar 1 of the sweep the FM-1 reads -0.4 (4 runs, spread <= 0.21 LU)
-HOST_SHIFT = {11: 0.2}
+HOST_SHIFT = {"RESO SWEEP": 0.2}
+LEVEL_CUT = {"BELL DYNO", "LUSH CHO", "VIBES", "VIBES ECHO", "MARIMBA", "WOOD ECHO"}   # (FINAL19 v2: under 0.9.9, accepted)
+
+
+def pr_names():
+    """presets.c's factory names in slot order (PR_FNAME)"""
+    s = open(os.path.join(ROOT, "firmware", "src", "presets.c")).read()
+    return re.findall(r'"([^"]*)"', re.search(r"PR_FNAME\[PR_NF\] = \{(.*?)\};", s, re.S).group(1))
+
+
+def preset_key(p):
+    """row p (1-based: F01..F19, then U01..) -> its PRESET_TARGET key: the factory preset's name, else U<nn>"""
+    return pr_names()[p - 1] if p <= PR_COUNT else f"U{p - PR_COUNT:02d}"
 
 
 def preset_target(p, host=False):
-    t, tol = PRESET_TARGET.get(p, (0.0, 1.0) if p > PR_COUNT else (0.0, 1.5))
-    return (t + HOST_SHIFT.get(p, 0.0) if host else t), tol
+    k = preset_key(p)
+    t, tol = PRESET_TARGET.get(k, (0.0, 1.0) if p > PR_COUNT else (0.0, 1.5))
+    return (t + HOST_SHIFT.get(k, 0.0) if host else t), tol
 
 
 def preset_label(p):
@@ -1328,7 +1389,10 @@ def presets(r, rep):
     gapped = [q["preset"] for q in rows if q["gaps"]]
     r.pc(0)
     spread = max(q["spread_lu"] for q in rows)
-    ok = max(lv) - min(lv) < 8 and not bad and not loud and not gapped
+    # THRESHOLD: the 8 LU span over the presets but FINAL19 v2's LEVEL-cut ones (LEVEL_CUT: under 0.9.9 by cb, accepted,
+    # their own targets above hold them); reason: WOOD ECHO -8.1 LU re F01 with the limiter idle (the coordinator 2026-11-10)
+    sv = [q["level"] for q in rows if preset_key(q["preset"]) not in LEVEL_CUT] or lv
+    ok = max(sv) - min(sv) < 8 and not bad and not loud and not gapped
     msg = (f"F01..{preset_label(len(rows))} loudness " + ", ".join(f"{v:.1f}" for v in lv) + f" LUFS (span {max(lv) - min(lv):.2f}; median of"
            f" {reps('presets')} takes, their own spread <= {spread:.2f} LU); clipping/clicks {bad or 'none'}")
     if loud:
@@ -2254,6 +2318,44 @@ def corr_lr(st):
 # ---- round 2: the measures that stand above the floor (the jack's hiss: -92 dBFS; USB's own rounding) and the ones
 # taken against a reference take of the same stimulus (the effect at 0): what the control adds, not the notes' own
 # decay, beating or attack (round 1's failures, re-analysed offline: tools/hil_scan.py --offline)
+FLOOR_SUB_MAX_DB = 10.0      # floor_sub: the floor's subtraction lowers a band's power by at most this much (a band
+                             # at its floor reads 10 dB under its raw value: a bound, not a measure)
+
+
+def floor_sub(p, f, most_db=FLOOR_SUB_MAX_DB):
+    """a band's power p with the source's floor f (the same band of its pre-roll, welch's scale) taken off, never
+    lower than most_db under p; f None (USB: exact zeros) leaves p. MARIMBA's WAH DEPTH 0 on the jack rode its hiss
+    (1-4 kHz, +5.9 dB from 0 to 127 once in 3 runs against the 6 dB limit; USB and the other runs +7.8 / +8.5)"""
+    if f is None:
+        return float(p)
+    return float(max(p - f, p * 10 ** (-most_db / 10)))
+
+
+NOISE_FLOOR_MARGIN_DB = 6.0  # marimba NOISE contact: NOISE de's excess within this of the hiss read the same way is
+                             # the floor (the jack)
+NOISE_FLOOR_XSRC_DB = 6.0    # ... and so is a jack reading this far over USB's (the same strike recorded at once:
+                             # the analogue path cannot add a contact; rc-0.9.9h T2: key 48's jack -50..-53 dB, USB
+                             # -62..-66, the hiss estimate one window low, the flag missed, MISMATCH 14.6 dB)
+
+
+def noise_floor_flags(vals, de, margin=NOISE_FLOOR_MARGIN_DB, xsrc=NOISE_FLOOR_XSRC_DB):
+    """{src: bool} for marimba NOISE's contact row: NOISE de's contact excess (v["c"][de]) stands on the source's
+    floor: within margin of the hiss-only excess (v["cfl"], -240 when there is none), or (the jack) more than xsrc
+    over USB's own reading of the same strike. A source on its floor is not compared (check(floor=...))"""
+    out = {}
+    u = vals.get("usb")
+    for src, v in vals.items():
+        if not v:
+            out[src] = False
+            continue
+        c = v["c"][de]
+        fl = c < v.get("cfl", -240.0) + margin
+        if src == "jack" and u and finite(u["c"][de]) and finite(c):
+            fl = fl or c > u["c"][de] + xsrc
+        out[src] = bool(fl)
+    return out
+
+
 def welch(x, n=4096):
     """the mean power spectrum of hann windows (50 % overlap): per-bin power of one n-window"""
     x = np.asarray(x, float)
@@ -2900,9 +3002,10 @@ def vibes_fx(V, S, stim=None, extra=()):
         """frame_dist of two takes, the same window from each onset"""
         return frame_dist(cut(t1.m(q), t1.on(q)[0], a, b), cut(t2.m(q), t2.on(q)[0], a, b), FDN)
 
-    def band_re(t, r, q, lo, hi, a=0.05, b=1.05):
+    def band_re(t, r, q, lo, hi, a=0.05, b=1.05, sub=False):
         """a band's level (dB) of take t re the reference take r, the same window from each onset; and whether t's
-        band is within 6 dB of its floor (then it reads the floor: an upper bound)"""
+        band is within 6 dB of its floor (then it reads the floor: an upper bound). sub: each take's floor (its
+        pre-roll, the same band) taken off first (floor_sub)"""
         x, y = cut(t.m(q), t.on(q)[0], a, b), cut(r.m(q), r.on(q)[0], a, b)
         n = min(len(x), len(y))
         X, fr = welch(x[:n])
@@ -2910,7 +3013,12 @@ def vibes_fx(V, S, stim=None, extra=()):
         m_ = (fr >= lo) & (fr < hi)
         F, _ = welch(t.pre(q)) if np.any(t.pre(q)) else (None, None)
         lim = F is not None and X[m_].sum() < 4 * F[m_].sum()
-        return float(10 * np.log10(X[m_].sum() / (Y[m_].sum() + 1e-30) + 1e-30)), bool(lim)
+        xp, yp = X[m_].sum(), Y[m_].sum()
+        if sub:
+            G, _ = welch(r.pre(q)) if np.any(r.pre(q)) else (None, None)
+            xp = floor_sub(xp, None if F is None else F[m_].sum())
+            yp = floor_sub(yp, None if G is None else G[m_].sum())
+        return float(10 * np.log10(xp / (yp + 1e-30) + 1e-30)), bool(lim)
 
     def nm(n):
         return f"{n} (CC {P[n]['cc']})"
@@ -3174,10 +3282,12 @@ def vibes_fx(V, S, stim=None, extra=()):
             lambda v: v >= 3, ">= 3 dB", fmt=lambda v: f"{v:.1f} dB")
     # a touch wah: DEPTH is how far the strike opens it (host TREM-WAH). Round 1 compared the spectral distances to
     # dry, which the wah's static filter dominates at any DEPTH (14.1 / 14.2 dB at 127 / 64)
-    wo = S.per(lambda q: [band_re(T[x], dry["ch"], q, 1000, 4000, 0.02, 0.3)[0] for x in (0, 64, 127)])
-    S.check("WAH DEPTH 0 / 64 / 127: the strike opens it", "1-4 kHz re no effect, 20..300 ms", wo,
+    # (each take's hiss taken off first, floor_sub: the jack's DEPTH 0 rode its floor, +5.9 dB once on MARIMBA)
+    wr = S.per(lambda q: [band_re(T[x], dry["ch"], q, 1000, 4000, 0.02, 0.3, sub=True) for x in (0, 64, 127)])
+    wo = {s_: v and [c for c, _ in v] for s_, v in wr.items()}
+    S.check("WAH DEPTH 0 / 64 / 127: the strike opens it", "1-4 kHz re no effect, 20..300 ms, less the floor", wo,
             lambda v: v[0] < v[1] < v[2] and v[2] - v[0] >= 6, "in order, 127 >= 6 dB over 0",
-            fmt=lambda v: " / ".join(f"{c:+.1f}" for c in v) + " dB")
+            fmt=lambda v: " / ".join(f"{c:+.1f}" for c in v) + " dB", floor={s_: bool(v and v[0][1]) for s_, v in wr.items()})
     S.check("WAH DEPTH 64", "vs no effect", S.per(lambda q: sdist(B(T[64], q), B(dry['ch'], q))), lambda v: v >= 1.5,
             ">= 1.5 dB", fmt=lambda v: f"{v:.1f} dB")
 
@@ -3635,8 +3745,10 @@ MFAMS = (("SOFT", 0), ("MED", 42), ("HARD", 85), ("RUBBER", 127))
 MVELS = (8, 24, 40, 64, 88, 100, 117, 127)
 # MARIMBA's chord re ST77 (the user's level decision "A", 2026-10-20: marimba.json calib.st77_offset_db stays +2.5 dB,
 # VIBES's; every MARIMBA strike is held under -0.5 dBFS by the top roll-off and the RING ceiling, so the A3-E4-A4 v100
-# chord reads -1.5 LU re ST77: FM-1 scans 3 and 4, -1.50 USB / -1.48 jack)
-MLEVEL_DB = -1.5
+# chord reads -1.5 LU re ST77: FM-1 scans 3 and 4, -1.50 USB / -1.48 jack). 0.9.10: MARIMBA unchanged, the Rhodes
+# louder: this suite on the host build (--host) reads -3.22 (0.9.9's host -0.99, its FM-1 -1.50); the FM-1 value to
+# confirm on the next scan
+MLEVEL_DB = -3.2
 M_CAPPED = {(84, "SOFT", "MED")}
 M_FX_RATE, M_FX_JIT, M_FX_SEED, M_FX_VEL = 8.0, 0.0, 1, 80   # marimba_fx's roll: per note, the jitter, the seed (m_fx_roll)          # both contacts at T7f's cap at v100 (marimba_va.capped, VA-M9's exceptions)
 
@@ -4066,15 +4178,19 @@ def marimba_decay(V, S):
             hf = excess_db(p1[-nh:], p0[-nh:]) - nl if nh >= FS // 20 and np.any(p0) else -240.0
             pd = T[de].pre(q)
             nc = min(len(p0), len(pd), int(0.06 * FS))      # the contact's window on hiss alone: NOISE de's floor
-            cf = m_excess_db(pd[-nc:], p0[-nc:]) - ring if nc >= int(0.06 * FS) and np.any(p0) else -240.0
+            # (the hiss's excess over every 60 ms window of the pre-rolls, the loudest: one window read it a few dB
+            # low and key 48's floor flag missed once, rc-0.9.9h T2)
+            nw = min(len(p0), len(pd)) // nc if nc >= int(0.06 * FS) and np.any(p0) else 0
+            cf = max((m_excess_db(pd[len(pd) - (i + 1) * nc:len(pd) - i * nc], p0[len(p0) - (i + 1) * nc:len(p0) - i * nc])
+                      for i in range(min(nw, 8))), default=-240.0 + ring) - ring
             # the contact re the note as the gate reads it (m_contact_db: the aligned difference, rectangular 0..60
             # ms); NOISE de's own reading the same way bounds what the alignment leaves (its tick ~30 dB under 127's)
             ca = {x: m_contact_db(m[x], o[x], m[0], o[0])[0] for x in (de, 127)}
-            return dict(c=c, k=knock_db(m[127], o[127], m[0], o[0]) - nl, hf=hf, cf=c[de] < cf + 6, ca=ca)
+            return dict(c=c, k=knock_db(m[127], o[127], m[0], o[0]) - nl, hf=hf, cfl=cf, ca=ca)
         vals = S.per(nz)
         S.check(f"NOISE (CC {P['NOISE']['cc']}) contact {de} -> 127", f"key {n}, 0..60 ms",
                 {s_: v and v["c"][127] - v["c"][de] for s_, v in vals.items()}, lambda v: v >= 6, ">= +6 dB", level=True,
-                floor={s_: bool(v and v["cf"]) for s_, v in vals.items()})   # (the jack: NOISE de's tick in its hiss)
+                floor=noise_floor_flags(vals, de))   # (the jack: NOISE de's tick in its hiss)
         S.check("NOISE 127 contact re the note", f"key {n}, 0..60 ms, the aligned difference re NOISE 0 (the gate's)",
                 {s_: v and (v["ca"][127], v["ca"][de]) for s_, v in vals.items()},
                 lambda v: v[0] > -35 and v[0] >= v[1] + 10,

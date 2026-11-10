@@ -44,7 +44,7 @@
  *   rev_plate_run: the pointers 25 x 4 + 10 x 22 + 11 x 8, the guard copies 2 x 27, the rest 317     779
  *   = 4981 at rest; at worst + a SIZE step's 3 delays 87 + the decay gain 40 + the warm-up's checked reads (the
  *   first 0.15 s after a start) 132 + a wrapped write's copy 81 = 5321.
- * A SIZE fade (0.9.6, BUGHUNT #19; 128 ms after a turn under a ringing tail), on top: one site's blend (pl_xblend,
+ * A SIZE fade (0.9.6, BUGHUNT #19; 1 s after a turn under a ringing tail, PL_XS), on top: one site's blend (pl_xblend,
  *   11 a sample, ~190) + its pointers ~40 + the gains anew ~140: ~+370. (All 22 sites at once cost ~+3190 from flash,
  *   measured +210 us on the FM-1 under the VIBES worst case, 4296 us; ~+2780 from RAM still 4272 us.)
  * HALL (fx.c rev_hall, its own decimator and DC blocker included), counted the same way: 5644 at rest, 5864 with its
@@ -55,6 +55,9 @@
 #ifndef FR_RAM
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */
 #define FR_FAR(fn) fn
+#endif
+#ifndef FX_RAM                                  /* (frodhes.c: FR_RAM, or flash in FR_C1 builds: core 1 runs the effects from XIP) */
+#define FX_RAM FR_RAM
 #endif
 #define REV_US_PLATE 350u                              /* (full rate: rev_hq.c's cost comment) */
 
@@ -99,6 +102,7 @@ _Static_assert(PL_IO3 + PL_GAP <= PL_IN && PL_IL1 >= RQ_NC, "the input allpasses
  * SIZE step to +5 dB at 115 (pl_ctl): HALL's level at the same MIX (HALL grows with MIX's size, a plate thins out as its
  * tank grows) */
 #define PL_OUT 2302                                    /* (rev_hq_plate.c: the half-rate plate's Bark loudness, Rhodes + VIBES phrases) */
+#define PL_MKG 1037u                                  /* the output gain's make-up (Q10): pl_ctl */
 #define PL_LIM 262143                                  /* |mid|, |side| <= 2^18 (the framework's exact return) */
 _Static_assert(14 * 32768 * 2 * PL_OUT <= 2147483647, "the output product");
 /* the read sites: 0..7 the segments' own delays (0 / 4: the modulated ones, without the excursion), 8..21 the taps */
@@ -138,7 +142,7 @@ static const uint16_t PL_ITOP[4] = {PL_IO0, PL_IO1, PL_IO2, PL_IO3};
 static const uint16_t PL_IL[4] = {PL_IL0, PL_IL1, PL_IL2, PL_IL3};
 
 /* sqrt(p / 32768) x 32768 (p Q15, 0 .. 32767): a one-pole's pole at twice the rate with the same time constant */
-static FR_RAM int32_t rq_sqrt15(int32_t p)
+static FX_RAM int32_t rq_sqrt15(int32_t p)
 {
     uint32_t x = (uint32_t)p << 15, r = 0, b = 1u << 30;
     while (b > x) b >>= 2;
@@ -170,11 +174,16 @@ static int rev_plate_active(const rev_plate_t *s) { return s->quiet < PL_N; }
 
 /* the gains and lengths for these settings. A new SIZE (0.9.6, BUGHUNT #19: it glided one step at a time, 13 samples
  * a delay, a bend and a click per step under a ringing tail): all 22 delays at once, the reads cross-fading from the
- * old ones one site after the other, 128 samples each (22 x 5.8 ms = 128 ms; one site at a time: the cost of one
+ * old ones one site after the other, 2048 samples each (22 x 46 ms = 1.0 s, PL_XS; one site at a time: the cost of one
  * blend, not 22; one fade at a time: a SIZE turned on during it waits for its end); the decay and output gains follow
  * the lengths and the size between as it fades. From silence, at once */
-#define PL_XS 32                                       /* a site's fade's step a sample (Q14): 512 samples (11.6 ms) a
-                                                         * site (64, the half rate's time: zipper 2.6x on a SIZE turn) */
+#define PL_XS 8                                        /* a site's fade's step a sample (Q14): 2048 samples (46 ms) a
+                                                         * site, 1.0 s for the 22, as rev_plate.c's (64, the half rate's
+                                                         * time: zipper 2.6x on a SIZE turn; 0.9.10, with the modulated
+                                                         * reads mended: at 32 the sweep's wet bent 7.9 cents p90, its
+                                                         * level stepped 3.3 dB; at 16 the wet's zipper 2.25; at 8 1.3
+                                                         * cents, 0.7 dB, zipper 1.57; equal power at 8: 3.6 cents) */
+_Static_assert(16384 % (RQ_NC * PL_XS) == 0, "a site's fade ends on a block (pl_xw past 16384 would go negative)");
 static void pl_dset(rev_plate_t *s, uint32_t k, int32_t sz)
 {
     uint32_t d = (PL_R(PL_D0[k]) * (uint32_t)(128 + sz)) >> 8;
@@ -220,7 +229,10 @@ static void pl_ctl(rev_plate_t *s, const rev_ctl_t *c)
         e = e * (1270u + (uint32_t)sz) / 1270u;         /* (a bigger tank damps less a second: + 10 % at 127) */
         s->g = (int32_t)exp2_neg(e);
         s->g2 = clampi(s->g + 4915, 8192, 16384);
-        s->ko = (int32_t)((4u * PL_OUT / 3u * exp2_neg(65536u - (uint32_t)clampi((sz - 40) * 729, 0, 54427))) >> 15);
+        /* (x PL_MKG / 1024: +0.11 dB, 0.9.10, the wet's level as before the modulated reads were mended: their
+         * 2-sample jumps had added that much noise power, so the chord's wet fell 0.11 dB without it) */
+        s->ko = (int32_t)((4u * PL_OUT / 3u * PL_MKG / 1024u
+                           * exp2_neg(65536u - (uint32_t)clampi((sz - 40) * 729, 0, 54427))) >> 15);
         s->cdec = c->decay;
     }
     if (c->damp != s->cdamp) {
@@ -230,13 +242,19 @@ static void pl_ctl(rev_plate_t *s, const rev_ctl_t *c)
         s->cdamp = c->damp;
     }
 }
-/* a SIZE fade: n samples of the old reads (q) x a plus the new (p) x b (Q14, this block's), into t */
-static FR_RAM __attribute__((noinline)) void pl_xblend(int16_t *t, const int16_t *q, const int16_t *p, uint32_t n,
-                                                       int32_t a, int32_t b)
+/* a SIZE fade: n samples of the old reads (q) x a plus the new (p) x b (Q14), into t; the weights move sample by sample
+ * from this block's start (a, b) toward the next block's (a1, b1), 1/RQ_NC of the way a sample (0.9.10: held for the
+ * block, the fade was a staircase, a step every control block: rev_plate.c's d2 spikes under a SIZE sweep). Sample 0
+ * has the block's own weights, as before */
+_Static_assert(RQ_NC == 32u, "pl_xblend's steps: 1/32 a sample");
+static FX_RAM __attribute__((noinline)) void pl_xblend(int16_t *t, const int16_t *q, const int16_t *p, uint32_t n,
+                                                       int32_t a, int32_t b, int32_t a1, int32_t b1)
 {
     uint32_t i;
-    for (i = 0; i < n; i++)
-        t[i] = (int16_t)hl_c16((q[i] * a + p[i] * b) >> 14);
+    int32_t da = a1 - a, db = b1 - b;
+    a <<= 5, b <<= 5;
+    for (i = 0; i < n; i++, a += da, b += db)
+        t[i] = (int16_t)hl_c16((q[i] * (a >> 5) + p[i] * (b >> 5)) >> 14);
 }
 /* the fade's two weights at w (Q14, the new's share): (1 - w, w) x (1 + 0.375 w (1 - w)), +0.8 dB at the middle: the
  * old and new reads are alike after a small SIZE step, unrelated after a big one (a plain 1 - w, w sank the tail
@@ -278,7 +296,7 @@ static void pl_cpy(int16_t *d, const int16_t *q)     /* PL_G + 1 int16 (both 4-b
  * v = x - g d into its write, y = d + g v (plain shifts: with g > 0 and no input the stored value changes sign every
  * pass and never grows, so it dies out). Returns the OR of the input */
 #define PL_AP(k, g) d = r##k[i], v = hl_c16(y - ((d * (g)) >> 15)), o##k[i] = (int16_t)v, y = d + ((v * (g)) >> 15)
-static FR_RAM __attribute__((noinline)) int32_t pl_in(const int16_t *const *r, int16_t *const *o, const int32_t *in,
+static FX_RAM __attribute__((noinline)) int32_t pl_in(const int16_t *const *r, int16_t *const *o, const int32_t *in,
                                                       int32_t *x, int32_t *bw, int32_t pb)   /* (RAM: 0.9.7) */
 {
     const int16_t *r0 = r[0], *r1 = r[1], *r2 = r[2], *r3 = r[3];
@@ -310,7 +328,7 @@ static FR_RAM __attribute__((noinline)) int32_t pl_in(const int16_t *const *r, i
  * shifts. a = x + g f (f = the other half's end); the modulated allpass (read q, the interpolation fm, gain -0.7,
  * write wm) into delay 1 (w1); delay 1's end (r1), damped (lp), x g, through allpass 2 (read r2, gain g2, write w2)
  * into delay 2 (w3). Returns the OR of the writes */
-static FR_RAM __attribute__((noinline)) int32_t pl_half(const int32_t *x, const int16_t *f, const int16_t *const *r,
+static FX_RAM __attribute__((noinline)) int32_t pl_half(const int32_t *x, const int16_t *f, const int16_t *const *r,
                                                  int32_t fm, int16_t *const *o, int32_t *lp, const int32_t *k)
 {
     const int16_t *q = r[0], *r1 = r[1], *r2 = r[2];
@@ -340,14 +358,14 @@ static FR_RAM __attribute__((noinline)) int32_t pl_half(const int32_t *x, const 
 }
 
 /* the 7 taps of a side (+ + - + - - -), one block: the left into mid[]; then the right, and mid / side */
-static FR_RAM __attribute__((noinline)) void pl_taps(const int16_t *const *t, int32_t *o)
+static FX_RAM __attribute__((noinline)) void pl_taps(const int16_t *const *t, int32_t *o)
 {
     const int16_t *a0 = t[0], *a1 = t[1], *a2 = t[2], *a3 = t[3], *a4 = t[4], *a5 = t[5], *a6 = t[6];
     uint32_t i;
     for (i = 0; i < RQ_NC; i++)
         o[i] = a0[i] + a1[i] - a2[i] + a3[i] - a4[i] - a5[i] - a6[i];
 }
-static FR_RAM __attribute__((noinline)) void pl_taps_ms(const int16_t *const *t, int32_t *mid, int32_t *side, int32_t k)
+static FX_RAM __attribute__((noinline)) void pl_taps_ms(const int16_t *const *t, int32_t *mid, int32_t *side, int32_t k)
 {
     const int16_t *a0 = t[0], *a1 = t[1], *a2 = t[2], *a3 = t[3], *a4 = t[4], *a5 = t[5], *a6 = t[6];
     uint32_t i;
@@ -395,6 +413,11 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
     else
         for (k = 0; k < PL_S_N; k++)
             t[k] = pl_ptr(s, PL_TOP[PL_SEG[k]], s->d[k], s->d[k]);
+    /* the modulated reads at dm / 256 samples: a site reads delay hi (P[i]) blended toward hi - 1 (P[i + 1]) by
+     * fm / 256, so hi = ceil(dm / 256) and fm = hi x 256 - dm, below as (dm + 255) >> 8 and 255 - ((dm + 255) & 255)
+     * (0.9.10: hi = floor, fm = dm & 255 read hi - frac, the delay jumping 2 samples at each whole sample of the
+     * excursion: the MOD's sweep crossed one ~20 times a second, d2 bursts 3x a still plate's, a grain) */
+    dm0 += 255u, dm1 += 255u;
     t[0] = pl_ptr(s, PL_O0, dm0 >> 8, (dm0 >> 8) - 1u);
     t[4] = pl_ptr(s, PL_O4, dm1 >> 8, (dm1 >> 8) - 1u);
     pl_cpy(b + PL_N, b);
@@ -402,14 +425,15 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
                                                          * and its new blended (a segment before the halves write:
                                                          * every delay >= 45 > a block) */
         uint32_t xk = s->xk, n = RQ_NC;
-        int32_t xa, xb;
+        int32_t xa, xb, xa1, xb1;
         const int16_t *p = b + ((w + s->tk[xk]) & PL_M);
         if (!(xk & 3u) && xk < 8u) {                    /* (0 / 4: modulated, the excursion on the new delay too) */
             uint32_t dm = xk ? dm1 : dm0, dc = xk ? d4 : d0;
             p = b + ((w + PL_TOP[xk] - ((dm >> 8) - dc + s->d[xk])) & PL_M), n = RQ_NC + 1u;
         }
         pl_xw(s->xw, &xa, &xb);
-        FR_FAR(pl_xblend)(pl_xt, t[xk], p, n, xa, xb);
+        pl_xw(s->xw + (int32_t)RQ_NC * PL_XS, &xa1, &xb1);   /* (the next block's: 16384 at the site's end) */
+        FR_FAR(pl_xblend)(pl_xt, t[xk], p, n, xa, xb, xa1, xb1);
         t[xk] = pl_xt;
     }
     for (k = 0; k < 8u; k++)
@@ -417,8 +441,8 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
     {
         /* (volatile: read once; as a constant the compiler rebuilt the address in the loop, 4 instructions a sample) */
         const int32_t *volatile xv = s->x;
-        act |= FR_FAR(pl_half)(xv, t[7], t, (int32_t)(dm0 & 255u), o, &s->dl, &s->g);
-        act |= FR_FAR(pl_half)(xv, t[3], t + 4, (int32_t)(dm1 & 255u), o + 4, &s->dr, &s->g);
+        act |= FR_FAR(pl_half)(xv, t[7], t, (int32_t)(255u - (dm0 & 255u)), o, &s->dl, &s->g);
+        act |= FR_FAR(pl_half)(xv, t[3], t + 4, (int32_t)(255u - (dm1 & 255u)), o + 4, &s->dr, &s->g);
     }
     FR_FAR(pl_taps)(t + 8, mid);
     FR_FAR(pl_taps_ms)(t + 15, mid, side, s->ko);
