@@ -27,8 +27,11 @@ from hostrun import FS, ROOT, cc, env_rms, note, rate_of, rms_db, run, tap_lag
 
 CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(21, 70, 0),  # F01's drive, reverb and filter (on by default since 0.9.3:
          cc(22, 106, 0), cc(22, 107, 0), cc(22, 113, 0),    # LP18 at 16K) off, and its compressor (on since 0.9.5:
-         cc(22, 112, 56), cc(22, 108, 40), cc(22, 109, 50)]   # off, THRESH 0, MAKEUP 0, 4:1, ATTACK and
-                                                        # RELEASE at their defaults): each control alone
+         cc(22, 112, 56), cc(22, 108, 40), cc(22, 109, 50),   # off, THRESH 0, MAKEUP 0, 4:1, ATTACK and
+         cc(22, 28, 64), cc(22, 29, 64), cc(22, 30, 64), cc(22, 31, 64),   # RELEASE at their defaults), and its voicing
+         cc(22, 102, 64), cc(22, 103, 64), cc(22, 104, 48), cc(22, 105, 0),   # at the defaults, LEVEL 52 (the
+         cc(22, 110, 52)]                               # proposed 19's F01 turns BARK / HAMMER to 127 and LEVEL to
+                                                        # 30, 0.9.10): each control alone
 PEDAL = [cc(22, 64, 127)]
 SHORT = [cc(23, 103, 0), cc(24, 104, 0)]            # RELEASE 0, NOISE 0: a note let go stops at once
 # the SELECT order (ui.c PG_ORDER) and the page ids the dump's card.<page>.<k> use (ui.c PG_*)
@@ -1406,16 +1409,16 @@ def _trs():
 
 @case("PRESET-LOAD-UNDO")
 def _preset():
-    """PRESETS loads a sound 0.4 s after the last detent (F12 AUTO WAH: its drive and band-pass move the energy into
-    the mids: the share of 500 Hz - 4 kHz rises from F01's; F11 RADIO until it moved to the starters, 0.9.5; F19 since); SAVE
-    held 0.7 s goes back"""
-    w = R(CLEAN + [f"{50 + 3 * i} turn 6 1" for i in range(11)] + ["600 dump", "700 press 9", "1500 release 9",
+    """PRESETS loads a sound 0.4 s after the last detent (F13 VIBES, 12 detents: the vibraphone moves the 500 Hz - 4 kHz
+    share by far more than 4 dB from F01's; F12 AUTO WAH until the proposed 19 dropped it, 0.9.10: its band-pass
+    raised the share; F11 RADIO until it moved to the starters, 0.9.5); SAVE held 0.7 s goes back"""
+    w = R(CLEAN + [f"{50 + 3 * i} turn 6 1" for i in range(12)] + ["600 dump", "700 press 9", "1500 release 9",
                                                                      "1600 dump"] + note(620, 60, 100, 60), 1700)
-    assert w.state(600)["header"] == "F12 AUTO WAH" and w.state(1600)["header"] == "F01 STAGE 77", (w.state(600)["header"], w.state(1600)["header"])
+    assert w.state(600)["header"] == "F13 VIBES" and w.state(1600)["header"] == "F01 STAGE 77", (w.state(600)["header"], w.state(1600)["header"])
     a = R(note(200, 60, 100, 1000), 1500)
-    b = R(["50 turn 6 1"] + [f"{60 + 3 * i} turn 6 1" for i in range(10)] + note(700, 60, 100, 1000), 2000)
+    b = R(["50 turn 6 1"] + [f"{60 + 3 * i} turn 6 1" for i in range(11)] + note(700, 60, 100, 1000), 2000)
     ma, mb = band_db(a.seg(0.25, 1.1), 500, 4000), band_db(b.seg(0.75, 1.6), 500, 4000)
-    return mb - ma, 4.0, f"500 Hz - 4 kHz share {ma:.1f} -> {mb:.1f} dB"
+    return abs(mb - ma), 4.0, f"500 Hz - 4 kHz share {ma:.1f} -> {mb:.1f} dB"
 
 
 @case("PRESET-SAVE")

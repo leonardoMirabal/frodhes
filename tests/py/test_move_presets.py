@@ -61,9 +61,11 @@ def test_sync_moves_the_variants_with_their_a(tmp_path, monkeypatch):
     src.mkdir(parents=True)
     shutil.copy(os.path.join(ROOT, "firmware", "src", "params.c"), src)
     pc = open(os.path.join(ROOT, "firmware", "src", "presets.c")).read()
-    old = "P_RV_LOCUT, 70, P_LEVEL, 52, 0xFF,"
-    assert pc.count(old) == 1
-    (src / "presets.c").write_text(pc.replace(old, "P_RV_LOCUT, 70, P_LEVEL, 55, P_NOISE, 40, 0xFF,"))
+    import re as _re
+    a = pc.index("PR_FDATA[] = {")
+    b = pc.index("0xFF,", a)                                                    # (F01's record: up to its 0xFF)
+    rec01 = _re.sub(r"P_LEVEL, (\d+),", lambda m: "P_LEVEL, %d," % (int(m.group(1)) + 3), pc[a:b], count=1)
+    (src / "presets.c").write_text(pc[:a] + rec01 + "P_NOISE, 40, " + pc[b:])
     rec_path = tmp_path / "proposed_records.txt"
     shutil.copy(gp.RECORDS, rec_path)
     monkeypatch.setattr(gp, "ROOT", str(tmp_path))
@@ -84,7 +86,8 @@ def test_sync_moves_the_variants_with_their_a(tmp_path, monkeypatch):
         assert {n: v for n, v in a.items() if n not in ("P_LEVEL", "P_NOISE")} == \
                {n: v for n, v in b.items() if n not in ("P_LEVEL", "P_NOISE")}, key
     text = rec_path.read_text()
-    assert text.count("--sync") == 1 and "F01 STAGE 77 LEVEL +3 NOISE -8" in text
+    assert text.count("--sync") == open(os.path.join(ROOT, "move", "presets", "proposed_records.txt")).read().count("--sync") + 1
+    assert "F01 STAGE 77 LEVEL +3 NOISE -8" in text
     assert gp.sync("2026-11-10") == []                                          # (idempotent)
 
 
