@@ -3,6 +3,30 @@
 # Buttons: SEL 3 (the delay's light), HOME 8; encoders SELECT 0, K1..K4 = 2..5.
 # Turning an amount up switches its effect on (the delay's light comes on), with the sound changing at once; the
 # FILTER card starts fully open (16K) and closes as it is turned down.
+# (2026-11-10) the boot preset's voicing, compressor, reverb and LEVEL as this script was written for (F01 before the
+# proposed 19; dry_dist.TYPE_BASE): the script tests its feature, not F01's record
+20 midi 0xB0 28 64
+20 midi 0xB0 29 64
+20 midi 0xB0 30 64
+20 midi 0xB0 31 64
+20 midi 0xB0 102 64
+20 midi 0xB0 103 64
+20 midi 0xB0 104 48
+20 midi 0xB0 105 0
+20 midi 0xB0 107 50
+20 midi 0xB0 112 16
+20 midi 0xB0 108 80
+20 midi 0xB0 109 72
+20 midi 0xB0 113 8
+20 midi 0xB0 91 18
+20 midi 0xB0 95 32
+20 midi 0xB0 69 70
+20 midi 0xB0 92 64
+20 midi 0xB0 93 64
+20 midi 0xB0 94 0
+20 midi 0xB0 73 0
+20 midi 0xB0 68 64
+20 midi 0xB0 110 52
 100 expect state label.0.0 DRIVE
 100 expect state label.0.1 FILTER
 100 expect state label.0.2 DELAY
