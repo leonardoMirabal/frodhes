@@ -1167,7 +1167,7 @@ FX_RAM __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, u
 #if FR_CHUNK
     if (!on && !ph_w) { if (FXC_1) { ph_cq = -1; ph_ph += inc * n; } return; }
     if (FXC_1) {
-        if (!ph_w) memset(&ph_st, 0, sizeof ph_st);
+        if (!ph_w) FR_FAR(memset)(&ph_st, 0, sizeof ph_st);
         if (ph_cq < 0) { ph_cq = ct; ph_gq = gt; ph_dq = depth << 8; ph_fq = fbk; ph_apv = 0; }
     }
     w1 = FR_FAR(xf_pre_c)(ph_w, on, L, R, n, XF_STEP_CP);
@@ -1179,7 +1179,9 @@ FX_RAM __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, u
                                                          * phaser +4.2 dB over both held renders, the control sweep) */
     if (!ph_w) {                                        /* switched on from rest: the allpasses start from 0 (their
                                                          * states were stale), under the fade in */
-        memset(&ph_st, 0, sizeof ph_st);
+        FR_FAR(memset)(&ph_st, 0, sizeof ph_st);     /* (through a register: fx_phaser is in RAM, libc.c's memset
+                                                         * in flash, beyond a call's reach when the compiler does not
+                                                         * inline it: the one-core link failed so, 0.9.11) */
     }
     if (ph_cq < 0) { ph_cq = ct; ph_gq = gt; ph_dq = depth << 8; ph_fq = fbk; ph_apv = 0; }   /* (switched on: at once) */
     w1 = FR_FAR(xf_pre)(ph_w, on, L, R, n, XF_STEP_CP);
