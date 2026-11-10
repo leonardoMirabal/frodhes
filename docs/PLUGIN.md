@@ -7,8 +7,8 @@ FM-1 plays: the same parameters, the same factory sounds, the same state. A desk
 the devices', so the plugin plays the high-quality version of everything: every engine and every effect on its HQ
 path, with 24 voices on every engine.
 
-This is a developer build. On macOS it opens its own window (the CLAP, VST3 and Audio Unit alike); on other systems
-the host shows its generic parameter view.
+It opens its own window on every system (macOS: the CLAP, VST3 and Audio Unit alike; Windows and Linux: the CLAP and
+VST3), from the same UI code (plugin/gui_mac.m, gui_win.c, gui_x11.c).
 
 ## Build
 
