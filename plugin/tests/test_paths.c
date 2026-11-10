@@ -100,7 +100,7 @@ int main(int argc, char **argv)
             if (x) { fprintf(x, "round %d", round); fclose(x); }
             EXPECT(frp_replace(t, f) == 0, "replace round %d", round);
         }
-        if ((x = frp_fopen(f, "rb")) != 0) { char b[16] = {0}; fread(b, 1, sizeof b - 1, x); fclose(x); EXPECT(!strcmp(b, "round 1"), "the replaced file holds round 1 ('%s')", b); }
+        if ((x = frp_fopen(f, "rb")) != 0) { char b[16] = {0}; size_t nr = fread(b, 1, sizeof b - 1, x); (void)nr; fclose(x); EXPECT(!strcmp(b, "round 1"), "the replaced file holds round 1 ('%s')", b); }
         else EXPECT(0, "read back %s", f);
         EXPECT(frp_list_dir(d, count_cb, &n) == 0 && n == 1, "one preset listed (%d)", n);
         EXPECT(frp_remove(f) == 0, "remove");
