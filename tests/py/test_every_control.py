@@ -1548,7 +1548,7 @@ def _dev_ui():
 def _dev_eng():
     """developer CC 9 caps VIBES' upper modes (1 = none: the attack above 3 kHz drops 50+ dB); CC 116 replies on CC
     115-118 and 112-113"""
-    pv = [cc(10, 79, 0), cc(20, 81, 0), cc(21, 91, 0)]
+    pv = CLEAN + [cc(10, 79, 0)]                        # (the voicing at its defaults: v2's F01 has a soft mallet)
     probe = sum((note(300, n, 110, 1000) for n in (60, 72)), [])
     a = band_db(R(pv + probe, 1500).seg(0.3, 0.5), 3000, 16000)
     b = band_db(R(pv + [cc(30, 9, 1)] + probe, 1500).seg(0.3, 0.5), 3000, 16000)

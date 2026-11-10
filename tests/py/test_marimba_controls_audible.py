@@ -29,6 +29,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import marimba_scan as ms  # noqa: E402
 import bar_measure as bm  # noqa: E402
+import dry_dist  # noqa: E402
 
 AWAIT = pytest.mark.xfail(ms.stub_detected(), reason=ms.await_reason(), strict=False)
 MARIMBA = [cc(20, 79, 127)]
@@ -40,7 +41,7 @@ def f0(n):
 
 
 def play(tag, setup, note, vel=100, on=200, dur=1500, end=None, raw=True):
-    lines = MARIMBA + (RAW if raw else []) + setup + [f"{on} midi 0x90 {note} {vel}", f"{on + dur} midi 0x80 {note} 0"]
+    lines = dry_dist.type_base_lines(10) + MARIMBA + (RAW if raw else []) + setup + [f"{on} midi 0x90 {note} {vel}", f"{on + dur} midi 0x80 {note} 0"]
     return run(tag, lines, end or on + dur + 1500)
 
 

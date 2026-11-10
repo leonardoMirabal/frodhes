@@ -19,7 +19,7 @@ from hostrun import BIN, FS, build, run  # noqa: E402
 def test_vibes_low_keys_lock_on_the_band_edge_in_the_strike_window():
     """why: the retune in the strike's window reads the band's edge at VIBES A1 / E1 (2.7 .. 3.6 % low)"""
     for key in (33, 28):
-        ev = ["50 midi 0xB0 10 127", "100 midi 0xB0 111 127", "110 midi 0xB0 106 0", "120 midi 0xB0 79 0",
+        ev = dd.type_base_lines(40) + ["50 midi 0xB0 10 127", "100 midi 0xB0 111 127", "110 midi 0xB0 106 0", "120 midi 0xB0 79 0",
               f"400 midi 0x90 {key} 64", f"1400 midi 0x80 {key} 0"]
         r = run(f"ddat-{key}", ev, 1600)
         x = (r.L.astype(float) + r.R.astype(float)) / 2

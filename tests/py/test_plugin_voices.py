@@ -20,6 +20,10 @@ import wave
 import numpy as np
 import pytest
 
+import sys  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools"))
+import dry_dist  # noqa: E402
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BUILD = os.environ.get("FRP_BUILD", os.path.join(ROOT, "build", "plugin"))
 RENDER = os.path.join(BUILD, "frp_clap_render")
@@ -40,7 +44,8 @@ ENGINES = {                                      # the TYPE's CCs (VIBES: its mo
 
 
 def render(tmp_path, name, engine, keys, k25=False, only25=False):
-    lines = ["40 midi 0xB0 119 127"] + ENGINES[engine]            # the engine alone (RAW)
+    lines = dry_dist.type_base_lines(30) + ["40 midi 0xB0 119 127"] + ENGINES[engine]   # the engine alone (RAW), the
+                                                                  # voicing at its defaults (not F01's)
     if not only25:
         lines += [f"{T_ON} midi 0x90 {k} {VEL}" for k in keys]
     if k25 or only25:

@@ -17,6 +17,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import bars_model as gm   # noqa: E402
 import marimba_va as mva  # noqa: E402
+import dry_dist  # noqa: E402
 
 SPEC = json.load(open(os.path.join(ROOT, "docs", "model", "data", "marimba_spec.json")))
 HDR = open(os.path.join(ROOT, "firmware", "gen", "bars_tables.h")).read()
@@ -24,7 +25,7 @@ HDR = open(os.path.join(ROOT, "firmware", "gen", "bars_tables.h")).read()
 
 def host_note(key, decay, dur_ms=6000):
     """MARIMBA (CC 79 127), RAW, RING = DECAY (CC 102), one v100 note held (pedal down: no key-up)"""
-    ls = ["50 midi 0xB0 119 127", "60 midi 0xB0 79 127", "61 midi 0xB0 64 127", f"62 midi 0xB0 102 {decay}",
+    ls = dry_dist.type_base_lines(40) + ["50 midi 0xB0 119 127", "60 midi 0xB0 79 127", "61 midi 0xB0 64 127", f"62 midi 0xB0 102 {decay}",
           f"100 midi 0x90 {key} 100"]
     r = hostrun.run(f"mring-{key}-{decay}", ls, end_ms=dur_ms + 200)
     return r.seg(0.1, 0.1 + dur_ms / 1000).astype(float)
@@ -107,7 +108,7 @@ def test_ring_corner_does_not_clip_raw():
     """the C on the host, RAW: bar_scan's corner 1 (RUBBER, TUBE 127, centre, WEIGHT 127, RING 127) on C3 and C2, v127,
     under full scale (before: clipped)"""
     for key in (36, 48):
-        ls = ["50 midi 0xB0 119 127", "50 midi 0xB0 104 0", "60 midi 0xB0 79 127", "61 midi 0xB0 102 127",
+        ls = dry_dist.type_base_lines(40) + ["50 midi 0xB0 119 127", "50 midi 0xB0 104 0", "60 midi 0xB0 79 127", "61 midi 0xB0 102 127",
               "61 midi 0xB0 29 127", "61 midi 0xB0 30 127", "61 midi 0xB0 28 0", "61 midi 0xB0 31 127",
               f"100 midi 0x90 {key} 127"]
         x = hostrun.run(f"mring-corner-{key}", ls, end_ms=1600).L.astype(float)

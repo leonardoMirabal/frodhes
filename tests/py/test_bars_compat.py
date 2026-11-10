@@ -136,7 +136,7 @@ def test_midi(new):
     assert d["factory.12"] == "F13 VIBES type=4 sw=0 mode=0 mot=1 depth=90 rate=66 shape=0 rev=20"   # 0.9.5 presets (DRY)
     assert d["factory.13"] == "F14 VIBES ECHO type=4 sw=0 mode=0 mot=0 depth=110 rate=78 shape=0 rev=34"
     assert d["factory.14"].startswith("F15 MARIMBA type=5 sw=0 mode=0 mot=0 ") and d["factory.14"].endswith("rev=22")
-    assert d["factory.15"].startswith("F16 WOOD ECHO type=5 ") and d["factory.15"].endswith("rev=30")   # (the proposed 19: hall 38 -> 30)
+    assert d["factory.15"].startswith("F16 WOOD ECHO type=5 ") and d["factory.15"].endswith("rev=38")   # (FINAL19 v2: hall 38)
     assert [d[f"factory.{i}"].split(" type=")[0] for i in (16, 17, 18)] == ["F17 TAPE ECHO", "F18 DREAM", "F19 WARM DRIVE"]
 
 

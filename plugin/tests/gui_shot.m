@@ -326,6 +326,8 @@ int main(int argc, char **argv)
         /* the host automates and plays: the knobs and the keys follow */
         ev_param(14, 90.0);                          /* DL_DEPTH (DELAY's MIX) */
         ev_param(13, 2.0);                           /* DL_SW */
+        ev_param(20, 64.0);                          /* TONE at its middle: the drags below need room both ways (F01's
+                                                      * TONE is 112 since FINAL19 v2) */
         ev_note(1, 60); ev_note(1, 64); ev_note(1, 67);
         if (find(FRW_TAB_R, 4, &x, &y, 0)) click(x, y, 1);   /* the DELAY tab */
         pump(0.4);

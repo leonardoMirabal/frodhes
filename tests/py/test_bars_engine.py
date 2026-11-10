@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 FS = 44100
 VIBES = "60 midi 0xB0 79 0\n60 midi 0xB0 47 0\n"   # CC 79: the bar types (VIBES); the motor (on with it) off
 import dry_dist  # noqa: E402
+TB = "".join(ln + "\n" for ln in dry_dist.type_base_lines(15))
 RAW = "".join(ln + "\n" for ln in dry_dist.type_base_lines(45)) + "50 midi 0xB0 119 127\n"   # the voicing at its defaults, not F01's (dry_dist.TYPE_BASE)
 F3B = [53, 55, 57, 59, 60, 62, 64, 65]
 F3B9 = F3B + [67]                             # nine bar voices (the S12 cases)
@@ -121,7 +122,7 @@ def test_the_motor_does_nothing_on_a_rhodes_type():
 
 def test_motor_passes_fx_trem_on_vibes():
     """On VIBES the motor is the engine's, the effects' tremolo stays off: with RAW off the motor's AM equals the RAW one"""
-    s = ("20 midi 0xB0 81 0\n21 midi 0xB0 91 0\n" + VIBES + MOTOR.format(rate=78)   # dry: F01's drive / reverb off
+    s = (TB + "20 midi 0xB0 81 0\n21 midi 0xB0 91 0\n" + VIBES + MOTOR.format(rate=78)   # dry: F01's drive / reverb off
          + "70 midi 0xB0 64 127\n200 midi 0x90 69 100\n4200 end\n")
     raw, _ = render("mot_raw", RAW + s)
     fx, _ = render("mot_fx", s)

@@ -20,6 +20,9 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 import test_move_params as tmp  # noqa: E402
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
+import dry_dist  # noqa: E402
+
 BLK_MS = 128 * 1000 / 44100            # one render_block
 HOLD = int(600 / BLK_MS)               # 600 ms
 EXT, TOUCH = 2, 5                      # plugin_api_v1.h MOVE_MIDI_SOURCE_EXTERNAL / _TOUCH
@@ -61,6 +64,8 @@ def struck():
 
 # each step's reads in order: "get s_sustain" lines, "get dev_sus" lines, "rms" lines
 SCRIPT = (
+    # the voicing at its defaults (dry_dist.TYPE_BASE), not F01's: v2's F01 rings longer
+    ["midi %d %d %d %d" % (EXT, 0xB0, c, v) for c, v in dry_dist.TYPE_BASE] + ["render 5"] +
     # 1 SUS ON holds, SUS OFF lets go
     ["set s_sustain 1", "render 5", "get s_sustain"] + struck()
     + ["set s_sustain 0", "render 5", "get s_sustain", "get dev_sus", "render 400", "rms 20"]

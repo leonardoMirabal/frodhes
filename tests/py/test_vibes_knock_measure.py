@@ -23,6 +23,7 @@ from scipy.signal import resample_poly
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import hil_scan as h  # noqa: E402
+import dry_dist  # noqa: E402
 
 BIN = os.path.join(ROOT, "build", "host", "frodhes")
 FS = h.FS
@@ -38,7 +39,7 @@ def host_build():
 def take(noise, key, up_ms):
     """VRig.reset (DRY, VIBES, the motor off, NOISE) + CC 10, key v100 at 0.5 s, let go up_ms ms after 2.0 s;
     resampled to FS: (mono, the onset index as the suite finds it)"""
-    s = ["20 midi 0xB0 81 0", "21 midi 0xB0 91 0", "60 midi 0xB0 79 0", "61 midi 0xB0 47 0", f"62 midi 0xB0 {NZ} {noise}",
+    s = dry_dist.type_base_lines(10) + ["20 midi 0xB0 81 0", "21 midi 0xB0 91 0", "60 midi 0xB0 79 0", "61 midi 0xB0 47 0", f"62 midi 0xB0 {NZ} {noise}",
          "450 midi 0xB0 10 127", f"500 midi 0x90 {key} 100", f"{2000 + up_ms} midi 0x80 {key} 0", "2600 end"]
     out = hostrun.out(f"knock-{noise}-{key}-{up_ms}")
     with open(out + ".txt", "w") as f:
