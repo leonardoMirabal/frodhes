@@ -611,19 +611,22 @@ def test_usb_host_renders_the_host_at_the_slots_tune(tmp_path):
 
 def test_usb_host_tune_on_the_0_9_9_d2_takes(tmp_path):
     """the 0.9.9 USB-C d2's own takes (build/rel099/move/d2b, slot TUNE -8, not read then): re-analysed, the Rhodes
-    (F01) and MARIMBA (F15) pass with the measured TUNE -8; VIBES (F13) still differs (its free motor: the d2 now plays
-    its usb-host with the motor off)"""
+    (F01) and MARIMBA (F15) passed with the measured TUNE -8 on the 0.9.9 sound; VIBES (F13) still differed (its free
+    motor: the d2 now plays its usb-host with the motor off). (2026-11-10) Since the 0.9.10 sound (rc4: the proposed 19,
+    the engine changes) the host no longer plays what those 0.9.9 takes hold, so the residual verdict is not judged
+    here any more (a sound check against an old release's takes); the TUNE is: measured -8 on all three, under 1 c
+    left after it"""
     import shutil
     import pytest
     src = _d2b()
     if src is None:
         pytest.skip("no build/rel099/move/d2b (the 0.9.9 d2's takes)")
-    for e, want in (("rhodes", True), ("marimba", True), ("vibes", False)):
+    for e in ("rhodes", "marimba", "vibes"):
         d = tmp_path / e
         shutil.copytree(os.path.join(src, e, "usb-host"), d)
         ok, rep = mh.usb_host_file(str(d), out=lambda s: None)
         assert (rep["tune"], rep["tune_source"]) == (-8, "measured"), (e, rep["verdict"])
-        assert ok == want and abs(rep["pitch_left_c"]) < 1, (e, rep["verdict"])
+        assert abs(rep["pitch_left_c"]) < 1, (e, rep["verdict"])
         assert rep["program"] == mh.D2_PRESET[e]
 
 
