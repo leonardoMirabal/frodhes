@@ -81,7 +81,7 @@ GRID = {
     "full": dict(keys_ep=(28, 33, 45, 57, 69, 81, 93), keys_bar=(45, 53, 60, 67, 74, 81, 89),
                  vels=(20, 40, 64, 96, 110, 127),
                  chords=(("low", (33, 40, 45, 49)), ("mid", (57, 60, 64, 67)), ("high", (69, 72, 76, 79))),
-                 presets=tuple(range(16)) + (32, 33, 34)),
+                 presets=True),
 }
 CONTROLS = (("TONE", 28), ("BARK", 29), ("BELL", 30), ("HAMMER", 31), ("DECAY", 102), ("NOISE", 104))
 # (full: each voice control at 0 and 127 on every TYPE, effects off, the FM-1 build: the control rows elsewhere
@@ -107,9 +107,19 @@ def f0(n):
 
 # ---------------------------------------------------------------- the cases and their scripts
 
-def cases(grid):
-    """[(case id, build, setup CCs [(t, status, d1, d2)], keys, kind)]: one script each"""
+def preset_names(tree=None):
+    """a tree's factory preset names in slot order (presets.c PR_FNAME)"""
+    import re
+    s = open(os.path.join(tree or ROOT, "firmware", "src", "presets.c")).read()
+    return re.findall(r'"([^"]*)"', re.search(r"PR_FNAME\[PR_NF\] = \{(.*?)\};", s, re.S).group(1))
+
+
+def cases(grid, tree=None):
+    """[(case id, build, setup CCs [(t, status, d1, d2)], keys, kind)]: one script each. A preset case is named by
+    the preset's NAME in that tree (2026-11-10: the proposed 19 moved and replaced presets; a name compares with the
+    last release's preset of that name, loaded by its own program change there)"""
     g, out = GRID[grid], []
+    names = preset_names(tree) if g["presets"] else []
     for build in ("fm1", "hq"):
         for tname, tcc, tval in TYPES:
             for cfg, ccs in CONFIGS.items():
@@ -130,11 +140,12 @@ def cases(grid):
                                 [(dry_dist.TYPE_BASE_T, 0xB0, c, v) for c, v in dry_dist.TYPE_BASE]   # (COMP off: the dry, as FXOFF)
                         out.append((f"{build}/{tname}/{cname}{cv}/A", build, setup,
                                     g["keys_ep"] if tcc == 80 else g["keys_bar"], "control"))
-        for pc in g["presets"]:
-            name = f"F{pc + 1:02d}" if pc < 16 else f"F{pc - 15:02d}"
+        for k, pname in enumerate(names):
+            pc = k if k < 16 else k + 16
+            name = pname.replace(" ", "_")
             for m, mv in METHODS:
                 out.append((f"{build}/{name}/PRESET/{m}", build, [(100, 0xC0, pc, None), (900, 0xB0, 40, mv)],
-                            g["keys_bar"] if 12 <= pc < 16 else g["keys_ep"], "preset"))
+                            g["keys_bar"] if 12 <= k < 16 else g["keys_ep"], "preset"))
     return out
 
 
@@ -387,10 +398,10 @@ def _job(a):
     return case[0], measure(binary, case, grid, tmp)
 
 
-def measure_all(bins, grid, tag, n=None):
-    """{case id: cells} for every case, the builds' binaries {fm1, hq}"""
+def measure_all(bins, grid, tag, n=None, tree=None):
+    """{case id: cells} for every case, the builds' binaries {fm1, hq} (tree: whose preset names)"""
     tmp = os.path.join(OUT, tag)
-    jobs = [(bins[c[1]], c, grid, tmp) for c in cases(grid)]
+    jobs = [(bins[c[1]], c, grid, tmp) for c in cases(grid, tree)]
     n = n or int(os.environ.get("PRISTINE_N", os.environ.get("PYTEST_N", "2")) or 2)
     with Pool(max(1, n)) as pool:
         res = dict(pool.map(_job, jobs, chunksize=2))
@@ -452,7 +463,7 @@ def last_cells(grid, base_tree=None):
     cache = os.path.join(OUT, f"last-{grid}-{key}.json")
     if os.path.exists(cache):
         return json.load(open(cache))
-    cells = measure_all(tree_bins(tree, os.path.join(OUT, "last-bin")), grid, "last-" + grid)
+    cells = measure_all(tree_bins(tree, os.path.join(OUT, "last-bin")), grid, "last-" + grid, tree=tree)
     json.dump(cells, open(cache, "w"))
     return cells
 
@@ -578,6 +589,9 @@ def judge(cand, base, expected):
     fails, moves, used = [], [], set()
     for cid in sorted(cand):
         bc = base.get(cid)
+        if bc is None and "/PRESET/" in cid:   # a preset the last release did not have: nothing to compare with
+            moves.append((cid, "*", "new", None, None, None, "a preset the last release did not have: no reference"))
+            continue
         if bc is None:
             fails.append((cid, "*", "*", None, None, None, "no baseline for this case"))
             continue

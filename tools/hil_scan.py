@@ -71,6 +71,7 @@ report build/hil/vibes-host.md): each take a fresh host run that replays the pan
 import argparse
 import json
 import os
+import re
 import sys
 import time
 
@@ -1258,9 +1259,11 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 # 4-note v127 pedalled chords already peak at -1.2 .. -1.4 dBFS before the limiter (-1.0), so it cannot come up to
 # its usual target without hard playing reaching the limiter; the global level stays as loud as fits. F06 / F09 /
 # F11 / F19 came down to the target (LEVEL 54 / 62 / 23 / 80: -0.1, -0.0, +0.2, +0.1)
-PRESET_TARGET = {9: (1.4, 1.5), 12: (2.3, 2.0), 13: (0.6, 1.0), 14: (0.7, 1.0), 15: (-3.8, 1.0),
-                 16: (-5.4, 1.0), 17: (0.0, 1.0), 18: (0.5, 1.0), 19: (0.6, 1.0),
-                 21: (-0.3, 1.0), 23: (0.7, 1.0)}
+# (2026-11-10, the proposed 19: the targets by preset NAME (presets.c PR_FNAME), not by slot: SUIT TREM moved F05 ->
+# F08; AUTO WAH (+2.3 +- 2.0) and RADIO (+0.6 +- 1.0) were dropped with their slots; the starters by U number)
+PRESET_TARGET = {"70S PHASER": (1.4, 1.5), "VIBES": (0.6, 1.0), "VIBES ECHO": (0.7, 1.0), "MARIMBA": (-3.8, 1.0),
+                 "WOOD ECHO": (-5.4, 1.0), "TAPE ECHO": (0.0, 1.0), "DREAM": (0.5, 1.0),
+                 "U02": (-0.3, 1.0), "U04": (0.7, 1.0)}
 # (2026-11-09, fx-level: 0.9.9's absolute level and balance again (742a2537: every LEVEL -19, then the presets the
 # effects had made quieter back to 0.9.9's loudness): the host reads F09 +2.0, F13 +3.1, F14 +3.2, F15 +0.2, F16 -1.8,
 # F18 +1.1, U02 +0.9, U04 +1.2 re F01 (the 0.9.10 headroom trims below are superseded: F04 -0.1, F08 +1.3, U07 -0.2
@@ -1295,12 +1298,24 @@ def preset_pc(p):
 # full range, no longer holds). 0.9.7: LEVEL 18, the host +0.0. 2026-10-28: the FM-1's readings moved with its saved
 # BPM (F11's LFO and echo are synced: +2.1 at LEVEL 18 at the unit's own tempo); with presets()' 120 BPM clock and
 # every take on bar 1 of the sweep the FM-1 reads -0.4 (4 runs, spread <= 0.21 LU)
-HOST_SHIFT = {11: 0.2}
+HOST_SHIFT = {"RESO SWEEP": 0.2}
+
+
+def pr_names():
+    """presets.c's factory names in slot order (PR_FNAME)"""
+    s = open(os.path.join(ROOT, "firmware", "src", "presets.c")).read()
+    return re.findall(r'"([^"]*)"', re.search(r"PR_FNAME\[PR_NF\] = \{(.*?)\};", s, re.S).group(1))
+
+
+def preset_key(p):
+    """row p (1-based: F01..F19, then U01..) -> its PRESET_TARGET key: the factory preset's name, else U<nn>"""
+    return pr_names()[p - 1] if p <= PR_COUNT else f"U{p - PR_COUNT:02d}"
 
 
 def preset_target(p, host=False):
-    t, tol = PRESET_TARGET.get(p, (0.0, 1.0) if p > PR_COUNT else (0.0, 1.5))
-    return (t + HOST_SHIFT.get(p, 0.0) if host else t), tol
+    k = preset_key(p)
+    t, tol = PRESET_TARGET.get(k, (0.0, 1.0) if p > PR_COUNT else (0.0, 1.5))
+    return (t + HOST_SHIFT.get(k, 0.0) if host else t), tol
 
 
 def preset_label(p):

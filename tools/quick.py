@@ -12,8 +12,8 @@ limit. The big grids (make release-diff, the long make pytest) are the net befor
   fx        tools/fx_pristine.py (the FM-1 build): every effect but DRIVE at MIX / DEPTH 0, 64, 127: the limiter idle,
             no clamp, the level at 0 equal to the bypass, no added non-linearity. One line per effect
   bypass    tests/py/test_bypass_level.py: FX off keeps the compressor; FX off = FX on at MIX 0 (level and width)
-  level     the absolute output: every TYPE (default effects) and F01..F19, a v127 chord and a v127 note, RMS within
-            1.5 dB of 0.9.9 and the peak at most 0.9.9's + 1 dB (USB's digital scale = the jack's at MASTER full: the
+  level     the absolute output: every TYPE (dry_dist's TYPE base) and each factory preset by name, a v127 chord and a
+            v127 note, critical-band loudness within 1.5 dB of 0.9.9's (RMS shown) and the peak at most 0.9.9's + 1 dB (USB's digital scale = the jack's at MASTER full: the
             headphones' headroom). tests/baselines/quick_level_099.json
   midi      MIDI velocity reaches the engine untouched: the same MIDI notes (v1 / 40 / 96 / 127) render byte for byte
             the same at every TOUCH (LIGHT MEDIUM HEAVY FIXED) and KEY VEL (1 96 127), and the setting did change
@@ -34,6 +34,9 @@ The Move (K27; its HQ host build, MOVE_DEFS + HQ_DEFAULT=1: the plugin as it loa
   tools/quick.py --save-level --fm1 BIN                          the level baseline (ONLY on the last release's build)
   tools/quick.py --save-level --hq BIN                           the Move's level baseline (the last release's Move
                                                                  build: tools/dry_dist.py --build-hq OUT --src TREE)
+  tools/quick.py --save-new-level --fm1 BIN --hq BIN             the presets 0.9.9 did not have: their own reference,
+                                                                 on the build they came with (tests/baselines/
+                                                                 quick_level_new*.json)
 """
 import argparse
 import hashlib
@@ -153,56 +156,96 @@ def check_bypass(b):
 
 
 # ---------------------------------------------------------------- level: the absolute output against 0.9.9
-LEVEL_CASES = [(f"TYPE-{n}", [f"100 midi 0xB0 {c} {v}"]) for n, c, v in
-               (("ST77", 80, 0), ("SUIT", 80, 32), ("FELT", 80, 64), ("DYNO", 80, 96), ("VIBES", 79, 0),
-                ("MARIMBA", 79, 127))] + \
-              [(f"F{pc + 1:02d}" if pc < 16 else f"F{pc - 15:02d}", [f"100 midi 0xC0 {pc}"])
-               for pc in list(range(16)) + [32, 33, 34]]
+# (2026-11-10, the proposed 19: the presets by NAME, not by slot, and judged by critical-band loudness (tools/cb_loud.py,
+# the level matching the presets were made with), RMS kept as information. THRESHOLD: cb loudness within +-1.5 dB of
+# 0.9.9's preset of the same name (was RMS +-1.5 dB by slot); the peak at most 0.9.9's + 1 dB as before. A preset 0.9.9
+# did not have is judged against its own reference, measured on the build it came with (LEVEL_NEW / LEVEL_NEW_HQ).)
+LEVEL_TYPES = (("TYPE-ST77", 80, 0), ("TYPE-SUIT", 80, 32), ("TYPE-FELT", 80, 64), ("TYPE-DYNO", 80, 96),
+               ("TYPE-VIBES", 79, 0), ("TYPE-MARIMBA", 79, 127))
+LEVEL_NEW = os.path.join(ROOT, "tests", "baselines", "quick_level_new.json")
+LEVEL_NEW_HQ = os.path.join(ROOT, "tests", "baselines", "quick_level_new_hq.json")
 
 
-def level_one(binary, name, setup, sub="level"):
+def preset_names(tree=ROOT):
+    """a tree's factory preset names in slot order (presets.c PR_FNAME)"""
+    s = open(os.path.join(tree, "firmware", "src", "presets.c")).read()
+    return re.findall(r'"([^"]*)"', re.search(r"PR_FNAME\[PR_NF\] = \{(.*?)\};", s, re.S).group(1))
+
+
+def level_cases(tree=ROOT):
+    """[(case, setup lines, bars)]: every TYPE on dry_dist's TYPE base (not F01's voicing), then each factory preset
+    by name, loaded by its program change in that tree (0..15 F01..F16, 32.. F17..)"""
+    import dry_dist
+    out = [(n, dry_dist.type_base_lines(95) + [f"100 midi 0xB0 {c} {v}"], c == 79) for n, c, v in LEVEL_TYPES]
+    for k, name in enumerate(preset_names(tree)):
+        out.append((name, [f"100 midi 0xC0 {k if k < 16 else k + 16}"], 12 <= k < 16))
+    return out
+
+
+def level_one(binary, name, setup, bars, sub="level"):
+    import cb_loud
     import release_diff as rd
-    bars = name in ("TYPE-VIBES", "TYPE-MARIMBA") or name in ("F13", "F14", "F15", "F16")
     chord, note = ((65, 69, 72, 77), 69) if bars else ((48, 55, 60, 64), 45)
     ls = list(setup) + [f"1000 midi 0x90 {n} 127" for n in chord] + [f"1800 midi 0x80 {n} 0" for n in chord]
     ls += [f"3500 midi 0x90 {note} 127", "4300 midi 0x80 {} 0".format(note), "6000 end"]
-    x = rd.render(binary, os.path.join(OUT, sub, name), sorted(ls, key=lambda l: int(l.split()[0])))
+    x = rd.render(binary, os.path.join(OUT, sub, name.replace(" ", "_")), sorted(ls, key=lambda l: int(l.split()[0])))
     seg = lambda a, b: x[int(a * FS):int(b * FS)]
     lv = lambda s: float(10 * np.log10(np.mean(np.square(s / 32768.0)) + 1e-20))
     pk = lambda s: float(20 * np.log10(np.abs(s).max() / 32768.0 + 1e-12))
-    return {"chord": {"level": lv(seg(1.0, 1.8)), "peak": pk(seg(1.0, 3.4))},
-            "note": {"level": lv(seg(3.5, 4.3)), "peak": pk(seg(3.5, 5.9))}}
+    bd = lambda s: [float(v) for v in cb_loud.bands(s.mean(1) / 32768.0)]
+    return {"chord": {"level": lv(seg(1.0, 1.8)), "peak": pk(seg(1.0, 3.4)), "bands": bd(seg(1.0, 1.8))},
+            "note": {"level": lv(seg(3.5, 4.3)), "peak": pk(seg(3.5, 5.9)), "bands": bd(seg(3.5, 4.3))}}
 
 
-def level_all(binary, sub="level"):
+def level_all(binary, sub="level", tree=ROOT, only=None):
+    cs = [c for c in level_cases(tree) if only is None or c[0] in only]
     with ThreadPoolExecutor(4) as ex:
-        return dict(zip([n for n, _ in LEVEL_CASES], ex.map(lambda c: level_one(binary, *c, sub), LEVEL_CASES)))
+        return dict(zip([c[0] for c in cs], ex.map(lambda c: level_one(binary, *c, sub), cs)))
+
+
+def cb_db(bands, ref_bands):
+    """the critical-band loudness of bands re ref_bands, dB (the gain that brings ref to bands' loudness)"""
+    import cb_loud
+    return float(cb_loud.match_db(np.array(ref_bands), cb_loud.loud(np.array(bands))))
 
 
 def check_level(b, key="fm1", area="level"):
     import fnmatch
     import release_diff as rd
     base = json.load(open(LEVEL_BASE_HQ if key == "hq" else LEVEL_BASE))["cases"]
+    try:
+        base_new = json.load(open(LEVEL_NEW_HQ if key == "hq" else LEVEL_NEW))["cases"]
+    except OSError:
+        base_new = {}
     got = level_all(b[key], area)
     # a level difference listed in tests/expected_changes.yaml ("quick-level/<fm1|hq>/<case>/<chord|note>", metric
-    # "level", min / max: the move against 0.9.9 in dB) passes; its reason says why (F16: 0.9.9 reached it on the limiter)
+    # "level", min / max: the move against 0.9.9 in dB, critical-band) passes; its reason says why
     listed = [e for e in rd.load_expected(rd.EXPECTED) if str(e.get("match", "")).startswith("quick-level/")]
     out = []
     for name, segs in got.items():
+        ref, new = (base, False) if name in base else (base_new, True)
+        if name not in ref:
+            out.append(row(False, area, name, "no reference: a preset 0.9.9 did not have needs its own "
+                           "(tools/quick.py --save-new-level on the build it came with)"))
+            continue
         bad, worst = [], None
         for s, m in segs.items():
-            bl, bp = base[name][s]["level"], base[name][s]["peak"]
-            dl, dp = m["level"] - bl, m["peak"] - bp
+            br = ref[name][s]
+            if "bands" not in br:
+                bad.append(f"{s}: the reference has no critical bands (re-save it on the last release's build)")
+                continue
+            dl, dp, dr = cb_db(m["bands"], br["bands"]), m["peak"] - br["peak"], m["level"] - br["level"]
             ok = any(fnmatch.fnmatch(f"quick-level/{key}/{name}/{s}", e["match"]) and "level" in str(e.get("metric", "")).split()
                      and e.get("min", -99) <= dl <= e.get("max", 99) and str(e.get("reason", "")).strip() for e in listed)
             if abs(dl) > LVL_TOL and not ok:
-                bad.append(f"{s} level {dl:+.1f} dB")
+                bad.append(f"{s} cb {dl:+.1f} dB")
             if dp > PEAK_TOL:
                 bad.append(f"{s} peak {m['peak']:.1f} dBFS ({dp:+.1f})")
             if worst is None or abs(dl) > abs(worst[1]):
-                worst = (s, dl, m["peak"], dp)
-        out.append(row(not bad, area, name, f"{worst[0]} level {worst[1]:+.1f} dB (limit +-{LVL_TOL}), peak "
-                       f"{worst[2]:.1f} dBFS ({worst[3]:+.1f}, limit +{PEAK_TOL})" if not bad else "; ".join(bad)))
+                worst = (s, dl, m["peak"], dp, dr)
+        tag = " (new: its own reference)" if new else ""
+        out.append(row(not bad, area, name, (f"{worst[0]} cb {worst[1]:+.1f} dB (limit +-{LVL_TOL}; RMS {worst[4]:+.1f}), "
+                       f"peak {worst[2]:.1f} dBFS ({worst[3]:+.1f}, limit +{PEAK_TOL})" if not bad else "; ".join(bad)) + tag))
     return out
 
 
@@ -326,18 +369,31 @@ def main():
     ap.add_argument("--only", help="a comma list of: " + ", ".join(CHECKS))
     ap.add_argument("--tree", help="with --fm1/--hq of another tree: that tree (test_bypass_level compiles from it)")
     ap.add_argument("--save-level", action="store_true")
+    ap.add_argument("--save-new-level", action="store_true")
     a = ap.parse_args()
     t0 = time.time()
     os.makedirs(OUT, exist_ok=True)
-    if a.save_level:
+    if a.save_level or a.save_new_level:
         if not a.fm1 and not a.hq:
-            raise SystemExit("--save-level --fm1 BIN | --hq BIN (the last release's FM-1 / Move host build)")
+            raise SystemExit("--save-level / --save-new-level --fm1 BIN | --hq BIN")
         import release_diff as rd
-        for binary, base, sub in ((a.fm1, LEVEL_BASE, "level"), (a.hq, LEVEL_BASE_HQ, "move-lvl")):
-            if binary:
-                json.dump({"release": rd.LAST, "cases": level_all(os.path.abspath(binary), sub)}, open(base, "w"),
-                          indent=1, sort_keys=True)
-                print(base)
+        if a.save_level:                                # (the last release's build, its own presets' names)
+            tree = os.path.abspath(a.tree) if a.tree else rd.last_tree()
+            for binary, base, sub in ((a.fm1, LEVEL_BASE, "level"), (a.hq, LEVEL_BASE_HQ, "move-lvl")):
+                if binary:
+                    json.dump({"release": rd.LAST, "cases": level_all(os.path.abspath(binary), sub, tree)},
+                              open(base, "w"), indent=1, sort_keys=True)
+                    print(base)
+            return 0
+        for binary, base, ref, sub in ((a.fm1, LEVEL_NEW, LEVEL_BASE, "level"), (a.hq, LEVEL_NEW_HQ, LEVEL_BASE_HQ, "move-lvl")):
+            if binary:                                  # (this tree's presets 0.9.9 did not have, on this build)
+                old = json.load(open(ref))["cases"]
+                new = [n for n in preset_names() if n not in old]
+                rev = subprocess.run(["git", "-C", ROOT, "rev-parse", "--short=8", "HEAD"], capture_output=True,
+                                     text=True).stdout.strip()
+                json.dump({"measured_on": rev, "cases": level_all(os.path.abspath(binary), sub, ROOT, set(new))},
+                          open(base, "w"), indent=1, sort_keys=True)
+                print(base, ", ".join(new))
         return 0
     b = {"fm1": os.path.abspath(a.fm1), "hq": os.path.abspath(a.hq)} if a.fm1 and a.hq else host_bins()
     b["tree"] = os.path.abspath(a.tree) if a.tree else ROOT
