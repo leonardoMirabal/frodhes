@@ -3,8 +3,8 @@
   2.9 ms, and a note starts at the next half instead of the next block. MIDI (USB) to the USB audio: median 13.0 ->
   10.5 ms, p90 15.6 -> 11.5 ms on the same FM-1. The sound is the same; only when a note starts moves. A note that
   starts in a block's second half now reaches the output without the silence gate's 0.7 ms fade-in.
-- On VIBES and MARIMBA in the two-core package, more notes than voices at the same instant start 5 at a time, 2.9 ms
-  apart (they were 14 at a time, 5.8 ms apart).
+- In the two-core package, on every instrument, more than 5 notes at the same instant start 5 at a time, 2.9 ms
+  apart (VIBES and MARIMBA started 14 at a time, 5.8 ms apart; the Rhodes all at once).
 - The FM-1's keys and MIDI notes are read while the screen is being drawn too (every package).
 
 ## Tools

@@ -1131,8 +1131,8 @@ the latch stays on until you tap REC again.
 chord mode, the arpeggiator and the sequencer play. Striking a note that is still sounding reuses its voice, so
 repeated notes do not use up voices. One note more takes over the quietest released note first, or else the oldest
 held one, with a short fade (1.5 ms), so there is no click. On VIBES and MARIMBA, more notes than voices at the same
-instant (a computer's chord, a sequencer step) start 10 at a time, one audio block (5.8 ms) apart, in order (the
-two-core package: 5 at a time, 2.9 ms apart). The
+instant (a computer's chord, a sequencer step) start 10 at a time, one audio block (5.8 ms) apart, in order. In the
+two-core package, on every instrument, more than 5 notes at the same instant start 5 at a time, 2.9 ms apart. The
 audio also has a safety guard: if it ever ran late, the quietest released note would be faded out rather than
 letting the sound break up. In testing, with every voice struck and every effect on, the guard never acts.
 

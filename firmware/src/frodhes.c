@@ -162,8 +162,14 @@ _Static_assert(FR_LAT_TAIL == 0u || ((FR_LAT_TAIL & 31u) == 0u && FR_LAT_TAIL < 
 #endif
 #endif
 #ifndef RH_START_MAX
+#if FR_LAT_EV && FR_LAT_HALF == 128u
+#define RH_START_MAX 5u                         /* per interrupt, as BAR_START_MAX: a 10-note chord starts within 2.9 ms
+                                                 * (5 + 5); at 7 the two-core storm (hil_c1_soak row 277: PC bursts,
+                                                 * HALL switch) peaked at 2416-2460 us whole ISR of 2400, at 5 2376 */
+#else
 #define RH_START_MAX (RH_NA * FR_LAT_HALF / 256u)   /* the Rhodes' the same (rh_init), per interrupt: with
                                                  * FR_LAT_EV the rest start at the block's next interrupt on free voices */
+#endif
 #endif
 #if FR_LAT_TAIL && !defined(DINGHY_HOST)
 /* the tail runs on core 1 after the interrupt, under the main loop: a flash slice (the flash off, the interrupts off)
