@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# cmake -DOBJS=a.o|b.o|... -DNM=nm -P nm_check.cmake: every slot object (engine_unit.c, FRP_SLOT n) defines exactly
+# cmake -DOBJS=a.o|b.o|... (or -DOBJS_FILE=list.txt) -DNM=nm -P nm_check.cmake: every slot object (engine_unit.c, FRP_SLOT n) defines exactly
 # one global symbol, frp_slot_<n> (Mach-O: _frp_slot_<n>), in every architecture slice; anything else fails. Weak
 # definitions (nm W) are the shared constant tables (plugin/compat/shared_tables.h: hidden, one copy for all slots);
 # they are counted and allowed, and only a slot built with the shared headers defines any.
 # -DWEAK_CRT_OK=1 (Windows): the MSVC CRT's weak inline definitions and string literals are allowed (see below).
-string(REPLACE "|" ";" _objs "${OBJS}")
+# -DOBJS_FILE=list.txt (one object a line; plugin/cmake/slots.cmake writes it) in place of -DOBJS
+if(DEFINED OBJS_FILE)
+    file(STRINGS "${OBJS_FILE}" _objs)
+else()
+    string(REPLACE "|" ";" _objs "${OBJS}")
+endif()
 set(_n 0)
 foreach(_o IN LISTS _objs)
     # a universal object of LTO bitcode: nm reads no slice of it, so each architecture is thinned out first (lipo)

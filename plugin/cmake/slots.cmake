@@ -55,8 +55,11 @@ target_include_directories(frodhes_engine PUBLIC "${FRP_ROOT}/plugin/src" "${FRP
 target_compile_options(frodhes_engine PRIVATE $<$<COMPILE_LANGUAGE:C>:${FRP_ENGINE_FLAGS}>)
 set_target_properties(frodhes_engine PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_dependencies(frodhes_engine ${_frp_slot_targets})
-string(REPLACE ";" "|" _frp_objs_arg "${_frp_objs}")
+# (the object list goes in a file, one path a line: on the command line "|"-joined, Windows' native Ninja build
+# wraps a PRE_LINK command in a second cmd.exe /C "...", the nested quotes end early and cmd ran each "|" as a pipe
+# ("'D:' is not recognized", the 2026-11-10 windows job; the cross build from macOS runs it under sh and never did)
+file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/frp_slot_objs.txt" CONTENT "$<JOIN:${_frp_objs},\n>\n")
 add_custom_command(TARGET frodhes_engine PRE_LINK
-    COMMAND ${CMAKE_COMMAND} "-DOBJS=$<JOIN:${_frp_objs},|>" -DNM=${CMAKE_NM} -DWEAK_CRT_OK=$<BOOL:${WIN32}> -P "${FRP_ROOT}/plugin/cmake/nm_check.cmake"
+    COMMAND ${CMAKE_COMMAND} "-DOBJS_FILE=${CMAKE_BINARY_DIR}/frp_slot_objs.txt" -DNM=${CMAKE_NM} -DWEAK_CRT_OK=$<BOOL:${WIN32}> -P "${FRP_ROOT}/plugin/cmake/nm_check.cmake"
     COMMENT "plugin: the slot objects export nothing but their tables (nm)"
     VERBATIM)
