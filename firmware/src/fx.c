@@ -70,7 +70,14 @@ static volatile int32_t fx_peak;                 /* ISR: last block's max |out| 
 static volatile uint32_t prof_us, prof_max_us;   /* ISR (frodhes.c app_audio): its own time, this block / maximum */
 static uint32_t prof_over;
 static volatile uint32_t fx_quiet_blocks;
-static void fx_set(uint32_t id, int32_t v) { if (id < FXP_N) fx_p[id] = v < 0 ? 0 : v > 127 ? 127 : v; }
+static volatile int32_t fx_cmp_amk, fx_cmp_beta;        /* main loop (fx_set): the compressor's auto make-up (log2 Q12)
+                                                         * and body lift (Q8), from THRESH and RATIO (cmp_auto) */
+static void cmp_auto(void);
+static void fx_set(uint32_t id, int32_t v)
+{
+    if (id < FXP_N) fx_p[id] = v < 0 ? 0 : v > 127 ? 127 : v;
+    if (id == FXP_CMP_AMT || id == FXP_CMP_RATIO) cmp_auto();
+}
 static volatile uint32_t fx_gz;                         /* blocks since the silence gate shut the output (0) */
 /* 500 ms under -66 dBFS, or 500 ms with the gate shut (BUGHUNT #27: an idle residue between -66 and -60 dBFS, KHLON's
  * offset moved by TREM, kept fx_quiet_blocks at 0 behind a shut gate, and nothing was ever saved) */
@@ -1526,9 +1533,63 @@ static int32_t cmp_gsh_of(int32_t kr)
     return sh;
 }
 #define CMP_DET(a, hd) do { int32_t d_ = (a) - cmp_env;                                                           \
-                            if (d_ >= 0) { cmp_env += (int32_t)(((int64_t)d_ * ka) >> 16); hd = CMP_HOLD; }        \
+                            if (d_ >= 0) { cmp_env += (int32_t)(((int64_t)d_ * (d_ > (cmp_env >> CMP_SAT) ? ka   \
+                                                     : kas)) >> 16); hd = CMP_HOLD; }                              \
                             else if (hd) hd--;                                                                     \
-                            else cmp_env += (int32_t)(((int64_t)d_ * kr) >> 16); } while (0)
+                            else cmp_env += (int32_t)(((int64_t)d_ * kr) >> 24); } while (0)   /* (kr: Q24) */
+/* the program-dependent release (stage 2, 2026-11-10): the detector's release adapts to the playing. A release that
+ * the next peak catches up again (the detector fell, then rose by less than 3.5 dB: a chord's beating, a low note's
+ * cycle, a decay slower than RELEASE) halves the release speed, down to 1/8 of RELEASE's; a new strike (a rise of
+ * more than 3.5 dB) gives RELEASE back at once, and without a catch the speed drifts back to RELEASE's (~90 ms). A
+ * released detector caught again every few cycles was a gain sawtooth at the beat rate: COMP RAT 4:1 ATK 40 REL 48
+ * (the default ATTACK and RELEASE) put the v127 mid chord's intermodulation at -43 dB (tools/dry_dist.py; the dry
+ * engine -79). Per 16-sample sub-block, nothing per sample */
+#ifndef CMP_PDR
+#define CMP_PDR 3                                       /* the slowest release: RELEASE's speed / 2^3 */
+#endif
+#ifndef CMP_PDT
+#define CMP_PDT 8                                       /* the drift back: 2^-8 a sub-block (~93 ms) */
+#endif
+#ifndef CMP_SAT
+#define CMP_SAT 1                                       /* a rise of less than half the detector (+3.5 dB): ... */
+#endif
+#ifndef CMP_SAS
+#define CMP_SAS 4                                       /* ... caught at ATTACK's speed / 16, when RELEASE is fast */
+#endif
+#ifndef CMP_SAK
+#define CMP_SAK 10                                      /* (RELEASE's coefficient from here: 60 and under, <= 150 ms,
+                                                         * fast enough to fall between a chord's beats; the presets'
+                                                         * slower RELEASE (64 .. 80) catch as they did) */
+#endif
+static int32_t cmp_krq = -1;                            /* the release in use (Q24; < 0: RELEASE's, not adapted yet) */
+static inline void cmp_adapt(int32_t kb, int32_t hd0, int32_t e0)
+{                                                       /* (after a sub-block's detector: e0, hd0 its start) */
+    int32_t k = cmp_krq;
+    if (cmp_env - e0 > (e0 >> 1)) k = kb;               /* a new strike: RELEASE's own speed */
+    else if (!hd0 && cmp_env > e0) { k -= k >> 1; if (k < (kb >> CMP_PDR)) k = kb >> CMP_PDR; }   /* caught again */
+    else k += (kb - k) >> CMP_PDT;
+    cmp_krq = k;
+}
+/* the body lift (stage 2): under steady compression the reduction relaxes by CMP_BETA of itself over ~190 ms
+ * (cmp_bs follows the reduction up slowly, at once down): a strike gets the full ratio, the body that follows a
+ * gentler one, so turning THRESH up brings the sustain up against the attack (fatness) instead of clamping it.
+ * Smooth by construction (a one-pole on the reduction, per sub-block): no ripple, no new intermodulation; when the
+ * reduction falls (a key-up, a decay) the relaxation follows it down at once, so a tail is never lifted over the
+ * level it had */
+#ifndef CMP_BETA
+#define CMP_BETA 90                                     /* Q8: 0.35 of the steady reduction given back */
+#endif
+#ifndef CMP_BSH
+#define CMP_BSH 9                                       /* 2^-9 a sub-block: ~186 ms */
+#endif
+static int32_t cmp_bs;                                  /* the steady reduction (log2 Q12 x 16) */
+static inline int32_t cmp_body(int32_t gr, int32_t beta)
+{
+    int32_t g16 = gr << 4;
+    if (g16 <= cmp_bs) cmp_bs = g16; else cmp_bs += (g16 - cmp_bs) >> CMP_BSH;
+    return gr - (((cmp_bs >> 4) * beta) >> 8);
+}
+static int32_t cmp_amg;                                  /* the auto make-up as the gain uses it, Q4 log2 Q12 (cmp_give) */
 static int32_t cmp_mk;                                   /* MAKEUP (log2 Q12) as the gain uses it: it glides to the
                                                           * knob's value, 1/16 of the way every 16 samples (5.8 ms),
                                                           * then exactly there; a step of the knob was a gain ramp of
@@ -1579,15 +1640,48 @@ static int32_t cmp_gr_at(int32_t env, int32_t thr, int32_t slope)
     if (over < 2048) return (int32_t)(((int64_t)slope * (over + 2048) * (over + 2048)) >> 25);
     return (slope * over) >> 12;
 }
-__attribute__((noinline)) static void cmp_from(const int32_t *m, uint32_t n, int32_t mk, int32_t thr, int32_t slope)
+__attribute__((noinline)) static void cmp_from(const int32_t *m, uint32_t n, int32_t mk, int32_t amk, int32_t thr,
+                                               int32_t slope)
 {                                                        /* the detector and the gain settled at this block's peak */
     int32_t pk = 0;
     uint32_t j;
     for (j = 0; j < n; j++) if (iabs(m[j]) > pk) pk = iabs(m[j]);
     cmp_env = pk << 8; cmp_hd = CMP_HOLD;
-    cmp_mk = mk;
+    cmp_mk = mk; cmp_amg = amk << 4;
     cmp_gs = cmp_gr_at(cmp_env, thr, slope) << 4;
-    cmp_g = cmp_exp2(mk - (cmp_gs >> 4));
+    cmp_g = cmp_exp2(mk - (cmp_gs >> 4) + (amk < (cmp_gs >> 4) ? amk : (cmp_gs >> 4)));
+    cmp_krq = -1; cmp_bs = 0;
+}
+/* the auto make-up (stage 2, 2026-11-10): THRESH and RATIO bring their own make-up, so turning THRESH up keeps the
+ * level and adds density: the critical-band loudness (binaural, tools/cb_loud.py) of C2 / C4 / C6 at v40 / 80 / 127,
+ * C5 v100 and three chords, averaged, with the compressor on equals the bypass' (build: the fit over THRESH 40 .. 127
+ * x RATIO 2:1 / 4:1 / 20:1 x ATTACK 40 / 100 at MKUP 0; the reduction per unit of slope, log2 Q12, linear between
+ * these THRESH values). None up to THRESH 56 (-17.6 dB), where every factory preset sits: their make-up as it was.
+ * MAKEUP is a trim on top; the sum at most +24 dB */
+static const int16_t CMP_SLOPE[8] = {1365, 2048, 2731, 3072, 3413, 3584, 3686, 3891};   /* 1 - 1/R, Q12 */
+static void cmp_auto(void)                               /* (main loop: fx_set; the ISR reads fx_cmp_amk / fx_cmp_beta) */
+{
+    static const int16_t AT[6] = {56, 64, 80, 96, 112, 127}, AQ[6] = {0, 405, 1065, 2152, 3672, 5339};
+    int32_t t = fx_p[FXP_CMP_AMT], i = 1, q = 0;
+    if (t > 56) {
+        while (t > AT[i]) i++;
+        q = AQ[i - 1] + (AQ[i] - AQ[i - 1]) * (t - AT[i - 1]) / (AT[i] - AT[i - 1]);
+    }
+    fx_cmp_amk = (q * CMP_SLOPE[fx_p[FXP_CMP_RATIO] & 7]) >> 12;
+    fx_cmp_beta = t <= 56 ? 0 : t >= 80 ? CMP_BETA : CMP_BETA * (t - 56) / 24;   /* the body lift fades in with it */
+}
+/* the auto make-up never past the reduction (stage 2, the coordinator 2026-11-10): it gives back at most what the
+ * compressor takes at that moment, so the gain over MAKEUP is never above 1 and no peak rises over the bypass (a slow
+ * ATTACK let a v127 chord's strike through under the full auto make-up: +3.0 dB at THRESH -40, 20:1, ATTACK 100).
+ * What it gives back: min(auto make-up, reduction). The auto make-up itself follows THRESH / RATIO down at the
+ * reduction's own smoothing (cmp_gsh), up at once: THRESH swept from -40 to 0 dB dropped it at once while the
+ * reduction smoothed away, a 6.3 dB dip (tools/control_sweep.py comp THRESH) */
+static inline int32_t cmp_give(int32_t amk, int32_t gr)
+{
+    int32_t a16 = amk << 4, a;
+    if (a16 >= cmp_amg) cmp_amg = a16; else cmp_amg += (a16 - cmp_amg) >> cmp_gsh;
+    a = cmp_amg >> 4;
+    return a < gr ? a : gr;
 }
 static inline int32_t cmp_glide(int32_t mk)              /* cmp_mk one sub-block closer to mk */
 {
@@ -1602,13 +1696,16 @@ static uint8_t cmp_redo;                                 /* (fx_comp: a switch-o
 static void fx_comp(int32_t *m, uint32_t n)
 {
     /* the four knobs (0.8): THRESHOLD 0 .. -40 dBFS, RATIO 1.5:1 .. 20:1, ATTACK, MAKEUP 0 .. +24 dB; RELEASE CC 109 */
-    static const int16_t SLOPE[8] = {1365, 2048, 2731, 3072, 3413, 3584, 3686, 3891};   /* 1 - 1/R, Q12 */
-    int32_t ka = (int32_t)FX_CMP_ATK[fx_p[FXP_CMP_ATK]], kr = (int32_t)FX_CMP_REL[fx_p[FXP_CMP_REL]] * CMP_KRM;
+    int32_t ka = (int32_t)FX_CMP_ATK[fx_p[FXP_CMP_ATK]], kr16 = (int32_t)FX_CMP_REL[fx_p[FXP_CMP_REL]] * CMP_KRM;
+    int32_t kb = kr16 << 8, kr = kb;                                  /* RELEASE in Q24; kr: the detector's (adapted) */
+    int32_t kas = kr16 >= CMP_SAK ? ka >> CMP_SAS : ka, beta = fx_cmp_beta;   /* kas: a small rise's attack */
     int32_t thr = -((fx_p[FXP_CMP_AMT] * 27434) >> 7);              /* log2 Q12 re full scale: 0 .. -6.64 (-40 dB) */
-    int32_t slope = SLOPE[fx_p[FXP_CMP_RATIO] & 7];
-    int32_t mk = (fx_p[FXP_CMP_GAIN] * 16461) >> 7;                /* make-up, log2 Q12: 0 .. 3.99 (+24 dB) */
+    int32_t slope = CMP_SLOPE[fx_p[FXP_CMP_RATIO] & 7];
+    int32_t amk = fx_cmp_amk;
+    int32_t mk = (fx_p[FXP_CMP_GAIN] * 16461) >> 7;                 /* MAKEUP, log2 Q12 (the auto make-up: cmp_give) */
+    if (amk > 16461 - mk) amk = 16461 - mk;                         /* (MAKEUP + the auto make-up: at most +24 dB) */
     int on = fx_p[FXP_CMP_SW] != 0;
-    cmp_gsh = cmp_gsh_of(kr);
+    cmp_gsh = cmp_gsh_of(kr16);
     int32_t w1;
     uint32_t sb, j;
 #if FR_C1
@@ -1628,9 +1725,10 @@ static void fx_comp(int32_t *m, uint32_t n)
         for (j = fxc_o; j < fxc_e; j++) if (iabs(m[j]) > cmp_pkc) cmp_pkc = iabs(m[j]);
         if (FXC_1) {
             cmp_env = cmp_pkc << 8; cmp_hd = CMP_HOLD;
-            cmp_mk = mk;
+            cmp_krq = -1; cmp_bs = 0;
+            cmp_mk = mk; cmp_amg = amk << 4;
             cmp_gs = cmp_gr_at(cmp_env, thr, slope) << 4;
-            cmp_g = cmp_exp2(mk - (cmp_gs >> 4));
+            cmp_g = cmp_exp2(mk - (cmp_gs >> 4) + cmp_give(amk, cmp_gs >> 4));
         } else if (cmp_pkc > p0) {                    /* a higher peak in a later chunk: the detector run again from
                                                        * it over the block so far (closer to one core's start from the
                                                        * block's peak); the gain ramps to it over the next 16 samples */
@@ -1640,15 +1738,18 @@ static void fx_comp(int32_t *m, uint32_t n)
             cmp_hd = hd;
         }
     }
+    if (cmp_krq < 0) cmp_krq = kb;                    /* (RELEASE's, from rest) */
     w1 = xf_pre_c(cmp_xw, on, m, 0, n, XF_STEP);
     for (sb = fxc_o; sb < fxc_e; sb += 16u) {
-        int32_t g0 = cmp_g, g1, gr, step, hd = cmp_hd;
+        int32_t g0 = cmp_g, g1, gr, step, hd = cmp_hd, e0 = cmp_env;
         const uint16_t *dt;
+        kr = cmp_krq;
         for (j = sb; j < sb + 16u; j++) CMP_DET(iabs(m[j]) << 8, hd);
+        cmp_adapt(kb, cmp_hd, e0);
         cmp_hd = hd;
-        gr = cmp_gsm(cmp_gr_at(cmp_env, thr, slope));
+        gr = cmp_body(cmp_gsm(cmp_gr_at(cmp_env, thr, slope)), beta);
         fx_cmp_gr = gr;
-        g1 = cmp_exp2(cmp_glide(mk) - gr);
+        g1 = cmp_exp2(cmp_glide(mk) - gr + cmp_give(amk, gr));
         cmp_ds = cmp_ds * 1664525u + 1013904223u;
         dt = cmp_env >= (128 << 8) ? CMP_DTH + (cmp_ds >> 26) : CMP_DTH0;
         step = (g1 - g0) / 16;
@@ -1668,6 +1769,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         int32_t pk = cmp_pkc, gr = 0, hd = CMP_HOLD;
         cmp_redo = 0;                                 /* (exact from the next block's second sub-block on) */
         cmp_env = pk << 8;
+        kr = kb;
         for (sb = 0; sb < n; sb += 16u) {
             for (j = sb; j < sb + 16u; j++) CMP_DET(iabs(fxc_mono[j]) << 8, hd);
             gr = cmp_gr_at(cmp_env, thr, slope);
@@ -1682,18 +1784,21 @@ static void fx_comp(int32_t *m, uint32_t n)
     if (!cmp_xw) {                                    /* switched on from rest: the detector from this block's peak,
                                                        * the gain settled there (they were whatever the last use left:
                                                        * the bug hunt, 2026-10-25), under the 46 ms crossfade */
-        cmp_from(m, n, mk, thr, slope);
+        cmp_from(m, n, mk, amk, thr, slope);
     }
+    if (cmp_krq < 0) cmp_krq = kb;                    /* (RELEASE's, from rest) */
     w1 = xf_pre(cmp_xw, on, m, 0, n, XF_STEP);               /* on / off: a crossfade, the compressor running (off was a
                                                        * gain step to unity in one sample, on one over 16 samples) */
     for (sb = 0; sb < n; sb += 16u) {
-        int32_t g0 = cmp_g, g1, gr, step, hd = cmp_hd;
+        int32_t g0 = cmp_g, g1, gr, step, hd = cmp_hd, e0 = cmp_env;
         const uint16_t *dt;
+        kr = cmp_krq;
         for (j = sb; j < sb + 16u && j < n; j++) CMP_DET(iabs(m[j]) << 8, hd);   /* detector: |x| in Q8 */
+        cmp_adapt(kb, cmp_hd, e0);
         cmp_hd = hd;
-        gr = cmp_gsm(cmp_gr_at(cmp_env, thr, slope));
+        gr = cmp_body(cmp_gsm(cmp_gr_at(cmp_env, thr, slope)), beta);
         fx_cmp_gr = gr;
-        g1 = cmp_exp2(cmp_glide(mk) - gr);
+        g1 = cmp_exp2(cmp_glide(mk) - gr + cmp_give(amk, gr));
         cmp_ds = cmp_ds * 1664525u + 1013904223u;
         dt = cmp_env >= (128 << 8) ? CMP_DTH + (cmp_ds >> 26) : CMP_DTH0;
         step = (g1 - g0) / 16;
@@ -2428,6 +2533,10 @@ static uint32_t gate_quiet;
  * sample, as clearing it all at once (that one block took ~5 ms of the 5.8 on the FM-1); the pre-delay line is
  * cleared the same way at its next use (pd_on = 0). */
 static volatile uint8_t fx_reset_req;
+/* the dry width's state (fx_width, below) */
+static int32_t wd_buf[512] POOL;                        /* the high-passed dry, WD_D back */
+static uint32_t wd_w;
+static int32_t wd_lp, wd_h2, wd_g;                      /* the band-pass' states (wd_lp Q8); the width's gain (Q15) */
 static void fx_reset_state(void)
 {
     lfo_ph = 0; lfo_rnd = 0x9E3779B9u; tw_ph = 0; ph_ph = 0; cp_ph = 0; dly_wow = 0; dly_flt = 0;
@@ -2449,6 +2558,7 @@ static void fx_reset_state(void)
     cmp_g = 65536; cmp_ds = 0x9E3779B9u;                /* (the gain's dither: its boot seed) */
     dc_l = dc_r = dce_l = dce_r = 0; memset(lk_l, 0, sizeof lk_l); memset(lk_r, 0, sizeof lk_r); lk_pk = 0; lk_g = 32768;
     gate_g = gate_tgt = 32768; gate_quiet = 0;
+    memset(wd_buf, 0, sizeof wd_buf); wd_lp = wd_h2 = 0;        /* (the dry width's reflection) */
 #ifdef FX_RESET_ONE_BLOCK
     memset(dly_buf, 0, sizeof dly_buf); memset(pd_buf, 0, sizeof pd_buf); dly_rst = 0;
 #endif
@@ -2539,6 +2649,59 @@ FX_RAM __attribute__((noinline)) static void fx_spread(const int32_t *mono, int3
 /* SPREAD's side for the bypass' sub-block (sd[j - sb]): rh_side + sb while it is on, else fx_zs (zeros: the plain
  * mono, the same integers; one loop each for both, less flash) */
 static int32_t fx_zs[LK] RH_SP_SEC(".bss.fx_zs");
+/* ---- the dry width (stage 2, 2026-11-10): the plain piano was a mono point on headphones (side / mid -25 dB with
+ * F01's room, none dry), while CHORUS / PHASER on sounded bigger at the same loudness (their width alone). A side
+ * wall's first reflection gives the dry a little width: the side S is the dry's band 570 Hz .. 4 kHz (one-pole high-
+ * and low-pass: the bass stays mono as in a room, the wall takes the top) delayed by WD_D (10 ms, 3.4 m of extra
+ * path) at WD_K; L = M + S, R = M - S. No modulation. The mono sum (L + R) / 2 is the dry exactly, the two ears'
+ * critical-band loudness within 0.05 cb (the per-ear comb ripples opposite in L and R), and the reflection arrives
+ * 10 ms after the strike: the v127 chords' peak +0.02 dB at most (tests/py/test_dry_width.py). The last stage before
+ * the limiter (fx_out, per sub-block, after the bypass' mix, the DC blockers and LEVEL; the limiter's gain is the
+ * same both sides and 1 unless limiting, so (L + R) / 2 stays the mono output exactly): M = (L + R) / 2, so FX on and off,
+ * the crossfade and every effect (the FILTER, TREM, the delay) get the same one reflection of their own output. Off
+ * while SPREAD's own side is on (wd_g glides it out / in over 16 blocks). Cost: one loop, ~18 instructions a sample */
+#ifndef WD_D
+#define WD_D 441                                        /* samples: 10 ms */
+#endif
+#ifndef WD_A
+#define WD_A 2553                                       /* Q15: the high-pass' pole, 1 - exp(-2 pi 570 / 44100) */
+#endif
+#ifndef WD_B
+#define WD_B 14260                                      /* Q15: the low-pass' pole, 1 - exp(-2 pi 4000 / 44100) */
+#endif
+#ifndef WD_K
+#define WD_K (-6554)                                    /* Q15: -0.2, the reflection's level in its band; the sign
+                                                         * puts it on the side of the hall's early part (with F01's
+                                                         * room +0.6 dB of width more than + would) */
+#endif
+static __attribute__((noinline)) int32_t fx_width(uint32_t o, uint32_t e, int on)
+{
+    uint32_t j, w = wd_w;
+    int32_t lp = wd_lp, h2 = wd_h2, g, kg, pk = 0, *pl = fx_L + o, *pr = fx_R + o;
+    g = wd_g;
+    if (o == 0u) {                                      /* (the block's first chunk: a step of the glide a block) */
+        g = clampi(g + (on ? 2048 : -2048), 0, 32768); wd_g = g;   /* 16 blocks from 0 to 1 */
+    }
+    kg = (WD_K * g) >> 15;
+    for (j = o; j < e; j++) {
+        int32_t l = *pl, r = *pr, x = (l + r) >> 1, sd;
+        lp += (int32_t)(((int64_t)((x << 8) - lp) * WD_A) >> 15);   /* (Q8: in whole LSBs the high-pass' state lagged
+                                                         * a slow tail by up to 12, a side of -1 LSB for 90 ms after
+                                                         * the note: test_every_control SUSTAIN) */
+        h2 += (int32_t)(((int64_t)(x - (lp >> 8) - h2) * WD_B) >> 15);   /* (the wall's absorption: a low-pass) */
+        sd = wd_buf[(w - WD_D) & 511u];
+        wd_buf[w & 511u] = h2; w++;
+        sd *= kg;                                       /* (32 bits: |h2| < 2^18) toward zero, so the side ends in */
+        sd = (sd + ((sd >> 31) & 32767)) >> 15;         /* exact zeros (a floor left -1 LSB on L 40 ms after the note:
+                                                         * test_every_control DELAY-MIX) */
+        l += sd; r -= sd; *pl++ = l; *pr++ = r;
+        l = iabs(l); r = iabs(r);
+        if (l > pk) pk = l;
+        if (r > pk) pk = r;
+    }
+    wd_w = w; wd_lp = lp; wd_h2 = h2;
+    return pk;                                          /* (the sub-block's peak, for the limiter) */
+}
 /* the bypassed dry with SPREAD's side: L = M + S, R = M - S (out of line: fx_process's registers as without it) */
 FX_RAM __attribute__((noinline)) static void fx_spread_dry(const int32_t *mono, const int32_t *sd, uint32_t sb)
 {
@@ -2652,6 +2815,10 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
             }
             fx_lv_dith = ds;
         }
+        pn = FR_FAR(fx_width)(sb, sb + LK, !FX_SIDE_ONB);   /* the dry width (stage 2): one wall reflection, after
+                                                         * the DC blockers and LEVEL (per channel: their rounding of
+                                                         * M + S and M - S left 1 LSB of noise in the mono sum, the
+                                                         * v20 notes' inh +10 dB); its peak replaces pn */
         tgt = lk_g + ((32768 - lk_g) >> 6) + 1;        /* release */
         if (tgt > 32768) tgt = 32768;
         if (lk_need(lk_pk) < tgt) tgt = lk_need(lk_pk);

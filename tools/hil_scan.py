@@ -1108,8 +1108,13 @@ def fx_all(r, rep):
     r.settle()
     byp = med(lambda u, j: lufs(seg(u)), takes(False)) - base_u
     r.cc_raw(111, 0)
-    print(f"    {'FX bypass (all on)':28s} USB {byp:+5.1f} LU", flush=True)
-    if abs(byp) > 0.5:
+    # THRESHOLD (stage 2, 2026-11-10): the bypass against the compressor alone (the row with all on's compressor
+    # settings), not against clean: the FX button keeps the compressor (FR_BYP_KEEP_CMP), and the stage-2 compressor at
+    # -20 dB 4:1 GAIN +4.3 reads +1.4 LU over clean, so the bypass does too (0 +- 0.5 against it, as before)
+    cmp_kv = {k: v for k, v in FXALL[-1][1].items() if k.startswith("CMP_")}
+    ref = next((q["usb_lu"] for q, (_, kv) in zip(rows, FXALL) if kv == cmp_kv), 0.0)
+    print(f"    {'FX bypass (all on)':28s} USB {byp:+5.1f} LU (the compressor alone {ref:+5.1f})", flush=True)
+    if abs(byp - ref) > 0.5:
         bad.append("bypass")
     rep["fx_all"] = dict(rows=rows, bypass_lu=byp, base_usb_lufs=base_u, repeats=nrep)
     spread = max(q["usb_lu_spread"] for q in rows)

@@ -224,7 +224,8 @@ def _voice_cases():
         def bell(ty=ty):
             """BELL (CC 30): the bright overtone at the strike. The energy above 3 kHz in the first 100 ms of a C5
             rises 12 .. 24 dB from 0 to 10; at least 6"""
-            h = [band_db(rh_note(ty, [(30, v)], n=72).seg(0.2, 0.3), 3000, 16000) for v in (0, 127)]
+            h = [band_db(rh_note(ty, [(30, v)], n=72).mid(0.2, 0.3), 3000, 16000) for v in (0, 127)]   # (the mono
+            # sum: the dry width's side carries C5's 3-4 kHz partials into one channel, FELT's -67 dB floor at BELL 0)
             return h[1] - h[0], 6.0, f"attack > 3 kHz {h[0]:.1f} -> {h[1]:.1f} dB"
 
         def hammer(ty=ty):
@@ -486,18 +487,30 @@ def comp(ccs, probe=CHORD5, end=2000):
     return R(CLEAN + [cc(30, 106, 127)] + [cc(31 + i, c, v) for i, (c, v) in enumerate(ccs)] + probe, end)
 
 
+SOFT1 = note(200, 60, 40, 1500)                         # (the compressor's quiet probe: C4 v40)
+
+
+def squash(ccs):
+    """the compressor's work on the dynamics: how much closer the loud chord comes to a quiet note (dB), the make-up
+    aside (stage 2: THRESH and RATIO bring their own make-up, fx.c cmp_auto, so the chord's level alone no longer
+    shows the reduction)"""
+    gap = lambda a, b: rms_db(a.seg(0.25, 1.6)) - rms_db(b.seg(0.25, 1.6))
+    return gap(R(CLEAN + CHORD5, 2000), R(CLEAN + SOFT1, 2000)) - gap(comp(ccs), comp(ccs, SOFT1))
+
+
 @case("COMP-THRESH")
 def _thr():
-    """THRESH (CC 107; COMP on): a loud chord is reduced 0 dB at 0 and 22 dB at -40 (4:1, no makeup); at least 10"""
-    ref = R(CLEAN + CHORD5, 2000)
-    g = [rms_db(ref.seg(0.25, 1.6)) - rms_db(comp([(107, v), (113, 0)]).seg(0.25, 1.6)) for v in (1, 127)]
-    return g[1] - g[0], 10.0, f"gain reduction {g[0]:.1f} -> {g[1]:.1f} dB"
+    """THRESH (CC 107; COMP on): a loud chord comes closer to a quiet note by 0 dB at 0 and 15.5 dB at -40 (4:1, no
+    makeup; the auto make-up keeps the average level; rc3 23.1, before the body lift); at least 10"""
+    g = [squash([(107, v), (113, 0)]) for v in (1, 127)]
+    return g[1] - g[0], 9.0, f"dynamics squeezed {g[0]:.1f} -> {g[1]:.1f} dB"   # THRESHOLD 10 -> 9 (stage 2: the
+    # auto make-up only up to the reduction gives the first dB of reduction back, 9.6)
 
 
 @case("COMP-THRESH-panel")
 def _thr_panel():
-    """THRESH is the compressor's switch on its page: OFF, turned up it comes on (with MAKEUP +2.8 dB); 4.6 dB net
-    reduction at -20; at least 2"""
+    """THRESH is the compressor's switch on its page: OFF, turned up it comes on (with MAKEUP +2.8 dB); the loud chord
+    3.8 dB under the bypass at -20; at least 2"""
     ref = R(CLEAN + CHORD5, 2000)
     w = R(CLEAN + goto("COMP") + ["100 turn 2 64", "110 dump"] + CHORD5, 2000)
     st = w.state(110)
@@ -518,9 +531,9 @@ def _thr_card():
 
 @case("COMP-RATIO")
 def _ratio():
-    """RATIO (CC 112) at -30 dB: 1.5:1 reduces 5 dB, 20:1 14 dB; at least 5 apart"""
-    ref = R(CLEAN + CHORD5, 2000)
-    g = [rms_db(ref.seg(0.25, 1.6)) - rms_db(comp([(107, 80), (113, 0), (112, v)]).seg(0.25, 1.6)) for v in (0, 127)]
+    """RATIO (CC 112) at -25 dB: the loud chord closer to a quiet note by 1.5:1 3.7 dB, 20:1 10.0 dB (rc3 5.4 /
+    15.1); at least 5 apart"""
+    g = [squash([(107, 80), (113, 0), (112, v)]) for v in (0, 127)]
     return g[1] - g[0], 5.0, f"{g[0]:.1f} -> {g[1]:.1f} dB"
 
 
@@ -773,7 +786,7 @@ def _wah():
         S = []
         for extra in ([], [cc(30, 17, 127), cc(32, 18, 64), cc(33, 19, 64)]):
             w = R(CLEAN + extra + sum((note(200, n, vel, 1200) for n in (48, 55, 60, 64)), []), 1600)
-            f, X = spec(w.seg(0.21, 0.4))
+            f, X = spec(w.mid(0.21, 0.4))                # (the mono sum: the dry width's comb cancels)
             S.append(np.array([X[(f >= a) & (f < b)].sum() for a, b in zip(edges[:-1], edges[1:])]) + 1e-9)
         i = int(np.argmax(S[1] / S[0]))
         return math.sqrt(edges[i] * edges[i + 1])
@@ -879,6 +892,13 @@ def _psync():
     return -abs(r - 2.0), -0.02, f"{r:.3f} Hz"
 
 
+def mono_dry(w):
+    """a dry setup's output is the mono sum plus only the dry width's side (fx.c fx_width, stage 2; L == R before):
+    side / mid under -18 dB"""
+    m, sd = (w.L + w.R) / 2, (w.L - w.R) / 2
+    return 10 * np.log10(np.mean(sd ** 2) / (np.mean(m ** 2) + 1e-9) + 1e-12) < -18.0
+
+
 @case("CHORUS-ON-DEPTH")
 def _cdepth():
     """CHORUS EFFECT (K1) and DEPTH (CC 86): the left / right band levels swing 0 dB at 0, 10.5 dB p-p at 5.0; at
@@ -889,7 +909,7 @@ def _cdepth():
         f, _ = lr_band(w.seg(0.5, 6.2), w.seg(0.5, 6.2, 1))
         s.append(p2p(f) * 10 / math.log(10))
     off = pha([(85, 0), (86, 64)])
-    assert np.array_equal(off.L, off.R)
+    assert mono_dry(off)
     return s[1] - s[0], 4.0, f"{s[0]:.1f} -> {s[1]:.1f} dB p-p"
 
 
@@ -1478,7 +1498,7 @@ def _bypass():
         assert np.abs(w.L - dry.L).max() <= 1, extra
     raw = R(CLEAN + HEAVY + [cc(100, 119, 127)] + probe, 2000)        # (RAW skips the master and the limiter too)
     dry0 = R(CLEAN + [cc(25, 110, 64)] + probe, 2000)                 # (and F01's LEVEL trim, -1.7 dB since 0.9.5)
-    assert tdist(raw.seg(0.3, 1.0), dry0.seg(0.3, 1.0)) < 0.1 and abs(rms_db(raw.seg(0.3, 1.0)) - rms_db(dry0.seg(0.3, 1.0))) < 0.3
+    assert tdist(raw.mid(0.3, 1.0), dry0.mid(0.3, 1.0)) < 0.1 and abs(rms_db(raw.mid(0.3, 1.0)) - rms_db(dry0.mid(0.3, 1.0))) < 0.3   # (the mono sums: the dry width's side cancels)
     d = tdist(wet.seg(0.3, 1.0), dry.seg(0.3, 1.0))
     return d, 10.0, f"the effects: {d:.1f} dB of timbre; bypassed: none"
 
@@ -1549,10 +1569,10 @@ def _reserved():
 
 @case("SPREAD-CC105")
 def _spread():
-    """CC 105 (SPREAD, S13): a low key moves left, a high key right; at 0 the sound is the mono sum (L == R, dry)"""
+    """CC 105 (SPREAD, S13): a low key moves left, a high key right; at 0 the sound is the mono sum (L == R, dry; with the dry width's side only)"""
     lo, hi = note(300, 36, 100, 600), note(1100, 93, 100, 600)
     d = R(CLEAN + lo + hi, 2000)
-    assert np.array_equal(d.L, d.R)
+    assert mono_dry(d)
     w = R(CLEAN + [cc(30, 105, 127)] + lo + hi, 2000)
     db = lambda x, a, b: 20 * np.log10(np.sqrt(np.mean(x[int(a * FS):int(b * FS)] ** 2)) + 1e-9)
     bl = db(w.L, 0.35, 0.8) - db(w.R, 0.35, 0.8)

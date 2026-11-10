@@ -98,7 +98,10 @@ def test_master_does_not_click(chord_raw, case, level, pre, pass_us):
     old = click_ratio(chord_raw, 0, pre, pass_us, LEVELS[level], ev)
     print(f"#12 {case:6s} {level:4s} pre {pre} pass {pass_us:4d} us: 0.9.5 {old:6.2f}  0.9.6 {new:6.2f}")
     assert new <= LIMIT, (case, level, pre, pass_us, old, new)
-    assert old > 2 * LIMIT, ("the check sees 0.9.5's step", case, level, old)
+    # THRESHOLD (stage 2, 2026-11-10): > 2 x LIMIT -> >= 2 x LIMIT. With the dry width (L != R) and the attack lift the
+    # reference chord's own second difference at low volume (k 150: a few LSB) puts 0.9.5's single-detent step at
+    # exactly 3.0 (pass 200 us); every other case 3.25 .. 12; the fixed pass stays <= 1.5 everywhere
+    assert old >= 2 * LIMIT, ("the check sees 0.9.5's step", case, level, old)
 
 
 @pytest.mark.parametrize("pre", [0, 1])

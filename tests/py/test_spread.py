@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """SPREAD (S13, params.c P_SPREAD, CC 105): each Rhodes key's stereo position on the 88-key harp (A0 left .. C8
 right), a side signal S next to the mono sum M (rhodes.c rh_side), L = M + S, R = M - S before the stereo effects,
-level-matched to the mono stages (fx.c fx_spread). SPREAD 0 (the default) is the mono sum, bit for bit as before;
-the centre stays the mono sum; the position follows the key; with DRIVE / COMP on the image stays."""
+level-matched to the mono stages (fx.c fx_spread). SPREAD 0 (the default) is the mono sum with the dry width's side
+(fx.c fx_width, stage 2: SPREAD's own side replaces it); the centre stays the mono sum; the position follows the key; with DRIVE / COMP on the image stays."""
 import os
 import subprocess
 import wave
@@ -49,11 +49,13 @@ def balance(L, R, i):
 
 
 def test_spread0_is_the_mono_sum():
-    """SPREAD 0 sent (and the default, not sent): the same samples, L == R on a dry setup"""
+    """SPREAD 0 sent (and the default, not sent): the same samples; on a dry setup L - R is only the dry width's side
+    (stage 2: L == R before), under -18 dB re the mono sum"""
     a = run("off", DRY, [LOW, MID, TOP])
     b = run("zero", DRY, [LOW, MID, TOP], spread=0)
     assert np.array_equal(a[0], b[0]) and np.array_equal(a[1], b[1])
-    assert np.array_equal(a[0], a[1])
+    m, s = (a[0] + a[1]) / 2, (a[0] - a[1]) / 2
+    assert 10 * np.log10(np.mean(s ** 2) / np.mean(m ** 2)) < -18.0
 
 
 def test_position_follows_the_key():
@@ -68,9 +70,10 @@ def test_position_follows_the_key():
 
 
 def test_centre_is_the_mono_sum():
-    """dry, SPREAD 127: (L + R) / 2 is the SPREAD 0 output within the rounding (the side's own filters and the DC
-    blockers round per channel): <= 2 LSB"""
-    M = run("c0", DRY, [LOW, MID, TOP], spread=0)[0]
+    """dry, SPREAD 127: (L + R) / 2 is the SPREAD 0 output's within the rounding (the side's own filters and the DC
+    blockers round per channel): <= 2 LSB (SPREAD 0's (L + R) / 2: the dry width's side cancels there)"""
+    L0, R0 = run("c0", DRY, [LOW, MID, TOP], spread=0)
+    M = (L0 + R0) / 2
     L, R = run("c127", DRY, [LOW, MID, TOP], spread=127)
     assert np.max(np.abs((L + R) / 2 - M)) <= 2
 

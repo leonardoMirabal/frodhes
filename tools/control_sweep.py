@@ -628,7 +628,8 @@ def checks(case, r):
         out["jump3"] = (r["jump3"], LIMITS["jump3"], r["jump3"] <= LIMITS["jump3"])
     out["dropout"] = (r["dropout"], LIMITS["dropout"], r["dropout"] <= LIMITS["dropout"])
     if "mix0" in r:
-        out["mix0"] = (r["mix0"], 1.0, r["mix0"] <= 1.0)   # (1 LSB: PAN's equal-power rounding at DEPTH 0)
+        out["mix0"] = (r["mix0"], 2.0, r["mix0"] <= 2.0)   # (1 LSB: PAN's equal-power rounding at DEPTH 0;
+        # THRESHOLD 1 -> 2 LSB, stage 2: the dry width's side reads (L + R) >> 1, so that LSB reaches the side once more)
     if r.get("click"):
         k, v = max(r["click"].items(), key=lambda kv: kv[1])
         out["click"] = (f"{v} ({k})", LIMITS["click"], v <= LIMITS["click"])

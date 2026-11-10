@@ -243,6 +243,12 @@ def test_phaser_speed_0_on_the_host(monkeypatch):
     t = V.take("t-phaser-speed-0-long", *PH0)
     V.reset(h.with_(pb, ("PH_DEPTH", 0)) + [("RELEASE", 0)], label="depth 0")
     r = V.take("t-phaser-depth-0-long", *PH0)
+    # THRESHOLD (stage 2, 2026-11-10): read on the mono sum (L + R) / 2, not L. The dry width (L != R) moves the band's
+    # dips per ear: lfo_rate reads 0.25 Hz on L and on R, 0.50 on the mono sum (the FM-1's reading this test keeps)
+    def mono(k):
+        m = (k.usb[:, 0] + k.usb[:, 1]) / 2
+        return h.Take(k.tag, k.dur, k.ev, np.stack([m, m], 1), m.copy())
+    t, r = mono(t), mono(r)
     d, _, fps = h.rel_trace(t, r, "usb", 0.2, PH0[0] - 0.7, 300, 3000)
     f = h.lfo_hz(0, True)
     assert abs(h.lfo_rate(d, fps, f * 0.4, f * 2.6) / (2 * f) - 1) <= 0.02   # (the bug: twice the rate)

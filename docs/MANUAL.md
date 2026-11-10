@@ -341,7 +341,7 @@ emulator has no velocity: its keys play at KEY VEL.
 | K1 | **THRESH** | **OFF** at 0: turn it up to switch the compressor on; then where it starts, down to −40 dB. Lower = more compression |
 | K2 | **RATIO** | How strongly it compresses: 1.5:1 to 20:1 |
 | K3 | **ATTACK** | How fast it grabs a note: low (0.1 ms) catches the hammer's attack, high (50 ms) lets it through |
-| K4 | **MAKEUP** | Gives back the volume the compression takes: 0 to +24 dB |
+| K4 | **MAKEUP** | A trim on top of the compressor's own make-up: 0 to +24 dB |
 
 **THRESH** is its on / off: turn it up from OFF and the compressor comes on at −16 dB (where the presets set it) with
 MAKEUP at +2.8 dB, which keeps the volume of what you play about the same (a quiet, dying tail comes up, as under
@@ -352,6 +352,13 @@ right is the reduction now in dB. The compressor
 comes first in the chain, right after the piano. It stays clean on chords: it holds its reduction across a note's
 waveform and lets it go smoothly (about 0.1 s), so it adds no roughness of its own; after a loud chord a soft note
 comes back to full level within about 0.3 s.
+
+Below −17.6 dB THRESH brings its own make-up: it gives back the first few dB of reduction, so moderate playing
+keeps its level while the loudest parts are squeezed. It never gives back more than the compressor is taking at that
+moment, so no peak comes out louder than with the compressor off (MAKEUP, set by hand, can still raise it). Past −25 dB a strike gets the full RATIO and a held
+note then relaxes to about two thirds of the reduction over 0.2 s, so heavy settings bring the sustain up instead of
+clamping it. Its release follows the music: a chord's beating does not pump it, a new strike lets it go at RELEASE's
+speed.
 
 ### EQ
 
@@ -1164,11 +1171,18 @@ ignore it. (The damper's own settle follows the register: a little slower in the
 treble.)
 
 **SPREAD** (CC 105, saved with the preset; MIDI only, there is no card for it) spreads the electric piano across the stereo
-field by key, low keys left, high keys right, as seen from the player. 0 (the default) is the mono piano; 64 a gentle
+field by key, low keys left, high keys right, as seen from the player. 0 (the default) is the piano with a little room
+width (below); 64 a gentle
 width; 127 places the lowest key of an 88-key piano fully left and the highest fully right. It is set at each strike
 (turning it moves the next notes). The chorus, phaser, delay and reverb take the spread; COMP, DRIVE, the FILTER and
 TREM/WAH work on the mono sum, and SPREAD follows their level (a hard drive narrows the image a little). VIBES and
 MARIMBA ignore it.
+
+**Width.** With SPREAD at 0 every sound gets one side-wall reflection: the mid and upper range (about 570 Hz to 4 kHz)
+10 ms late, about 14 dB down, on the side only (left plus, right minus). The bass stays centred, nothing is modulated,
+and the mono sum is unchanged, so a mono speaker hears exactly the piano. On headphones the piano is no longer a point
+in the middle; the loudness and the chord peaks stay the same. It applies with the effects on and off (after them, so
+the FILTER, TREM and the delay reach it too), and it fades out while SPREAD is above 0, which brings its own side.
 
 | CC | Parameter | CC | Parameter |
 | --- | --- | --- | --- |

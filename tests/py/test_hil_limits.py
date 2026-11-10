@@ -178,4 +178,7 @@ def test_comp_attack_by_the_strikes_level():
     c = {x: h.crest_db(T[x].m("usb"), T[x].on("usb")[0]) for x in T}
     assert s[0] < s[40] < s[127], s
     assert s[127] - s[0] >= 6.0, s
-    assert c[127] - c[0] < 3.0, c                  # the old measure: at its limit, and 40 above 127
+    # THRESHOLD (stage 2, 2026-11-10): c[127] - c[0] < 3.0 -> < s[127] - s[0]. The stage-2 compressor (the make-up
+    # only up to the reduction) lets a slow attack's strike through unlifted: the crest moves too (10.97 / 14.27 /
+    # 15.86 dB), still far less than the strike's level (-3.48 / -0.38 / +5.82)
+    assert c[127] - c[0] < s[127] - s[0], (c, s)    # the old measure: less than the strike's level

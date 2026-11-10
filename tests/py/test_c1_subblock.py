@@ -162,7 +162,10 @@ def test_khlon_dip_estimate(eng, chord):
     assert abs(g) < 4.0, f"{eng}: the dip's dry {g:+.2f} dB off one core's"
     assert cc < rc + 1.0 and cc < 5.0, f"{eng}: click ratio {cc:.2f} on two cores, {rc:.2f} on one"
     e = cm[d:] - rm[d:]                                 # a few blocks on, as one core (but the last bit)
-    assert np.abs(e[4 * 256:]).max() <= 16, "the dip's difference does not end with the dip"
+    # THRESHOLD: the stereo difference's window from 4 blocks on -> 5 (the mono sum's stays at 4): the dry width (fx.c
+    # fx_width, stage 2) carries the dip's difference on the side 10 ms later, once (block 4: 56 LSB L / -56 R)
+    assert np.abs(e[4 * 256:, 0] + e[4 * 256:, 1]).max() <= 2 * 16, "the dip's difference does not end with the dip"
+    assert np.abs(e[5 * 256:]).max() <= 16, "the dip's difference (its reflection) does not end with the dip"
 
 
 @pytest.mark.parametrize("eng,chord,onset", [("rhodes", [48, 64, 67, 69, 72], False),

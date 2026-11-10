@@ -1210,6 +1210,13 @@ def _places(x, fs, events, rng, k, kind, avoid_lim=None, ccs=(), widen=0.0, cloc
                                                             # need the take's first ~0.56 s: a slip at 0.30 - 0.55 s
                                                             # is not judged on any build, from 0.56 s it is: 2026-10-28)
     ok[-int((2.0 if kind == "drop1ms" else 0.5) * fs):] = False   # (a slip is judged over the next second)
+    if kind == "drop1ms":                                   # (and sound to judge it on: the jack's tracking needs
+        from scipy.ndimage import minimum_filter1d as mnf   # steady windows after the slip; 2026-11-10, stage 2: a
+        w3 = int(0.3 * fs)                                  # draw at 9.34 s in rhodes-recipe-dry1, 20 ms before the
+        ahead = np.empty_like(lv)                           # dampers' silence, left the slip one window to show in)
+        ahead[:-w3] = mnf(lv, w3, origin=-(w3 // 2))[w3:]
+        ahead[-w3:] = 0
+        ok &= ahead > 32767 * 0.01
     if avoid_lim is not None:
         ok &= ~avoid_lim[:len(ok)]
     if kind in ("dropout", "jack_dropout"):                 # (sound on both sides, as the detector wants it)
@@ -1557,7 +1564,10 @@ class Device:
         return got.get("usb"), (got["jack"][:, 0] if "jack" in got else None), counters, rig
 
 
-ONSET_NOISE_X = 4.0                           # onset_lag's threshold: at least this x the recording's peak before it
+ONSET_NOISE_X = 3.0                           # onset_lag's threshold: at least this x the recording's peak before it
+# THRESHOLD (stage 2, 2026-11-10): 4.0 -> 3.0. The Move dry run's LEVEL -12 dB worst take: the first chord's strike
+# 256 LSB on the simulated jack, its noise peak 66 (3.9 x): at 4 x the onset was the next louder moment, 50 ms late,
+# outside align's 30 ms search. 3 x the lead's own peak is still far over the noise (a peak of 0.3 s of it)
 
 
 def onset_lag(x, events, fs, thr=None):

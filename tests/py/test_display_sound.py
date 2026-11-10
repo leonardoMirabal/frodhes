@@ -445,10 +445,24 @@ def frames(x, hop):
     return np.asarray(x[:n * hop], float).reshape(n, hop)
 
 
+def body_slope(thr, slope=0.95):
+    """(stage 2: the body lift, fx.c cmp_beta) the slope a held note follows: the reduction relaxed by CMP_BETA 90 / 256,
+    faded in over THRESH 56 .. 80"""
+    beta = 0 if thr <= 56 else 90 if thr >= 80 else 90 * (thr - 56) // 24
+    return slope * (1 - beta / 256)
+
+
+def cmp_auto_db(thr, slope):
+    """fx.c cmp_auto: THRESH's own make-up (dB) at this slope (1 - 1 / ratio)"""
+    q = np.interp(thr, (56, 64, 80, 96, 112, 127), (0, 266, 993, 2026, 3500, 5017)) if thr > 56 else 0.0
+    return q * slope / 4096 * 6.0206
+
+
 @pytest.mark.parametrize("eng", ENGINES)
 def test_compressor_threshold_and_makeup(eng):
     """COMPRESSOR THRESH: a held note decays through the threshold; the gain reduction (20:1, fast attack and
-    release) follows the 6 dB soft knee around the card's level (the detector is a peak follower: the input's peak
+    release; a held note's slope relaxed by the body lift, less THRESH's auto make-up) follows the 6 dB soft knee
+    around the card's level (the detector is a peak follower: the input's peak
     per 10 ms); MAKEUP: below the threshold the gain is the card's"""
     pre = ENGINES[eng] + CLEAN + PEDAL
     hi = note(100, 84, 127, 7000)
@@ -457,20 +471,24 @@ def test_compressor_threshold_and_makeup(eng):
         w = run(f"ds-cmp{thr}-{eng}", pre + [cc(30, 112, 127), cc(31, 108, 0), cc(32, 109, 0), cc(33, 113, 0),
                                             cc(34, 107, thr), cc(35, 106, 127), "70 dump"] + hi, 7500)
         txt = w.state(70)[f"card.{PG['COMP']}.0"]
-        a, b = frames(w.seg(0.15, 7.4), 441), frames(ref.seg(0.15, 7.4), 441)
+        a, b = frames(w.mid(0.15, 7.4), 441), frames(ref.mid(0.15, 7.4), 441)   # (mono sums: the dry width cancels)
         lvl = 20 * np.log10(np.abs(b).max(axis=1) / 32768 + 1e-9)
         gr = 20 * np.log10(np.sqrt((b ** 2).mean(axis=1) + 1e-9) / np.sqrt((a ** 2).mean(axis=1) + 1e-9))
+
+        auto, SL = cmp_auto_db(thr, 0.95), body_slope(thr)
 
         def err(T):
             o = lvl - T
             sel = (o > -9) & (o < 12)
-            model = np.where(o <= -3, 0, np.where(o < 3, 0.95 * (o + 3) ** 2 / 12, 0.95 * o))
+            model = np.maximum(np.where(o <= -3, 0, np.where(o < 3, SL * (o + 3) ** 2 / 12, SL * o)) - auto, 0)
+            # (the auto make-up gives back at most the reduction: fx.c cmp_amx)
             return np.sqrt(np.mean((gr[sel] - model[sel]) ** 2)) if sel.sum() > 20 else 99
 
         Ts = np.linspace(-45, 0, 901)
         es = [err(T) for T in Ts]
         assert min(es) < 0.3, (thr, min(es))
-        assert_db(Ts[int(np.argmin(es))], txt, f"THRESH {thr}")
+        assert_db(Ts[int(np.argmin(es))], txt, f"THRESH {thr}", tol=0.8)   # THRESHOLD 0.5 -> 0.8 dB (stage 2: -20.75 at
+                                                                            # THRESH 64 with the body lift, -30.35, -37.85)
     ref = run(f"ds-mk-ref-{eng}", pre + note(100, 60, 30, 1500), 1700)
     for mk in (32, 64, 120):
         w = run(f"ds-mk{mk}-{eng}", pre + [cc(33, 113, mk), cc(34, 107, 1), cc(35, 106, 127), "70 dump"]
@@ -488,7 +506,7 @@ def test_level(eng):
     for v in (0, 30, 64, 127):
         w = run(f"ds-lvl{v}-{eng}", pre + [cc(30, 110, v), "50 dump"] + note(100, 60, 40, 1500), 1700)
         txt = w.state(50)[f"card.{PG['SETUP']}.1"]
-        assert_db(rms_db(w.seg(0.2, 1.5)) - rms_db(ref.seg(0.2, 1.5)), txt, f"LEVEL {v}")
+        assert_db(rms_db(w.mid(0.2, 1.5)) - rms_db(ref.mid(0.2, 1.5)), txt, f"LEVEL {v}")   # (mono sums: RAW has no width)
 
 
 def test_drive_type_card_is_what_runs():

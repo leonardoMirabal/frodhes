@@ -43,10 +43,18 @@ def seg(x, t0, t1):
     return x[int(t0 * FS):int(t1 * FS)]
 
 
+def mono(L, R):
+    """(L + R) / 2: the mono sum, where the dry width's side cancels (fx.c fx_width, stage 2: L = M + S, R = M - S);
+    the mono effects' laws are read there (they were read on L while L == R)"""
+    return (np.asarray(L, float) + np.asarray(R, float)) / 2
+
+
 def test_dry_chain_is_clean():
     L, R = run("dry", [(81, 0), (91, 0)], [(100, 60, 100, 400)], 3000)
-    assert np.max(np.abs(L)) < 32000 and np.array_equal(L, R)
-    assert rms_db(seg(L, 2.5, 3.0)) < -90          # the damped note ends
+    M, S = mono(L, R), (np.asarray(L, float) - np.asarray(R, float)) / 2
+    assert np.max(np.abs(L)) < 32000 and np.max(np.abs(R)) < 32000
+    assert 10 * np.log10(np.mean(S ** 2) / np.mean(M ** 2)) < -18   # (L == R until stage 2: the dry width's side only)
+    assert rms_db(seg(L, 2.5, 3.0)) < -90 and rms_db(seg(R, 2.5, 3.0)) < -90   # the damped note ends
 
 
 def test_delay_echoes():
@@ -216,11 +224,11 @@ def test_tremolo_shape_is_a_rounded_square():
     above it is the amp law, test_tremolo_amp_law)"""
     pre = [(81, 0), (91, 0), (64, 127)]
     chord = [(200, n, 100, 3800) for n in (48, 55, 60, 64, 67, 72)]
-    ref, _ = run("shape-ref", pre, chord, 4000)
+    ref = mono(*run("shape-ref", pre, chord, 4000))
     hz = lfo_rate_shown(40, half=False)
     flat = []
     for s in (0, 18, 30, 48, 64):
-        L, _ = run(f"shape{s}", pre + [(17, 64), (21, 80), (18, 127), (19, 40), (22, s)], chord, 4000)
+        L = mono(*run(f"shape{s}", pre + [(17, 64), (21, 80), (18, 127), (19, 40), (22, s)], chord, 4000))
         n = 32
         g = (np.sqrt(np.mean(seg(L, 0.5, 3.5)[:len(seg(L, 0.5, 3.5)) // n * n].reshape(-1, n) ** 2, axis=1))
              / (np.sqrt(np.mean(seg(ref, 0.5, 3.5)[:len(seg(ref, 0.5, 3.5)) // n * n].reshape(-1, n) ** 2, axis=1)) + 1e-9))
@@ -235,8 +243,8 @@ def _trem_gain_db(tag, shape, depth=127, rate=60, extra=()):
     """the AM tremolo's gain (dB, 64-sample frames, smoothed) on a held chord against the same chord dry"""
     pre = [(81, 0), (91, 0)]
     chord = [(200, n, 100, 3800) for n in (48, 55, 60, 64, 67, 72)]
-    ref, _ = run("amp-ref", pre, chord, 4000)
-    L, _ = run(tag, pre + [(17, 64), (21, 127), (18, depth), (19, rate), (22, shape)] + list(extra), chord, 4000)
+    ref = mono(*run("amp-ref", pre, chord, 4000))
+    L = mono(*run(tag, pre + [(17, 64), (21, 127), (18, depth), (19, rate), (22, shape)] + list(extra), chord, 4000))
     n = 64
     e = lambda x: np.sqrt(np.mean(x[:len(x) // n * n].reshape(-1, n) ** 2, axis=1))
     g = 20 * np.log10(e(seg(L, 0.6, 3.6)) / (e(seg(ref, 0.6, 3.6)) + 1e-9) + 1e-6)
