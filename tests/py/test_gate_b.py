@@ -24,6 +24,7 @@ import hostrun  # noqa: E402  (tests/py: the per-worker render paths)
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
+import dry_dist  # noqa: E402
 import rhodes_model as gm  # noqa: E402
 
 BIN = os.path.join(ROOT, "build", "gate_b", "frodhes")   # the host build without S4 (exe())
@@ -34,7 +35,7 @@ KEYS = {k["midi"]: k for k in SPEC["keys"]}
 def exe():
     def make(p):
         subprocess.run(["cc", "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", '-DAPP_VER="dev"', "-DRH_NO_S4",
-                        "-DRH_NO_DRV_MK", "-DRH_NO_DYN", "-DRH_NO_HD", "-DRH_NO_TOP",   # (0.9.10: the output-gain stages and the glide, below)
+                        "-DRH_NO_DRV_MK", "-DRH_NO_DYN", "-DRH_NO_HD", "-DRH_NO_TOP", "-DRH_ATK_A=0u",   # (0.9.10: the output-gain stages, the attack lift and the glide)
                         "-I" + os.path.join(ROOT, "firmware", "src"), "-I" + os.path.join(ROOT, "firmware", "gen"),
                         "-o", p, os.path.join(ROOT, "firmware", "src", "frodhes.c"), "-lm"], check=True)
     return hostrun.once(BIN, make)
@@ -44,6 +45,7 @@ def c_render(note, vel, dur_ms, off_ms=None, tag="gb"):
     out = hostrun.out(f"{tag}-{note}-{vel}")
     scr = out + ".txt"
     with open(scr, "w") as f:
+        f.writelines(ln + "\n" for ln in dry_dist.type_base_lines(50))   # the voicing at its defaults, not F01's
         f.write("50 midi 0xB0 119 127\n")                 # developer: bypass the effects, test the voice
         f.write("50 midi 0xB0 104 0\n")                   # NOISE off: the golden model has no thump / felt noise
         f.write(f"100 midi 0x90 {note} {vel}\n")
