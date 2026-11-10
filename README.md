@@ -58,7 +58,9 @@ the voices on one core and the effects on the other: 14 voices on every instrume
 rate, with the sound 5.8 ms later. Install it from a terminal (`python3 tools/fm1_install.py frodhes-c1.fwsc`; the emulator page installs `frodhes.fwsc`). You can switch between the two at any time; your
 settings, presets and pattern stay.
 
-Your settings and presets stay when you update. You can always go back to M-VAVE's own firmware:
+Your settings and presets stay when you update. 0.9.10 changes the factory presets and some of their program numbers
+(four new, four gone, SUIT TREM now F08): [the list](docs/MANUAL.md#6-presets). You can always go back to M-VAVE's own
+firmware:
 [how](docs/MANUAL.md#going-back-to-the-original-firmware).
 
 ## On the Ableton Move
@@ -99,8 +101,8 @@ macOS it opens its own window. Download the package for your system from the
 
 ## Other keyboards
 
-Frodhes also runs on the SMK-37 Pro, SMK-37 Elite and MKE-P37. Read [docs/SMK37.md](docs/SMK37.md) before you
-install one.
+Frodhes also runs on the SMK-37 Pro, SMK-37 Elite and MKE-P37, with 10 voices as the FM-1's one-core package. Read
+[docs/SMK37.md](docs/SMK37.md) before you install one.
 
 The files on the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest):
 

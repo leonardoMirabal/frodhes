@@ -80,7 +80,8 @@ pads, the step buttons, Up and Down (the octave), Play and the other buttons sta
 ### Presets
 
 On the FRODHES page, turn **knob 5 (PRESET)**. **F01-F19** are the FM-1's factory sounds, **F20-F57** are two more
-versions of each, made for the Move, and **U01-U16** are your own.
+versions of each, made for the Move, and **U01-U16** are your own. 0.9.10 changed the factory presets and some of their
+numbers (the [list](MANUAL.md#6-presets)); F20-F57 follow them (the appendix below).
 
 ### Saving a sound
 
