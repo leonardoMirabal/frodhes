@@ -1589,6 +1589,7 @@ static inline int32_t cmp_body(int32_t gr, int32_t beta)
     if (g16 <= cmp_bs) cmp_bs = g16; else cmp_bs += (g16 - cmp_bs) >> CMP_BSH;
     return gr - (((cmp_bs >> 4) * beta) >> 8);
 }
+static int32_t cmp_amg;                                  /* the auto make-up as the gain uses it, Q4 log2 Q12 (cmp_give) */
 static int32_t cmp_mk;                                   /* MAKEUP (log2 Q12) as the gain uses it: it glides to the
                                                           * knob's value, 1/16 of the way every 16 samples (5.8 ms),
                                                           * then exactly there; a step of the knob was a gain ramp of
@@ -1639,15 +1640,16 @@ static int32_t cmp_gr_at(int32_t env, int32_t thr, int32_t slope)
     if (over < 2048) return (int32_t)(((int64_t)slope * (over + 2048) * (over + 2048)) >> 25);
     return (slope * over) >> 12;
 }
-__attribute__((noinline)) static void cmp_from(const int32_t *m, uint32_t n, int32_t mk, int32_t thr, int32_t slope)
+__attribute__((noinline)) static void cmp_from(const int32_t *m, uint32_t n, int32_t mk, int32_t amk, int32_t thr,
+                                               int32_t slope)
 {                                                        /* the detector and the gain settled at this block's peak */
     int32_t pk = 0;
     uint32_t j;
     for (j = 0; j < n; j++) if (iabs(m[j]) > pk) pk = iabs(m[j]);
     cmp_env = pk << 8; cmp_hd = CMP_HOLD;
-    cmp_mk = mk;
+    cmp_mk = mk; cmp_amg = amk << 4;
     cmp_gs = cmp_gr_at(cmp_env, thr, slope) << 4;
-    cmp_g = cmp_exp2(mk - (cmp_gs >> 4));
+    cmp_g = cmp_exp2(mk - (cmp_gs >> 4) + (amk < (cmp_gs >> 4) ? amk : (cmp_gs >> 4)));
     cmp_krq = -1; cmp_bs = 0;
 }
 /* the auto make-up (stage 2, 2026-11-10): THRESH and RATIO bring their own make-up, so turning THRESH up keeps the
@@ -1671,11 +1673,15 @@ static void cmp_auto(void)                               /* (main loop: fx_set; 
 /* the auto make-up never past the reduction (stage 2, the coordinator 2026-11-10): it gives back at most what the
  * compressor takes at that moment, so the gain over MAKEUP is never above 1 and no peak rises over the bypass (a slow
  * ATTACK let a v127 chord's strike through under the full auto make-up: +3.0 dB at THRESH -40, 20:1, ATTACK 100).
- * The part of it the reduction does not cover, to subtract */
-static inline int32_t cmp_amx(int32_t amk, int32_t gr)
+ * What it gives back: min(auto make-up, reduction). The auto make-up itself follows THRESH / RATIO down at the
+ * reduction's own smoothing (cmp_gsh), up at once: THRESH swept from -40 to 0 dB dropped it at once while the
+ * reduction smoothed away, a 6.3 dB dip (tools/control_sweep.py comp THRESH) */
+static inline int32_t cmp_give(int32_t amk, int32_t gr)
 {
-    int32_t x = amk - gr;
-    return x > 0 ? x : 0;
+    int32_t a16 = amk << 4, a;
+    if (a16 >= cmp_amg) cmp_amg = a16; else cmp_amg += (a16 - cmp_amg) >> cmp_gsh;
+    a = cmp_amg >> 4;
+    return a < gr ? a : gr;
 }
 static inline int32_t cmp_glide(int32_t mk)              /* cmp_mk one sub-block closer to mk */
 {
@@ -1696,8 +1702,8 @@ static void fx_comp(int32_t *m, uint32_t n)
     int32_t thr = -((fx_p[FXP_CMP_AMT] * 27434) >> 7);              /* log2 Q12 re full scale: 0 .. -6.64 (-40 dB) */
     int32_t slope = CMP_SLOPE[fx_p[FXP_CMP_RATIO] & 7];
     int32_t amk = fx_cmp_amk;
-    int32_t mk = ((fx_p[FXP_CMP_GAIN] * 16461) >> 7) + amk;         /* make-up + the auto make-up, log2 Q12 */
-    if (mk > 16461) mk = 16461;                                     /* (MAKEUP + the auto make-up: at most +24 dB) */
+    int32_t mk = (fx_p[FXP_CMP_GAIN] * 16461) >> 7;                 /* MAKEUP, log2 Q12 (the auto make-up: cmp_give) */
+    if (amk > 16461 - mk) amk = 16461 - mk;                         /* (MAKEUP + the auto make-up: at most +24 dB) */
     int on = fx_p[FXP_CMP_SW] != 0;
     cmp_gsh = cmp_gsh_of(kr16);
     int32_t w1;
@@ -1720,9 +1726,9 @@ static void fx_comp(int32_t *m, uint32_t n)
         if (FXC_1) {
             cmp_env = cmp_pkc << 8; cmp_hd = CMP_HOLD;
             cmp_krq = -1; cmp_bs = 0;
-            cmp_mk = mk;
+            cmp_mk = mk; cmp_amg = amk << 4;
             cmp_gs = cmp_gr_at(cmp_env, thr, slope) << 4;
-            cmp_g = cmp_exp2(mk - (cmp_gs >> 4));
+            cmp_g = cmp_exp2(mk - (cmp_gs >> 4) + cmp_give(amk, cmp_gs >> 4));
         } else if (cmp_pkc > p0) {                    /* a higher peak in a later chunk: the detector run again from
                                                        * it over the block so far (closer to one core's start from the
                                                        * block's peak); the gain ramps to it over the next 16 samples */
@@ -1743,7 +1749,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         cmp_hd = hd;
         gr = cmp_body(cmp_gsm(cmp_gr_at(cmp_env, thr, slope)), beta);
         fx_cmp_gr = gr;
-        g1 = cmp_exp2(cmp_glide(mk) - gr - cmp_amx(amk, gr));
+        g1 = cmp_exp2(cmp_glide(mk) - gr + cmp_give(amk, gr));
         cmp_ds = cmp_ds * 1664525u + 1013904223u;
         dt = cmp_env >= (128 << 8) ? CMP_DTH + (cmp_ds >> 26) : CMP_DTH0;
         step = (g1 - g0) / 16;
@@ -1778,7 +1784,7 @@ static void fx_comp(int32_t *m, uint32_t n)
     if (!cmp_xw) {                                    /* switched on from rest: the detector from this block's peak,
                                                        * the gain settled there (they were whatever the last use left:
                                                        * the bug hunt, 2026-10-25), under the 46 ms crossfade */
-        cmp_from(m, n, mk, thr, slope);
+        cmp_from(m, n, mk, amk, thr, slope);
     }
     if (cmp_krq < 0) cmp_krq = kb;                    /* (RELEASE's, from rest) */
     w1 = xf_pre(cmp_xw, on, m, 0, n, XF_STEP);               /* on / off: a crossfade, the compressor running (off was a
@@ -1792,7 +1798,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         cmp_hd = hd;
         gr = cmp_body(cmp_gsm(cmp_gr_at(cmp_env, thr, slope)), beta);
         fx_cmp_gr = gr;
-        g1 = cmp_exp2(cmp_glide(mk) - gr - cmp_amx(amk, gr));
+        g1 = cmp_exp2(cmp_glide(mk) - gr + cmp_give(amk, gr));
         cmp_ds = cmp_ds * 1664525u + 1013904223u;
         dt = cmp_env >= (128 << 8) ? CMP_DTH + (cmp_ds >> 26) : CMP_DTH0;
         step = (g1 - g0) / 16;
