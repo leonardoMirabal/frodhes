@@ -506,38 +506,36 @@ static inline __attribute__((always_inline)) void flt_burn(uint32_t k)
         }
 }
 #define FLT_BURN(k) flt_burn(k)
-/* core 1's real work in a block (FR_FAULT): its job's time less the time it waited for core 0's frames (the job's
- * time, core 1's "busy", includes those waits: it ends with core 0's last chunk); the most since the last read, and
- * the least wait. The CC 116 = 30 reply's items 48 / 49 (us) */
-static volatile uint32_t flt_work_max, flt_idle_min = 0xFFFFFFFFu;
 #else
 #define FLT_BURN(k) ((void)0)
+#endif
+#if FR_C1 && !defined(DINGHY_HOST)
+/* core 1's real work in a block (every two-core build since 0.9.11; FR_FAULT's before): its job's time less the time
+ * it waited for core 0's frames (the job's time, core 1's "busy" (item 46), includes those waits: it ends with core
+ * 0's last chunk, and with FR_LAT_HALF it spans the block's interrupts and the tail); the most since the last read,
+ * and the least wait. The CC 116 = 30 reply's items 48 / 49 (us; tools/hil_c1_soak.py gates the LAT build on 48) */
+static volatile uint32_t flt_work_max, flt_idle_min = 0xFFFFFFFFu;
 #endif
 static void c1_stream_job(uint32_t a)
 {
     (void)a;
-#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)
+#if !defined(DINGHY_HOST)
     uint32_t j0 = fm1_ticks(), idle = 0, p0, w;
     FLT_BURN(flt_c1);
     fx_pre_c();
-    while (c1_fxd < c1_job.n)
+    while (c1_fxd < c1_job.n)                   /* (core 0's wait holds core 1 if this runs late: fr_c1_wait_us) */
         if (!c1_stream_step()) { p0 = fm1_ticks(); fr_c1_pause(); idle += fm1_ticks() - p0; }
-    w = fm1_ticks() - j0 - idle;
+    w = fm1_ticks() - j0 - idle;                /* (items 48 / 49: the work, the least wait) */
     if (w > flt_work_max) flt_work_max = w;
     if (idle < flt_idle_min) flt_idle_min = idle;
     fr_c1_sync();
-#else
-    FLT_BURN(flt_c1);
-    fx_pre_c();
-#endif
-#if !defined(DINGHY_HOST) && !(defined(FR_FAULT) && FR_C1)
-    while (c1_fxd < c1_job.n)                   /* (core 0's wait holds core 1 if this runs late: fr_c1_wait_us) */
-        if (!c1_stream_step()) fr_c1_pause();
     C1PF(22, fm1_ticks() - c1_pf_t0);           /* (C1_PROF: core 1's last frame done, since the block's start) */
 #if defined(C1PF_ON)
     c1_pf_d22 = fm1_ticks() - c1_pf_t0;         /* (this block's: the snapshot, item 50) */
 #endif
-#elif defined(DINGHY_HOST)
+#else
+    FLT_BURN(flt_c1);
+    fx_pre_c();
     c1_stream_step();                           /* (the host twin: the rest at core 0's ticks and its wait) */
 #endif
 }
@@ -1270,8 +1268,8 @@ FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
             if (v == 30u) usb_health_send(30u + k, k < FR_C1_INFO_N ? fr_c1_info(k) : c1_nv);
             else usb_health_send(50u + k - FR_C1_INFO_N, fr_c1_info(k));
         }
-#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)
-        if (v == 30u) {                                /* FR_FAULT: 48 core 1's most work in a block, 49 its least
+#if FR_C1 && !defined(DINGHY_HOST)
+        if (v == 30u) {                                /* 48 core 1's most work in a block, 49 its least
                                                         * wait (us; since the last read) */
             uint32_t wm = flt_work_max / FM1_TICKS_PER_US, im = flt_idle_min;
             flt_work_max = 0; flt_idle_min = 0xFFFFFFFFu;
