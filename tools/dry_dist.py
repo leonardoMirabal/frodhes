@@ -55,6 +55,22 @@ BASE_HQ = os.path.join(ROOT, "tests", "baselines", "dry_dist_099_hq.json")
 HQ_DEFS = ("-DFR_VOICES=16u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1", "-DHQ_DEFAULT=1")   # (the Makefile's
                                   # MOVE_DEFS, the HQ Rhodes on: the Move as it loads; make test-move's host-hq build)
 FS = 44100
+# The TYPE cases' base (2026-11-10, the proposed 19): a TYPE is tested on its engine's voicing, not on whatever the boot
+# preset F01 holds. Sent after the boot and before the TYPE: the voicing knobs at their params.c defaults, the
+# compressor, the reverb and LEVEL as F01 had them when the 0.9.9 baselines and the ceilings were set (rc2: NOISE 48,
+# 2:1 THR 50 ATTACK 80 RELEASE 72 MAKE-UP 8, HALL 18 LOW CUT 70, LEVEL 52). (cc, value); COMP's switch is left as the
+# boot has it (on: CC 106 would wake it). Shared with tools/release_diff.py and tools/quick.py's TYPE level cases.
+TYPE_BASE = ((28, 64), (29, 64), (30, 64), (31, 64), (102, 64), (103, 64), (104, 48), (105, 0),     # TONE .. SPREAD
+             (107, 50), (112, 16), (108, 80), (109, 72), (113, 8),                                # the compressor
+             (91, 18), (95, 32), (69, 70), (92, 64), (93, 64), (94, 0), (73, 0), (68, 64),       # the reverb
+             (110, 52))                                                                           # LEVEL
+TYPE_BASE_T = 105                  # ms: after the boot and the config's CC at 100, before the TYPE at 110
+
+
+def type_base_lines(t=TYPE_BASE_T):
+    return [f"{t} midi 0xB0 {c} {v}" for c, v in TYPE_BASE]
+
+
 KEYS = (28, 33, 45, 57, 69, 81, 93)
 VELS = (64, 96, 110, 127)
 TYPES = (("ST77", 0), ("SUIT", 32), ("FELT", 64), ("DYNO", 96))
@@ -102,7 +118,8 @@ def events(keys=True):
 
 def script(cfg_cc, type_cc, meth_cc, keys=True):
     ev, end = events(keys)
-    ls = [f"100 midi 0xB0 {cfg_cc} 127", f"110 midi 0xB0 80 {type_cc}", f"120 midi 0xB0 40 {meth_cc}"]
+    ls = [f"100 midi 0xB0 {cfg_cc} 127"] + type_base_lines() + [f"110 midi 0xB0 80 {type_cc}",
+                                                                  f"120 midi 0xB0 40 {meth_cc}"]
     for kind, _, t, ns, v in ev:
         if kind == "key":             # the host's key path: the press lands with the reading (tests/host.c vkey)
             ls += [f"{t - 20} vkey {v} {KEY_HARD}", f"{t} keys {1 << v:#x}", f"{t + HOLD} keys 0"]

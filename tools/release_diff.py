@@ -65,6 +65,7 @@ import numpy as np
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))     # (cb_loud; the pool's spawned workers too)
+import dry_dist  # noqa: E402  (its TYPE_BASE: the TYPE cases on the engine's voicing)
 LAST = "v0.9.9"                    # the last release (456b5da4); move with every release, never to a candidate
 OUT = os.path.join(ROOT, "build", "release_diff")
 BASE_FAST = os.path.join(ROOT, "tests", "baselines", "release_diff_fast.json")
@@ -113,7 +114,8 @@ def cases(grid):
         for tname, tcc, tval in TYPES:
             for cfg, ccs in CONFIGS.items():
                 for m, mv in METHODS:
-                    setup = [(110, 0xB0, tcc, tval), (120, 0xB0, 40, mv)] + [(100, 0xB0, c, v) for c, v in ccs]
+                    setup = [(110, 0xB0, tcc, tval), (120, 0xB0, 40, mv)] + [(100, 0xB0, c, v) for c, v in ccs] + \
+                            [(dry_dist.TYPE_BASE_T, 0xB0, c, v) for c, v in dry_dist.TYPE_BASE]   # (not F01's voicing)
                     if cfg == "FXOFF" and build == "fm1":    # the dry engine, as v0.9.9's bypass: the FX button keeps
                         setup.append((125, 0xB0, 106, 0))    # the compressor from 0.9.10 (fx.c FR_BYP_KEEP_CMP), so
                                                              # COMP off too (the HQ build kept it in v0.9.9 already)
@@ -124,7 +126,8 @@ def cases(grid):
                 for cname, ccn in CONTROLS:
                     for cv in (0, 127):
                         setup = [(100, 0xB0, 111, 127), (110, 0xB0, tcc, tval), (120, 0xB0, 40, 0),
-                                 (125, 0xB0, 106, 0), (130, 0xB0, ccn, cv)]   # (COMP off: the dry, as FXOFF)
+                                 (125, 0xB0, 106, 0), (130, 0xB0, ccn, cv)] + \
+                                [(dry_dist.TYPE_BASE_T, 0xB0, c, v) for c, v in dry_dist.TYPE_BASE]   # (COMP off: the dry, as FXOFF)
                         out.append((f"{build}/{tname}/{cname}{cv}/A", build, setup,
                                     g["keys_ep"] if tcc == 80 else g["keys_bar"], "control"))
         for pc in g["presets"]:
