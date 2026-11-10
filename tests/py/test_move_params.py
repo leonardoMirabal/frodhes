@@ -279,7 +279,9 @@ def test_plugin_presets_and_hierarchy_per_type():
             bad = [(n, x, got[pid] if pid < len(got) else None) for n, pid, x in want[i] if pid >= len(got) or got[pid] != x]
             assert not bad, (i, name, bad)                         # (parameter, want, got)
     names = {i: name for i, (_, _, _, name) in enumerate(pr)}
-    assert names[35] == "F20 STAGE77 ECHO" and names[72] == "F57 RADIO LOW", (names[35], names[72])
+    import gen_move_presets as gp                           # (the names follow presets.c's order: --sync by name)
+    last = gp.table()[-1]
+    assert names[35] == "F20 STAGE77 ECHO" and names[72] == "F%02d %s" % (last[0], last[1]), (names[35], names[72])
     ty = {int(ln.split()[1]): ln.split()[2] for ln in out if ln.startswith("type ")}
     assert [ty[t] for t in range(6)] == ["0", "0", "0", "0", "1", "2"]
     hl = [int(ln.split()[1]) for ln in out if ln.startswith("hierarchy ")]

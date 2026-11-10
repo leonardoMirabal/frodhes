@@ -85,7 +85,23 @@ fi
 [ -e "$WT/.local" ] || ln -s "$MAIN/.local" "$WT/.local"
 # a REF older than this script's tools gets this tree's copies (the change kept out of presets.patch): the --sync, the
 # list check, the plugin test host's --presets dump (a test host: nothing of it ships)
-for f in "tools/gen_move_presets.py:--sync" "tools/preset_lists.py:preset_lists" "plugin/tests/clap_render.c:--presets"; do
+# A REF whose generator still keeps the variants' names in the script (NAMES, before --sync by name) first has them
+# written into its variants.json ("name", "line": a format change, the same names); new_variants.json comes along
+if ! grep -q NEW_VARIANTS "$WT/tools/gen_move_presets.py" 2>/dev/null && grep -q "^NAMES = {" "$WT/tools/gen_move_presets.py"; then
+    ( cd "$WT" && python3 - <<'PYEOF'
+import json, runpy
+names = runpy.run_path("tools/gen_move_presets.py", run_name="old")["NAMES"]
+p = "move/presets/variants.json"
+d = json.load(open(p))
+for (b, v), (n, l) in names.items():
+    d[b][v] = dict({"name": n, "line": l}, **{k: x for k, x in d[b][v].items() if k not in ("name", "line")})
+open(p, "w").write(json.dumps(d, indent=1, ensure_ascii=False) + "\n")
+PYEOF
+    ) || exit 2
+    note "      (variants.json: the variants' names written in from $REF's gen_move_presets.py NAMES)"
+fi
+[ -e "$WT/move/presets/new_variants.json" ] || { cp "$M/move/presets/new_variants.json" "$WT/move/presets/"; OVERLAY="${OVERLAY:-} move/presets/new_variants.json"; }
+for f in "tools/gen_move_presets.py:NEW_VARIANTS" "tools/preset_lists.py:named %r" "plugin/tests/clap_render.c:--presets"; do
     if ! grep -q -- "${f#*:}" "$WT/${f%%:*}" 2>/dev/null; then
         cp "$M/${f%%:*}" "$WT/${f%%:*}"
         OVERLAY="${OVERLAY:-} ${f%%:*}"
@@ -99,7 +115,10 @@ step host make -j2 host build/host-hq/frodhes || fail=1
 # every generated table is checked
 if [ $fail = 0 ]; then
     step presets-sync "$PY" tools/gen_move_presets.py --sync || fail=1
-    git -C "$WT" diff -- move/presets move/move_presets.h > "$OUT/presets.patch"   # (the records and the header only)
+    # the plugin's names (plugin/gen/params_map.h: F01-F57 from presets.c and the Move's records) after a reorder
+    step presets-plugin "$PY" tools/gen_plugin_params.py || fail=1
+    # (the records, variants.json, the header, MOVE.md's table and the plugin's map only)
+    git -C "$WT" diff -- move/presets move/move_presets.h docs/MOVE.md plugin/gen > "$OUT/presets.patch"
     if [ -s "$OUT/presets.patch" ]; then
         note "      presets: CHANGED with presets.c: $(grep '^+# ' "$OUT/presets.patch" | sed 's/^+# //'); presets.patch (commit it on the branch)"
     else

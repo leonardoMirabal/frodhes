@@ -40,7 +40,7 @@ def expected():
     """[(label "F01 STAGE 77", [value per id])] for F01-F57, from presets.c and the Move's records; and the problems
     of the records' A against presets.c"""
     ids = param_ids()
-    recs, rows = gp.presets_c()
+    recs, rows, _ = gp.presets_c()
     s = open(os.path.join(ROOT, "firmware", "src", "presets.c")).read()
     names = re.findall(r'"([^"]*)"', re.search(r"PR_FNAME\[PR_NF\] = \{(.*?)\};", s, re.S).group(1))
     out, bad = [], []
@@ -48,7 +48,10 @@ def expected():
     for k, (nm, r) in enumerate(zip(names, recs)):
         full = [r.get(n, rows[n][0]) for n in ids]
         out.append(("F%02d %s" % (k + 1, nm), full))
-        a = {n: v for n, _, v in rec.get(("F%02d" % (k + 1), "A"), ("", []))[1]}
+        an, ap = rec.get(("F%02d" % (k + 1), "A"), ("", []))
+        a = {n: v for n, _, v in ap}
+        if a and an != nm:
+            bad.append("records F%02d A: named %r, presets.c %r (tools/gen_move_presets.py --sync)" % (k + 1, an, nm))
         diff = [n for n in a if a[n] != r.get(n, rows[n][0])]
         if not a or diff:
             bad.append("records F%02d A: %s against presets.c (tools/gen_move_presets.py --sync)"

@@ -1,0 +1,53 @@
+{
+ "_about": "B / C for a factory preset new in presets.c, by its name: tools/gen_move_presets.py --sync takes them when the preset first appears (B / C = its A with \"set\", P_LEVEL = A's + level_delta) and moves them into variants.json. B: tools/f01_search.py final19's alternative (level-matched by its critical-band search on the build it ran on). C: a variant rule the factory preset review used on a like preset, its level step taken over (2026-11-10, host HQ build, critical-band loudness of a phrase re A: WARM77 ECHO -0.13 dB, PUNCH TAPE -0.14, LUSH DARK +0.14, DRIVE BODY -0.18; the B: -0.12, -0.14, +0.05, +0.02).",
+ "WARM 77": {
+  "note": "New in the proposed 19 (FINAL19, 2026-11-10): the warm 77, dry.",
+  "B": {"name": "WARM77 FAT", "line": "a firmer compressor (3:1, faster attack, longer release), more hall",
+        "desc": "FINAL19's alternative (A FAT 77): CMP AMT 36, ATK 40, RATIO 3, REL 96; hall 18, LOW CUT 70",
+        "set": {"P_CMP_AMT": 36, "P_CMP_ATK": 40, "P_CMP_RATIO": 3, "P_CMP_REL": 96, "P_RV_DEPTH": 18, "P_RV_LOCUT": 70},
+        "level": "final19", "level_delta": -2},
+  "C": {"name": "WARM77 ECHO", "line": "a soft dark analog echo on the quarter note, a little more hall",
+        "desc": "F01 B's rule: ANA 1/4, mix 10, feedback 24, tone 46; hall 10 -> 12",
+        "set": {"P_DL_SW": 2, "P_DL_DEPTH": 10, "P_DL_SYNC": 9, "P_DL_FDBK": 24, "P_DL_TONE": 46, "P_RV_DEPTH": 12},
+        "level": "step (F01 B)", "level_delta": -1},
+  "pick": "B", "why": "B is the search's own alternative; C the review's echo on a dry 77."
+ },
+ "PUNCH 77": {
+  "note": "New in the proposed 19 (FINAL19, 2026-11-10): the punchy 77.",
+  "B": {"name": "VINTAGE 77", "line": "darker and softer: less bell and hammer, a gentle compressor, a plate",
+        "desc": "FINAL19's alternative (A VINTAGE 77): TONE 64, BELL 48, HAMMER 48, CMP 50 / 1 / 80 / 96, PLATE 22, LOW CUT 80",
+        "set": {"P_TONE": 64, "P_BELL": 48, "P_HAMMER": 48, "P_CMP_AMT": 50, "P_CMP_RATIO": 1, "P_CMP_ATK": 80,
+                "P_CMP_REL": 96, "P_RV_TYPE": 2, "P_RV_DEPTH": 22, "P_RV_LOCUT": 80},
+        "level": "final19", "level_delta": 27},
+  "C": {"name": "PUNCH TAPE", "line": "a tape echo on the dotted 1/8, a slightly bigger hall",
+        "desc": "F01 C's rule: TAPE 8D, mix 13, feedback 32, tone 54; hall 18 -> 22, pre-delay 20",
+        "set": {"P_DL_SW": 3, "P_DL_DEPTH": 13, "P_DL_SYNC": 8, "P_DL_FDBK": 32, "P_DL_TONE": 54, "P_RV_DEPTH": 22,
+                "P_RV_PREDLY": 20},
+        "level": "step (F01 C)", "level_delta": 0},
+  "pick": "C", "why": "C keeps the punch and adds the echo; B is a different (vintage) piano."
+ },
+ "LUSH CHO": {
+  "note": "New in the proposed 19 (FINAL19, 2026-11-10): chorus, a dotted-1/8 tape echo, a plate.",
+  "B": {"name": "LUSH SOFT", "line": "a softer bark, a gentler compressor, a shorter decay",
+        "desc": "FINAL19's alternative (pick 1): BARK 64, CMP AMT 50, ATK 80, DECAY 64",
+        "set": {"P_BARK": 64, "P_CMP_AMT": 50, "P_CMP_ATK": 80, "P_DECAY": 64},
+        "level": "final19", "level_delta": 13},
+  "C": {"name": "LUSH DARK", "line": "a slower chorus, a darker analog echo on the quarter note",
+        "desc": "F07 C's rule: CP SPEED 44 -> 36; ANA 1/4, feedback 46, tone 50",
+        "set": {"P_CP_SPEED": 36, "P_DL_SW": 2, "P_DL_SYNC": 9, "P_DL_FDBK": 46, "P_DL_TONE": 50},
+        "level": "step (F07 C)", "level_delta": -1},
+  "pick": "B", "why": "B is the search's own alternative; C the ballad's darker echo."
+ },
+ "WARM DRIVE": {
+  "note": "New in the proposed 19 (FINAL19, 2026-11-10): a warm drive, chorus, a dotted-1/8 tape echo, a plate.",
+  "B": {"name": "DRIVE SOFT", "line": "a softer bark, a gentler compressor",
+        "desc": "FINAL19's alternative (pick 1): BARK 64, CMP RATIO 1, ATK 80",
+        "set": {"P_BARK": 64, "P_CMP_RATIO": 1, "P_CMP_ATK": 80},
+        "level": "final19", "level_delta": 4},
+  "C": {"name": "DRIVE BODY", "line": "more drive and body, a longer tape slap",
+        "desc": "F06 C's rule: drive 40 -> 46, drive tone 70 -> 64, the tape a little longer (mix 14, feedback 36)",
+        "set": {"P_DRIVE": 46, "P_DRV_TONE": 64, "P_DL_DEPTH": 14, "P_DL_FDBK": 36},
+        "level": "step (F06 C)", "level_delta": 0},
+  "pick": "B", "why": "B is the search's own alternative; C the driven 77's body."
+ }
+}

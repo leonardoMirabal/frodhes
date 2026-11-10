@@ -9,8 +9,8 @@ the 38 variants follow as F20-F57, in the review's order (F01 B, F01 C, F02 B, .
 table, compiled into the Move build only (move/move_bridge.h includes the header; the FM-1 image never sees it), so
 presets.c's PR_FDATA can change its format without touching this.
 
-  tools/gen_move_presets.py           write move/move_presets.h
-  tools/gen_move_presets.py --check   exit 1 if the committed header is not what the sources give
+  tools/gen_move_presets.py           write move/move_presets.h and docs/MOVE.md's F20.. table
+  tools/gen_move_presets.py --check   exit 1 if the committed header or table is not what the sources give
   tools/gen_move_presets.py --sync    first bring proposed_records.txt to presets.c (sync() below), then write
 
 --sync: the records' A are presets.c's factory records (over the ids a record has: params.c's later ids sit at their
@@ -21,7 +21,7 @@ variant's "set" names it. A comment line in the records says what moved. No rend
 The sources (copies of the review's output, committed): move/presets/proposed_records.txt (every variant's full
 id = value list, the defaults included, read back from the host build) and move/presets/variants.json (what each
 variant changes). The check here: every B / C in variants.json has a record, and a record differs from its A only
-in the ids its "set" names, P_LEVEL (the level solver) aside. The names are the Move's own (NAMES below): generic,
+in the ids its "set" names, P_LEVEL (the level solver) aside. The names are the Move's own (variants.json's "name"): generic,
 at most 12 characters (the FM-1's user preset name), no brand names.
 """
 import json
@@ -33,51 +33,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = os.path.join(ROOT, "move", "presets")
 RECORDS = os.path.join(SRC_DIR, "proposed_records.txt")
 VARIANTS = os.path.join(SRC_DIR, "variants.json")
+NEW_VARIANTS = os.path.join(SRC_DIR, "new_variants.json")   # B / C for a preset new in presets.c, by name (--sync)
 OUT = os.path.join(ROOT, "move", "move_presets.h")
+DOC = os.path.join(ROOT, "docs", "MOVE.md")                 # its appendix table of F20-F57 (doc_table below)
 FIRST = 20                                  # F20: the first Move-only preset (after presets.c's 19)
 NAME_MAX = 12                               # presets.c preset_t name[12]: "F20 " + 12 = the 16 the screen shows
 
-# (base preset, variant) -> (name, one line for docs/MOVE.md). The variant's character, in the FM-1's words.
-NAMES = {
-    ("F01", "B"): ("STAGE77 ECHO", "a soft dark analog echo on the quarter note, a little more hall"),
-    ("F01", "C"): ("STAGE77 TAPE", "a tape echo on the dotted 1/8, a slightly bigger hall"),
-    ("F02", "B"): ("SUITCASE DRY", "dry, a touch less cabinet noise, the level re-set"),
-    ("F02", "C"): ("SUITCASE AMP", "the amp's warmth (BHLUE drive) and a short dark analog slap"),
-    ("F03", "B"): ("FELT HALL", "dry, a bigger and softer hall"),
-    ("F03", "C"): ("FELT ECHO", "the bigger hall and a soft dark analog echo on the quarter note"),
-    ("F04", "B"): ("BELL SOFT", "dry, the top edge softer, a little more plate"),
-    ("F04", "C"): ("BELL ECHO", "a short digital echo on the dotted 1/8, a little more plate"),
-    ("F05", "B"): ("TREM ECHO", "a soft analog echo on the quarter note, the level re-set"),
-    ("F05", "C"): ("TREM DEEP", "a slower, deeper vibrato, more warmth and plate"),
-    ("F06", "B"): ("DRIVEN77 LVL", "as F06, the level re-set (half way between chord and phrase)"),
-    ("F06", "C"): ("DRIVEN BODY", "more drive and body, a longer tape slap"),
-    ("F07", "B"): ("BALLAD TIGHT", "less boom in the long plate's tail (LOW CUT 80)"),
-    ("F07", "C"): ("BALLAD DARK", "a longer, darker analog echo tail, a slower chorus"),
-    ("F08", "B"): ("DYNO80S LVL", "as F08, the level re-set"),
-    ("F08", "C"): ("DYNO80S SOFT", "the echo softer and darker, less chorus"),
-    ("F09", "B"): ("PHASER LVL", "as F09, the level re-set"),
-    ("F09", "C"): ("PHASER SLOW", "a slower, more liquid sweep, a longer analog echo"),
-    ("F10", "B"): ("FUNK WAH LVL", "as F10, the level re-set"),
-    ("F10", "C"): ("FUNK PLUCK", "less squash, more pluck (2:1, slower attack), a short dark slap"),
-    ("F11", "B"): ("RESO SPACE", "more echo and hall"),
-    ("F11", "C"): ("RESO SMOOTH", "a smoother peak (less resonance), a wider sweep"),
-    ("F12", "B"): ("AUTOWAH ECHO", "a digital echo on the quarter note"),
-    ("F12", "C"): ("AUTOWAH TAPE", "a tape echo on the dotted 1/8 and a plate"),
-    ("F13", "B"): ("VIBES HALL", "dry, a little more hall"),
-    ("F13", "C"): ("VIBES MOTOR", "the slower, deeper motor, more hall"),
-    ("F14", "B"): ("VIBES CLEAN", "a cleaner echo (fewer repeats)"),
-    ("F14", "C"): ("VIBES DRIFT", "the motor on, slow and shallow, under the echo"),
-    ("F15", "B"): ("MARIMBA HALL", "dry, more hall and pre-delay"),
-    ("F15", "C"): ("MARIMBA ECHO", "a soft analog echo on the quarter note"),
-    ("F16", "B"): ("WOOD PLAIN", "the chorus off"),
-    ("F16", "C"): ("WOOD LIGHT", "a lighter chorus, less echo and hall"),
-    ("F17", "B"): ("TAPE WIDE", "tamer repeats and a touch of chorus"),
-    ("F17", "C"): ("TAPE DARK", "the echo on the quarter note, darker repeats"),
-    ("F18", "B"): ("DREAM CLEAR", "less chorus wobble under the hall"),
-    ("F18", "C"): ("DREAM DEEP", "a slower, deeper pan, the echo on the dotted 1/4"),
-    ("F19", "B"): ("RADIO LVL", "as F19, the level re-set"),
-    ("F19", "C"): ("RADIO LOW", "the band a little lower: more body"),
-}
+# Each variant's name and its line for docs/MOVE.md live in variants.json ("name", "line"), with the variant: --sync
+# carries a preset's variants by its name, so a reordered presets.c takes them along. The variant's character, in
+# the FM-1's words.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests", "py"))
 from test_repo_hygiene import BRANDS as HYGIENE_BRANDS  # noqa: E402  (the repo's banned names, one list)
 OTHER_NAMES = re.compile(r"RHODES|WURLI|ROLAND|KORG|MOVE|DX7|CP70", re.I)   # product names kept out of preset names
@@ -126,8 +90,8 @@ def table():
         for v in sorted(k for k in var[base] if re.fullmatch(r"[B-Z]", k)):
             if (base, v) not in rec:
                 raise SystemExit("variants.json has %s %s, proposed_records.txt has no record of it" % (base, v))
-            if (base, v) not in NAMES:
-                raise SystemExit("%s %s has no name: add it to NAMES" % (base, v))
+            if not var[base][v].get("name") or not var[base][v].get("line"):
+                raise SystemExit("%s %s has no name / line in variants.json" % (base, v))
             pairs = rec[(base, v)][1]
             moved = {n for n, _, x in pairs if a.get(n) != x} - {"P_LEVEL"}
             named = set(var[base][v].get("set", {}))
@@ -136,10 +100,11 @@ def table():
             for n, _, x in pairs:
                 if n in var[base][v].get("set", {}) and var[base][v]["set"][n] != x:
                     raise SystemExit("%s %s: %s is %d in the record, %d in variants.json" % (base, v, n, x, var[base][v]["set"][n]))
-            name, line = NAMES[(base, v)]
+            name, line = var[base][v]["name"], var[base][v]["line"]
             rows.append((FIRST + len(rows), name, line, base, v, pairs))
-    if len(rows) != len(NAMES):
-        raise SystemExit("NAMES has %d entries, the records give %d variants" % (len(NAMES), len(rows)))
+    extra = sorted(set(b for b, _ in rec) - set(var))
+    if extra:
+        raise SystemExit("proposed_records.txt has %s, variants.json has no entry for it" % ", ".join(extra))
     names = [r[1] for r in rows]
     for n in names:
         if len(n) > NAME_MAX or not NAME_CHARS.match(n) or has_brand(n):
@@ -193,9 +158,19 @@ def header():
     return "\n".join(out) + "\n"
 
 
+def doc_text(cur):
+    """docs/MOVE.md with its appendix table ("| F20 | NAME | F01 B: line |" rows) from the records"""
+    rows = ["| F%02d | %s | %s %s: %s |" % (num, name, base, v, line) for num, name, line, base, v, _ in table()]
+    ls = cur.split("\n")
+    idx = [i for i, ln in enumerate(ls) if re.match(r"^\| F\d\d \| ", ln)]
+    if not idx or idx != list(range(idx[0], idx[-1] + 1)):
+        raise SystemExit("docs/MOVE.md: no single F20.. table to write")
+    return "\n".join(ls[:idx[0]] + rows + ls[idx[-1] + 1:])
+
+
 def presets_c():
-    """presets.c's factory records [{P_X: v}] (PR_FDATA: id / value pairs, 0xFF ends each) and params.c's
-    {P_X: (default, hi)}"""
+    """presets.c's factory records [{P_X: v}] (PR_FDATA: id / value pairs, 0xFF ends each), params.c's
+    {P_X: (default, hi)} and presets.c's names (PR_FNAME)"""
     src = os.path.join(ROOT, "firmware", "src")
     s = open(os.path.join(src, "presets.c")).read()
     body = re.sub(r"/\*.*?\*/", "", re.search(r"PR_FDATA\[\] = \{(.*?)\n\};", s, re.S).group(1), flags=re.S)
@@ -208,37 +183,73 @@ def presets_c():
             cur = []
         else:
             cur.append(x)
+    names = re.findall(r'"([^"]*)"', re.search(r"PR_FNAME\[PR_NF\] = \{(.*?)\};", s, re.S).group(1))
+    if len(names) != len(recs):
+        raise SystemExit("presets.c: %d names, %d records" % (len(names), len(recs)))
     p = open(os.path.join(src, "params.c")).read()
     rows = {m.group(1): (int(m.group(3)), int(m.group(2)))     # (default, hi)
             for m in re.finditer(r"\[(P_[A-Z0-9_]+)\] = \{\"[^\"]*\", (\d+), (\d+), F_\w+, (\d+)", p)}
-    return recs, rows
+    return recs, rows, names
 
 
 def sync(today=None):
-    """proposed_records.txt's A to presets.c, the B / C with them (the module's docstring); returns what moved"""
+    """proposed_records.txt and variants.json to presets.c (the module's docstring), by preset NAME: a preset that
+    moved slot takes its records and its variants along; a preset presets.c dropped loses them (git keeps them); a new
+    preset gets its A, and its B / C from new_variants.json when that names it (else A only). Returns what moved."""
     import time
-    recs, rows = presets_c()
+    recs, rows, pnames = presets_c()
     rec = records()
     with open(VARIANTS) as f:
         var = json.load(f)
-    new, moved = {}, []
+    try:
+        with open(NEW_VARIANTS) as f:
+            nvar = {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+    except OSError:
+        nvar = {}
+    old = {}                                        # name -> old base
+    for (b, v), (bname, _) in rec.items():
+        if v == "A":
+            old[bname] = b
+    ids = [(n, i) for n, i, _ in rec[("F01", "A")][1]]
+    new_rec, new_var, moved, order = {}, {}, [], []
     for k, r in enumerate(recs):
-        base = "F%02d" % (k + 1)
-        if (base, "A") not in rec:
-            raise SystemExit("presets.c has %s, proposed_records.txt has no A record of it" % base)
-        a_old = {n: v for n, _, v in rec[(base, "A")][1]}
-        a_new = {n: r.get(n, rows[n][0]) for n in a_old}
-        unknown = set(r) - set(a_old)
+        base, name = "F%02d" % (k + 1), pnames[k]
+        unknown = set(r) - {n for n, _ in ids}
         if unknown:
             raise SystemExit("%s in presets.c sets %s, which the records do not have" % (base, sorted(unknown)))
-        d = {n: a_new[n] - a_old[n] for n in a_old if a_new[n] != a_old[n]}
-        if not d:
+        a_new = {n: r.get(n, rows[n][0]) for n, _ in ids}
+        if name not in old:                         # a new preset
+            e = nvar.get(name)
+            new_rec[(base, "A")] = (name, [(n, i, a_new[n]) for n, i in ids])
+            ent = {"note": (e or {}).get("note", "new in presets.c %s" % (today or time.strftime("%Y-%m-%d")))}
+            for v in sorted(x for x in (e or {}) if re.fullmatch(r"[B-Z]", x)):
+                vals = dict(a_new, **e[v].get("set", {}))
+                vals["P_LEVEL"] = max(0, min(rows["P_LEVEL"][1], a_new["P_LEVEL"] + int(e[v].get("level_delta", 0))))
+                new_rec[(base, v)] = (name, [(n, i, vals[n]) for n, i in ids])
+                ent[v] = {x: y for x, y in e[v].items() if x != "level_delta"}
+            for x in ("pick", "why"):
+                if e and x in e:
+                    ent[x] = e[x]
+            new_var[base] = ent
+            vs = [v for v in ent if re.fullmatch(r"[B-Z]", v)]
+            moved.append("%s %s new (%s)" % (base, name, "with " + " / ".join(vs) if vs else "A only"))
+            order.append(base)
             continue
-        moved.append("%s %s" % (base, " ".join("%s %+d" % (n[2:], x) for n, x in sorted(d.items()))))
-        for (b, v), (bname, pairs) in rec.items():
-            if b != base:
+        ob = old[name]
+        a_old = {n: v for n, _, v in rec[(ob, "A")][1]}
+        d = {n: a_new[n] - a_old[n] for n in a_old if a_new[n] != a_old[n]}
+        new_var[base] = var.get(ob, {})
+        what = []
+        if ob != base:
+            what.append("from %s" % ob)
+        if d:
+            what.append(" ".join("%s %+d" % (n[2:], x) for n, x in sorted(d.items())))
+        if what:
+            moved.append("%s %s %s" % (base, name, ", ".join(what)))
+        for (b, v), (bname, pairs) in sorted(rec.items()):
+            if b != ob:
                 continue
-            setn = var.get(base, {}).get(v, {}).get("set", {}) if v != "A" else {}
+            setn = var.get(ob, {}).get(v, {}).get("set", {}) if v != "A" else {}
             out = []
             for n, i, x in pairs:
                 if n in d:
@@ -249,28 +260,38 @@ def sync(today=None):
                     elif n not in setn:
                         x = a_new[n]
                 out.append((n, i, x))
-            new[(b, v)] = (bname, out)
+            new_rec[(base, v)] = (bname, out)
+        order.append(base)
+    for name, ob in sorted(old.items(), key=lambda t: t[1]):
+        if name not in pnames:
+            vs = [v for v in var.get(ob, {}) if re.fullmatch(r"[B-Z]", v)]
+            moved.append("%s %s dropped (its %s with it)" % (ob, name, " / ".join(vs) if vs else "A"))
     if not moved:
         return []
     lines = open(RECORDS).read().splitlines()
-    last_comment = max(i for i, ln in enumerate(lines) if ln.startswith("#"))
-    for i, ln in enumerate(lines):
-        m = LINE.match(ln.strip())
-        if m and (m.group(1), m.group(2)) in new:
-            bname, pairs = new[(m.group(1), m.group(2))]
-            lines[i] = "%s %s (%s): %s" % (m.group(1), m.group(2), bname, " ".join("%s[%d]=%d" % p for p in pairs))
-    note = "# %s (tools/gen_move_presets.py --sync): with presets.c, the B / C records too: %s." % (
-        today or time.strftime("%Y-%m-%d"), "; ".join(moved))
-    lines.insert(last_comment + 1, note)
+    first = next(i for i, ln in enumerate(lines) if LINE.match(ln.strip()))
+    head = lines[:first]
+    while head and not head[-1].strip():
+        head.pop()
+    head.append("# %s (tools/gen_move_presets.py --sync): with presets.c, by name, the B / C records too: %s." % (
+        today or time.strftime("%Y-%m-%d"), "; ".join(moved)))
+    body = []
+    for base in order:
+        body.append("")
+        for v in sorted(v for b, v in new_rec if b == base):
+            bname, pairs = new_rec[(base, v)]
+            body.append("%s %s (%s): %s" % (base, v, bname, " ".join("%s[%d]=%d" % p for p in pairs)))
     with open(RECORDS, "w") as f:
-        f.write("\n".join(lines) + "\n")
+        f.write("\n".join(head + body) + "\n")
+    with open(VARIANTS, "w") as f:
+        f.write(json.dumps(new_var, indent=1, ensure_ascii=False) + "\n")
     return moved
 
 
 def main():
     if "--sync" in sys.argv[1:]:
         moved = sync()
-        print("proposed_records.txt: %s" % ("; ".join(moved) if moved else "every A is presets.c's already"))
+        print("proposed_records.txt / variants.json: %s" % ("; ".join(moved) if moved else "every A is presets.c's already"))
     text = header()
     if "--check" in sys.argv[1:]:
         try:
@@ -281,11 +302,18 @@ def main():
         if cur != text:
             print("move/move_presets.h is stale: run tools/gen_move_presets.py")
             return 1
+        doc = open(DOC).read()
+        if doc_text(doc) != doc:
+            print("docs/MOVE.md's F20.. table is stale: run tools/gen_move_presets.py")
+            return 1
         print("move/move_presets.h is current (%d Move-only presets)" % len(table()))
         return 0
     with open(OUT, "w") as f:
         f.write(text)
-    print("wrote move/move_presets.h (%d Move-only presets)" % len(table()))
+    doc = open(DOC).read()
+    with open(DOC, "w") as f:
+        f.write(doc_text(doc))
+    print("wrote move/move_presets.h and docs/MOVE.md's table (%d Move-only presets)" % len(table()))
     return 0
 
 

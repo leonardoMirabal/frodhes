@@ -2,6 +2,8 @@
  "F01": {
   "note": "The boot sound and the level reference: dry today (compressor, HALL 18). The user missed a delay here. Every F01 variant is levelled back to F01 A, so the reference level stays where it is.",
   "B": {
+   "name": "STAGE77 ECHO",
+   "line": "a soft dark analog echo on the quarter note, a little more hall",
    "desc": "a soft dark quarter-note analog echo (ANA 1/4, mix 10, feedback 24, tone 46), hall 18 -> 20",
    "set": {
     "P_DL_SW": 2,
@@ -14,6 +16,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "STAGE77 TAPE",
+   "line": "a tape echo on the dotted 1/8, a slightly bigger hall",
    "desc": "a tape echo on the dotted 1/8 (TAPE 8D, mix 13, feedback 32, tone 54), a slightly bigger hall (22, pre-delay 20, about 13 ms)",
    "set": {
     "P_DL_SW": 3,
@@ -32,6 +36,8 @@
  "F02": {
   "note": "Dry suitcase. Its phrase reads 1.0 LU under F01 (the chord is level): the soft playing is quieter than F01's.",
   "B": {
+   "name": "SUITCASE DRY",
+   "line": "dry, a touch less cabinet noise, the level re-set",
    "desc": "stays dry: LEVEL half way between the chord and the phrase, a touch more cabinet noise off (NOISE 44 -> 40)",
    "set": {
     "P_NOISE": 40
@@ -39,6 +45,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "SUITCASE AMP",
+   "line": "the amp's warmth (BHLUE drive) and a short dark analog slap",
    "desc": "the suitcase amp's warmth (BHLUE drive 14) and a short dark analog slap (ANA 1/8, mix 8, feedback 15, tone 40)",
    "set": {
     "P_DRV_SW": 5,
@@ -57,6 +65,8 @@
  "F03": {
   "note": "Dry felt piano: the darkest of the set (presence -32.7 dB re total, F01 -23.0). That is the felt's character; the variants open the room rather than the tone.",
   "B": {
+   "name": "FELT HALL",
+   "line": "dry, a bigger and softer hall",
    "desc": "stays dry: a slightly bigger, softer hall (18 -> 26, pre-delay 24, decay 72), LEVEL re-set",
    "set": {
     "P_RV_DEPTH": 26,
@@ -66,6 +76,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "FELT ECHO",
+   "line": "the bigger hall and a soft dark analog echo on the quarter note",
    "desc": "B plus a soft dark quarter-note analog echo (ANA 1/4, mix 9, feedback 26, tone 38)",
    "set": {
     "P_RV_DEPTH": 24,
@@ -85,6 +97,8 @@
  "F04": {
   "note": "Dry bell voicing: the brightest dry preset (presence -14.9, air -27.6) and its ff chord touches the limiter (2 samples, TP -2.7).",
   "B": {
+   "name": "BELL SOFT",
+   "line": "dry, the top edge softer, a little more plate",
    "desc": "stays dry: the top edge a little softer (TONE 64 -> 58), plate 16 -> 20, LEVEL re-set",
    "set": {
     "P_TONE": 58,
@@ -93,6 +107,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "BELL ECHO",
+   "line": "a short digital echo on the dotted 1/8, a little more plate",
    "desc": "a short digital echo on the dotted 1/8 (DIG 8D, mix 9, feedback 18, tone 62) and plate 20; tone as A",
    "set": {
     "P_DL_SW": 1,
@@ -110,6 +126,8 @@
  "F05": {
   "note": "Suitcase PAN vibrato at 4.5 Hz: the phrase reads 1.1 LU under F01.",
   "B": {
+   "name": "TREM ECHO",
+   "line": "a soft analog echo on the quarter note, the level re-set",
    "desc": "LEVEL re-set, a soft analog echo on the 1/4 (ANA, mix 8, feedback 20, tone 44)",
    "set": {
     "P_DL_SW": 2,
@@ -121,6 +139,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "TREM DEEP",
+   "line": "a slower, deeper vibrato, more warmth and plate",
    "desc": "a slower, deeper vibrato (RATE 88 -> 80, DEPTH 72 -> 84), warmth 20 -> 26, plate 24 -> 28, LEVEL re-set",
    "set": {
     "P_TW_RATE": 80,
@@ -136,11 +156,15 @@
  "F06": {
   "note": "KHLON drive: the phrase reads 1.3 LU under F01; the drive thins the lows (low -10.3 dB, F01 -4.8) and the compressor keeps the true peak at -12.5 dBTP.",
   "B": {
+   "name": "DRIVEN77 LVL",
+   "line": "as F06, the level re-set (half way between chord and phrase)",
    "desc": "LEVEL re-set only (half way chord / phrase)",
    "set": {},
    "level": "auto"
   },
   "C": {
+   "name": "DRIVEN BODY",
+   "line": "more drive and body, a longer tape slap",
    "desc": "more body: drive tone 72 -> 64, drive 64 -> 70, the tape slap a little longer (mix 12 -> 14, feedback 40 -> 46), LEVEL re-set",
    "set": {
     "P_DRV_TONE": 64,
@@ -156,6 +180,8 @@
  "F07": {
   "note": "Ballad: the chord reads +1.0 re F01 and the low region is the fullest of the Rhodes set (-3.6 dB).",
   "B": {
+   "name": "BALLAD TIGHT",
+   "line": "less boom in the long plate's tail (LOW CUT 80)",
    "desc": "LOW CUT 70 -> 80 (less boom in the long plate's tail; the piano's own lows unchanged), LEVEL re-set",
    "set": {
     "P_RV_LOCUT": 80
@@ -163,6 +189,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "BALLAD DARK",
+   "line": "a longer, darker analog echo tail, a slower chorus",
    "desc": "B plus a longer, darker echo tail (DIG -> ANA, mix 12 -> 14, feedback 30 -> 36, tone 50 -> 44), chorus slower (40 -> 32)",
    "set": {
     "P_RV_LOCUT": 80,
@@ -180,11 +208,15 @@
  "F08": {
   "note": "Bell + chorus + dotted echo: the loudest Rhodes preset on both measures (phrase +1.2, chord +1.1), bright (presence -16.5), touches the limiter once.",
   "B": {
+   "name": "DYNO80S LVL",
+   "line": "as F08, the level re-set",
    "desc": "LEVEL re-set only",
    "set": {},
    "level": "auto"
   },
   "C": {
+   "name": "DYNO80S SOFT",
+   "line": "the echo softer and darker, less chorus",
    "desc": "the echo a little softer and darker (mix 18 -> 14, tone 76 -> 66), chorus 70 -> 60, LEVEL re-set",
    "set": {
     "P_DL_DEPTH": 14,
@@ -199,11 +231,15 @@
  "F09": {
   "note": "Phaser: the chord reads +1.3 re F01.",
   "B": {
+   "name": "PHASER LVL",
+   "line": "as F09, the level re-set",
    "desc": "LEVEL re-set only",
    "set": {},
    "level": "auto"
   },
   "C": {
+   "name": "PHASER SLOW",
+   "line": "a slower, more liquid sweep, a longer analog echo",
    "desc": "a slower, more liquid sweep (SPEED 30 -> 24, FDBK 64 -> 72), the analog echo a little longer (feedback 30 -> 38), LEVEL re-set",
    "set": {
     "P_PH_SPEED": 24,
@@ -218,11 +254,15 @@
  "F10": {
   "note": "Touch wah: the phrase reads 2.5 LU under F01 (outside the 1.5 LU rule) while the chord is level; it is also the darkest effect preset (presence -40 dB): the wah opens little on this phrase.",
   "B": {
+   "name": "FUNK WAH LVL",
+   "line": "as F10, the level re-set",
    "desc": "LEVEL re-set (half way chord / phrase)",
    "set": {},
    "level": "auto"
   },
   "C": {
+   "name": "FUNK PLUCK",
+   "line": "less squash, more pluck (2:1, slower attack), a short dark slap",
    "desc": "less squash, more pluck: the compressor 4:1 -> 2:1 with a slower attack (20 -> 40), a short dark analog slap (ANA 1/16, mix 7, feedback 10, tone 44), LEVEL re-set (a deeper wah or more resonance measured the same: the wah's top is under 2 kHz, so it stays dark by design)",
    "set": {
     "P_CMP_RATIO": 1,
@@ -241,6 +281,8 @@
  "F11": {
   "note": "Resonant LP sweep over 2 bars: levels fine (phrase -0.4, chord +0.1).",
   "B": {
+   "name": "RESO SPACE",
+   "line": "more echo and hall",
    "desc": "a little more space: echo mix 14 -> 17, hall 22 -> 28, LEVEL re-set",
    "set": {
     "P_DL_DEPTH": 17,
@@ -249,6 +291,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "RESO SMOOTH",
+   "line": "a smoother peak (less resonance), a wider sweep",
    "desc": "a smoother, less whistling peak (RESO 88 -> 78), the sweep a little wider (LFO 64 -> 72), LEVEL re-set",
    "set": {
     "P_FL_RESO": 78,
@@ -262,6 +306,8 @@
  "F12": {
   "note": "Auto wah (the user's earlier pick, B): chord +1.3, phrase -0.8, within its documented 0 +- 2.0. Dry today.",
   "B": {
+   "name": "AUTOWAH ECHO",
+   "line": "a digital echo on the quarter note",
    "desc": "a quarter-note digital echo (DIG 1/4, mix 10, feedback 24, tone 56), LEVEL re-set",
    "set": {
     "P_DL_SW": 1,
@@ -273,6 +319,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "AUTOWAH TAPE",
+   "line": "a tape echo on the dotted 1/8 and a plate",
    "desc": "a tape echo on the dotted 1/8 (TAPE 8D, mix 12, feedback 30, tone 54) and a plate instead of the small hall (PLATE 18)",
    "set": {
     "P_DL_SW": 3,
@@ -291,6 +339,8 @@
  "F13": {
   "note": "Dry VIBES: chord +2.7 (target +2.5).",
   "B": {
+   "name": "VIBES HALL",
+   "line": "dry, a little more hall",
    "desc": "stays dry: a little more hall (20 -> 26, pre-delay 20 -> 28), LEVEL re-set to +2.5",
    "set": {
     "P_RV_DEPTH": 26,
@@ -299,6 +349,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "VIBES MOTOR",
+   "line": "the slower, deeper motor, more hall",
    "desc": "the classic slower, deeper motor (RATE 66 -> 58, DEPTH 90 -> 104), hall 24",
    "set": {
     "P_MOT_RATE": 58,
@@ -313,6 +365,8 @@
  "F14": {
   "note": "VIBES + tape echo + plate: chord +2.8.",
   "B": {
+   "name": "VIBES CLEAN",
+   "line": "a cleaner echo (fewer repeats)",
    "desc": "a cleaner echo (feedback 50 -> 40, mix 20 -> 18), LEVEL re-set",
    "set": {
     "P_DL_FDBK": 40,
@@ -321,6 +375,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "VIBES DRIFT",
+   "line": "the motor on, slow and shallow, under the echo",
    "desc": "the motor on, slow and shallow (ON, RATE 50, DEPTH 70) under the echo",
    "set": {
     "P_MOT_ON": 1,
@@ -335,6 +391,8 @@
  "F15": {
   "note": "Dry MARIMBA: chord -0.2 (its target), phrase +0.1.",
   "B": {
+   "name": "MARIMBA HALL",
+   "line": "dry, more hall and pre-delay",
    "desc": "stays dry: hall 22 -> 28, pre-delay 12 -> 20, LEVEL re-set",
    "set": {
     "P_RV_DEPTH": 28,
@@ -343,6 +401,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "MARIMBA ECHO",
+   "line": "a soft analog echo on the quarter note",
    "desc": "a soft quarter-note analog echo (ANA 1/4, mix 9, feedback 20, tone 46)",
    "set": {
     "P_DL_SW": 2,
@@ -359,6 +419,8 @@
  "F16": {
   "note": "MARIMBA + chorus + echo + hall: the loudest preset on the phrase (+3.5 LU re F01, 3.4 over F15), the true peak at the limiter's ceiling with 6 limited samples. Its chord is at the +2.5 target. Trials: less echo and hall alone changed nothing (+3.6); the chorus is what lifts the phrase over the chord (chorus off: phrase +2.5, chord +2.5, limited samples 3).",
   "B": {
+   "name": "WOOD PLAIN",
+   "line": "the chorus off",
    "desc": "the chorus off, LEVEL re-set to the chord's +2.5 (the gate target unchanged)",
    "set": {
     "P_CP_SW": 0
@@ -366,6 +428,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "WOOD LIGHT",
+   "line": "a lighter chorus, less echo and hall",
    "desc": "keeps a lighter chorus (depth 40 -> 24), less wash (echo mix 22 -> 16, hall 38 -> 32), LEVEL half way chord / phrase at +1.5 (moves hil_scan's F16 chord target from +2.5 to the value in the table)",
    "set": {
     "P_CP_DEPTH": 24,
@@ -383,6 +447,8 @@
  "F17": {
   "note": "Tape echo: levels fine (phrase -0.2, chord +0.1).",
   "B": {
+   "name": "TAPE WIDE",
+   "line": "tamer repeats and a touch of chorus",
    "desc": "the repeats tamer (feedback 72 -> 62), a touch of chorus (depth 30, speed 36) for the tape's width, LEVEL re-set",
    "set": {
     "P_DL_FDBK": 62,
@@ -393,6 +459,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "TAPE DARK",
+   "line": "the echo on the quarter note, darker repeats",
    "desc": "the echo on the quarter note (SYNC 8D -> 1/4), darker repeats (tone 62 -> 52), LEVEL re-set",
    "set": {
     "P_DL_SYNC": 9,
@@ -406,6 +474,8 @@
  "F18": {
   "note": "Dream: levels fine (phrase +0.7, chord +0.6), the widest preset.",
   "B": {
+   "name": "DREAM CLEAR",
+   "line": "less chorus wobble under the hall",
    "desc": "LEVEL re-set, chorus 60 -> 50 (less pitch wobble under the hall's own modulation)",
    "set": {
     "P_CP_DEPTH": 50
@@ -413,6 +483,8 @@
    "level": "auto"
   },
   "C": {
+   "name": "DREAM DEEP",
+   "line": "a slower, deeper pan, the echo on the dotted 1/4",
    "desc": "a slower, deeper pan (RATE 30 -> 22, DEPTH 36 -> 50), the echo on the dotted 1/4 (SYNC 1/4 -> 4D, feedback 30 -> 40)",
    "set": {
     "P_TW_RATE": 22,
@@ -428,11 +500,15 @@
  "F19": {
   "note": "Radio: the phrase reads +1.7 LU re F01 (outside 1.5), the chord -0.1; the narrowest band (low -18 dB).",
   "B": {
+   "name": "RADIO LVL",
+   "line": "as F19, the level re-set",
    "desc": "LEVEL re-set only (half way chord / phrase)",
    "set": {},
    "level": "auto"
   },
   "C": {
+   "name": "RADIO LOW",
+   "line": "the band a little lower: more body",
    "desc": "the band a little lower (FREQ 66 -> 62): more body, and the phrase and the chord agree; LEVEL re-set (a higher, resonant band split them by 5-7 LU)",
    "set": {
     "P_FL_FREQ": 62
