@@ -142,7 +142,7 @@ FX_RAM __attribute__((noinline)) static void tp_loop(int32_t *L, int32_t *R, int
         int32_t y;
         wq += ws;
         y = (int32_t)(((int64_t)*m++ * (wq >> 8)) >> 15);
-        dg += (dgt - dg) >> 9;
+        DLY_DG_STEP(dg, dgt);
         *L = (int32_t)(((int64_t)*L * dg) >> 15) + y; *R = (int32_t)(((int64_t)*R * dg) >> 15) + y;
     }
     dly_dg = dg; dly_sgk = msk ? sg16 : 0;              /* (fx.c dly_son) */
@@ -268,7 +268,7 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
         w++;
         wq += ws;
         r = (int32_t)(((int64_t)r * (wq >> 8)) >> 15);   /* (64 bits: the 4-point read overshoots 2^16, c1-int) */
-        dg += (dgt - dg) >> 9;
+        DLY_DG_STEP(dg, dgt);
         L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
     }
     dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg; dly_sgk = msk ? sg16 : 0;
@@ -430,7 +430,7 @@ static inline __attribute__((always_inline)) void dly_loop_c(int32_t *L, int32_t
         int32_t r;
         wq += ws;
         r = (int32_t)(((int64_t)er[j - j0] * (wq >> 8)) >> 15);
-        dg += (dgt - dg) >> 9;
+        DLY_DG_STEP(dg, dgt);
         L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
     }
     }
@@ -493,7 +493,7 @@ __attribute__((noinline)) static void dly_fade_c(int32_t *L, int32_t *R, uint32_
         w++;
         wq += ws;
         r = (int32_t)(((int64_t)r * (wq >> 8)) >> 15);
-        dg += (dgt - dg) >> 9;
+        DLY_DG_STEP(dg, dgt);
         L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
     }
     dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg;
@@ -568,7 +568,7 @@ FX_RAM __attribute__((noinline)) static void tp_loop_c(int32_t *L, int32_t *R, u
         w++;
         wq += ws;
         y = (int32_t)(((int64_t)y * (wq >> 8)) >> 15);
-        dg += (dgt - dg) >> 9;
+        DLY_DG_STEP(dg, dgt);
         L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + y; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + y;
     }
     dly_w = w; tp_b1 = b1; tp_b2 = b2; tp_h1 = h1; tp_h2 = h2; dly_dg = dg;

@@ -1723,6 +1723,10 @@ static void fx_comp(int32_t *m, uint32_t n)
 static int16_t dly_buf[DLY_LEN] POOL;
 static uint32_t dly_w, dly_wow, dly_flt;
 static int32_t dly_d = 4410 << 8, dly_lp, dly_hp, dly_dg = 32768, dly_sg;   /* dly_sg: the send's stereo make-up, log2 Q12 */
+/* the dry's glide to its target dgt (Q15): 1/512 a sample, as before, and the last 511 one LSB a sample: the old
+ * (dgt - dg) >> 9 stopped up to 511 short rising (x 0.98441, -0.137 dB: DEPTH 0 under the bypass after any take, for
+ * good; 2026-11-10, tests/py/test_dly_depth0.py); falling it reached dgt already (the shift rounds down) */
+#define DLY_DG_STEP(dg, dgt) do { int32_t e_ = (dgt) - (dg); (dg) += (e_ >> 9) + (e_ > 0 && e_ < 512); } while (0)
 static int32_t dly_sgk = 65536;                 /* the make-up (Q16) the last block ended on: each block ramps from it */
 static int32_t dly_fbk = -1;                    /* FDBK's feedback gain the last block ended on (-1: none yet): DIG / ANA
                                                  * ramp from it over the block, as the echo's gain (a step once a block
@@ -1856,7 +1860,7 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
         w++;
         wq += ws;
         r = (int32_t)(((int64_t)r * (wq >> 8)) >> 15);   /* (64 bits: the 4-point read overshoots 2^16, c1-int) */
-        dg += (dgt - dg) >> 9;
+        DLY_DG_STEP(dg, dgt);
         L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
     }
     dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg; dly_sgk = msk ? sg16 : 0;
