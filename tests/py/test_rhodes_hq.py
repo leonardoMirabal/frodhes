@@ -16,6 +16,7 @@ import hostrun  # noqa: E402
 
 ROOT = hostrun.ROOT
 sys.path.insert(0, os.path.join(ROOT, "tools"))
+import dry_dist  # noqa: E402
 import gate_h  # noqa: E402
 
 D = os.path.join(ROOT, "build", "hq_test")
@@ -53,7 +54,7 @@ def test_top_keys_same_level_band_limited(tmp_path):
     each note's level within 0.1 dB, and differs from Classic only by the band the half-band takes away (the top
     of the spectrum and Classic's aliasing), at least 40 dB under the note (the live contact off: it is the pickup's
     test, and the second strike of each key meets a ringing tine)"""
-    t, L = 0, ["0 midi 0xB0 80 0"]
+    t, L = 0, dry_dist.type_base_lines(0) + ["0 midi 0xB0 80 0"]   # (the voicing at its defaults, not F01's)
     notes = []
     for n in range(85, 109, 2):
         for v in (120, 104):

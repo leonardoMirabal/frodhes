@@ -71,7 +71,8 @@ def run(job):
     d = os.path.join(OUT, "r")
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, f"{os.path.basename(binary)}-{ty}-{meth}-{os.getpid()}")
-    ls, ev, t = ["20 midi 0xB0 119 127", "30 midi 0xB0 104 0", f"40 midi 0xB0 80 {ty * 32}",
+    ls, ev, t = dd.type_base_lines(10) + ["20 midi 0xB0 119 127",   # (the voicing at its defaults, not F01's)
+                  "30 midi 0xB0 104 0", f"40 midi 0xB0 80 {ty * 32}",
                  f"50 midi 0xB0 40 {meth}"], [], 400
     for k in keys:
         for v in vels:

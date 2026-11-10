@@ -23,7 +23,10 @@ import sys
 import numpy as np
 import pytest
 
-from hostrun import FS, cc, card_hz, env_rms, rate_of, rms_db, run
+from hostrun import FS, ROOT, cc, card_hz, env_rms, rate_of, rms_db, run
+
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import dry_dist  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -85,7 +88,8 @@ def am_db(x, guess):
 
 
 def play(tag, setup, note, vel=100, on=200, dur=1500, end=None, raw=True):
-    lines = VIBES + (RAW if raw else []) + MOTOR_OFF + setup + [f"{on} midi 0x90 {note} {vel}", f"{on + dur} midi 0x80 {note} 0"]
+    lines = dry_dist.type_base_lines(10) + VIBES + (RAW if raw else [])   # (the voicing at its defaults, not F01's)
+    lines = lines + MOTOR_OFF + setup + [f"{on} midi 0x90 {note} {vel}", f"{on + dur} midi 0x80 {note} 0"]
     return run(tag, lines, end or on + dur + 1500)
 
 

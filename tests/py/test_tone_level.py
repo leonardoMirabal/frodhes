@@ -20,12 +20,14 @@ sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 from hostrun import FS, run  # noqa: E402
 from tone_level import KEYS, lufs  # noqa: E402
+import dry_dist  # noqa: E402
 
 TYPES = ["STAGE77", "SUITCASE", "FELT", "DYNO"]
 
 
 def note(ty, tone, n, vel, extra=(), resp=0):
-    ev = ["20 midi 0xB0 119 127", "30 midi 0xB0 104 0", f"35 midi 0xB0 40 {resp}", f"40 midi 0xB0 80 {ty * 32}",
+    ev = dry_dist.type_base_lines(10) + ["20 midi 0xB0 119 127",   # (the voicing at its defaults, not F01's)
+           "30 midi 0xB0 104 0", f"35 midi 0xB0 40 {resp}", f"40 midi 0xB0 80 {ty * 32}",
           f"50 midi 0xB0 28 {tone}", f"200 midi 0x90 {n} {vel}", *extra, f"800 midi 0x80 {n} 0"]
     x = run(f"tone-{ty}-{tone}-{n}-{vel}-{len(extra)}-r{resp}", ev, 900).L.astype(float)
     seg = x[int(0.2 * FS):int(0.8 * FS)]

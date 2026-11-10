@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from hostrun import FS, ROOT, run  # noqa: E402
 
 sys.path.insert(0, os.path.join(ROOT, "tools"))
+import dry_dist  # noqa: E402  (the voicing at its defaults, not F01's)
 import gen_velmap as gv  # noqa: E402
 
 SOS = butter(4, 5000, "highpass", fs=FS, output="sos")
@@ -23,7 +24,7 @@ CFG = json.load(open(os.path.join(ROOT, "docs", "model", "data", "velmap.json"))
 
 
 def note(tag, key, vel):
-    r = run(tag, ["20 midi 0xB0 119 127", "25 midi 0xB0 40 127", "30 midi 0xB0 104 0", f"100 midi 0x90 {key} {vel}"], end_ms=560)
+    r = run(tag, dry_dist.type_base_lines(10) + ["20 midi 0xB0 119 127", "25 midi 0xB0 40 127", "30 midi 0xB0 104 0", f"100 midi 0x90 {key} {vel}"], end_ms=560)
     x = r.L / 32768.0
     a = np.abs(x)
     i = int(np.argmax(a > 0.02 * a.max()))
@@ -43,7 +44,7 @@ def test_tables_in_range():
 
 
 def note_deep(tag, key, vel):
-    r = run(tag, ["20 midi 0xB0 119 127", "25 midi 0xB0 40 0", "30 midi 0xB0 104 0", f"100 midi 0x90 {key} {vel}"], end_ms=560)
+    r = run(tag, dry_dist.type_base_lines(10) + ["20 midi 0xB0 119 127", "25 midi 0xB0 40 0", "30 midi 0xB0 104 0", f"100 midi 0x90 {key} {vel}"], end_ms=560)
     x = r.L / 32768.0
     a = np.abs(x)
     i = int(np.argmax(a > 0.02 * a.max()))
@@ -83,7 +84,7 @@ def test_restrike_no_click(key, v1, v2, pedal):
     may be brighter than the sum; a step in the old note's swing would be far more). 0.9.9: up to +0 dB. The map: the
     felt's ramp under the strike +15.6 dB (E3 30 -> 127, pedal up), the old note rescaled 7.5x +13 dB (pedal down);
     the felt lifted at once and the rescale capped at X_new / X_old (rhodes.c rh_vm_restrike): up to +8 dB"""
-    pre = ["20 midi 0xB0 119 127", "25 midi 0xB0 40 127", "30 midi 0xB0 104 0"]
+    pre = dry_dist.type_base_lines(10) + ["20 midi 0xB0 119 127", "25 midi 0xB0 40 127", "30 midi 0xB0 104 0"]
     ped = ["150 midi 0xB0 64 127"] if pedal else []
     x = run(f"vm_rs_{key}_{v1}_{v2}_{pedal}", pre + ped + [f"200 midi 0x90 {key} {v1}", f"1100 midi 0x80 {key} 0",
                                                          f"1200 midi 0x90 {key} {v2}"], end_ms=1400).L

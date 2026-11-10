@@ -25,6 +25,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 import hostrun as H  # noqa: E402
 from test_smk_host import smk_build  # noqa: E402
 
+sys.path.insert(0, os.path.join(H.ROOT, "tools"))
+import dry_dist  # noqa: E402
+
 ROOT = H.ROOT
 FS = 44100
 LIMIT = 1.5
@@ -54,7 +57,7 @@ def harness(tmp):
 @pytest.fixture(scope="module")
 def chord_raw(tmp_path_factory):
     tmp = str(tmp_path_factory.mktemp("mclick"))
-    lines = [H.cc(195, 64, 127)]
+    lines = dry_dist.type_base_lines(20) + [H.cc(195, 64, 127)]   # (the voicing at its defaults, not F01's)
     for n in (36, 48, 52, 55, 60):
         lines += H.note(200, n, 90, 3600)
     r = H.run("master-chord", lines, 4000, binary=smk_build())

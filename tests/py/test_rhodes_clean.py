@@ -14,6 +14,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import control_sweep as cs  # noqa: E402
+import dry_dist  # noqa: E402
+
+TB = "".join(ln + "\n" for ln in dry_dist.type_base_lines(45))   # the voicing at its defaults, not F01's
 
 import hostrun  # noqa: E402
 
@@ -40,7 +43,7 @@ def harm(x, f0):
 @pytest.mark.parametrize("kv", sorted(CEIL), ids=[f"{k}v{v}" for k, v in sorted(CEIL)])
 def test_hard_notes_stay_clean(kv, resp, binary):
     k, v = kv
-    s = (f"50 midi 0xB0 10 127\n100 midi 0xB0 40 {resp}\n150 midi 0xB0 111 127\n400 midi 0x90 {k} {v}\n"
+    s = (TB + f"50 midi 0xB0 10 127\n100 midi 0xB0 40 {resp}\n150 midi 0xB0 111 127\n400 midi 0x90 {k} {v}\n"
          f"1400 midi 0x80 {k} 0\n1500 end\n")
     bark, h3 = harm(cs.render(s, binary).mean(1), 440 * 2 ** ((k - 69) / 12))
     cb, c3 = CEIL[kv]
@@ -53,7 +56,7 @@ def test_velocity_still_brightens_the_top(k, resp, binary):
     """keys 69 and up: the bark at v127 at least 6 dB over v40's, as 0.9.9's swing gives (the first 0.9.10 fix left
     the top flat at -35 dB at every velocity)"""
     def bark(v):
-        s = (f"50 midi 0xB0 10 127\n100 midi 0xB0 40 {resp}\n150 midi 0xB0 111 127\n400 midi 0x90 {k} {v}\n"
+        s = (TB + f"50 midi 0xB0 10 127\n100 midi 0xB0 40 {resp}\n150 midi 0xB0 111 127\n400 midi 0x90 {k} {v}\n"
              f"1400 midi 0x80 {k} 0\n1500 end\n")
         return harm(cs.render(s, binary).mean(1), 440 * 2 ** ((k - 69) / 12))[0]
     assert bark(127) - bark(40) >= 6.0, (k, bark(40), bark(127))

@@ -435,7 +435,9 @@ def test_new_controls_round_trip(tmp_path):
         for p, v in want.items():
             assert s0[f"p.{ids[p]}"] == str(v), ("settings", typ, p, s0[f"p.{ids[p]}"])
             assert s2[f"p.{ids[p]}"] == str(v), ("U03", typ, p, s2[f"p.{ids[p]}"])
-        assert s1[f"p.{ids['RV_TYPE']}"] == "1" and s2["header"].startswith("U03")
+        # F01 in between: a factory reverb (HALL or PLATE; 0.9.10's F01 is PLATE), and not U03's settings
+        assert s1[f"p.{ids['RV_TYPE']}"] in ("1", "2") and s2["header"].startswith("U03")
+        assert any(s1[f"p.{ids[p]}"] != str(v) for p, v in want.items()), ("F01 between", typ)
 
 
 def _base_tree(tmp):

@@ -1,6 +1,29 @@
 # The HQ bars' live contact (tests/py/test_bars_hq.py, Gate H): VIBES then MARIMBA, RAW, the pedal down: a strike,
 # then the same key again while it rings (40 / 150 / 400 ms later, soft / mid / hard), each from silence; then
 # MARIMBA's top keys (the contact at every strike, from C6) at four velocities, and a fast repeated note.
+# the voicing at its defaults (dry_dist.TYPE_BASE, rc2's F01): 0.9.10's F01 is not the defaults
+0 midi 0xB0 28 64
+0 midi 0xB0 29 64
+0 midi 0xB0 30 64
+0 midi 0xB0 31 64
+0 midi 0xB0 102 64
+0 midi 0xB0 103 64
+0 midi 0xB0 104 48
+0 midi 0xB0 105 0
+0 midi 0xB0 107 50
+0 midi 0xB0 112 16
+0 midi 0xB0 108 80
+0 midi 0xB0 109 72
+0 midi 0xB0 113 8
+0 midi 0xB0 91 18
+0 midi 0xB0 95 32
+0 midi 0xB0 69 70
+0 midi 0xB0 92 64
+0 midi 0xB0 93 64
+0 midi 0xB0 94 0
+0 midi 0xB0 73 0
+0 midi 0xB0 68 64
+0 midi 0xB0 110 52
 0 midi 0xB0 119 127
 1 midi 0xB0 47 0
 2 midi 0xB0 64 127
