@@ -2691,9 +2691,11 @@ static __attribute__((noinline)) int32_t fx_width(uint32_t o, uint32_t e, int on
         h2 += (int32_t)(((int64_t)(x - (lp >> 8) - h2) * WD_B) >> 15);   /* (the wall's absorption: a low-pass) */
         sd = wd_buf[(w - WD_D) & 511u];
         wd_buf[w & 511u] = h2; w++;
-        sd *= kg;                                       /* (32 bits: |h2| < 2^18) toward zero, so the side ends in */
-        sd = (sd + ((sd >> 31) & 32767)) >> 15;         /* exact zeros (a floor left -1 LSB on L 40 ms after the note:
-                                                         * test_every_control DELAY-MIX) */
+        {                                               /* (64 bits: a hot chorus chord took |h2| past 2^18 and the
+                                                         * 32-bit product overflowed, test_fuzz) toward zero, so the */
+            int64_t t = (int64_t)sd * kg;               /* side ends in exact zeros (a floor left -1 LSB on L 40 ms */
+            sd = (int32_t)((t + ((t >> 63) & 32767)) >> 15);   /* after the note: test_every_control DELAY-MIX) */
+        }
         l += sd; r -= sd; *pl++ = l; *pr++ = r;
         l = iabs(l); r = iabs(r);
         if (l > pk) pk = l;
