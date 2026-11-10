@@ -162,11 +162,26 @@ jobs:
       - name: self-contained (Windows' own DLLs only, the static CRT)
         run: FRP_OBJDUMP="$(cygpath -u "$PROGRAMFILES")/LLVM/bin/llvm-objdump.exe" python tools/plugin_depcheck.py windows "$RUNNER_TEMP/w/Frodhes"
       - name: the coroutine (fibers), the window's controller and view, the headless host's selftest
+        # cmd with the build step's environment (vcvars64 + LLVM on PATH): Git bash ran the first exe with exit 127 and
+        # no message (a loader failure); cmd reports the NTSTATUS. Each test's DLL imports are listed first.
+        shell: cmd
         run: |
-          build/plugin-win/frp_test_coro.exe
-          build/plugin-win/frp_test_gui_ctl.exe
-          build/plugin-win/frp_gui_demo.exe --selftest
-          build/plugin-win/frp_clap_render.exe "$RUNNER_TEMP/w/Frodhes/CLAP/Frodhes.clap" --selftest
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
+          call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          set "PATH=%ProgramFiles%\LLVM\bin;%PATH%"
+          cd build\plugin-win || exit /b 1
+          for %%e in (frp_test_coro frp_test_gui_ctl frp_gui_demo frp_clap_render) do (
+            echo %%e.exe imports:
+            llvm-objdump -p %%e.exe | findstr /c:"DLL Name"
+          )
+          frp_test_coro.exe
+          if %errorlevel% neq 0 (echo frp_test_coro.exe: exit %errorlevel% & exit /b 1)
+          frp_test_gui_ctl.exe
+          if %errorlevel% neq 0 (echo frp_test_gui_ctl.exe: exit %errorlevel% & exit /b 1)
+          frp_gui_demo.exe --selftest
+          if %errorlevel% neq 0 (echo frp_gui_demo.exe: exit %errorlevel% & exit /b 1)
+          frp_clap_render.exe "%RUNNER_TEMP%\w\Frodhes\CLAP\Frodhes.clap" --selftest
+          if %errorlevel% neq 0 (echo frp_clap_render.exe: exit %errorlevel% & exit /b 1)
       - name: clap-validator (CLAP)
         run: .local/plugin-deps/clap-validator/clap-validator.exe validate "$RUNNER_TEMP/w/Frodhes/CLAP/Frodhes.clap"
       - name: pluginval (VST3, strictness 10, with the editor tests)
