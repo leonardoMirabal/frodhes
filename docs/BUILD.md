@@ -189,6 +189,11 @@ Frodhes changes its platform files in a few small places:
   and the timers), holds it on every reset (`FM1_RESET_HOOK` in `hal/fm1_sys.h`) and on a fault of core 0
   (`FM1_FAULT_HOOK` in `hal/fm1_irq.h`); both hooks are empty in every other build. `app.ld` keeps the crash record
   first in NOINIT, where core 1's stack lives. The default image is byte-identical with or without this code.
+  The two-core image runs at 128-frame interrupts (`FR_C1_LAT` in `frodhes.c`): `platform.c` takes `HALF_FRAMES`
+  from the app when it sets it (its own 256 otherwise; the USB ring's band follows it), and core 1 may still run
+  effects code from the flash after an interrupt, so `hal/fm1_flash.h` calls the app's `FL_XIP_OFF_WAIT()` before
+  each moment the flash leaves XIP (empty by default), `st_read` in `platform.c` too, and `platform.c` leaves
+  `FL_SLICE_OK` to the app when it defines one.
 - **The browser and the host.** It builds for the browser (`DINGHY_WEB`), and there is a host-mode fix in `gfx.c`.
 - **The screen.** `FONT_S` in `gen/felucca_font.h` stores only the glyphs the firmware draws (`tools/gen_font.py`;
   the others point at `?`, which `gfx.c` draws for them).
