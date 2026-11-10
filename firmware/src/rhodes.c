@@ -141,6 +141,7 @@ typedef struct {
     int32_t lvl, lvl0;                         /* the modes' peak sum: the last sub-block's, the highest since the
                                                 * strike (the key-up thump's cap: rh_left) */
     uint16_t felt_g;                           /* Q15: the key-up felt noise's gain (the same cap: RH_FELT_K) */
+    uint16_t atk;                              /* Q15: the strike's output lift still to decay (RH_ATK_A, rh_voice_sub) */
     int32_t kd, kr;                            /* DECAY's and RELEASE's k at the note-on: eps0 / eps1's (rh_retune) */
     int32_t hd_off0, hd_g0, hd_gc, hd_d, hd_y1, hd_y2; /* the harmonic decay glide (rh_hd_init): the strike's offset and
                                                 * gain there, the gain it set last, the glide's end (Q25 gap), its two
@@ -549,24 +550,43 @@ static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /
     for (; i < 64u; i++) { d2 += *t++; d1 += d2; x += d1; o[i] = (int16_t)(o[i] + (((x - o[i]) * w) >> 15)); }
 }
 
+/* the attack's lift (2026-11-09, the user: the Rhodes weak; the 0.9.10 Rhodes' longer mid / upper decay, matched to
+ * 0.9.9's loudness, left its first 60 ms 0.9 .. 1.4 dB under 0.9.9's at every velocity, the crest 1.4 .. 3 dB lower):
+ * the voice's output gain x (1 + RH_ATK_A / 32768) at the strike, back to 1 over ~0.2 s (rh_voice_sub). Up to
+ * RH_ATK_V, then less to none at v127: the hardest chords' peak stays where it was (the user: "loudness no need to be
+ * a hotter signal") */
+#ifndef RH_ATK_A
+#define RH_ATK_A 6200u                                  /* +1.5 dB */
+#endif
+#define RH_ATK_V 96u
+
 /* The dynamics stage (0.9.10): a key x velocity gain on the voice, set at the strike (no per-sample cost), relative
- * to 0.9.9's loudness. mf and f (v >= 60) keep 0.9.9's level exactly; below, RESPONSE (rh_touch_mode, taken at the
- * strike) picks the soft end: A (FULL, dynamic) goes quieter on a smoothstep, 0 dB at v60 to -9 dB at v20 and below
- * (no step, no corner, at most 0.65 dB a velocity step: v20 -> v127 ~34.5 dB, v1 -> v127 ~39.4 dB); B (LIGHT, the
+ * to 0.9.9's loudness. From v40 up both keep 0.9.9's level exactly (2026-11-09, the user: the soft end back toward
+ * 0.9.9; it was 0 dB at v60 to -9 dB at v20: v40 -4.5, v50 -1.6 dB, the FM-1's keys' usual range heard weak); below,
+ * RESPONSE (rh_touch_mode, taken at the strike) picks the soft end: A (FULL, dynamic) goes quieter on a smoothstep,
+ * 0 dB at v40 to -9 dB at v10 and below (no step, no corner, at most 0.45 dB a velocity step: v30 -2.3, v20 -6.7 dB;
+ * v1 -> v127 as before); B (LIGHT, the
  * light touch) keeps 0.9.9's velocity law (v20 -> v127 ~25.5 dB). The same sound at every velocity in both, only the
  * soft end's level differs (the same drive, swing and harmonics: B is A x a gain, to the integers' rounding; A = B
- * from v60). A's depth is held by the output gate (fx.c GATE_LO, 16 LSB peak, -66 dBFS, 406 ms): a soft note that
+ * from v40). A's depth is held by the output gate (fx.c GATE_LO, 16 LSB peak, -66 dBFS, 406 ms): a soft note that
  * drops under it is faded 0.4 s later; at -9 dB no velocity has more notes under it within 1 s than 0.9.9 at its
  * 32 LSB (keys 21..96 x the TYPEs, LEVEL 64: v1 20, v10 17, v20 10, v30 4 of 104; 0.9.9 20 / 17 / 13 / 8; -12 dB
  * at v1 gave 24 / 19 / 10 / 4), and a v1 note on keys up to ~96 stays ~20 dB over the FM-1 jack's -92.5 dBFS floor.
  * The top keys taper in both, 0 dB at key 82 to -5 dB at key 98 and above (smoothstep: the upper octave thinner,
  * keys 90-100 at v64 ~-6 dB re key 60). Only ever a cut, so no chord gets louder than 0.9.9's. It multiplies the drive's output gain law (rh_drive_g: the note-on's
  * gain, the kill, a re-strike's force ratio) and the noises' scale (the knock, the felt). The tables:
- * round(32768 x 10^(-9 s((60 - v) / 40) / 20)), round(32768 x 10^(-5 s((k - 82) / 16) / 20)), s(t) = 3t^2 - 2t^3 on
+ * round(32768 x 10^(-9 s((40 - v) / 30) / 20)), round(32768 x 10^(-5 s((k - 82) / 16) / 20)), s(t) = 3t^2 - 2t^3 on
  * [0, 1] */
-#define RH_DYN_V_HI 60u
+#define RH_DYN_V_HI 40u
 #define RH_DYN_K_LO 82u
-static const uint16_t RH_DYN_V[RH_DYN_V_HI] = {             /* Q15, v 0..59 (60..127: 32768): RESPONSE A */
+static const uint16_t RH_DYN_V[RH_DYN_V_HI] = {             /* Q15, v 0..39 (40..127: 32768): RESPONSE A */
+    11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11666, 11781, 11969, 12227, 12554,
+    12949, 13413, 13944, 14543, 15210, 15943, 16744, 17608, 18535, 19519, 20555, 21636, 22754, 23896, 25049, 26197,
+    27322, 28404, 29420, 30347, 31159, 31831, 32338, 32658};
+/* the bars' LIGHT level map (bars.c bar_lt_g: 1 / this, up to +9 dB at v20 and below, 0 dB from v60): the electric
+ * piano's FULL soft end until 2026-11-09, kept for the bars so their LIGHT stays byte-identical */
+#define RH_DYN_VB_HI 60u
+static const uint16_t RH_DYN_VB[RH_DYN_VB_HI] = {
     11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627,
     11627, 11627, 11627, 11627, 11627, 11649, 11714, 11821, 11969, 12156, 12382, 12646, 12949, 13291, 13670, 14087,
     14543, 15037, 15568, 16137, 16744, 17386, 18064, 18775, 19519, 20291, 21091, 21913, 22754, 23608, 24472, 25337,
@@ -710,6 +730,8 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
                      * (a + ((a2 - a) w >> 15), between a and a2: an int16), so the force is byte-identical */
         rh_pz_mix(v->pbuf, &RH_PZB, RH_PZI(key, l + 1u < RH_NLAYER ? l + 1u : RH_NLAYER - 1u), w);
     v->ptab = v->pbuf;
+    v->atk = (uint16_t)(vel <= RH_ATK_V ? RH_ATK_A : (RH_ATK_A * (127u - vel)) / (127u - RH_ATK_V));   /* (each strike,
+                                                       * a re-strike too: the attack's lift, none at v127) */
     v->pamp = (int32_t)pa[i] + ((((int32_t)pa[i + 1] - (int32_t)pa[i]) * (int32_t)f) >> 8);
 #ifdef RH_DRIVE
     if (RH_IS_MAP(v)) v->pphys = v->pamp;             /* MAP: the physical force is the modes' force */
@@ -1780,6 +1802,13 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
     const rh_key_t *k = v->k;
     uint32_t j, m;
     int32_t sum = 0, Hp = v->Hprev, off = v->off, gain = v->gain, fnz = 0;
+    if (v->atk) {                                         /* the attack's lift: x (1 + atk), atk from RH_ATK_A at the
+                                                           * strike down by 1/64 a sub-block (~46 ms); after the
+                                                           * pickup (its output gain): the same harmonics */
+        int64_t g = ((int64_t)gain * (32768 + v->atk)) >> 15;
+        gain = g > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)g;
+        v->atk = v->atk > 63u ? (uint16_t)(v->atk - (v->atk >> 6)) : 0u;
+    }
     if (v->ramp) {                                        /* damper crossfade: E and eps together */
         int32_t f;
         v->ramp--;
@@ -1837,7 +1866,7 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
             if (v->m[m].live) sum += fnz ? FR_FAR(rh_mode_f)(&v->m[m]) : FR_FAR(rh_mode_p)(&v->m[m]);
     }
 #ifdef FR_HQ
-    if (hq_v[v - rv].os) Hp = hq_pickup(v, mix, side, Hp); else
+    if (hq_v[v - rv].os) Hp = hq_pickup(v, mix, side, Hp, gain); else   /* (gain: with the lift) */
 #endif
     if (v->fade == 32768) {                               /* pickup, then the per-key gain into the mix: no steal fade
                                                            * (only this loop changes it in a render: the test below would

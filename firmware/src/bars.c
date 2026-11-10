@@ -222,12 +222,12 @@ static int32_t bar_fam_nz(void)
 
 /* RESPONSE on the bars (0.9.10, the coordinator: no knob that does nothing): the electric piano's level map. A (FULL,
  * rh_touch_mode 0) leaves the strike as it was, byte-identical; B (LIGHT) lifts the soft end by the same ratio the
- * electric piano's LIGHT has over its FULL (rhodes.c rh_dyn: 1 / RH_DYN_V, up to +9.0 dB at v20 and below, 0 dB from
- * v60). The strike's force pulse and its contact noise only: the modes are linear, so the note is the same note at
+ * electric piano's LIGHT had over its FULL until 2026-11-09 (rhodes.c RH_DYN_VB: 1 / it, up to +9.0 dB at v20 and
+ * below, 0 dB from v60). The strike's force pulse and its contact noise only: the modes are linear, so the note is the same note at
  * another level (the same tone); read at each strike, as the electric piano's */
 static uint32_t bar_lt_g(uint32_t vel)              /* Q15, >= 32768 */
 {
-    return rh_touch_mode && vel < RH_DYN_V_HI ? (32768u << 15) / RH_DYN_V[vel] : 32768u;
+    return rh_touch_mode && vel < RH_DYN_VB_HI ? (32768u << 15) / RH_DYN_VB[vel] : 32768u;
 }
 static void bar_lt_pulse(bar_voice_t *v, uint32_t vel)
 {

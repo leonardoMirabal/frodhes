@@ -161,16 +161,21 @@ def tuned(p, fr, funds):
     return [fu * r for fu in funds]
 
 
-def harm_cells(seg, fund, fs=FS, pad=1):
-    """H2..H6 re H1 (dB, band peaks) and inh: the power off the harmonic bands re the power of H1 (dB)"""
+def harm_cells(seg, fund, fs=FS, pad=1, retune=True):
+    """H2..H6 re H1 (dB, band peaks) and inh: the power off the harmonic bands re the power of H1 (dB). retune: the
+    f0 measured (tuned); not in the strike's 150 ms window (aH): its main lobe is +-27 Hz wide, so the H1 band at the
+    low keys holds no peak of its own, its edge was taken for one (A1 55 Hz locked at 45.7 .. 47.5 Hz, H6 read at
+    ~280 Hz, and a 4 ms shift of the strike moved VIBE-B 33/64 aH6 -54.8 -> -26.8, 2026-11-10); the band peaks there
+    (+-3 %) hold any clock's few hundred ppm without it"""
     p, fr = spectrum(seg, fs, pad)
-    fund = tuned(p, fr, [fund])[0]
+    if retune:
+        fund = tuned(p, fr, [fund])[0]
     pk = []
     for k in range(1, 7):
         m = (fr > k * fund * (1 - BAND)) & (fr < k * fund * (1 + BAND))
         pk.append(p[m].max() if m.any() else 1e-30)
     h = [10 * np.log10(pk[k] / pk[0] + 1e-30) for k in range(1, 6)]
-    return h, inharm(p, fr, [fund])
+    return h, (inharm(p, fr, [fund]) if retune else None)   # (inh: the analysis window's only; it retunes)
 
 
 def inharm(p, fr, funds):
@@ -210,7 +215,7 @@ def measure_wave(x, t0=0.0, fs=FS, keys=False):
         seg = x[i0:i1]
         if kind in ("note", "key"):
             h, inh = harm_cells(seg, f0(ns[0]), fs)
-            a, _ = harm_cells(x[int((ts + A0) * fs):int((ts + A1) * fs)], f0(ns[0]), fs, pad=8)
+            a, _ = harm_cells(x[int((ts + A0) * fs):int((ts + A1) * fs)], f0(ns[0]), fs, pad=8, retune=False)
             out[label] = dict(H2=h[0], H3=h[1], H4=h[2], H5=h[3], H6=h[4], inh=inh,
                               aH2=a[0], aH3=a[1], aH4=a[2], aH5=a[3], aH6=a[4])
         else:

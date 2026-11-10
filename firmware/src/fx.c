@@ -1240,12 +1240,22 @@ static uint32_t cho_w;
 static int32_t cho_xw;                                  /* the on / off crossfade's wet share (xf_next) */
 static uint8_t cho_fill, cho_run;                       /* blocks still to fill the line before the fade in; it runs */
 static int32_t cho_swq;                                 /* the sweep's width x 256, gliding (CHO_SWS) */
+static int32_t cho_ly[2];                               /* the output's low part per side (cho_tap_k) */
 static int32_t cho_el = -1, cho_er, cho_km, cho_cg, cho_hl[2];   /* the taps' end positions (Q8; -1: none yet), the
                                                          * last sub-block's mix and make-up, the wet's high-pass */
-#define CHO_MKF 3300                                    /* the full mix's make-up, 1 + CHO_MKF / 32768 (+0.83 dB; it was
-                                                         * 1950, +0.50: the 0.9.10 Rhodes' chord -1.2 .. -1.5 LU at
-                                                         * DEPTH 64 .. 127, test_mix_levels' -1.5 .. +0.5; fx_all's wide
-                                                         * chorus target, -2.5 +- 2, bounds it from above) */
+#ifndef CHO_MKF
+#define CHO_MKF 6600                                    /* the full mix's make-up above ~220 Hz, 1 + CHO_MKF / 32768
+                                                         * (+1.6 dB; 2026-11-09: 3300 over the whole output, +0.83 dB, and
+                                                         * a half-mix x 7 / 8, lifted the bass the comb never touches:
+                                                         * C2 +0.7 .. +1.3 LUFS, +2.4 critical-band. Now on the comb's
+                                                         * band only, refitted on the critical-band loudness: C2 within
+                                                         * +-0.2 LUFS, the mean over engines, notes, velocities -0.2 .. -0.6 dB re the bypass;
+                                                         * tools/fx_level_audit.py, tests/py/test_fx_ear_level.py; before:
+                                                         * 1950, +0.50, the 0.9.10 Rhodes' chord -1.2 .. -1.5 LU) */
+#endif
+#ifndef CHO_HMK
+#define CHO_HMK 10                                      /* the half-mix comb's make-up, x CHO_HMK / 8 (was 7) */
+#endif
 #define CHO_SWS 256                                     /* the sweep width's largest step a sub-block (fxq-mod: with
                                                          * the mix gliding, DEPTH 127 -> 0 moved the taps from 154
                                                          * samples out to the centre in 32 samples under a still-wet
@@ -1277,9 +1287,9 @@ static inline __attribute__((always_inline)) int32_t cho_herm(const int32_t *a, 
  * notch sits near 71 Hz: C2 -10 dB at DEPTH 64, the audit 2026-10-25) */
 static inline __attribute__((always_inline)) int32_t cho_tap_k(int32_t *x, uint32_t k, uint32_t v, uint32_t e,
                                                               int32_t km, int32_t cg, int32_t dk, int32_t dc,
-                                                              int32_t hl, const int ramp)
+                                                              int32_t hl, int32_t *lyp, const int ramp)
 {
-    int32_t *xe = x + k;
+    int32_t *xe = x + k, ly = *lyp;
     if (ramp) { km <<= 5; cg <<= 5; }
     for (; x < xe; x++) {
         int32_t l = *x, t = cho_herm(cho_b + ((v >> 13) & 1023u), (int32_t)((v >> 3) & 1023u)), d;
@@ -1293,23 +1303,39 @@ static inline __attribute__((always_inline)) int32_t cho_tap_k(int32_t *x, uint3
         if (ramp) { km += dk; cg += dc; kq = km >> 5; cq = cg >> 5; } else { kq = km; cq = cg; }
         l += (int32_t)(((int64_t)(d - (hl >> CHO_HPS)) * kq) >> 15);   /* (t - l) high-passed, x mix: 64-bit (it
                                                          * overflowed from |t - l| 131072) */
-        *x = l + (int32_t)(((int64_t)l * cq) >> 15);    /* the comb's loss, minus the stereo width's loudness (0.8); */
-    }                                                   /* (= (l * (32768 + cg)) >> 15 exactly, without its overflow;
-                                                         * 64-bit: l passed 2^31 / cg at a VIBES fuzz seed's level) */
+        ly += l - (ly >> CHO_HPS);                      /* (the output's part under ~220 Hz x 2^CHO_HPS: the make-up
+                                                         * leaves it, 2026-11-09: the comb is only above, so the bass
+                                                         * passed +0.7 .. +1.3 dB louder, C2 +2.4 critical-band) */
+        *x = l + (int32_t)(((int64_t)(l - (ly >> CHO_HPS)) * cq) >> 15);   /* the comb's loss (above ~220 Hz) */
+    }
+    *lyp = ly;
     return hl;
 }
 /* one side over the block, its sub-blocks' settings in kb (in place; its own registers: inlined it spilled). Each side
  * reads only the line (written for the whole block first) and its own samples */
-FX_RAM __attribute__((noinline)) static int32_t cho_side(int32_t *x, const cho_k_t *kb, uint32_t n, int32_t hl)
+__attribute__((noinline)) static int32_t cho_side(int32_t *x, const cho_k_t *kb, uint32_t n, int32_t hl, int32_t *ly)
 {
     uint32_t sb;
     for (sb = 0; sb < n; sb += 32u, kb++) {
         uint32_t k = n - sb < 32u ? n - sb : 32u;
-        if (!kb->dk && !kb->dc) hl = cho_tap_k(x + sb, k, kb->v, kb->e, kb->km, kb->cg, 0, 0, hl, 0);
-        else hl = cho_tap_k(x + sb, k, kb->v, kb->e, kb->km, kb->cg, kb->dk, kb->dc, hl, 1);   /* (DEPTH moving) */
+        if (!kb->dk && !kb->dc) hl = cho_tap_k(x + sb, k, kb->v, kb->e, kb->km, kb->cg, 0, 0, hl, ly, 0);
+        else hl = cho_tap_k(x + sb, k, kb->v, kb->e, kb->km, kb->cg, kb->dk, kb->dc, hl, ly, 1);   /* (DEPTH moving) */
     }
     return hl;
 }
+#if !FR_C1
+/* the same with the mix and the make-up held over the whole block (DEPTH still: every block but a DEPTH move's), in
+ * RAM (FX_RAM: a leaf); cho_side above, from flash, takes the blocks where they move (2026-11-09: the make-up's low
+ * part, cho_ly, put .ram_text 28 B over with both loops in RAM) */
+FX_RAM __attribute__((noinline)) static int32_t cho_side_k(int32_t *x, const cho_k_t *kb, uint32_t n, int32_t hl,
+                                                           int32_t *ly)
+{
+    uint32_t sb;
+    for (sb = 0; sb < n; sb += 32u, kb++)
+        hl = cho_tap_k(x + sb, n - sb < 32u ? n - sb : 32u, kb->v, kb->e, kb->km, kb->cg, 0, 0, hl, ly, 0);
+    return hl;
+}
+#endif
 /* a tap's position (Q8) at the LFO's ph, swq the sweep's width x 256 (|osc x swq| < 2^31) */
 __attribute__((noinline)) static int32_t cho_pos(uint32_t ph, int32_t swq)
 {
@@ -1325,7 +1351,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
     static int con;                                     /* (the block's: on, the line filled) */
     if (!on && !cho_xw) { cho_el = -1; cho_km = cho_cg = 0; cho_fill = 0; cho_run = 0; return; }
     if (FXC_1) {
-        if (!cho_run) { memset(cho_buf, 0, sizeof cho_buf); cho_hl[0] = cho_hl[1] = 0; cho_fill = 2; cho_run = 1; cho_km = mt; }
+        if (!cho_run) { memset(cho_buf, 0, sizeof cho_buf); cho_hl[0] = cho_hl[1] = cho_ly[0] = cho_ly[1] = 0; cho_fill = 2; cho_run = 1; cho_km = mt; }
         con = on && !cho_fill;
         if (cho_fill) cho_fill--;
         if (cho_el < 0) {
@@ -1347,7 +1373,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
         el = cho_pos(cp_ph + inc * 32u, cho_swq); er = cho_pos(cp_ph + inc * 32u + 0x40000000u, cho_swq);
         int32_t sl = el - cho_el, sr = er - cho_er;
         int32_t mix = cho_km + clampi(mt - cho_km, -CHO_KMS, CHO_KMS), cg;
-        cg = (mix * CHO_MKF >> 14) + (((mix * (16384 - mix)) >> 14) * 7 >> 3);   /* (as the one-chunk form: CHO_MKF) */
+        cg = (mix * CHO_MKF >> 14) + (((mix * (16384 - mix)) >> 14) * CHO_HMK >> 3);   /* (as the one-chunk form: CHO_MKF) */
         uint32_t p = 0u - (cho_w - fxc_e + sb);
         cho_k_t *kl = &cho_k[0][sb >> 5], *kr = &cho_k[1][sb >> 5];
         kl->v = (p << 13) + ((uint32_t)cho_el << 5); kr->v = (p << 13) + ((uint32_t)cho_er << 5);
@@ -1357,14 +1383,14 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
         cho_el = el; cho_er = er; cho_km = mix; cho_cg = cg;
         cp_ph += inc * 32u;
     }
-    cho_hl[0] = FR_FAR(cho_side)(L + fxc_o, cho_k[0] + (fxc_o >> 5), fxc_e - fxc_o, cho_hl[0]);
-    cho_hl[1] = FR_FAR(cho_side)(R + fxc_o, cho_k[1] + (fxc_o >> 5), fxc_e - fxc_o, cho_hl[1]);
+    cho_hl[0] = FR_FAR(cho_side)(L + fxc_o, cho_k[0] + (fxc_o >> 5), fxc_e - fxc_o, cho_hl[0], &cho_ly[0]);
+    cho_hl[1] = FR_FAR(cho_side)(R + fxc_o, cho_k[1] + (fxc_o >> 5), fxc_e - fxc_o, cho_hl[1], &cho_ly[1]);
     xf_post_c(L, R, xf_d[0], xf_d[1], n, cho_xw, w1);
     if (FXC_Z) cho_xw = w1;
 #else
     if (!on && !cho_xw) { cho_el = -1; cho_km = cho_cg = 0; cho_fill = 0; cho_run = 0; return; }   /* off and faded out: rests (switched on
                                                          * again: the taps start where the LFO is, the mix from dry) */
-    if (!cho_run) { memset(cho_buf, 0, sizeof cho_buf); cho_hl[0] = cho_hl[1] = 0; cho_fill = 2; cho_run = 1; cho_km = mt; }
+    if (!cho_run) { memset(cho_buf, 0, sizeof cho_buf); cho_hl[0] = cho_hl[1] = cho_ly[0] = cho_ly[1] = 0; cho_fill = 2; cho_run = 1; cho_km = mt; }
                                                         /* (from rest: the line held what it held when it stopped;
                                                          * cleared, then two blocks dry while it fills: the taps read
                                                          * 153 .. 465 samples back; the mix at once: it is faded in) */
@@ -1382,6 +1408,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
         cho_w += n;
         cho_b[-1] = cho_b[1023]; cho_b[1024] = cho_b[0]; cho_b[1025] = cho_b[1];
     }
+    int32_t mv = 0;                                     /* (a sub-block's mix or make-up moves: cho_side) */
     for (sb = 0; sb < n; sb += 32u) {
         /* the taps glide sample by sample to the next sub-block's (they jumped once per 32 samples: a step in the
          * delay time, a zipper on the chorus' output of ~10x the signal's third difference, 2026-10-24); each sub-block
@@ -1392,7 +1419,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
         el = cho_pos(cp_ph + inc * 32u, cho_swq); er = cho_pos(cp_ph + inc * 32u + 0x40000000u, cho_swq);
         int32_t sl = el - cho_el, sr = er - cho_er;     /* per sample, in Q13 (x 32: the 32 steps add up exactly) */
         int32_t mix = cho_km + clampi(mt - cho_km, -CHO_KMS, CHO_KMS), cg;
-        cg = (mix * CHO_MKF >> 14) + (((mix * (16384 - mix)) >> 14) * 7 >> 3);   /* + half-mix comb; the gain is
+        cg = (mix * CHO_MKF >> 14) + (((mix * (16384 - mix)) >> 14) * CHO_HMK >> 3);   /* + half-mix comb; the gain is
                                                          * 1 + cg / 32768 (cg < 7600: l * cg fits up to |l| 282000; l * the
                                                          * whole gain overflowed from |l| 61856: a hot chord, fuzz 2390;
                                                          * the largest, 7028 at mix 11472) */
@@ -1405,11 +1432,17 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
         kl->e = (uint32_t)sl - 8192u; kr->e = (uint32_t)sr - 8192u;
         kl->km = kr->km = cho_km; kl->cg = kr->cg = cho_cg;
         kl->dk = kr->dk = mix - cho_km; kl->dc = kr->dc = cg - cho_cg;
+        mv |= kl->dk | kl->dc;
         cho_el = el; cho_er = er; cho_km = mix; cho_cg = cg;
         cp_ph += inc * 32u;
     }
-    cho_hl[0] = FR_FAR(cho_side)(L, cho_k[0], n, cho_hl[0]);
-    cho_hl[1] = FR_FAR(cho_side)(R, cho_k[1], n, cho_hl[1]);
+    if (mv) {                                           /* (DEPTH moving: the ramps, from flash) */
+        cho_hl[0] = cho_side(L, cho_k[0], n, cho_hl[0], &cho_ly[0]);
+        cho_hl[1] = cho_side(R, cho_k[1], n, cho_hl[1], &cho_ly[1]);
+    } else {
+        cho_hl[0] = FR_FAR(cho_side_k)(L, cho_k[0], n, cho_hl[0], &cho_ly[0]);
+        cho_hl[1] = FR_FAR(cho_side_k)(R, cho_k[1], n, cho_hl[1], &cho_ly[1]);
+    }
     xf_post(L, R, xf_d[0], xf_d[1], n, cho_xw, w1);
     cho_xw = w1;
 #endif
@@ -1690,6 +1723,10 @@ static void fx_comp(int32_t *m, uint32_t n)
 static int16_t dly_buf[DLY_LEN] POOL;
 static uint32_t dly_w, dly_wow, dly_flt;
 static int32_t dly_d = 4410 << 8, dly_lp, dly_hp, dly_dg = 32768, dly_sg;   /* dly_sg: the send's stereo make-up, log2 Q12 */
+/* the dry's glide to its target dgt (Q15): 1/512 a sample, as before, and the last 511 one LSB a sample: the old
+ * (dgt - dg) >> 9 stopped up to 511 short rising (x 0.98441, -0.137 dB: DEPTH 0 under the bypass after any take, for
+ * good; 2026-11-10, tests/py/test_dly_depth0.py); falling it reached dgt already (the shift rounds down) */
+#define DLY_DG_STEP(dg, dgt) do { int32_t e_ = (dgt) - (dg); (dg) += (e_ >> 9) + (e_ > 0 && e_ < 512); } while (0)
 static int32_t dly_sgk = 65536;                 /* the make-up (Q16) the last block ended on: each block ramps from it */
 static int32_t dly_fbk = -1;                    /* FDBK's feedback gain the last block ended on (-1: none yet): DIG / ANA
                                                  * ramp from it over the block, as the echo's gain (a step once a block
@@ -1823,7 +1860,7 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
         w++;
         wq += ws;
         r = (int32_t)(((int64_t)r * (wq >> 8)) >> 15);   /* (64 bits: the 4-point read overshoots 2^16, c1-int) */
-        dg += (dgt - dg) >> 9;
+        DLY_DG_STEP(dg, dgt);
         L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
     }
     dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg; dly_sgk = msk ? sg16 : 0;
@@ -2398,7 +2435,7 @@ static void fx_reset_state(void)
     dly_rb = dly_w; dly_rst = 1; dly_lp = dly_hp = 0;   /* the delay line: dly_clear_step(), the next blocks */
     dly_clrn = DLY_CLR; dly_lc = 1;
     tp_reset();                                         /* TAPE's filters, noise and transport */
-    memset(cho_buf, 0, sizeof cho_buf); cho_el = -1; cho_hl[0] = cho_hl[1] = 0;   /* (the taps restart with cp_ph) */
+    memset(cho_buf, 0, sizeof cho_buf); cho_el = -1; cho_hl[0] = cho_hl[1] = cho_ly[0] = cho_ly[1] = 0;   /* (the taps restart with cp_ph) */
     memset(rev_comb, 0, sizeof rev_comb); memset(rev_ap, 0, sizeof rev_ap); memset(&hl, 0, sizeof hl);
     pd_on = 0; rv_running = 0; rev_reset_state();       /* (the pre-delay line: at its next use; the TYPE's
                                                          * state: rev_types.c) */

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """RESPONSE (CC 40) on the bar engines (bars.c bar_lt_g, 0.9.10): the electric piano's level map. FULL (A) leaves VIBES
 and MARIMBA as they were; LIGHT (B) lifts the soft end by the electric piano's LIGHT-over-FULL ratio (rhodes.c
-RH_DYN_V: +9.0 dB at v20 and below, 0 from v60), on the strike's pulse and its contact noise only, so the tone is the
+RH_DYN_VB, the electric piano's FULL soft end until 2026-11-09: +9.0 dB at v20 and below, 0 from v60), on the strike's pulse and its contact noise only, so the tone is the
 same:
 - B / A level per velocity: 20 log10(32768 / RH_DYN_V[v]) within 0.25 dB below v60, byte-identical from v60;
 - the same tone: every 1/3-octave band within 30 dB of the loudest and above -80 dBFS in A moves with the level, within
@@ -22,7 +22,7 @@ import hostrun  # noqa: E402
 from hostrun import FS  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
-_t = re.search(r"RH_DYN_V\[RH_DYN_V_HI\] = \{[^}]*\}", open(os.path.join(ROOT, "firmware", "src", "rhodes.c")).read())
+_t = re.search(r"RH_DYN_VB\[RH_DYN_VB_HI\] = \{[^}]*\}", open(os.path.join(ROOT, "firmware", "src", "rhodes.c")).read())
 RH_DYN_V = [int(x) for x in re.findall(r"\d+", re.sub(r"/\*.*?\*/", "", _t.group(0).split("=", 1)[1], flags=re.S))]
 assert len(RH_DYN_V) == 60
 BARS = {"VIBES": 0, "MARIMBA": 100}                      # CC 79 (frodhes.c: VIBES 0..95, MARIMBA 96..127)

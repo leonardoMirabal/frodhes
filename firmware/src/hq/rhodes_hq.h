@@ -52,6 +52,6 @@ static uint32_t hq_live_n;                     /* live contacts this block */
 
 static void hq_voice_init(rh_voice_t *v);
 static void hq_pulse(rh_voice_t *v, uint32_t vel);
-static int32_t hq_pickup(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t Hp);
+static int32_t hq_pickup(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t Hp, int32_t gain);
 static void hq_pulse_gain(rh_voice_t *v);
 static inline void hq_block(void) { hq_live_n = 0; }
