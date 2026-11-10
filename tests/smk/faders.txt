@@ -3,6 +3,30 @@
 # default DRIVE p.1, FILTER p.41, DELAY p.14, REVERB p.19). A fader takes over once it reaches the value (or passes
 # it); until then it moves nothing and the footer says where to go. "fader.N": the card it drives, its value, OWN / WAIT.
 0 ids smk
+# (2026-11-10) the boot preset's voicing, compressor, reverb and LEVEL as this script was written for (F01 before the
+# proposed 19; dry_dist.TYPE_BASE): the script tests its feature, not F01's record
+20 midi 0xB0 28 64
+20 midi 0xB0 29 64
+20 midi 0xB0 30 64
+20 midi 0xB0 31 64
+20 midi 0xB0 102 64
+20 midi 0xB0 103 64
+20 midi 0xB0 104 48
+20 midi 0xB0 105 0
+20 midi 0xB0 107 50
+20 midi 0xB0 112 16
+20 midi 0xB0 108 80
+20 midi 0xB0 109 72
+20 midi 0xB0 113 8
+20 midi 0xB0 91 18
+20 midi 0xB0 95 32
+20 midi 0xB0 69 70
+20 midi 0xB0 92 64
+20 midi 0xB0 93 64
+20 midi 0xB0 94 0
+20 midi 0xB0 73 0
+20 midi 0xB0 68 64
+20 midi 0xB0 110 52
 100 expect state fbank A
 400 fader 0 10
 500 expect state fader.0 TONE:+0.0:WAIT
@@ -52,6 +76,7 @@
 3300 expect state fbank A
 3300 expect led 1 0
 # VIBES: bank A is STRIKE MALLET TUBE WEIGHT
-3400 midi 0xB0 79 0
+3350 midi 0xB0 30 64
+3400 midi 0xB0 79 0                                           # (BELL 64 first: F02 sets its own since 0.9.10)
 3500 expect state fader.2 TUBE:5.0:WAIT
 3600 end
