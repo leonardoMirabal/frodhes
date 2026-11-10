@@ -38,7 +38,7 @@ def test_meter_reads_the_fm1_ballistics():
     tick = max(1, round(33 / BLK_MS))                      # about one meter tick between two reads
     lines = (["set p_cmp_sw 0", "render 20", "get r_cmp_gr", "set p_cmp_sw 1", "set p_cmp_amt 127", "set p_cmp_ratio 7",
               "render 40", "get r_cmp_gr"]
-             + on + ["render 120", "get r_cmp_gr"] + off
+             + on + ["render 30", "get r_cmp_gr"] + off   # THRESHOLD (stage 2): read at 30 blocks, not 120 (below)
              + sum((["render %d" % tick, "get r_cmp_gr"] for _ in range(60)), [])
              + ["set p_cmp_amt 96"]       # 2026-11-08: under the 30 dB clamp (0.9.10's louder chord read 300 both sides)
              + on + ["render 120", "get r_cmp_gr", "set s_fx 0", "render 200", "get r_cmp_gr",
@@ -49,6 +49,9 @@ def test_meter_reads_the_fm1_ballistics():
     db, pk = gr(v[2])
     assert 30 <= db <= 300, v[2]                            # a loud chord into THRSH 127, 20:1: several dB
     assert pk in GR_DB10 and pk <= db, v[2]                 # the peak: the segment the reading reached
+    # THRESHOLD (stage 2, 2026-11-10): the first read 120 -> 30 blocks after the chord. The compressor's adaptive release
+    # lets the reduction follow the chord's strike down: the reading clamps at 30 dB for ~40 blocks, then falls at
+    # the meter's 0.5 dB a tick (26.5 dB at 120 blocks under its held 30 dB peak), as the meter should
     fall = [gr(x) for x in v[3:63]]
     for (d0, _), (d1, _) in zip([(db, pk)] + fall, fall):
         assert d1 <= d0 and d0 - d1 <= 10, (d0, d1)     # at most 0.5 dB a tick (a read 0-2 ticks on; less when the

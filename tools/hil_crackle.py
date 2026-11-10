@@ -1564,7 +1564,10 @@ class Device:
         return got.get("usb"), (got["jack"][:, 0] if "jack" in got else None), counters, rig
 
 
-ONSET_NOISE_X = 4.0                           # onset_lag's threshold: at least this x the recording's peak before it
+ONSET_NOISE_X = 3.0                           # onset_lag's threshold: at least this x the recording's peak before it
+# THRESHOLD (stage 2, 2026-11-10): 4.0 -> 3.0. The Move dry run's LEVEL -12 dB worst take: the first chord's strike
+# 256 LSB on the simulated jack, its noise peak 66 (3.9 x): at 4 x the onset was the next louder moment, 50 ms late,
+# outside align's 30 ms search. 3 x the lead's own peak is still far over the noise (a peak of 0.3 s of it)
 
 
 def onset_lag(x, events, fs, thr=None):
