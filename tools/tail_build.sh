@@ -24,7 +24,8 @@
 #            (build/move/frodhes-module.tar.gz; test-move's relinks carry the default version)
 # Out (OUT, default build/tail/<sha>): the packages, the Move tarball, every log, SHA256SUMS, summary.txt (each step's
 # result and time). Exit 0 only when every step passed. Light by default: nice, -j2, PYTEST_N=2.
-#   --keep     keep the worktree afterwards (default: removed when every step passed)
+#   --keep     keep the worktree afterwards (default: removed when every step passed and the lists did not change;
+#              a failed run keeps it for a look, git worktree remove after)
 #   --dry-run  print the plan only
 set -u
 M=$(cd "$(dirname "$0")/.." && pwd)
@@ -87,6 +88,7 @@ fi
 for f in "tools/gen_move_presets.py:--sync" "tools/preset_lists.py:preset_lists" "plugin/tests/clap_render.c:--presets"; do
     if ! grep -q -- "${f#*:}" "$WT/${f%%:*}" 2>/dev/null; then
         cp "$M/${f%%:*}" "$WT/${f%%:*}"
+        OVERLAY="${OVERLAY:-} ${f%%:*}"
         note "      (${f%%:*} from $(git -C "$M" rev-parse --short=8 HEAD): $REF has no ${f#*:})"
     fi
 done
@@ -108,7 +110,8 @@ if [ $fail = 0 ]; then
     step presets-check-plugin "$PY" tools/gen_plugin_params.py --check || fail=1
 fi
 
-if [ $fail = 0 ]; then
+pre=$fail                                       # (the lanes and the list check need the host build and the lists)
+if [ $pre = 0 ]; then
     lane() {
         case "$1" in
             move)  step move-ci sh tools/ci_move.sh ;;
@@ -125,8 +128,9 @@ if [ $fail = 0 ]; then
 fi
 
 # the three preset lists (presets.c, the Move's, the plugin's: names and values), then the Move package last: test-move
-# and the bridge tests relink build/move/frodhes with their own default version; this one is MOVE_VER=X
-if [ $fail = 0 ]; then
+# and the bridge tests relink build/move/frodhes with their own default version; this one is MOVE_VER=X. Both run
+# whatever a lane gave: a Gate M DIFF does not hide a preset list's
+if [ $pre = 0 ]; then
     step preset-lists "$PY" tools/preset_lists.py || fail=1
     sed 's/^/      /' "$OUT/preset-lists.log" | grep -E "ok |FAIL|skip" >> "$SUM"
     step move-pkg make move MOVE_VER="$VER" || fail=1
@@ -140,6 +144,9 @@ done
 [ -f "$WT/build/move/frodhes/engine.so" ] && note "      move engine.so $(shasum -a 256 "$WT/build/move/frodhes/engine.so" | cut -c1-16)"
 note "$( [ $fail = 0 ] && echo PASS || echo FAIL): tail_build $SHA in $(( ($(date +%s) - T0) / 60 )) min $(( ($(date +%s) - T0) % 60 )) s; out $OUT"
 if [ $fail = 0 ] && [ $KEEP = 0 ] && [ ! -s "$OUT/presets.patch" ]; then
+    for f in ${OVERLAY:-}; do                                            # (this tree's tools out again)
+        git -C "$WT" checkout -q -- "$f" 2>/dev/null || rm -f "$WT/$f"
+    done
     git -C "$M" worktree remove "$WT" 2>/dev/null || note "      (the worktree $WT stays: not clean)"
 fi
 exit $fail
