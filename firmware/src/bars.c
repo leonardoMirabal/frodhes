@@ -528,6 +528,41 @@ static int32_t bar_left(const bar_voice_t *v)   /* the level now in strike-force
     return f * l / l0;
 }
 
+/* the knock's reach re the strike's (Q15, at most 32768) at the bar's fundamental: the SOFT pulse it plays against the
+ * strike's own, each pulse's spectrum there (Goertzel over its table, as bar_predict) times its point spacing
+ * (2^16 / prate samples): the mode's amplitude per unit of force. A harder mallet's strike is a shorter pulse that
+ * gives the fundamental less for the same force, and the soft knock, capped by the force left alone, came out over the
+ * note it ended (VIBES BARK 96 .. 127: +0.4 .. +0.8 dB in the key-up's block, a 16-note chord, 2026-11-10). The upper
+ * modes the hard strike adds only make the note louder than its fundamental: never louder.
+ * tests/py/test_bars_knock_mallet.py */
+static int32_t bar_pulse_at(const int16_t *t, uint32_t prate, uint32_t th, int32_t *l)   /* log2 |P| Delta, Q8 */
+{
+    uint32_t dq = 0xFFFFFFFFu / prate, ph, i, k;
+    uint64_t tpe = ((((uint64_t)th * 1367130551u) >> 30) * dq) >> 16;
+    int32_t c, s1 = 0, s2 = 0;
+    int64_t q;
+    if (tpe >= 0x80000000u) return 0;
+    ph = (uint32_t)tpe;
+    i = ph >> 22;
+    c = i < 256u ? BAR_MOT_COS[i] : -BAR_MOT_COS[512u - i];
+    for (k = 0; k < BAR_PLEN + 2u; k++) {
+        int32_t s0 = t[k] + (int32_t)(((int64_t)c * s1) >> 14) - s2;
+        s2 = s1; s1 = s0;
+    }
+    q = (int64_t)s1 * s1 + (int64_t)s2 * s2 - (((int64_t)c * s1) >> 14) * s2;
+    if (q <= 0) return 0;
+    *l = (bar_log2_64((uint64_t)q) >> 1) + bar_log2_32(dq);
+    return 1;
+}
+static int32_t bar_knock_reach(const bar_voice_t *v)
+{
+    uint32_t th = (uint32_t)v->k->m[0].th;
+    int32_t ls, lt, l;
+    if (!bar_pulse_at(v->pbuf, v->prate, th, &ls) || !bar_pulse_at(v->pthump, v->prate_thump, th, &lt)) return 32768;
+    l = ls - lt;
+    return l >= 0 ? 32768 : bar_exp2(15 * 256 + l);
+}
+
 static void bar_note_off(uint32_t note)
 {
     uint32_t i;
@@ -539,6 +574,7 @@ static void bar_note_off(uint32_t note)
             if (!bar_has_damper()) continue;                 /* no felt: no knock, no felt noise (C6) */
             if (bar_pedal_w && bar_thump && !v->ptab) {      /* the felt lands on the bar: a soft knock */
                 int32_t cap = (int32_t)(((uint32_t)bar_left(v) * BAR_THUMP_CAP) >> 15);
+                cap = (int32_t)(((int64_t)cap * bar_knock_reach(v)) >> 15);   /* (the strike's mallet) */
                 v->ptab = v->pthump;
                 v->pamp = bar_thump > 32767 ? 32767 : bar_thump;
                 if (v->pamp > cap) v->pamp = cap;
