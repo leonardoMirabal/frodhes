@@ -512,8 +512,8 @@ static inline __attribute__((always_inline)) void flt_burn(uint32_t k)
 #if FR_C1 && !defined(DINGHY_HOST)
 /* core 1's real work in a block (every two-core build since 0.9.11; FR_FAULT's before): its job's time less the time
  * it waited for core 0's frames (the job's time, core 1's "busy" (item 46), includes those waits: it ends with core
- * 0's last chunk, and with FR_LAT_HALF it spans the block's interrupts and the tail); the most since the last read,
- * and the least wait. The CC 116 = 30 reply's items 48 / 49 (us; tools/hil_c1_soak.py gates the LAT build on 48) */
+ * 0's last chunk, and with FR_LAT_HALF it spans the block's interrupts and the tail: c1_lat_job sums its jobs' work
+ * and waits over the block); the most since the last read, and the least wait. The CC 116 = 30 reply's items 48 / 49 (us; tools/hil_c1_soak.py gates the LAT build on 48) */
 static volatile uint32_t flt_work_max, flt_idle_min = 0xFFFFFFFFu;
 #endif
 static void c1_stream_job(uint32_t a)
@@ -624,10 +624,22 @@ static void lat_fx(uint32_t o, uint32_t e)      /* core 0: the effects of frames
 static void c1_lat_job(uint32_t a)              /* core 1, one an interrupt */
 {
     (void)a;
+#ifndef DINGHY_HOST
+    static uint32_t work, idle;                 /* this block's work and waits so far (items 48 / 49: per block) */
+    uint32_t j0 = fm1_ticks(), i0 = 0, p0, ce = fxc_ce;
+    if (!lat_o) { work = 0; idle = 0; }
+#endif
     if (!lat_o) fx_pre_c();                     /* (the block's start only: it flushes the block before's rows) */
 #ifndef DINGHY_HOST
     while (c1_fxd < fxc_ce)
-        if (!c1_stream_step()) fr_c1_pause();
+        if (!c1_stream_step()) { p0 = fm1_ticks(); fr_c1_pause(); i0 += fm1_ticks() - p0; }
+    work += fm1_ticks() - j0 - i0;
+    idle += i0;
+    if (ce == LAT_LB) {                         /* (the block's last job: its work, the waits of its jobs) */
+        if (work > flt_work_max) flt_work_max = work;
+        if (idle < flt_idle_min) flt_idle_min = idle;
+        fr_c1_sync();
+    }
 #else
     c1_stream_step();                           /* (the host twin: the rest at core 0's ticks and its waits) */
 #endif
