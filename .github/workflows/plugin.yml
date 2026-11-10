@@ -53,6 +53,12 @@ jobs:
           key: plugin-deps-${{ hashFiles('plugin/deps.lock') }}-macos
       - name: the pinned dependencies and test tools (plugin/deps.lock)
         run: sh tools/plugin_deps.sh
+      # (make test-plugin runs pytest (test_plugin_gui, test_plugin_tail) and Gate D's tempo check (numpy): the
+      # runner's Homebrew python has neither, the 2026-11-10 macos job; the versions as ci.yml's)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: pip install numpy==2.5.4 pytest
       - name: version
         run: |
           V="${{ inputs.version }}"; V="${V#v}"
