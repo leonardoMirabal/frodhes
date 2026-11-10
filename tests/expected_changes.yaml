@@ -3354,20 +3354,13 @@ changes:
 # ---- 18c. PROVISIONAL stage 1: must return under the rc3 ceilings by rc4 (coordinator 2026-11-10). The attack's lift
 # (a0bd58ee) into the compressor / drive; stage 2's compressor rework must bring them back; any still over at rc4:
 # RH_ATK_A lowered until they pass. D: a drive preset (DRIVE is exempt from pristine; the compressor is on there too).
-  - {match: "fm1/DYNO/FX/[AB]/k28v64", metric: H4, min: 8.78, max: 9.28, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a: rc3 -61.1 -> -58.9, lim -60.0"}
   - {match: "fm1/F05/PRESET/[AB]/k28v96", metric: H5, min: 4.05, max: 4.55, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D: rc3 -49.9 -> -48.6, lim -49.9"}
   - {match: "fm1/F06/PRESET/[AB]/k45v96", metric: H4, min: 2.81, max: 3.31, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D: rc3 -50.3 -> -50.1, lim -50.1"}
-  - {match: "fm1/F08/PRESET/B/k28v20", metric: H4, min: 3.06, max: 3.56, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a: rc3 -51.3 -> -49.6, lim -49.9"}
   - {match: "fm1/F10/PRESET/[AB]/k33v96", metric: H4, min: 3.07, max: 3.57, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D: rc3 -54.3 -> -53.0, lim -53.4"}
   - {match: "fm1/F10/PRESET/[AB]/k45v64", metric: inh, min: 4.44, max: 4.94, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D: rc3 -44.6 -> -40.4, lim -42.1"}
   - {match: "fm1/F19/PRESET/[AB]/k45v64", metric: H3, min: 2.91, max: 3.41, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D: rc3 -47.5 -> -46.3, lim -46.4"}
-  - {match: "fm1/FELT/DECAY0/A/k93v96", metric: H2, min: 2.78, max: 3.28, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a: rc3 -36.6 -> -36.6, lim -36.6"}
-  - {match: "fm1/ST77/DECAY0/A/k93v96", metric: H2, min: 2.76, max: 3.26, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a: rc3 -26.5 -> -26.4, lim -26.5"}
-  - {match: "hq/F04/PRESET/[AB]/k28v64", metric: H6, min: 2.87, max: 3.37, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a: rc3 -55.1 -> -53.5, lim -53.6"}
   - {match: "hq/F05/PRESET/[AB]/k28v110", metric: H6, min: 2.79, max: 3.29, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D: rc3 -54.5 -> -53.5, lim -53.6"}
   - {match: "hq/F06/PRESET/[AB]/k28v96", metric: H3, min: 3.11, max: 3.61, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D: rc3 -51.5 -> -50.5, lim -50.8"}
-  - {match: "hq/F08/PRESET/[AB]/k45v96", metric: H5, min: 2.83, max: 3.33, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a: rc3 -60.9 -> -58.4, lim -58.4"}
-  - {match: "hq/F08/PRESET/B/k28v20", metric: H4, min: 2.86, max: 3.36, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a: rc3 -51.7 -> -50.0, lim -50.1"}
   - {match: "hq/F10/PRESET/[AB]/k45v64", metric: inh, min: 4.94, max: 5.44, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D: rc3 -46.2 -> -41.3, lim -43.5"}
   - {match: "hq/F01/PRESET/[AB]/k93v96", metric: clk, min: -6.41, max: -5.91, reason: "s1 a hq (6cbe4d80)"}
   - {match: "hq/F09/PRESET/A/k93v20", metric: inh, min: 2.83, max: 3.33, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D hq: s1 -27.6 -> -27.4, lim -27.5"}
@@ -3454,3 +3447,14 @@ changes:
   - {match: "hq/SUIT/FXOFF/[AB]/chord-mid", metric: lu, min: -1.33, max: -0.73, reason: "s2: -19.69 (stage 1b -19.49; 0.9.9 -18.66)"}
   - {match: "hq/VIBES/FX/[AB]/chord-low", metric: lu, min: -1.36, max: -0.76, reason: "s2: -20.83 (stage 1b -20.73; 0.9.9 -19.77)"}
   - {match: "hq/VIBES/FXOFF/[AB]/chord-low", metric: lu, min: -1.40, max: -0.80, reason: "s2: -20.95 (stage 1b -20.82; 0.9.9 -19.85)"}
+# ---- 21. Signed off (coordinator 2026-11-10): the attack's lift stays (RH_ATK_A 6200, the user's choice "attack back").
+# These no-drive cells of 18c stay over their rc3 ceilings by the lift: the attack lift's harder strike raises the
+# strike-time harmonics, as a higher velocity does; RH_ATK_A=0 gives rc3's values (tests/baselines/stage1_ceilings.txt).
+# Values measured on stage 2 (the compressor rework + the dry width), host build.
+  - {match: "fm1/DYNO/FX/[AB]/k28v64", metric: H4, min: 8.78, max: 9.28, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "SIGNED (coordinator 2026-11-10): rc3 -61.12 -> -58.90, limit -60.00; the attack lift's harder strike raises the strike-time harmonics, as a higher velocity does; RH_ATK_A=0 gives rc3's values"}
+  - {match: "fm1/F08/PRESET/B/k28v20", metric: H4, min: 3.06, max: 3.56, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "SIGNED (coordinator 2026-11-10): rc3 -51.27 -> -49.57, limit -49.88; the attack lift's harder strike raises the strike-time harmonics, as a higher velocity does; RH_ATK_A=0 gives rc3's values"}
+  - {match: "fm1/FELT/DECAY0/A/k93v96", metric: H2, min: 2.78, max: 3.28, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "SIGNED (coordinator 2026-11-10): rc3 -36.63 -> -36.59, limit -36.62; the attack lift's harder strike raises the strike-time harmonics, as a higher velocity does; RH_ATK_A=0 gives rc3's values"}
+  - {match: "fm1/ST77/DECAY0/A/k93v96", metric: H2, min: 2.76, max: 3.26, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "SIGNED (coordinator 2026-11-10): rc3 -26.46 -> -26.44, limit -26.45; the attack lift's harder strike raises the strike-time harmonics, as a higher velocity does; RH_ATK_A=0 gives rc3's values"}
+  - {match: "hq/F04/PRESET/[AB]/k28v64", metric: H6, min: 2.87, max: 3.37, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "SIGNED (coordinator 2026-11-10): rc3 -55.06 -> -53.46, limit -53.57; the attack lift's harder strike raises the strike-time harmonics, as a higher velocity does; RH_ATK_A=0 gives rc3's values"}
+  - {match: "hq/F08/PRESET/[AB]/k45v96", metric: H5, min: 2.83, max: 3.33, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "SIGNED (coordinator 2026-11-10): rc3 -60.87 -> -58.36, limit -58.44; the attack lift's harder strike raises the strike-time harmonics, as a higher velocity does; RH_ATK_A=0 gives rc3's values"}
+  - {match: "hq/F08/PRESET/B/k28v20", metric: H4, min: 2.86, max: 3.36, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "SIGNED (coordinator 2026-11-10): rc3 -51.73 -> -49.96, limit -50.07; the attack lift's harder strike raises the strike-time harmonics, as a higher velocity does; RH_ATK_A=0 gives rc3's values"}
