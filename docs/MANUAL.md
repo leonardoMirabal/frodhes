@@ -972,37 +972,37 @@ the tail.
 
 | Preset | What it is |
 | --- | --- |
-| F01 STAGE 77 | The stage piano: the full bark and hammer, a brighter tone, a short plate (the sound Frodhes starts with) |
-| F02 SUITCASE | The suitcase piano: its cabinet, no vibrato, the bell up, a short plate |
-| F03 EARLY FELT | The early felt-hammer piano: its soft onset, a bright tone, a short plate |
-| F04 BELL DYNO | The bell voicing, the hammer up, a short plate |
-| F05 WARM 77 | A warm, rich stage piano: the bark up, the bell and the hammer soft, a dark hall |
-| F06 PUNCH 77 | A punchy stage piano: a firmer compressor (2:1, a slower attack that lets the strike through), the hammer full, a hall |
-| F07 BALLAD | Rounder, a slow chorus, a soft quarter-note digital echo and a long plate behind a short pre-delay |
+| F01 STAGE 77 | The stage piano: a bright tone, the bell full, the bark lower, a trace of hall (the sound Frodhes starts with) |
+| F02 SUITCASE | The suitcase piano: its cabinet, no vibrato, a gentle compressor, a bright tone, a soft hammer, a trace of hall |
+| F03 EARLY FELT | The early felt-hammer piano: its soft onset, a bright tone, a gentle compressor, a trace of hall |
+| F04 BELL DYNO | The bell voicing as it is, a short plate |
+| F05 WARM 77 | A warm stage piano: a gentle compressor, the tone and the bark a little up, a little hall |
+| F06 PUNCH 77 | A punchy stage piano: the hammer full, the bark and the bell up, a bright tone, a fast gentle compressor, a hall |
+| F07 BALLAD | Rounder (less tone and bell), a slow chorus, a soft quarter-note digital echo and a long plate behind a short pre-delay |
 | F08 SUIT TREM | The suitcase piano with its stereo vibrato (PAN, 4.5 Hz), a little warmth and a vintage plate |
-| F09 70S PHASER | A slow, deep phaser with feedback on a piano with a light BHLUE amp breakup, a dark quarter-note analog echo |
-| F10 FUNK WAH | A compressor, the TSH8 drive (its mid hump, tight lows) and the touch wah: harder playing opens it; a small room |
+| F09 70S PHASER | A slow, deep phaser with feedback on a bright piano with a light BHLUE amp breakup, a dark quarter-note analog echo |
+| F10 FUNK WAH | A compressor, the bark up, the TSH8 drive (its mid hump, tight lows) and the touch wah: harder playing opens it; a small room |
 | F11 RESO SWEEP | A piano driven through OHCD into the resonant low-pass, its LFO sweeping it over two bars on the tempo, a clean quarter-note echo |
 | F12 LUSH CHO | A lush chorus, a dotted-1/8 tape echo on the tempo and a plate |
 | F13 VIBES | Dry: VIBES with a softer mallet and a slower motor, a gentle compressor that lets the mallet through, a trace of hall |
 | F14 VIBES ECHO | VIBES without the motor, a cord mallet and a longer ring, a light chorus, a dotted-1/8 tape echo on the tempo and a bright plate |
 | F15 MARIMBA | Dry: the marimba as it is, ringing out, a gentle compressor, a trace of hall |
 | F16 WOOD ECHO | MARIMBA with a hard, heavy mallet, a light chorus, a dotted-1/8 digital echo on the tempo and a hall |
-| F17 TAPE ECHO | A warm piano into the tape echo, dotted 1/8 on the tempo, a plate |
+| F17 TAPE ECHO | A bright piano (the bark low) into the tape echo, dotted 1/8 on the tempo, a plate |
 | F18 DREAM | Felt hammers, a slow stereo pan, chorus, a quarter-note analog echo and a long, dark, moving hall |
 | F19 WARM DRIVE | A warm KHLON drive under a chorus, a dotted-1/8 tape echo on the tempo and a plate |
 
 The echoes and sweeps marked "on the tempo" follow the TEMPO page's BPM (120 when you start; PLAY taps it), so they
-fit what you play. The factory presets are level-matched by their loudness across the spectrum (how loud they sound,
-not only their RMS), so browsing does not jump in volume. VIBES and MARIMBA sit a little above the electric pianos, as
-their types do, except where hard playing would reach the output limiter: those presets play a little quieter, so
-their four-note chords at velocity 127 with the pedal stay at least 0.5 dB under it, and turning VOLUME up gives the
-level back without the limiter's squeeze. Four presets use a drive type: F09 BHLUE, F10 TSH8, F11 OHCD, F19 KHLON.
+fit what you play. Each factory preset is as loud as 0.9.9's preset of the same name, measured by its loudness across
+the spectrum (how loud it sounds, not only its RMS), so browsing does not jump in volume. Six play quieter, because
+at 0.9.9's level hard playing reached the output limiter: F04 BELL DYNO, F12 LUSH CHO, F13 VIBES, F14 VIBES ECHO,
+F15 MARIMBA and F16 WOOD ECHO. Their four-note chords at velocity 127 with the pedal stay under the limiter, and
+turning VOLUME up gives the level back without the limiter's squeeze. Four presets use a drive type: F09 BHLUE, F10 TSH8, F11 OHCD, F19 KHLON.
 
 **The starter user presets.** Until you save your first preset, U01–U09 hold nine more electric piano sounds to play or to
 overwrite (an FM-1 that already has saved user presets keeps exactly those); U10–U16 start empty. They are
-level-matched like the factory presets, except U02 (about 3.4 LU under F01) and U07 (about 1.2 LU under), kept quieter for the
-same reason as the quieter factory presets above:
+close to the factory presets' level, 1 to 2 LU under F01 (F01 now plays at 0.9.9's STAGE 77 level), U04 a
+little over it:
 
 | Preset | What it is |
 | --- | --- |
