@@ -38,7 +38,7 @@ def stats(lat):
                 p90=float(np.percentile(a, 90)), min=float(a.min()), max=float(a.max()))
 
 
-def onsets(x, sr, marks, sends):
+def onsets(x, sr, marks, sends, thr=THR):
     """x: the recording (mono float); marks: [(first frame, ADC time)] per callback; sends: note-on times on the
     stream clock. Returns the latencies in ms (None for a note not counted)"""
     f = np.array([m[0] for m in marks], float)
@@ -51,10 +51,10 @@ def onsets(x, sr, marks, sends):
         j = k - 1 if abs(t[k - 1] - s) <= abs(t[k] - s) else k
         i0 = int(round(f[j] + (s - t[j]) * sr))                    # the send's frame
         q = int(QUIET_MS * sr / 1000)
-        if i0 - q < 0 or i0 >= len(a) or a[i0 - q:i0].max() > THR:
+        if i0 - q < 0 or i0 >= len(a) or a[i0 - q:i0].max() > thr:
             out.append(None)
             continue
-        hit = np.flatnonzero(a[i0:i0 + int(0.2 * sr)] > THR)
+        hit = np.flatnonzero(a[i0:i0 + int(0.2 * sr)] > thr)
         out.append(None if not hit.size else 1000.0 * hit[0] / sr)
     return out
 
@@ -70,6 +70,8 @@ def main(argv=None):
     ap.add_argument("--note", type=int, default=72)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--label", default="")
+    ap.add_argument("--jack", type=int, metavar="CH", help="record the jack on this input of --dev (1-based)")
+    ap.add_argument("--dev", default="M6", help="the jack's interface (with --jack)")
     ap.add_argument("--json", default=os.path.join(os.path.dirname(__file__), "..", "build", "hil", "latency.json"))
     a = ap.parse_args(argv)
     if a.location and not a.port:
@@ -85,9 +87,17 @@ def main(argv=None):
         sys.exit("no FM-1 MIDI port")
     out = fm1_midi.ChannelOut(midi_guard.open_output(mido, names[0]))
     print(fm1_midi.say(out.ch), flush=True)
-    devs = fm1_ports.devices(sd.query_devices(), 2)
-    if not devs:
-        sys.exit("no FM-1 audio input")
+    if a.jack:                                       # the jack: the interface's input, at its own rate
+        devs = [i for i, d in enumerate(sd.query_devices()) if d["name"].startswith(a.dev) and d["max_input_channels"]]
+        if not devs:
+            sys.exit(f"no {a.dev} input")
+        nch, col = sd.query_devices(devs[0])["max_input_channels"], a.jack - 1
+        a.rate = int(sd.query_devices(devs[0])["default_samplerate"])
+    else:
+        devs = fm1_ports.devices(sd.query_devices(), 2)
+        if not devs:
+            sys.exit("no FM-1 audio input")
+        nch, col = 2, 0
     cc = lambda n, v: out.send(mido.Message("control_change", control=n, value=v))  # noqa: E731
     import hil_scan
     cc(120, 0)
@@ -108,10 +118,10 @@ def main(argv=None):
         marks.append((p, ti.inputBufferAdcTime))
         m = min(frames, len(buf) - p)
         if m > 0:
-            buf[p:p + m] = indata[:m, 0]
+            buf[p:p + m] = indata[:m, col]
         pos[0] = p + frames
 
-    s = sd.InputStream(device=devs[0], samplerate=a.rate, channels=2, dtype="float32", callback=cb, blocksize=64,
+    s = sd.InputStream(device=devs[0], samplerate=a.rate, channels=nch, dtype="float32", callback=cb, blocksize=64,
                        latency="low")
     sends = []
     try:
@@ -129,12 +139,15 @@ def main(argv=None):
         s.close()
         cc(119 if a.raw else 111, 0)
     x = buf[:min(pos[0], len(buf))]
-    lat = onsets(x, a.rate, marks, sends)
+    thr = THR                                        # the jack has a noise floor: 4x the first second's peak
+    if a.jack:
+        thr = max(THR, 4.0 * float(np.abs(x[int(0.2 * a.rate):int(0.9 * a.rate)]).max()))
+    lat = onsets(x, a.rate, marks, sends, thr)
     ok = [v for v in lat if v is not None]
     if len(ok) < max(5, a.notes // 2):
         sys.exit(f"hil_latency: only {len(ok)} of {a.notes} notes counted (the FM-1 not sounding, or not silent)")
     st = stats(ok)
-    print(f"{a.label or 'latency'}: MIDI -> USB audio ms over {st['n']} notes: median {st['median']:.2f} p10 "
+    print(f"{a.label or 'latency'}: MIDI -> {'jack' if a.jack else 'USB audio'} ms over {st['n']} notes: median {st['median']:.2f} p10 "
           f"{st['p10']:.2f} p90 {st['p90']:.2f} (min {st['min']:.2f} max {st['max']:.2f})")
     os.makedirs(os.path.dirname(os.path.abspath(a.json)), exist_ok=True)
     with open(a.json, "w") as fh:
