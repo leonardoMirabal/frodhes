@@ -47,6 +47,10 @@ int main(void)
     printf("%s    coro: %ld switches each way, coroutine ran %ld passes, x %.6f y %.6f k %ld\n",
            n == N + 1 && ticks == N + 1 && k > 0 ? "ok" : "FAIL", N, n, x, y, k);
     if (!(n == N + 1 && x > 0.55 && y > 2.89 && y < 2.91)) { printf("FAIL coro: values\n"); return 1; }
+#ifdef _WIN32
+    _aligned_free(stk);                           /* (aligned_alloc is _aligned_malloc there: plugin/compat/win/frp_win.h) */
+#else
     free(stk);
+#endif
     return 0;
 }
