@@ -23,7 +23,8 @@ BIN = os.path.join(ROOT, "build", "host", "frodhes")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 FS = 44100
 VIBES = "60 midi 0xB0 79 0\n60 midi 0xB0 47 0\n"   # CC 79: the bar types (VIBES); the motor (on with it) off
-RAW = "50 midi 0xB0 119 127\n"
+import dry_dist  # noqa: E402
+RAW = "".join(ln + "\n" for ln in dry_dist.type_base_lines(45)) + "50 midi 0xB0 119 127\n"   # the voicing at its defaults, not F01's (dry_dist.TYPE_BASE)
 F3B = [53, 55, 57, 59, 60, 62, 64, 65]
 F3B9 = F3B + [67]                             # nine bar voices (the S12 cases)
 F3BV = F3B + [67, 69, 71, 72, 74, 76]         # edge_chord: the first BAR_VOICES (fr_voices) of them

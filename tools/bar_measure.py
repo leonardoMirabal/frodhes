@@ -10,6 +10,8 @@ import wave
 
 import numpy as np
 
+import dry_dist  # noqa: E402  (tools/ is on the path)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(ROOT, "build", "host", "frodhes")
 FS = 44100
@@ -89,7 +91,10 @@ def counters(log):
 
 
 def setup_events(t0=20, typ=0, raw=True, noise=None, **cc):
-    ev = [(t0, f"midi 0xB0 {type_ccnum(typ)} {type_cc(typ)}")]
+    # the boot record's voicing, compressor, reverb and LEVEL set to dry_dist.TYPE_BASE first: the measures do not
+    # follow F01 (0.9.10 reordered the factory presets and F01 is no longer the defaults)
+    ev = [(t0, f"midi 0xB0 {c} {v}") for c, v in dry_dist.TYPE_BASE]
+    ev.append((t0, f"midi 0xB0 {type_ccnum(typ)} {type_cc(typ)}"))
     if typ >= 4:
         ev.append((t0, "midi 0xB0 47 0"))            # the motor starts with a bar TYPE: off (motor tests turn it on)
     if raw:

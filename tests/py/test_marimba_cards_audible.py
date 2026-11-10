@@ -20,6 +20,7 @@ import pytest
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
+import dry_dist  # noqa: E402
 import marimba_scan as ms  # noqa: E402
 from hostrun import build, cc, run  # noqa: E402
 
@@ -52,7 +53,7 @@ def lv(card, a, b, n, vel, keys=KEYS):
 def test_card_names_on_the_panel(card, enc, vals):
     """the card shows the family / the strike point exactly at its detent (turned on the panel from 64)"""
     for v, name in vals.items():
-        r = run(f"mc-name-{card}-{v}", [cc(20, 79, 127)] + [f"{t} {s}" for t, s in ms.panel(
+        r = run(f"mc-name-{card}-{v}", dry_dist.type_base_lines(10) + [cc(20, 79, 127)] + [f"{t} {s}" for t, s in ms.panel(
             {dict(STRIKE="TONE", MALLET="BARK")[card]: v})] + ["400 dump"], 500)
         st = r.state(400)
         assert st["card.2.0"] == "MARIMBA" and st[f"vlabel.0.{enc - 2}"] == card, st

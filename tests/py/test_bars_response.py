@@ -21,6 +21,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 import hostrun  # noqa: E402
 from hostrun import FS  # noqa: E402
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
+import dry_dist  # noqa: E402
+
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 _t = re.search(r"RH_DYN_VB\[RH_DYN_VB_HI\] = \{[^}]*\}", open(os.path.join(ROOT, "firmware", "src", "rhodes.c")).read())
 RH_DYN_V = [int(x) for x in re.findall(r"\d+", re.sub(r"/\*.*?\*/", "", _t.group(0).split("=", 1)[1], flags=re.S))]
@@ -31,7 +34,8 @@ FS_DB = 20 * np.log10(32768 * FS / 4)                    # bands(): a full-scale
 
 
 def render(binary, typ, resp, key, vel):
-    ev = [f"50 midi 0xB0 79 {BARS[typ]}", "100 midi 0xB0 111 127", f"120 midi 0xB0 40 {resp}",
+    ev = dry_dist.type_base_lines(40) + [f"50 midi 0xB0 79 {BARS[typ]}",   # the voicing at its defaults, not F01's (dry_dist.TYPE_BASE)
+           "100 midi 0xB0 111 127", f"120 midi 0xB0 40 {resp}",
           f"400 midi 0x90 {key} {vel}", f"1400 midi 0x80 {key} 0"]
     tag = f"bars_resp_{os.path.basename(os.path.dirname(binary))}_{typ}_{resp}_{key}_{vel}"
     r = hostrun.run(tag, ev, 2400, binary=binary)
