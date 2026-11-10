@@ -11,8 +11,12 @@ import pytest
 
 import hostrun as hr
 
+import sys  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools"))
+import dry_dist  # noqa: E402  (the voicing at its defaults, not F01's)
+
 SW = dict(OFF=0, DIG=48, ANA=80, TAPE=112)
-CLEAN = [hr.cc(5, 120, 0), hr.cc(6, 91, 0), hr.cc(7, 81, 0), hr.cc(8, 106, 0)]   # reverb, drive, compressor off
+CLEAN = dry_dist.type_base_lines(4) + [hr.cc(5, 120, 0), hr.cc(6, 91, 0), hr.cc(7, 81, 0), hr.cc(8, 106, 0)]   # reverb, drive, compressor off
 
 
 def d2(x):

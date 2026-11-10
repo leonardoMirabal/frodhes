@@ -20,8 +20,12 @@ import pytest
 
 from hostrun import FS, ROOT, card_hz, cc, env_rms, note, once, rate_of, rms_db, run, tap_lag
 
+import sys  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import dry_dist  # noqa: E402  (the voicing at its defaults, not F01's)
+
 ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 0), cc(11, 47, 0)]}   # VIBES: its motor (on with it) off
-CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(23, 106, 0), cc(24, 110, 64)]   # F01's drive, reverb, comp off; 0 dB
+CLEAN = dry_dist.type_base_lines(19) + [cc(20, 81, 0), cc(21, 91, 0), cc(23, 106, 0), cc(24, 110, 64)]   # F01's drive, reverb, comp off; 0 dB
 PEDAL = [cc(22, 64, 127)]
 PG = {"TREM": 7, "PHA": 8, "CHO": 9, "DELAY": 10, "TEMPO": 11, "FILTER": 6, "LFO": 16, "COMP": 5, "SETUP": 17,
       "ARP": 15, "SEQ": 14, "DRIVE": 19, "REVERB": 20, "MOTOR": 21,
