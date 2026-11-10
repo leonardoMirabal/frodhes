@@ -9249,8 +9249,8 @@ changes:
   - match: "hq/F18/PRESET/A/k93v110"
     metric: "peak"
     min: -7.452
-    max: -5.974
-    reason: "0.9.9's absolute output level again (742a2537: LIM_T 24000, -2.7 dBFS, the preset LEVELs): cb -2.5 median, peak -2.7. Track 3 item 0, group H; coordinator sign-off 2026-11-09 (1 values, move -6.95 median) [s1 ac]"
+    max: -5.349
+    reason: "0.9.9's absolute output level again (742a2537: LIM_T 24000, -2.7 dBFS, the preset LEVELs): cb -2.5 median, peak -2.7. Track 3 item 0, group H; coordinator sign-off 2026-11-09 (1 values, move -6.95 median) [s1 ac] [s1 a hq]"
   - match: "hq/F18/PRESET/A/k93v127"
     metric: "peak"
     min: -7.654
@@ -9259,8 +9259,8 @@ changes:
   - match: "hq/F18/PRESET/B/k93v64"
     metric: "peak"
     min: -7.238
-    max: -5.766
-    reason: "0.9.9's absolute output level again (742a2537: LIM_T 24000, -2.7 dBFS, the preset LEVELs): cb -2.5 median, peak -2.7. Track 3 item 0, group H; coordinator sign-off 2026-11-09 (1 values, move -6.74 median) [s1 ac]"
+    max: -4.479
+    reason: "0.9.9's absolute output level again (742a2537: LIM_T 24000, -2.7 dBFS, the preset LEVELs): cb -2.5 median, peak -2.7. Track 3 item 0, group H; coordinator sign-off 2026-11-09 (1 values, move -6.74 median) [s1 ac] [s1 a hq]"
   - match: "hq/ST77/FX/A/k69v110"
     metric: "peak"
     min: -2.653
@@ -11444,10 +11444,10 @@ changes:
     reason: "the ratio only: inh re H1 -38.27 -> -33.84, H1 -43.5 -> -53.1 dBFS, the absolute energy -81.7 -> -86.9 dBFS (-5.20). Track 3 item 0; coordinator sign-off 2026-11-09 (the ratio-only ceilings) [s1 ea]"
   - match: "hq/F09/PRESET/A/k93v20"
     metric: "inh"
-    min: 4.123
+    min: 2.828
     max: 4.623
     ceiling_proof: "tests/baselines/ratio_only_proof.json"
-    reason: "the ratio only: inh re H1 -30.46 -> -26.08, H1 -47.8 -> -60.3 dBFS, the absolute energy -78.3 -> -86.4 dBFS (-8.17). Track 3 item 0; coordinator sign-off 2026-11-09 (the ratio-only ceilings)"
+    reason: "the ratio only: inh re H1 -30.46 -> -26.08, H1 -47.8 -> -60.3 dBFS, the absolute energy -78.3 -> -86.4 dBFS (-8.17). Track 3 item 0; coordinator sign-off 2026-11-09 (the ratio-only ceilings) [s1 a hq]"
   - match: "hq/F10/PRESET/A/k45v20"
     metric: "inh"
     min: 4.369
@@ -11475,9 +11475,9 @@ changes:
   - match: "hq/F11/PRESET/A/k93v64"
     metric: "inh"
     min: 3.494
-    max: 3.994
+    max: 4.301
     ceiling_proof: "tests/baselines/ratio_only_proof.json"
-    reason: "the ratio only: inh re H1 -37.46 -> -33.71, H1 -52.8 -> -56.2 dBFS, the absolute energy -90.2 -> -89.9 dBFS (+0.28). Track 3 item 0; coordinator sign-off 2026-11-09 (the ratio-only ceilings)"
+    reason: "the ratio only: inh re H1 -37.46 -> -33.71, H1 -52.8 -> -56.2 dBFS, the absolute energy -90.2 -> -89.9 dBFS (+0.28). Track 3 item 0; coordinator sign-off 2026-11-09 (the ratio-only ceilings) [s1 a hq]"
   - match: "hq/F11/PRESET/B/k93v40"
     metric: "inh"
     min: 3.992
@@ -11522,10 +11522,10 @@ changes:
     reason: "the ratio only: inh re H1 -39.82 -> -35.99, H1 -45.3 -> -54.6 dBFS, the absolute energy -85.1 -> -90.6 dBFS (-5.41). Track 3 item 0; coordinator sign-off 2026-11-09 (the ratio-only ceilings) [s1 eac]"
   - match: "hq/F19/PRESET/A/k93v20"
     metric: "H3"
-    min: 5.222
+    min: 4.666
     max: 6.924
     ceiling_proof: "tests/baselines/ratio_only_proof.json"
-    reason: "the ratio only: H3 re H1 -51.60 -> -44.93, H1 -36.8 -> -48.9 dBFS, the absolute energy -88.4 -> -93.9 dBFS (-5.41). Track 3 item 0; coordinator sign-off 2026-11-09 (the ratio-only ceilings) [s1 ea]"
+    reason: "the ratio only: H3 re H1 -51.60 -> -44.93, H1 -36.8 -> -48.9 dBFS, the absolute energy -88.4 -> -93.9 dBFS (-5.41). Track 3 item 0; coordinator sign-off 2026-11-09 (the ratio-only ceilings) [s1 ea] [s1 a hq]"
   - match: "hq/FELT/FX/A/k45v20"
     metric: "inh"
     min: 4.134
@@ -12171,10 +12171,10 @@ changes:
     reason: "DRIVE on (OHCD 53, as 0.9.9): inh re H1 -32.0 -> -21.9, the energy itself -91.0 -> -89.4 dBFS (the 0.9.10 sonic engine (4370bb25)). [s1 ea]"
   - match: "hq/F11/PRESET/B/k93v20"
     metric: "inh"
-    min: 4.565
+    min: 4.173
     max: 5.065
     ceiling_proof: "tests/baselines/t3_ceilings_proof.json"
-    reason: "DRIVE on (OHCD 53, as 0.9.9): inh re H1 -27.2 -> -22.3, the energy itself -90.9 -> -89.9 dBFS (the preset LEVELs F01..F11 + compressor dither (e09bcbdf))."
+    reason: "DRIVE on (OHCD 53, as 0.9.9): inh re H1 -27.2 -> -22.3, the energy itself -90.9 -> -89.9 dBFS (the preset LEVELs F01..F11 + compressor dither (e09bcbdf)). [s1 a hq]"
   - match: "hq/F12/PRESET/[AB]/k69v127"
     metric: "H3"
     min: 4.776
@@ -14466,8 +14466,8 @@ changes:
   - match: "hq/F04/PRESET/[AB]/k93v110"
     metric: "peak"
     min: -18.513
-    max: -17.513
-    reason: "group C2, the 0.9.10 sonic engine (5d6a4901): peak -18.01 (down), the note's level -5.6 dB, decay -9.2 dB. (C2)"
+    max: -16.962
+    reason: "group C2, the 0.9.10 sonic engine (5d6a4901): peak -18.01 (down), the note's level -5.6 dB, decay -9.2 dB. (C2) [s1 a hq]"
   - match: "hq/F04/PRESET/B/k57v127"
     metric: "H4"
     min: -28.579
@@ -14616,8 +14616,8 @@ changes:
   - match: "hq/F08/PRESET/[AB]/k93v110"
     metric: "peak"
     min: -16.221
-    max: -14.689
-    reason: "group C2, the 0.9.10 sonic engine (5d6a4901): peak -15.72 (down), the note's level -4.9 dB, decay -7.2 dB. (C2) [s1 ac]"
+    max: -13.928
+    reason: "group C2, the 0.9.10 sonic engine (5d6a4901): peak -15.72 (down), the note's level -4.9 dB, decay -7.2 dB. (C2) [s1 ac] [s1 a hq]"
   - match: "hq/F08/PRESET/[AB]/k93v127"
     metric: "clk"
     min: -23.806
@@ -14746,8 +14746,8 @@ changes:
   - match: "hq/F11/PRESET/[AB]/k93v110"
     metric: "peak"
     min: -8.840
-    max: -7.840
-    reason: "group C2, the 0.9.10 sonic engine (5d6a4901): peak -8.34 (down), the note's level +0.7 dB, decay -4.8 dB. (C2)"
+    max: -7.105
+    reason: "group C2, the 0.9.10 sonic engine (5d6a4901): peak -8.34 (down), the note's level +0.7 dB, decay -4.8 dB. (C2) [s1 a hq]"
   - match: "hq/F11/PRESET/[AB]/k93v127"
     metric: "peak"
     min: -8.043
@@ -14756,8 +14756,8 @@ changes:
   - match: "hq/F11/PRESET/[AB]/k93v96"
     metric: "peak"
     min: -11.612
-    max: -10.612
-    reason: "group C2, the 0.9.10 sonic engine (5d6a4901): peak -11.11 (down), the note's level +0.2 dB, decay -5.9 dB. (C2)"
+    max: -7.856
+    reason: "group C2, the 0.9.10 sonic engine (5d6a4901): peak -11.11 (down), the note's level +0.2 dB, decay -5.9 dB. (C2) [s1 a hq]"
   - match: "hq/F11/PRESET/B/k28v20"
     metric: "keyup"
     silent: false
@@ -14927,8 +14927,8 @@ changes:
   - match: "hq/F17/PRESET/[AB]/k93v110"
     metric: "peak"
     min: -8.315
-    max: -7.315
-    reason: "group C2, the 0.9.10 sonic engine (4370bb25): peak -7.82 (down), the note's level -3.9 dB, decay -4.5 dB. (C2)"
+    max: -6.766
+    reason: "group C2, the 0.9.10 sonic engine (4370bb25): peak -7.82 (down), the note's level -3.9 dB, decay -4.5 dB. (C2) [s1 a hq]"
   - match: "hq/F17/PRESET/A/k93v127"
     metric: "peak"
     min: -8.293
@@ -14937,8 +14937,8 @@ changes:
   - match: "hq/F17/PRESET/[AB]/k93v64"
     metric: "peak"
     min: -7.803
-    max: -6.803
-    reason: "group C2, the 0.9.10 sonic engine (5d6a4901): peak -7.30 (down), the note's level -4.2 dB, decay -4.5 dB. (C2)"
+    max: -5.651
+    reason: "group C2, the 0.9.10 sonic engine (5d6a4901): peak -7.30 (down), the note's level -4.2 dB, decay -4.5 dB. (C2) [s1 a hq]"
   - match: "hq/F17/PRESET/B/k33v40"
     metric: "keyup"
     min: -9.332
@@ -15012,8 +15012,8 @@ changes:
   - match: "hq/F18/PRESET/A/k93v64"
     metric: "peak"
     min: -7.238
-    max: -5.766
-    reason: "group C2, the 0.9.10 sonic engine (5d6a4901): peak -6.74 (down), the note's level -4.7 dB, decay +1.0 dB. (C2) [s1 ac]"
+    max: -4.479
+    reason: "group C2, the 0.9.10 sonic engine (5d6a4901): peak -6.74 (down), the note's level -4.7 dB, decay +1.0 dB. (C2) [s1 ac] [s1 a hq]"
   - match: "hq/F18/PRESET/[AB]/k93v96"
     metric: "keyup"
     min: 4.586
@@ -15037,8 +15037,8 @@ changes:
   - match: "hq/F18/PRESET/B/k93v110"
     metric: "peak"
     min: -7.452
-    max: -5.974
-    reason: "group C2, the 0.9.10 sonic engine (4370bb25): peak -6.95 (down), the note's level -4.8 dB, decay +0.9 dB. (C2) [s1 ac]"
+    max: -5.349
+    reason: "group C2, the 0.9.10 sonic engine (4370bb25): peak -6.95 (down), the note's level -4.8 dB, decay +0.9 dB. (C2) [s1 ac] [s1 a hq]"
   - match: "hq/F18/PRESET/B/k93v127"
     metric: "peak"
     min: -7.654
@@ -15057,8 +15057,8 @@ changes:
   - match: "hq/F19/PRESET/[AB]/k93v96"
     metric: "H3"
     min: -22.583
-    max: -21.583
-    reason: "group C2, the 0.9.10 sonic engine (4370bb25): H3 -22.08 (down), the note's level -1.4 dB, decay -5.7 dB. (C2)"
+    max: -18.063
+    reason: "group C2, the 0.9.10 sonic engine (4370bb25): H3 -22.08 (down), the note's level -1.4 dB, decay -5.7 dB. (C2) [s1 a hq]"
   - match: "hq/F19/PRESET/B/k28v40"
     metric: "keyup"
     silent: false
@@ -15580,3 +15580,8 @@ changes:
   - {match: "hq/F08/PRESET/[AB]/k45v96", metric: H5, min: 2.83, max: 3.33, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a: rc3 -60.9 -> -58.4, lim -58.4"}
   - {match: "hq/F08/PRESET/B/k28v20", metric: H4, min: 2.86, max: 3.36, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a: rc3 -51.7 -> -50.0, lim -50.1"}
   - {match: "hq/F10/PRESET/[AB]/k45v64", metric: inh, min: 4.94, max: 5.44, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D: rc3 -46.2 -> -41.3, lim -43.5"}
+  - {match: "hq/F01/PRESET/[AB]/k93v96", metric: clk, min: -6.41, max: -5.91, reason: "s1 a hq (6cbe4d80)"}
+  - {match: "hq/F09/PRESET/A/k93v20", metric: inh, min: 2.83, max: 3.33, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D hq: s1 -27.6 -> -27.4, lim -27.5"}
+  - {match: "hq/F11/PRESET/A/k93v64", metric: inh, min: 3.80, max: 4.30, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D hq: s1 -33.6 -> -33.4, lim -34.5"}
+  - {match: "hq/F11/PRESET/B/k93v20", metric: inh, min: 4.17, max: 4.67, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D hq: s1 -22.3 -> -22.7, lim -24.2"}
+  - {match: "hq/F19/PRESET/A/k93v20", metric: H3, min: 4.67, max: 5.17, ceiling_proof: tests/baselines/stage1_ceilings.txt, reason: "PROVISIONAL a D hq: s1 -46.1 -> -46.7, lim -48.6"}

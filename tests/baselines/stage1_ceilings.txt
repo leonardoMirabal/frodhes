@@ -46,3 +46,8 @@ hq   F08   PRESET B  k 28 v 20  H4    rc3  -51.73  stage1  -49.96  limit  -50.07
 hq   F08   PRESET B  k 45 v 96  H5    rc3  -60.87  stage1  -58.36  limit  -58.44  noatk  -59.98  abs  -85.1 dBFS  no drive
 hq   F10   PRESET A  k 45 v 64  inh   rc3  -46.24  stage1  -41.31  limit  -43.50  noatk  -46.24  abs  -77.0 dBFS  DRIVE preset
 hq   F10   PRESET B  k 45 v 64  inh   rc3  -46.24  stage1  -41.31  limit  -43.50  noatk  -46.24  abs  -77.0 dBFS  DRIVE preset
+# + 4 HQ k93 cells after 6cbe4d80 (the lift now on the HQ path too): already over their ceilings under section 16/17 proofs, moved 0.2 .. 0.6 dB
+hq   F09   PRESET A  k 93 v 20  inh   rc3  (HQ path had no lift)  stage1  -27.60  now  -27.38  limit  -27.46  DRIVE preset (HQ, 6cbe4d80)
+hq   F11   PRESET A  k 93 v 64  inh   rc3  (HQ path had no lift)  stage1  -33.57  now  -33.41  limit  -34.46  DRIVE preset (HQ, 6cbe4d80)
+hq   F11   PRESET B  k 93 v 20  inh   rc3  (HQ path had no lift)  stage1  -22.34  now  -22.73  limit  -24.15  DRIVE preset (HQ, 6cbe4d80)
+hq   F19   PRESET A  k 93 v 20  H3    rc3  (HQ path had no lift)  stage1  -46.13  now  -46.68  limit  -48.60  DRIVE preset (HQ, 6cbe4d80)
