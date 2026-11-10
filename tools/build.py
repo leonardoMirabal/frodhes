@@ -579,6 +579,9 @@ def main():
     ap.add_argument("--o2", action="store_true",
                     help="probe: the app at -O2 -fno-unroll-loops instead of -Os (not with --release; the USB-MIDI "
                          "babbled at -O2 once, 2026-10-13: run the USB checks on such a build)")
+    ap.add_argument("--c1-256", action="store_true",
+                    help="with --c1: the 256-frame interrupts of 0.9.10 (no FR_C1_LAT; developer A/B builds only), "
+                         "file frodhes[-X.Y.Z]-c1-256.fwsc")
     ap.add_argument("--c1", action="store_true",
                     help="two cores (frodhes.c FR_C1: 14 voices on core 0, the effects and the full-rate reverb on "
                          "core 1); the FM-1 only; file frodhes[-X.Y.Z]-c1.fwsc, identity FM-1_958 as every build")
@@ -618,8 +621,8 @@ def main():
         if BOARD != "fm1":
             raise SystemExit("--c1: the FM-1 only")
         C1 = True
-        BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], "-DFR_C1=1"]
-        name = name[:-len(".fwsc")] + "-c1.fwsc"
+        BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], "-DFR_C1=1"] + ([] if a.c1_256 else ["-DFR_C1_LAT=1"])
+        name = name[:-len(".fwsc")] + ("-c1-256.fwsc" if a.c1_256 else "-c1.fwsc")
     if a.usb_name is not None:
         if BOARD != "fm1":
             raise SystemExit("--usb-name: the FM-1 only")

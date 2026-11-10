@@ -109,6 +109,24 @@ static void fr_ramx_clear(void)
  * chunk through FR_C1's chunk machinery (eng_begin / eng_chunk / eng_end, fx_process's [fxc_o, fxc_e)): the output is
  * the 256-frame build's integers, its frames out one half buffer sooner (5.8 -> 2.9 ms at 128). FR_LAT_EV 1: a note-on
  * that finds a free voice starts at the next interrupt instead of the next 256-frame block (app_audio_lat) */
+/* FR_C1_LAT (tools/build.py --c1, 0.9.11): the two-core package's latency settings, each overridable: 128-frame
+ * interrupts, note starts at the next interrupt, core 1's tail of 64 frames (2 chunks: core 0 never waits for the
+ * block's first chunk's heavier effects, which made the first interrupt the worst one). MIDI -> audio about 6 ms
+ * shorter than the 256-frame build; the same integers, the notes' starts on the interrupt grid (tests/py/test_latency.py) */
+#if defined(FR_C1_LAT) && FR_C1_LAT
+#if !FR_C1
+#error "FR_C1_LAT: the two-core build only"
+#endif
+#ifndef FR_LAT_HALF
+#define FR_LAT_HALF 128u
+#endif
+#ifndef FR_LAT_EV
+#define FR_LAT_EV 1
+#endif
+#ifndef FR_LAT_TAIL
+#define FR_LAT_TAIL 64u
+#endif
+#endif
 #ifndef FR_LAT_HALF
 #define FR_LAT_HALF 256u
 #endif
@@ -123,9 +141,9 @@ _Static_assert(FR_LAT_HALF == 128u || FR_LAT_HALF == 64u || FR_LAT_HALF == 32u, 
 #define FR_LAT_EV 0
 #endif
 #ifndef FR_LAT_TAIL
-#define FR_LAT_TAIL 0u                          /* 32: each interrupt sends its frames 32 late (app_audio) */
+#define FR_LAT_TAIL 0u                          /* 32, 64: each interrupt sends its frames that late (app_audio) */
 #endif
-_Static_assert(FR_LAT_TAIL == 0u || FR_LAT_TAIL == 32u, "FR_LAT_TAIL: 0 or 32 frames");
+_Static_assert(FR_LAT_TAIL == 0u || ((FR_LAT_TAIL & 31u) == 0u && FR_LAT_TAIL < FR_LAT_HALF), "FR_LAT_TAIL: 0, or whole chunks under FR_LAT_HALF");
 #if FR_LAT_TAIL && !FR_C1
 #error "FR_LAT_TAIL: two cores only (core 1 runs the tail)"
 #endif
@@ -732,8 +750,10 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
         }
     }
-    fr_c1_block_end();
     if (e == LAT_LB) {                          /* the block's end */
+        fr_c1_block_end();                      /* (core 1's busy time per 256-frame block, as the 256-frame build:
+                                                 * sampled per interrupt it counted the job's span from one interrupt's
+                                                 * end to the next, which the tail carries past an interrupt by design) */
         if (c1_nv > FR_C1_NV1 && !fr_c1_live()) c1_one_core();
         blk_ph[0] = tw_ph; blk_ph[1] = cp_ph; blk_ph[2] = ph_ph; blk_ph[3] = lfo_ph; blk_ph[4] = bar_mot_ph;
         blk_ms = lat_ms0;

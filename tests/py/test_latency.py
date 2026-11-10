@@ -51,7 +51,7 @@ def same_shifted(a, b, sh):
     return n > 2 * FS and not np.any(b[:sh]) and np.array_equal(a[:n - sh], b[sh:n])
 
 
-@pytest.mark.parametrize("tail", [0, 32])
+@pytest.mark.parametrize("tail", [0, 32, 64])
 @pytest.mark.parametrize("engine", [0, 1, 2])
 def test_lat128_same_integers(engine, tail):
     lines = take(engine=engine, end=4000)
@@ -60,7 +60,7 @@ def test_lat128_same_integers(engine, tail):
     assert same_shifted(a, b, tail)
 
 
-@pytest.mark.parametrize("tail", [0, 32])
+@pytest.mark.parametrize("tail", [0, 32, 64])
 @pytest.mark.parametrize("c1", ["order=1", "refuse=3", "late=40", "off=1", "busy=3"])
 def test_lat128_same_integers_core1_faults(c1, tail):
     lines = take(engine=0, end=3000)
@@ -113,7 +113,7 @@ def onsets(lines_t, x, half):
 
 
 @pytest.mark.parametrize("half,ev,tail,lo,hi", [(256, 0, 0, 5.80, 12.7), (128, 0, 0, 2.90, 9.8), (128, 1, 0, 2.90, 6.9),
-                                                (128, 1, 32, 3.63, 7.6), (64, 1, 0, 1.45, 3.95), (64, 1, 32, 2.18, 4.7)])
+                                                (128, 1, 32, 3.63, 7.6), (128, 1, 64, 4.35, 8.35), (64, 1, 0, 1.45, 3.95), (64, 1, 32, 2.18, 4.7)])
 def test_event_timing(half, ev, tail, lo, hi):
     ts = [1000 + 700 * i + (i * 37) % 97 for i in range(48)]     # arrivals over every phase of the block
     lines = [cc(10, 119, 127)]                                   # RAW: the engine's output (no limiter, no gate)
@@ -197,3 +197,13 @@ def test_tail_flash_never_under_core1(name):
     bad = build(os.path.join(ROOT, "build", "host", "lat_xip0", "frodhes"), d + ["-DHOST_XIP_NOWAIT"])
     r = run(f"lat_xip0_{name}", lines, env=env, binary=bad, check=False)
     assert "XIP OFF under core 1's tail" in r.out
+
+
+def test_c1_package_defaults():
+    """tools/build.py --c1 (FR_C1_LAT): the two-core package is the 128-frame build with FR_LAT_EV and a 64-frame tail
+    (the same integers as those switches given by hand, real-time event timing)"""
+    pkg = build(os.path.join(ROOT, "build", "host", "lat_pkg", "frodhes"), ["-DFR_C1=1", "-DFR_C1_LAT=1"])
+    lines = take(engine=0, end=2500)
+    a, _ = wav("lat_pkg", lines, pkg)
+    b, _ = wav("lat_pkg_ref", lines, lat_bin(128, 1, 64))
+    assert np.array_equal(a, b) and np.any(a)
