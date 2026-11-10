@@ -59,6 +59,9 @@ LEVEL_BASE = os.path.join(ROOT, "tests", "baselines", "quick_level_099.json")
 LEVEL_BASE_HQ = os.path.join(ROOT, "tests", "baselines", "quick_level_099_hq.json")
 FS = 44100
 LVL_TOL, PEAK_TOL = 1.5, 1.0
+# THRESHOLD: the presets' peaks judged by the limiter-idle margin (fx.c LIM_T -2.7 dBFS, 0.3 dB under it) instead of
+# 0.9.9's peak + PEAK_TOL (shown as information); reason: the absolute ceiling is the headroom rule (742a2537), FINAL19 v2
+PEAK_CEIL = -3.0
 
 
 def sh(cmd, timeout=600):
@@ -239,13 +242,13 @@ def check_level(b, key="fm1", area="level"):
                      and e.get("min", -99) <= dl <= e.get("max", 99) and str(e.get("reason", "")).strip() for e in listed)
             if abs(dl) > LVL_TOL and not ok:
                 bad.append(f"{s} cb {dl:+.1f} dB")
-            if dp > PEAK_TOL:
-                bad.append(f"{s} peak {m['peak']:.1f} dBFS ({dp:+.1f})")
+            if m["peak"] > PEAK_CEIL:                # (the limiter-idle margin, not 0.9.9's peak: THRESHOLD below)
+                bad.append(f"{s} peak {m['peak']:.1f} dBFS ({dp:+.1f} re 0.9.9; limiter-idle ceiling {PEAK_CEIL})")
             if worst is None or abs(dl) > abs(worst[1]):
                 worst = (s, dl, m["peak"], dp, dr)
         tag = " (new: its own reference)" if new else ""
         out.append(row(not bad, area, name, (f"{worst[0]} cb {worst[1]:+.1f} dB (limit +-{LVL_TOL}; RMS {worst[4]:+.1f}), "
-                       f"peak {worst[2]:.1f} dBFS ({worst[3]:+.1f}, limit +{PEAK_TOL})" if not bad else "; ".join(bad)) + tag))
+                       f"peak {worst[2]:.1f} dBFS ({worst[3]:+.1f} re 0.9.9, ceiling {PEAK_CEIL})" if not bad else "; ".join(bad)) + tag))
     return out
 
 

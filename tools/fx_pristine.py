@@ -41,7 +41,10 @@ LIM_T = 24000
 BUILD_DEFS = {"one": [], "c1": ["-DFR_C1=1"],
               "hq": ["-DFR_VOICES=16u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1"]}
 # every effect off: COMP, DRIVE, TREM/WAH, CHO/PHA, DELAY, REVERB MIX, FILTER, SPREAD, EQ flat
-CLEAN = [(106, 0), (84, 0), (17, 0), (85, 0), (88, 0), (91, 0), (70, 0), (105, 0), (34, 64), (35, 64), (37, 64)]
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import dry_dist  # noqa: E402
+# the voicing, compressor, reverb and LEVEL at dry_dist.TYPE_BASE (rc2's F01) first: 0.9.10's F01 is not the defaults
+CLEAN = list(dry_dist.TYPE_BASE) + [(106, 0), (84, 0), (17, 0), (85, 0), (88, 0), (91, 0), (70, 0), (105, 0), (34, 64), (35, 64), (37, 64)]
 D = "{d}"
 EFFECTS = {   # name: (CCs with {d} = the MIX / DEPTH under test, exempt from nl, MIX-0 level applies)
     "chorus": ([(85, 64), (86, D)], False, True),
