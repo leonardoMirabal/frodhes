@@ -68,7 +68,7 @@ ffa6ed653769948f49558de7bf2edd79a35bd02cd201249f1290bb4d934992e1  scripts/rev_ty
 68254ee4804c93d90e39d31cc0b2d43d3745c2be45e7337702774dfb6be22b5c  scripts/rhodes_steal_release
 316ab550295343948e75cd08cb227a0a6284e372c6ccaa98ae3b420b8a2af116  scripts/vibes
 10ad31bef5688489b5eb7d9d0f67125313feb0285db6bffdbc780e1d2b92acf0  scripts/vibes_motor
-e6d5d4ac1525632eae7389492977adf5b2c4336219d0bc23b5a2c6d3771bd27c  scripts/vibes_steal_release
+30339025e3ef13f3ed91c2f80a268859bb7950c97fa1b96322e06829fffe8223  scripts/vibes_steal_release
 # host-only host/frodhes: the default run (no script: the built-in demo)
 # host-only scripts/arp: FM-1 input lines: btn, keys
 # host-only scripts/arp_buttons: FM-1 input lines: btn, keys

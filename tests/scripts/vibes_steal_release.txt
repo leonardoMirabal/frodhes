@@ -1,6 +1,30 @@
 # VIBES: a note let go while it waits for a voice (the steal's 1.5 ms fade) starts let go and is not held for good.
 # Ten notes held fill the voices (BAR_VOICES 10); an eleventh is struck and let go at once (one audio block): it steals
 # the oldest voice; when every key is let go, no voice is still held (found by test_fuzz: 8 voices held for 6 notes, at 8 voices).
+# (2026-11-10) the boot preset's voicing, compressor, reverb and LEVEL as this script was written for (F01 before the
+# proposed 19; dry_dist.TYPE_BASE): the script tests the steal and the release, not F01's record
+20 midi 0xB0 28 64
+20 midi 0xB0 29 64
+20 midi 0xB0 30 64
+20 midi 0xB0 31 64
+20 midi 0xB0 102 64
+20 midi 0xB0 103 64
+20 midi 0xB0 104 48
+20 midi 0xB0 105 0
+20 midi 0xB0 107 50
+20 midi 0xB0 112 16
+20 midi 0xB0 108 80
+20 midi 0xB0 109 72
+20 midi 0xB0 113 8
+20 midi 0xB0 91 18
+20 midi 0xB0 95 32
+20 midi 0xB0 69 70
+20 midi 0xB0 92 64
+20 midi 0xB0 93 64
+20 midi 0xB0 94 0
+20 midi 0xB0 73 0
+20 midi 0xB0 68 64
+20 midi 0xB0 110 52
 50 midi 0xB0 79 0
 51 midi 0xB0 47 0
 100 midi 0x90 53 100
