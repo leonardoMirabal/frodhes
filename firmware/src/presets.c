@@ -70,6 +70,10 @@ _Static_assert(sizeof pr_user == ST_TAIL_N, "the user presets are the store reco
  * level-matched to F01 by critical-band loudness (tools/cb_loud.py; F01 itself to 0.9.9's F01). New: F05 WARM 77,
  * F06 PUNCH 77, F12 LUSH CHO, F19 WARM DRIVE; SUIT TREM moved F05 -> F08; dropped: DRIVEN 77, DYNO 80S, AUTO WAH,
  * RADIO. The program numbers of the moved and new presets changed with it (MANUAL 'Factory presets').
+ * FINAL19 v2 (the stage-2 engine): each preset at 0.9.9's preset of the same name by critical-band loudness (within
+ * 1 dB) with the limiter idle (peaks under the -2.7 dBFS ceiling by 0.3 dB or more); where that margin could not
+ * hold at 0.9.9's loudness the LEVEL is cut to it (F04 BELL DYNO, F12 LUSH CHO, F13 VIBES, F14 VIBES ECHO, F15
+ * MARIMBA, F16 WOOD ECHO: 0.9.9 reached them through the limiter).
  *
  * The drive TYPEs (P_DRV_SW, drive.c: 1 FDRV, 2 KHLON, 3 TSH8, 4 OHCD, 5 BHLUE) chosen in four of them (SUIT TREM and
  * TAPE ECHO keep FDRV, the default), each one's CPU predicted with its TYPE's own cost (tools/cpu_budget.py + drive.c's
@@ -86,97 +90,103 @@ static const char *const PR_FNAME[PR_NF] = {
     "FUNK WAH", "RESO SWEEP", "LUSH CHO", "VIBES", "VIBES ECHO", "MARIMBA", "WOOD ECHO", "TAPE ECHO", "DREAM",
     "WARM DRIVE"};   /* (the header shows 14 characters: names up to 10) */
 static const uint8_t PR_FDATA[] = {   /* the factory records, one after another: id / value pairs, 0xFF ends each */
-    /* F01 STAGE 77: the clean stage piano (the boot sound and the level reference): the full bark and hammer, a short
-     * plate */
+    /* F01 STAGE 77: the clean stage piano (the boot sound and the level reference): a bright TONE, the bell full, the
+     * bark lower, a trace of hall */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 8, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 30, P_TONE, 80, P_BARK, 127, P_BELL, 96, P_HAMMER, 127,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 57, P_TONE, 112, P_BARK, 48, P_BELL, 127, P_HAMMER, 64,
     P_DECAY, 72, 0xFF,
-    /* F02 SUITCASE: the suitcase's cabinet, no vibrato: the bell up, a short plate */
-    P_TYPE, 1, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 8, P_RV_TYPE, 2, P_RV_LOCUT, 70, P_LEVEL, 20, P_TONE, 80, P_BARK, 96, P_BELL, 127, P_HAMMER, 127,
+    /* F02 SUITCASE: the suitcase's cabinet, no vibrato: a gentle compressor (1.5:1), a bright TONE, the hammer soft, a
+     * trace of hall */
+    P_TYPE, 1, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 0, P_CMP_ATK, 40, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_RV_DEPTH, 16, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 47, P_TONE, 112, P_BARK, 80, P_BELL, 96, P_HAMMER, 32,
     P_DECAY, 72, 0xFF,
-    /* F03 EARLY FELT: the felt hammers, their soft onset, NOISE lower (soft playing), a brighter TONE */
-    P_TYPE, 2, P_NOISE, 36, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 8, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 34, P_TONE, 112, P_BARK, 127, P_BELL, 127, P_HAMMER, 80,
+    /* F03 EARLY FELT: the felt hammers, their soft onset, NOISE lower (soft playing), a brighter TONE, a gentle
+     * compressor, a trace of hall */
+    P_TYPE, 2, P_NOISE, 36, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 1, P_CMP_ATK, 40, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 46, P_TONE, 112, P_BARK, 80, P_BELL, 64, P_HAMMER, 64,
     P_DECAY, 72, 0xFF,
-    /* F04 BELL DYNO: the bell voicing, the hammer up, a short plate */
+    /* F04 BELL DYNO: the bell voicing (its TYPE), the cards at the middle, a short plate */
     P_TYPE, 3, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 16, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 36, P_TONE, 80, P_BARK, 64, P_BELL, 64, P_HAMMER, 127,
-    P_DECAY, 72, 0xFF,
-    /* F05 WARM 77: a warm, rich 77: the bark up, the bell and the hammer soft, a dark hall */
-    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 10, P_RV_TYPE, 1, P_RV_LOCUT, 50, P_LEVEL, 44, P_TONE, 80, P_BARK, 127, P_BELL, 64, P_HAMMER, 64,
+    P_RV_DEPTH, 16, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 52, P_TONE, 64, P_BARK, 64, P_BELL, 64, P_HAMMER, 64,
+    P_DECAY, 64, 0xFF,
+    /* F05 WARM 77: a warm 77: a gentle compressor, the TONE and the bark a little up, a little hall */
+    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 1, P_CMP_ATK, 40, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_RV_DEPTH, 10, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 59, P_TONE, 80, P_BARK, 72, P_BELL, 64, P_HAMMER, 64,
     P_DECAY, 72, P_RV_DECAY, 64, 0xFF,
-    /* F06 PUNCH 77: a punchy 77: a firmer compressor (2:1, attack 100), the hammer full, a hall */
-    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 2, P_CMP_ATK, 100, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 23, P_TONE, 96, P_BARK, 96, P_BELL, 96, P_HAMMER, 127,
+    /* F06 PUNCH 77: a punchy 77: the hammer full, the bark and the bell up, a bright TONE, a fast 1.5:1 compressor, a
+     * hall */
+    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 0, P_CMP_ATK, 40, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 41, P_TONE, 96, P_BARK, 88, P_BELL, 96, P_HAMMER, 127,
     P_DECAY, 72, P_RV_DECAY, 64, 0xFF,
-    /* F07 BALLAD: rounder, a slow chorus, a long plate behind a pre-delay, a soft quarter-note digital echo */
-    P_TYPE, 0, P_TONE, 80, P_BELL, 127, P_NOISE, 40, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 0, P_CMP_ATK, 100,
+    /* F07 BALLAD: rounder (TONE and bell down), a slow chorus, a long plate behind a pre-delay, a soft quarter-note
+     * digital echo */
+    P_TYPE, 0, P_TONE, 56, P_BELL, 76, P_NOISE, 40, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 2, P_CMP_ATK, 40,
     P_CMP_REL, 72, P_CMP_GAIN, 8, P_CP_SW, 1, P_CP_DEPTH, 56, P_CP_SPEED, 40, P_DL_SW, 1, P_DL_DEPTH, 12,
     P_DL_SYNC, 9, P_DL_FDBK, 30, P_DL_TONE, 50, P_RV_DEPTH, 48, P_RV_TYPE, 2, P_RV_DECAY, 84, P_RV_PREDLY, 40,
-    P_RV_LOCUT, 70, P_LEVEL, 17, P_BARK, 96, P_HAMMER, 127, P_DECAY, 72, 0xFF,
-    /* F08 SUIT TREM: the suitcase amp, its stereo PAN vibrato at 4.5 Hz, a little warmth, a vintage plate */
+    P_RV_LOCUT, 70, P_LEVEL, 59, P_BARK, 64, P_HAMMER, 64, P_DECAY, 64, 0xFF,
+    /* F08 SUIT TREM: the suitcase amp, its stereo PAN vibrato, a little warmth, a bright TONE, a 4:1 compressor, a
+     * vintage plate */
     P_TYPE, 1, P_NOISE, 44, P_DRIVE, 20, P_TW_SW, 1, P_TW_MODE, 0, P_TW_DEPTH, 72, P_TW_RATE, 88, P_CMP_SW, 1,
-    P_CMP_AMT, 64, P_CMP_RATIO, 2, P_CMP_ATK, 100, P_CMP_REL, 72, P_CMP_GAIN, 8, P_RV_DEPTH, 24, P_RV_TYPE, 2,
-    P_RV_LOCUT, 70, P_LEVEL, 26, P_TONE, 80, P_BARK, 127, P_BELL, 127, P_HAMMER, 127, P_DECAY, 64, 0xFF,
-    /* F09 70S PHASER: a slow, deep phaser with feedback on a lightly driven stage piano, a dark analog echo, a plate */
-    P_TYPE, 0, P_NOISE, 48, P_DRIVE, 34, P_DRV_SW, 5, P_BARK, 127, P_CMP_SW, 1, P_CMP_AMT, 64, P_CMP_RATIO, 2,
-    P_CMP_ATK, 100, P_CMP_REL, 72, P_CMP_GAIN, 8, P_PH_SW, 1, P_PH_DEPTH, 85, P_PH_SPEED, 30, P_PH_FDBK, 64,
+    P_CMP_AMT, 36, P_CMP_RATIO, 3, P_CMP_ATK, 100, P_CMP_REL, 72, P_CMP_GAIN, 8, P_RV_DEPTH, 24, P_RV_TYPE, 2,
+    P_RV_LOCUT, 70, P_LEVEL, 41, P_TONE, 112, P_BARK, 80, P_BELL, 64, P_HAMMER, 96, P_DECAY, 72, 0xFF,
+    /* F09 70S PHASER: a slow, deep phaser with feedback on a lightly driven, bright stage piano (the bark low), a dark
+     * analog echo, a plate */
+    P_TYPE, 0, P_NOISE, 48, P_DRIVE, 34, P_DRV_SW, 5, P_BARK, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1,
+    P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8, P_PH_SW, 1, P_PH_DEPTH, 85, P_PH_SPEED, 30, P_PH_FDBK, 64,
     P_DL_SW, 2, P_DL_DEPTH, 12, P_DL_SYNC, 9, P_DL_FDBK, 30, P_DL_TONE, 50, P_RV_DEPTH, 22, P_RV_TYPE, 2,
-    P_RV_LOCUT, 70, P_LEVEL, 58, P_TONE, 80, P_BELL, 127, P_HAMMER, 127, P_DECAY, 64, 0xFF,
-    /* F10 FUNK WAH: a compressor, drive, the touch wah (harder playing opens it), a small dry room */
+    P_RV_LOCUT, 70, P_LEVEL, 75, P_TONE, 112, P_BELL, 96, P_HAMMER, 96, P_DECAY, 72, 0xFF,
+    /* F10 FUNK WAH: a compressor, drive, the touch wah (harder playing opens it), the bark up, a small dry room */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 56, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 26,
-    P_DRIVE, 44, P_DRV_SW, 3, P_TW_SW, 2, P_TW_DEPTH, 92, P_TW_RATE, 72, P_BARK, 127, P_RV_DEPTH, 14, P_RV_TYPE, 1,
-    P_RV_LOCUT, 80, P_LEVEL, 29, P_TONE, 80, P_BELL, 127, P_HAMMER, 127, P_DECAY, 72, 0xFF,
+    P_DRIVE, 44, P_DRV_SW, 3, P_TW_SW, 2, P_TW_DEPTH, 92, P_TW_RATE, 72, P_BARK, 84, P_RV_DEPTH, 14, P_RV_TYPE, 1,
+    P_RV_LOCUT, 80, P_LEVEL, 41, P_TONE, 64, P_BELL, 64, P_HAMMER, 64, P_DECAY, 64, 0xFF,
     /* F11 RESO SWEEP: a driven tone into the resonant LP12, the LFO's triangle sweeping it over 2 bars, a quarter-note
      * digital echo, a hall */
-    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 2, P_CMP_ATK, 100, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 3, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_DRIVE, 53, P_DRV_SW, 4, P_DRV_TONE, 60, P_FL_TYPE, 1, P_FL_FREQ, 76, P_FL_RESO, 88, P_FL_LFO, 64,
     P_LFO_SHAPE, 1, P_LFO_SYNC, 13, P_DL_SW, 1, P_DL_DEPTH, 14, P_DL_SYNC, 9, P_DL_FDBK, 40, P_DL_TONE, 60,
-    P_RV_DEPTH, 22, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 17, P_TONE, 80, P_BARK, 96, P_BELL, 96, P_HAMMER, 127,
-    P_DECAY, 72, 0xFF,
+    P_RV_DEPTH, 22, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 52, P_TONE, 64, P_BARK, 64, P_BELL, 64, P_HAMMER, 64,
+    P_DECAY, 64, 0xFF,
     /* F12 LUSH CHO: a lush chorus, a dotted-1/8 tape echo, a plate */
-    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 1, P_CMP_ATK, 100, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 20, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 33, P_CP_SW, 1, P_CP_DEPTH, 64, P_CP_SPEED, 44,
-    P_DL_SW, 3, P_DL_DEPTH, 16, P_DL_SYNC, 8, P_DL_FDBK, 40, P_DL_TONE, 58, P_TONE, 80, P_BARK, 96, P_BELL, 96,
-    P_HAMMER, 127, P_DECAY, 72, 0xFF,
+    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_RV_DEPTH, 20, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 55, P_CP_SW, 1, P_CP_DEPTH, 64, P_CP_SPEED, 44,
+    P_DL_SW, 3, P_DL_DEPTH, 16, P_DL_SYNC, 8, P_DL_FDBK, 40, P_DL_TONE, 58, P_TONE, 64, P_BARK, 64, P_BELL, 64,
+    P_HAMMER, 64, P_DECAY, 64, 0xFF,
     /* F13 VIBES: (dry) the vibraphone as the model plays it, the motor at 2.6 Hz, the mallet compressor, a trace of hall
      * */
     P_TYPE, 4, P_TONE, 64, P_BARK, 52, P_BELL, 70, P_HAMMER, 64, P_DECAY, 64, P_RELEASE, 64, P_NOISE, 40,
     P_MOT_ON, 1, P_MOT_DEPTH, 90, P_MOT_RATE, 66, P_MOT_SHAPE, 0, P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 0,
     P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_RV_DEPTH, 20, P_RV_TYPE, 1, P_RV_PREDLY, 20, P_RV_LOCUT, 70,
-    P_LEVEL, 45, 0xFF,
+    P_LEVEL, 42, 0xFF,
     /* F14 VIBES ECHO: the motor off, a cord mallet, a light slow chorus, a dotted-1/8 tape echo, a bright plate */
     P_TYPE, 4, P_TONE, 64, P_BARK, 82, P_BELL, 64, P_HAMMER, 60, P_DECAY, 72, P_RELEASE, 54, P_NOISE, 36,
     P_MOT_ON, 0, P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_CP_SW, 1,
     P_CP_DEPTH, 40, P_CP_SPEED, 40, P_DL_SW, 3, P_DL_DEPTH, 20, P_DL_SYNC, 8, P_DL_FDBK, 50, P_DL_TONE, 56,
-    P_RV_DEPTH, 34, P_RV_TYPE, 2, P_RV_DECAY, 70, P_RV_PREDLY, 16, P_RV_LOCUT, 80, P_LEVEL, 48, 0xFF,
+    P_RV_DEPTH, 34, P_RV_TYPE, 2, P_RV_DECAY, 70, P_RV_PREDLY, 16, P_RV_LOCUT, 80, P_LEVEL, 44, 0xFF,
     /* F15 MARIMBA: (dry) the default mallet, tube and weight, MUTE 0, the mallet compressor, a trace of hall */
     P_TYPE, 5, P_TONE, 64, P_BARK, 64, P_BELL, 64, P_HAMMER, 64, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40, P_CMP_SW, 1,
     P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_RV_DEPTH, 22, P_RV_TYPE, 1,
-    P_RV_PREDLY, 12, P_RV_LOCUT, 70, P_LEVEL, 41, 0xFF,
+    P_RV_PREDLY, 12, P_RV_LOCUT, 70, P_LEVEL, 39, 0xFF,
     /* F16 WOOD ECHO: a hard yarn mallet, MUTE 0, a light chorus, a dotted-1/8 digital echo, a hall behind a pre-delay */
     P_TYPE, 5, P_TONE, 60, P_BARK, 80, P_BELL, 64, P_HAMMER, 110, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40,
     P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_CP_SW, 1,
     P_CP_DEPTH, 40, P_CP_SPEED, 44, P_DL_SW, 1, P_DL_DEPTH, 22, P_DL_SYNC, 8, P_DL_FDBK, 26, P_DL_TONE, 50,
-    P_RV_DEPTH, 30, P_RV_TYPE, 1, P_RV_DECAY, 64, P_RV_PREDLY, 24, P_RV_LOCUT, 70, P_LEVEL, 25, 0xFF,
-    /* F17 TAPE ECHO: a warm piano into the tape echo, dotted 1/8 on the tempo, a plate */
-    P_TYPE, 0, P_TONE, 80, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 1, P_CMP_ATK, 100, P_CMP_REL, 72,
+    P_RV_DEPTH, 38, P_RV_TYPE, 1, P_RV_DECAY, 64, P_RV_PREDLY, 24, P_RV_LOCUT, 80, P_LEVEL, 17, 0xFF,
+    /* F17 TAPE ECHO: a bright piano (the bark low) into the tape echo, dotted 1/8 on the tempo, a plate */
+    P_TYPE, 0, P_TONE, 112, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72,
     P_CMP_GAIN, 8, P_DRIVE, 22, P_DL_SW, 3, P_DL_DEPTH, 29, P_DL_SYNC, 8, P_DL_FDBK, 72, P_DL_TONE, 62,
-    P_RV_DEPTH, 22, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 17, P_BARK, 127, P_BELL, 96, P_HAMMER, 127, P_DECAY, 72,
+    P_RV_DEPTH, 22, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 52, P_BARK, 48, P_BELL, 96, P_HAMMER, 96, P_DECAY, 64,
     0xFF,
     /* F18 DREAM: felt hammers, a slow stereo pan, chorus, a quarter-note analog echo, a long dark hall */
-    P_TYPE, 2, P_DECAY, 72, P_NOISE, 30, P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 1, P_CMP_ATK, 90, P_CMP_REL, 80,
+    P_TYPE, 2, P_DECAY, 72, P_NOISE, 30, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 0, P_CMP_ATK, 40, P_CMP_REL, 80,
     P_CMP_GAIN, 8, P_TW_SW, 1, P_TW_MODE, 0, P_TW_DEPTH, 36, P_TW_RATE, 30, P_CP_SW, 1, P_CP_DEPTH, 60,
-    P_CP_SPEED, 30, P_DL_SW, 2, P_DL_DEPTH, 21, P_DL_SYNC, 9, P_DL_FDBK, 30, P_RV_DEPTH, 68, P_RV_TYPE, 2,
-    P_RV_DECAY, 104, P_RV_PREDLY, 60, P_RV_TONE, 56, P_RV_MOD, 84, P_RV_LOCUT, 90, P_LEVEL, 39, P_TONE, 112,
-    P_BARK, 127, P_BELL, 127, P_HAMMER, 127, 0xFF,
+    P_CP_SPEED, 30, P_DL_SW, 2, P_DL_DEPTH, 21, P_DL_SYNC, 9, P_DL_FDBK, 30, P_RV_DEPTH, 76, P_RV_TYPE, 1,
+    P_RV_DECAY, 104, P_RV_PREDLY, 60, P_RV_TONE, 56, P_RV_MOD, 84, P_RV_LOCUT, 80, P_LEVEL, 47, P_TONE, 112,
+    P_BARK, 80, P_BELL, 127, P_HAMMER, 96, 0xFF,
     /* F19 WARM DRIVE: a warm drive (KHLON), chorus, a dotted-1/8 tape echo, a plate */
-    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 2, P_CMP_ATK, 100, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 16, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 30, P_DRIVE, 40, P_DRV_SW, 2, P_DRV_TONE, 70, P_CP_SW, 1,
+    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_RV_DEPTH, 16, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 64, P_DRIVE, 40, P_DRV_SW, 2, P_DRV_TONE, 70, P_CP_SW, 1,
     P_CP_DEPTH, 50, P_CP_SPEED, 36, P_DL_SW, 3, P_DL_DEPTH, 12, P_DL_SYNC, 8, P_DL_FDBK, 30, P_DL_TONE, 56,
-    P_TONE, 80, P_BARK, 127, P_BELL, 127, P_HAMMER, 127, P_DECAY, 72, 0xFF,
+    P_TONE, 64, P_BARK, 64, P_BELL, 64, P_HAMMER, 64, P_DECAY, 64, 0xFF,
 };
 /* factory record idx (< PR_NF): the records are stored back to back (0.9.6: no padding to 64 bytes, 423 B less) */
 FR_COLD static const uint8_t *pr_fdata(uint32_t idx)
