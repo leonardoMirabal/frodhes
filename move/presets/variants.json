@@ -124,58 +124,75 @@
   "why": "Already level (phrase +0.3, chord 0.0) and glassy as its name says; the 2 limited samples are one ff chord. B only if its top feels sharp."
  },
  "F05": {
-  "note": "Suitcase PAN vibrato at 4.5 Hz: the phrase reads 1.1 LU under F01.",
+  "note": "New in the proposed 19 (FINAL19, 2026-11-10): the warm 77, dry.",
   "B": {
-   "name": "TREM ECHO",
-   "line": "a soft analog echo on the quarter note, the level re-set",
-   "desc": "LEVEL re-set, a soft analog echo on the 1/4 (ANA, mix 8, feedback 20, tone 44)",
+   "name": "WARM77 FAT",
+   "line": "a firmer compressor (3:1, faster attack, longer release), more hall",
+   "desc": "FINAL19's alternative (A FAT 77): CMP AMT 36, ATK 40, RATIO 3, REL 96; hall 18, LOW CUT 70",
+   "set": {
+    "P_CMP_AMT": 36,
+    "P_CMP_ATK": 40,
+    "P_CMP_RATIO": 3,
+    "P_CMP_REL": 96,
+    "P_RV_DEPTH": 18,
+    "P_RV_LOCUT": 70
+   },
+   "level": "final19"
+  },
+  "C": {
+   "name": "WARM77 ECHO",
+   "line": "a soft dark analog echo on the quarter note, a little more hall",
+   "desc": "F01 B's rule: ANA 1/4, mix 10, feedback 24, tone 46; hall 10 -> 12",
    "set": {
     "P_DL_SW": 2,
-    "P_DL_DEPTH": 8,
+    "P_DL_DEPTH": 10,
     "P_DL_SYNC": 9,
-    "P_DL_FDBK": 20,
-    "P_DL_TONE": 44
+    "P_DL_FDBK": 24,
+    "P_DL_TONE": 46,
+    "P_RV_DEPTH": 12
    },
-   "level": "auto"
-  },
-  "C": {
-   "name": "TREM DEEP",
-   "line": "a slower, deeper vibrato, more warmth and plate",
-   "desc": "a slower, deeper vibrato (RATE 88 -> 80, DEPTH 72 -> 84), warmth 20 -> 26, plate 24 -> 28, LEVEL re-set",
-   "set": {
-    "P_TW_RATE": 80,
-    "P_TW_DEPTH": 84,
-    "P_DRIVE": 26,
-    "P_RV_DEPTH": 28
-   },
-   "level": "auto"
+   "level": "step (F01 B)"
   },
   "pick": "B",
-  "why": "Fixes the level (phrase -1.1 -> -0.5) and adds a soft echo under the vibrato; C's slower vibrato is a matter of taste."
+  "why": "B is the search's own alternative; C the review's echo on a dry 77."
  },
  "F06": {
-  "note": "KHLON drive: the phrase reads 1.3 LU under F01; the drive thins the lows (low -10.3 dB, F01 -4.8) and the compressor keeps the true peak at -12.5 dBTP.",
+  "note": "New in the proposed 19 (FINAL19, 2026-11-10): the punchy 77.",
   "B": {
-   "name": "DRIVEN77 LVL",
-   "line": "as F06, the level re-set (half way between chord and phrase)",
-   "desc": "LEVEL re-set only (half way chord / phrase)",
-   "set": {},
-   "level": "auto"
+   "name": "VINTAGE 77",
+   "line": "darker and softer: less bell and hammer, a gentle compressor, a plate",
+   "desc": "FINAL19's alternative (A VINTAGE 77): TONE 64, BELL 48, HAMMER 48, CMP 50 / 1 / 80 / 96, PLATE 22, LOW CUT 80",
+   "set": {
+    "P_TONE": 64,
+    "P_BELL": 48,
+    "P_HAMMER": 48,
+    "P_CMP_AMT": 50,
+    "P_CMP_RATIO": 1,
+    "P_CMP_ATK": 80,
+    "P_CMP_REL": 96,
+    "P_RV_TYPE": 2,
+    "P_RV_DEPTH": 22,
+    "P_RV_LOCUT": 80
+   },
+   "level": "final19"
   },
   "C": {
-   "name": "DRIVEN BODY",
-   "line": "more drive and body, a longer tape slap",
-   "desc": "more body: drive tone 72 -> 64, drive 64 -> 70, the tape slap a little longer (mix 12 -> 14, feedback 40 -> 46), LEVEL re-set",
+   "name": "PUNCH TAPE",
+   "line": "a tape echo on the dotted 1/8, a slightly bigger hall",
+   "desc": "F01 C's rule: TAPE 8D, mix 13, feedback 32, tone 54; hall 18 -> 22, pre-delay 20",
    "set": {
-    "P_DRV_TONE": 64,
-    "P_DRIVE": 70,
-    "P_DL_DEPTH": 14,
-    "P_DL_FDBK": 46
+    "P_DL_SW": 3,
+    "P_DL_DEPTH": 13,
+    "P_DL_SYNC": 8,
+    "P_DL_FDBK": 32,
+    "P_DL_TONE": 54,
+    "P_RV_DEPTH": 22,
+    "P_RV_PREDLY": 20
    },
-   "level": "auto"
+   "level": "step (F01 C)"
   },
-  "pick": "B",
-  "why": "A level fix only (phrase -1.3 -> -0.6); the drive's sound is as tuned."
+  "pick": "C",
+  "why": "C keeps the punch and adds the echo; B is a different (vintage) piano."
  },
  "F07": {
   "note": "Ballad: the chord reads +1.0 re F01 and the low region is the fullest of the Rhodes set (-3.6 dB).",
@@ -206,27 +223,34 @@
   "why": "Closer to F01 (chord +1.0 -> +0.6) and a cleaner tail; C if a longer, darker echo suits the ballad."
  },
  "F08": {
-  "note": "Bell + chorus + dotted echo: the loudest Rhodes preset on both measures (phrase +1.2, chord +1.1), bright (presence -16.5), touches the limiter once.",
+  "note": "Suitcase PAN vibrato at 4.5 Hz: the phrase reads 1.1 LU under F01.",
   "B": {
-   "name": "DYNO80S LVL",
-   "line": "as F08, the level re-set",
-   "desc": "LEVEL re-set only",
-   "set": {},
+   "name": "TREM ECHO",
+   "line": "a soft analog echo on the quarter note, the level re-set",
+   "desc": "LEVEL re-set, a soft analog echo on the 1/4 (ANA, mix 8, feedback 20, tone 44)",
+   "set": {
+    "P_DL_SW": 2,
+    "P_DL_DEPTH": 8,
+    "P_DL_SYNC": 9,
+    "P_DL_FDBK": 20,
+    "P_DL_TONE": 44
+   },
    "level": "auto"
   },
   "C": {
-   "name": "DYNO80S SOFT",
-   "line": "the echo softer and darker, less chorus",
-   "desc": "the echo a little softer and darker (mix 18 -> 14, tone 76 -> 66), chorus 70 -> 60, LEVEL re-set",
+   "name": "TREM DEEP",
+   "line": "a slower, deeper vibrato, more warmth and plate",
+   "desc": "a slower, deeper vibrato (RATE 88 -> 80, DEPTH 72 -> 84), warmth 20 -> 26, plate 24 -> 28, LEVEL re-set",
    "set": {
-    "P_DL_DEPTH": 14,
-    "P_DL_TONE": 66,
-    "P_CP_DEPTH": 60
+    "P_TW_RATE": 80,
+    "P_TW_DEPTH": 84,
+    "P_DRIVE": 26,
+    "P_RV_DEPTH": 28
    },
    "level": "auto"
   },
   "pick": "B",
-  "why": "The loudest Rhodes preset brought to F01 (phrase +1.2 -> +0.1, chord +1.1 -> 0.0); the sound unchanged."
+  "why": "Fixes the level (phrase -1.1 -> -0.5) and adds a soft echo under the vibrato; C's slower vibrato is a matter of taste."
  },
  "F09": {
   "note": "Phaser: the chord reads +1.3 re F01.",
@@ -304,37 +328,34 @@
   "why": "Level and sweep fine as they are (phrase -0.4, chord +0.1); B adds space, C tames the resonance."
  },
  "F12": {
-  "note": "Auto wah (the user's earlier pick, B): chord +1.3, phrase -0.8, within its documented 0 +- 2.0. Dry today.",
+  "note": "New in the proposed 19 (FINAL19, 2026-11-10): chorus, a dotted-1/8 tape echo, a plate.",
   "B": {
-   "name": "AUTOWAH ECHO",
-   "line": "a digital echo on the quarter note",
-   "desc": "a quarter-note digital echo (DIG 1/4, mix 10, feedback 24, tone 56), LEVEL re-set",
+   "name": "LUSH SOFT",
+   "line": "a softer bark, a gentler compressor, a shorter decay",
+   "desc": "FINAL19's alternative (pick 1): BARK 64, CMP AMT 50, ATK 80, DECAY 64",
    "set": {
-    "P_DL_SW": 1,
-    "P_DL_DEPTH": 10,
-    "P_DL_SYNC": 9,
-    "P_DL_FDBK": 24,
-    "P_DL_TONE": 56
+    "P_BARK": 64,
+    "P_CMP_AMT": 50,
+    "P_CMP_ATK": 80,
+    "P_DECAY": 64
    },
-   "level": "auto"
+   "level": "final19"
   },
   "C": {
-   "name": "AUTOWAH TAPE",
-   "line": "a tape echo on the dotted 1/8 and a plate",
-   "desc": "a tape echo on the dotted 1/8 (TAPE 8D, mix 12, feedback 30, tone 54) and a plate instead of the small hall (PLATE 18)",
+   "name": "LUSH DARK",
+   "line": "a slower chorus, a darker analog echo on the quarter note",
+   "desc": "F07 C's rule: CP SPEED 44 -> 36; ANA 1/4, feedback 46, tone 50",
    "set": {
-    "P_DL_SW": 3,
-    "P_DL_DEPTH": 12,
-    "P_DL_SYNC": 8,
-    "P_DL_FDBK": 30,
-    "P_DL_TONE": 54,
-    "P_RV_TYPE": 2,
-    "P_RV_DEPTH": 18
+    "P_CP_SPEED": 36,
+    "P_DL_SW": 2,
+    "P_DL_SYNC": 9,
+    "P_DL_FDBK": 46,
+    "P_DL_TONE": 50
    },
-   "level": "auto"
+   "level": "step (F07 C)"
   },
   "pick": "B",
-  "why": "The auto wah gains a quarter-note echo, level unchanged; C's tape echo and plate are wetter."
+  "why": "B is the search's own alternative; C the ballad's darker echo."
  },
  "F13": {
   "note": "Dry VIBES: chord +2.7 (target +2.5).",
@@ -498,24 +519,31 @@
   "why": "Level evened (+0.7 -> +0.1) and a little less pitch wobble; the sound otherwise the same."
  },
  "F19": {
-  "note": "Radio: the phrase reads +1.7 LU re F01 (outside 1.5), the chord -0.1; the narrowest band (low -18 dB).",
+  "note": "New in the proposed 19 (FINAL19, 2026-11-10): a warm drive, chorus, a dotted-1/8 tape echo, a plate.",
   "B": {
-   "name": "RADIO LVL",
-   "line": "as F19, the level re-set",
-   "desc": "LEVEL re-set only (half way chord / phrase)",
-   "set": {},
-   "level": "auto"
+   "name": "DRIVE SOFT",
+   "line": "a softer bark, a gentler compressor",
+   "desc": "FINAL19's alternative (pick 1): BARK 64, CMP RATIO 1, ATK 80",
+   "set": {
+    "P_BARK": 64,
+    "P_CMP_RATIO": 1,
+    "P_CMP_ATK": 80
+   },
+   "level": "final19"
   },
   "C": {
-   "name": "RADIO LOW",
-   "line": "the band a little lower: more body",
-   "desc": "the band a little lower (FREQ 66 -> 62): more body, and the phrase and the chord agree; LEVEL re-set (a higher, resonant band split them by 5-7 LU)",
+   "name": "DRIVE BODY",
+   "line": "more drive and body, a longer tape slap",
+   "desc": "F06 C's rule: drive 40 -> 46, drive tone 70 -> 64, the tape a little longer (mix 14, feedback 36)",
    "set": {
-    "P_FL_FREQ": 62
+    "P_DRIVE": 46,
+    "P_DRV_TONE": 64,
+    "P_DL_DEPTH": 14,
+    "P_DL_FDBK": 36
    },
-   "level": "auto"
+   "level": "step (F06 C)"
   },
-  "pick": "C",
-  "why": "The phrase was outside the 1.5 LU rule (+1.7); the lower band makes the phrase and the chord agree (about 0.0 / -0.2) with more body. B is the level-only fix."
+  "pick": "B",
+  "why": "B is the search's own alternative; C the driven 77's body."
  }
 }

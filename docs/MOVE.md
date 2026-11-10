@@ -505,22 +505,22 @@ Two more versions (B and C) of each FM-1 preset, made for the Move.
 | F25 | FELT ECHO | F03 C: the bigger hall and a soft dark analog echo on the quarter note |
 | F26 | BELL SOFT | F04 B: dry, the top edge softer, a little more plate |
 | F27 | BELL ECHO | F04 C: a short digital echo on the dotted 1/8, a little more plate |
-| F28 | TREM ECHO | F05 B: a soft analog echo on the quarter note, the level re-set |
-| F29 | TREM DEEP | F05 C: a slower, deeper vibrato, more warmth and plate |
-| F30 | DRIVEN77 LVL | F06 B: as F06, the level re-set (half way between chord and phrase) |
-| F31 | DRIVEN BODY | F06 C: more drive and body, a longer tape slap |
+| F28 | WARM77 FAT | F05 B: a firmer compressor (3:1, faster attack, longer release), more hall |
+| F29 | WARM77 ECHO | F05 C: a soft dark analog echo on the quarter note, a little more hall |
+| F30 | VINTAGE 77 | F06 B: darker and softer: less bell and hammer, a gentle compressor, a plate |
+| F31 | PUNCH TAPE | F06 C: a tape echo on the dotted 1/8, a slightly bigger hall |
 | F32 | BALLAD TIGHT | F07 B: less boom in the long plate's tail (LOW CUT 80) |
 | F33 | BALLAD DARK | F07 C: a longer, darker analog echo tail, a slower chorus |
-| F34 | DYNO80S LVL | F08 B: as F08, the level re-set |
-| F35 | DYNO80S SOFT | F08 C: the echo softer and darker, less chorus |
+| F34 | TREM ECHO | F08 B: a soft analog echo on the quarter note, the level re-set |
+| F35 | TREM DEEP | F08 C: a slower, deeper vibrato, more warmth and plate |
 | F36 | PHASER LVL | F09 B: as F09, the level re-set |
 | F37 | PHASER SLOW | F09 C: a slower, more liquid sweep, a longer analog echo |
 | F38 | FUNK WAH LVL | F10 B: as F10, the level re-set |
 | F39 | FUNK PLUCK | F10 C: less squash, more pluck (2:1, slower attack), a short dark slap |
 | F40 | RESO SPACE | F11 B: more echo and hall |
 | F41 | RESO SMOOTH | F11 C: a smoother peak (less resonance), a wider sweep |
-| F42 | AUTOWAH ECHO | F12 B: a digital echo on the quarter note |
-| F43 | AUTOWAH TAPE | F12 C: a tape echo on the dotted 1/8 and a plate |
+| F42 | LUSH SOFT | F12 B: a softer bark, a gentler compressor, a shorter decay |
+| F43 | LUSH DARK | F12 C: a slower chorus, a darker analog echo on the quarter note |
 | F44 | VIBES HALL | F13 B: dry, a little more hall |
 | F45 | VIBES MOTOR | F13 C: the slower, deeper motor, more hall |
 | F46 | VIBES CLEAN | F14 B: a cleaner echo (fewer repeats) |
@@ -533,7 +533,7 @@ Two more versions (B and C) of each FM-1 preset, made for the Move.
 | F53 | TAPE DARK | F17 C: the echo on the quarter note, darker repeats |
 | F54 | DREAM CLEAR | F18 B: less chorus wobble under the hall |
 | F55 | DREAM DEEP | F18 C: a slower, deeper pan, the echo on the dotted 1/4 |
-| F56 | RADIO LVL | F19 B: as F19, the level re-set |
-| F57 | RADIO LOW | F19 C: the band a little lower: more body |
+| F56 | DRIVE SOFT | F19 B: a softer bark, a gentler compressor |
+| F57 | DRIVE BODY | F19 C: more drive and body, a longer tape slap |
 
 Building Frodhes for the Move, its tests and installing over ssh are in [MOVE-DEV.md](MOVE-DEV.md).
