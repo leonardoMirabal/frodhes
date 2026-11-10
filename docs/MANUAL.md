@@ -341,7 +341,7 @@ emulator has no velocity: its keys play at KEY VEL.
 | K1 | **THRESH** | **OFF** at 0: turn it up to switch the compressor on; then where it starts, down to −40 dB. Lower = more compression |
 | K2 | **RATIO** | How strongly it compresses: 1.5:1 to 20:1 |
 | K3 | **ATTACK** | How fast it grabs a note: low (0.1 ms) catches the hammer's attack, high (50 ms) lets it through |
-| K4 | **MAKEUP** | Gives back the volume the compression takes: 0 to +24 dB |
+| K4 | **MAKEUP** | A trim on top of the compressor's own make-up: 0 to +24 dB |
 
 **THRESH** is its on / off: turn it up from OFF and the compressor comes on at −16 dB (where the presets set it) with
 MAKEUP at +2.8 dB, which keeps the volume of what you play about the same (a quiet, dying tail comes up, as under
@@ -352,6 +352,12 @@ right is the reduction now in dB. The compressor
 comes first in the chain, right after the piano. It stays clean on chords: it holds its reduction across a note's
 waveform and lets it go smoothly (about 0.1 s), so it adds no roughness of its own; after a loud chord a soft note
 comes back to full level within about 0.3 s.
+
+Below −17.6 dB THRESH brings its own make-up: turning it down (or RATIO up) keeps the average volume the same and
+squeezes the dynamics, so soft notes come up and loud ones go down. Past −25 dB a strike gets the full RATIO and a held
+note then relaxes to about two thirds of the reduction over 0.2 s, so heavy settings bring the sustain up instead of
+clamping it. Its release follows the music: a chord's beating does not pump it, a new strike lets it go at RELEASE's
+speed.
 
 ### EQ
 

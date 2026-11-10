@@ -483,18 +483,29 @@ def comp(ccs, probe=CHORD5, end=2000):
     return R(CLEAN + [cc(30, 106, 127)] + [cc(31 + i, c, v) for i, (c, v) in enumerate(ccs)] + probe, end)
 
 
+SOFT1 = note(200, 60, 40, 1500)                         # (the compressor's quiet probe: C4 v40)
+
+
+def squash(ccs):
+    """the compressor's work on the dynamics: how much closer the loud chord comes to a quiet note (dB), the make-up
+    aside (stage 2: THRESH and RATIO bring their own make-up, fx.c cmp_auto, so the chord's level alone no longer
+    shows the reduction)"""
+    gap = lambda a, b: rms_db(a.seg(0.25, 1.6)) - rms_db(b.seg(0.25, 1.6))
+    return gap(R(CLEAN + CHORD5, 2000), R(CLEAN + SOFT1, 2000)) - gap(comp(ccs), comp(ccs, SOFT1))
+
+
 @case("COMP-THRESH")
 def _thr():
-    """THRESH (CC 107; COMP on): a loud chord is reduced 0 dB at 0 and 22 dB at -40 (4:1, no makeup); at least 10"""
-    ref = R(CLEAN + CHORD5, 2000)
-    g = [rms_db(ref.seg(0.25, 1.6)) - rms_db(comp([(107, v), (113, 0)]).seg(0.25, 1.6)) for v in (1, 127)]
-    return g[1] - g[0], 10.0, f"gain reduction {g[0]:.1f} -> {g[1]:.1f} dB"
+    """THRESH (CC 107; COMP on): a loud chord comes closer to a quiet note by 0 dB at 0 and 15.5 dB at -40 (4:1, no
+    makeup; the auto make-up keeps the average level; rc3 23.1, before the body lift); at least 10"""
+    g = [squash([(107, v), (113, 0)]) for v in (1, 127)]
+    return g[1] - g[0], 10.0, f"dynamics squeezed {g[0]:.1f} -> {g[1]:.1f} dB"
 
 
 @case("COMP-THRESH-panel")
 def _thr_panel():
-    """THRESH is the compressor's switch on its page: OFF, turned up it comes on (with MAKEUP +2.8 dB); 4.6 dB net
-    reduction at -20; at least 2"""
+    """THRESH is the compressor's switch on its page: OFF, turned up it comes on (with MAKEUP +2.8 dB); the loud chord
+    3.8 dB under the bypass at -20; at least 2"""
     ref = R(CLEAN + CHORD5, 2000)
     w = R(CLEAN + goto("COMP") + ["100 turn 2 64", "110 dump"] + CHORD5, 2000)
     st = w.state(110)
@@ -515,9 +526,9 @@ def _thr_card():
 
 @case("COMP-RATIO")
 def _ratio():
-    """RATIO (CC 112) at -30 dB: 1.5:1 reduces 5 dB, 20:1 14 dB; at least 5 apart"""
-    ref = R(CLEAN + CHORD5, 2000)
-    g = [rms_db(ref.seg(0.25, 1.6)) - rms_db(comp([(107, 80), (113, 0), (112, v)]).seg(0.25, 1.6)) for v in (0, 127)]
+    """RATIO (CC 112) at -25 dB: the loud chord closer to a quiet note by 1.5:1 3.7 dB, 20:1 10.0 dB (rc3 5.4 /
+    15.1); at least 5 apart"""
+    g = [squash([(107, 80), (113, 0), (112, v)]) for v in (0, 127)]
     return g[1] - g[0], 5.0, f"{g[0]:.1f} -> {g[1]:.1f} dB"
 
 
