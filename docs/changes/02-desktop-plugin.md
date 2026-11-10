@@ -1,12 +1,11 @@
 <!-- Public text: no DAW or other brand names; format and platform names are fine.
 VERIFY: the platforms in the release commit's "Plugin tested:" line (tools/plugin_asset.sh) = the platforms named
-here; the user's real-host checklist (docs/PLUGIN.md "Try it in a DAW") as a count of hosts, no names. -->
+here; the voice count and the ENGINE wording against plugin/cmake/slots.cmake (24, HQ only on rc4) and Gate D's count; the user's real-host checklist (docs/PLUGIN.md "Try it in a DAW") as a count of hosts, no names. -->
 ## New
 
 - **Frodhes as a desktop plugin**: an instrument for your music software, as CLAP and VST3 on macOS, Windows and
   Linux, and as an Audio Unit on macOS. The same instruments, effects and factory sounds as on the FM-1, computed by
-  the same code. It opens in the higher-quality version with 16 voices, as on the Move; its ENGINE control switches
-  to CLASSIC, the FM-1's own sound bit for bit with its 10 voices.
+  the same code. It plays the higher-quality version of every instrument and effect, with 24 voices.
 - Its own window on every system: the FM-1's pages as cards with knobs, resizable, sharp on high-resolution screens.
   Presets (the 57 factory sounds and your own, saved as files): click the preset's name for the whole list, grouped
   by instrument, and SAVE with a name of your own. MIDI learn, the effects' bypass (a bypassed effect's knobs are
@@ -27,7 +26,7 @@ here; the user's real-host checklist (docs/PLUGIN.md "Try it in a DAW") as a cou
 - Gate D (`tools/gate_d.py`): the plugin's renders equal the host build's, byte for byte, on every MIDI-driven test
   render (78), with random and 1-frame blocks and CLAP note events; the higher-quality engine against the host build
   with it on; 48 kHz against the FM-1's USB resampler; other rates within 1 LSB; the Intel slice under Rosetta.
-- The core: CLASSIC 10 and HQ 16 voices, the state round trip (every setting, older and broken states), presets,
+- The core: 24 voices on every instrument, the state round trip (every setting, older and broken states), presets,
   automation (the device's CC path, byte for byte), MIDI learn, the tempo sources and a synced delay at the host's
   tempo; the tail reported to the host.
 - Validators: clap-validator (35 passed, 0 failed), pluginval at strictness 10 with its editor tests, `auval
