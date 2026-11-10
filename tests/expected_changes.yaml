@@ -15651,3 +15651,69 @@ changes:
     min: -65.0
     max: -56.4
     reason: "silent -> -57.0 dB: the dry width (stage 2, fx.c fx_width): its wall reflection 10 ms after the dry, in the key-up window after MARIMBA's dry ends (FX off; 0.9.9 exact zeros)"
+# ---- 20. Stage 2 on stage 1b (the compressor rework dc5282fa/363d4995 + the dry width): the cells that left the
+# stage-1 entries' windows, measured on the full grid (build/s2/full_m2 vs full_s1b). Chords on the factory presets with
+# the compressor on: level / lu / cb -0.1 .. -0.25 dB against stage 1b, peaks unchanged (the program-dependent release
+# holds a re-caught chord's reduction a little longer). F10 (4:1, ATTACK 20, RELEASE 40; a drive preset): H4 at k28v127
+# -29.2 -> -56.6 dB (0.9.9: the gain sawtooth gone), HQ H5 -58.8 -> -54.0. HQ F12 k33v20 level +2.3 dB (the adaptive
+# release; every factory preset's THRESH is <= 56: no auto make-up, no body lift). The rest: tail windows within 1 dB of stage 1b. Coordinator sign-off needed.
+  - {match: "fm1/DYNO/DECAY0/A/k93v20", metric: decay, silent: false, min: 32.06, max: 33.06, reason: "s2: 32.56 (stage 1b 33.44; 0.9.9 silent)"}
+  - {match: "fm1/DYNO/FX/[AB]/chord-high", metric: lu, min: -1.31, max: -0.71, reason: "s2: -20.45 (stage 1b -20.30; 0.9.9 -19.44)"}
+  - {match: "fm1/F01/PRESET/[AB]/chord-low", metric: lu, min: -1.46, max: -0.86, reason: "s2: -21.45 (stage 1b -21.29; 0.9.9 -20.29)"}
+  - {match: "fm1/F01/PRESET/[AB]/chord-mid", metric: lu, min: -1.35, max: -0.75, reason: "s2: -20.25 (stage 1b -20.04; 0.9.9 -19.20)"}
+  - {match: "fm1/F01/PRESET/B/k45v20", metric: keyup, min: -21.91, max: -21.31, reason: "s2: -42.83 (stage 1b -42.76; 0.9.9 -21.22)"}
+  - {match: "fm1/F02/PRESET/[AB]/chord-low", metric: lu, min: -1.36, max: -0.76, reason: "s2: -22.52 (stage 1b -22.38; 0.9.9 -21.46)"}
+  - {match: "fm1/F02/PRESET/[AB]/chord-mid", metric: lu, min: -1.37, max: -0.77, reason: "s2: -20.79 (stage 1b -20.58; 0.9.9 -19.72)"}
+  - {match: "fm1/F03/PRESET/[AB]/chord-high", metric: cb, min: -1.95, max: -1.35, reason: "s2: 42.73 (stage 1b 42.90; 0.9.9 44.38)"}
+  - {match: "fm1/F03/PRESET/[AB]/chord-mid", metric: cb, min: -1.81, max: -1.21, reason: "s2: 39.46 (stage 1b 39.65; 0.9.9 40.98)"}
+  - {match: "fm1/F03/PRESET/[AB]/pedal", metric: cb, min: -1.94, max: -1.34, reason: "s2: 42.75 (stage 1b 42.91; 0.9.9 44.39)"}
+  - {match: "fm1/F09/PRESET/[AB]/chord-low", metric: lu, min: -1.40, max: -0.80, reason: "s2: -19.08 (stage 1b -18.94; 0.9.9 -17.98)"}
+  - {match: "fm1/F09/PRESET/[AB]/chord-mid", metric: lu, min: -1.50, max: -0.90, reason: "s2: -21.01 (stage 1b -20.77; 0.9.9 -19.80)"}
+  - {match: "fm1/F10/PRESET/[AB]/chord-mid", metric: cb, min: -2.38, max: -1.78, reason: "s2: 40.81 (stage 1b 40.26; 0.9.9 42.89)"}
+  - {match: "fm1/F10/PRESET/[AB]/k28v127", metric: H4, min: -27.75, max: -27.15, reason: "s2: -56.65 (stage 1b -56.10; 0.9.9 -29.19)"}
+  - {match: "fm1/F11/PRESET/[AB]/chord-mid", metric: level, min: -1.81, max: -1.21, reason: "s2: -21.24 (stage 1b -21.16; 0.9.9 -19.74)"}
+  - {match: "fm1/F18/PRESET/[AB]/chord-low", metric: level, min: -1.83, max: -1.23, reason: "s2: -18.75 (stage 1b -18.57; 0.9.9 -17.22)"}
+  - {match: "fm1/FELT/FX/[AB]/chord-low", metric: lu, min: -1.41, max: -0.81, reason: "s2: -21.58 (stage 1b -21.42; 0.9.9 -20.47)"}
+  - {match: "fm1/FELT/FX/[AB]/chord-mid", metric: lu, min: -1.45, max: -0.85, reason: "s2: -20.27 (stage 1b -20.08; 0.9.9 -19.12)"}
+  - {match: "fm1/MARIMBA/FX/[AB]/chord-mid", metric: lu, min: -1.31, max: -0.71, reason: "s2: -22.40 (stage 1b -22.33; 0.9.9 -21.39)"}
+  - {match: "fm1/ST77/DECAY0/A/k93v20", metric: decay, silent: false, min: 32.27, max: 33.27, reason: "s2: 32.77 (stage 1b 33.28; 0.9.9 silent)"}
+  - {match: "fm1/ST77/FX/[AB]/chord-low", metric: lu, min: -1.46, max: -0.86, reason: "s2: -21.45 (stage 1b -21.29; 0.9.9 -20.29)"}
+  - {match: "fm1/ST77/FX/[AB]/chord-mid", metric: lu, min: -1.35, max: -0.75, reason: "s2: -20.25 (stage 1b -20.04; 0.9.9 -19.20)"}
+  - {match: "fm1/SUIT/DECAY0/A/k93v20", metric: decay, silent: false, min: 31.97, max: 32.97, reason: "s2: 32.47 (stage 1b 33.24; 0.9.9 silent)"}
+  - {match: "fm1/SUIT/FX/[AB]/chord-low", metric: lu, min: -1.37, max: -0.77, reason: "s2: -21.41 (stage 1b -21.27; 0.9.9 -20.34)"}
+  - {match: "fm1/SUIT/FX/[AB]/chord-mid", metric: lu, min: -1.37, max: -0.77, reason: "s2: -19.67 (stage 1b -19.45; 0.9.9 -18.59)"}
+  - {match: "fm1/VIBES/FX/[AB]/chord-low", metric: lu, min: -1.36, max: -0.76, reason: "s2: -20.96 (stage 1b -20.86; 0.9.9 -19.90)"}
+  - {match: "hq/F01/PRESET/[AB]/chord-low", metric: lu, min: -1.45, max: -0.85, reason: "s2: -21.43 (stage 1b -21.25; 0.9.9 -20.28)"}
+  - {match: "hq/F01/PRESET/[AB]/chord-mid", metric: lu, min: -1.35, max: -0.75, reason: "s2: -20.30 (stage 1b -20.08; 0.9.9 -19.25)"}
+  - {match: "hq/F01/PRESET/[AB]/pedal", metric: lu, min: -1.41, max: -0.81, reason: "s2: -20.04 (stage 1b -19.91; 0.9.9 -18.93)"}
+  - {match: "hq/F02/PRESET/[AB]/chord-mid", metric: lu, min: -1.37, max: -0.77, reason: "s2: -20.86 (stage 1b -20.65; 0.9.9 -19.80)"}
+  - {match: "hq/F03/PRESET/[AB]/chord-high", metric: cb, min: -1.93, max: -1.33, reason: "s2: 42.78 (stage 1b 42.94; 0.9.9 44.41)"}
+  - {match: "hq/F03/PRESET/[AB]/chord-mid", metric: cb, min: -1.88, max: -1.28, reason: "s2: 39.39 (stage 1b 39.62; 0.9.9 40.97)"}
+  - {match: "hq/F03/PRESET/[AB]/pedal", metric: cb, min: -1.91, max: -1.31, reason: "s2: 42.81 (stage 1b 42.96; 0.9.9 44.42)"}
+  - {match: "hq/F09/PRESET/[AB]/chord-low", metric: lu, min: -1.38, max: -0.78, reason: "s2: -19.13 (stage 1b -19.01; 0.9.9 -18.05)"}
+  - {match: "hq/F09/PRESET/[AB]/chord-mid", metric: lu, min: -1.48, max: -0.88, reason: "s2: -21.09 (stage 1b -20.86; 0.9.9 -19.91)"}
+  - {match: "hq/F10/PRESET/[AB]/chord-mid", metric: cb, min: -2.35, max: -1.75, reason: "s2: 40.85 (stage 1b 40.31; 0.9.9 42.91)"}
+  - {match: "hq/F10/PRESET/[AB]/k28v127", metric: H4, min: -26.07, max: -25.47, reason: "s2: -54.47 (stage 1b -49.38; 0.9.9 -28.70)"}
+  - {match: "hq/F10/PRESET/[AB]/k28v127", metric: H5, min: -11.13, max: -10.53, reason: "s2: -54.00 (stage 1b -58.81; 0.9.9 -43.17)"}
+  - {match: "hq/F12/PRESET/B/k33v20", metric: level, min: 5.75, max: 6.35, reason: "s2: -80.26 (stage 1b -82.56; 0.9.9 -86.31)"}
+  - {match: "hq/F16/PRESET/A/k89v20", metric: keyup, min: -3.74, max: -3.14, reason: "s2: -23.50 (stage 1b -23.88; 0.9.9 -20.05)"}
+  - {match: "hq/F18/PRESET/[AB]/chord-low", metric: level, min: -1.81, max: -1.21, reason: "s2: -18.89 (stage 1b -18.71; 0.9.9 -17.38)"}
+  - {match: "hq/FELT/FX/[AB]/chord-low", metric: lu, min: -1.42, max: -0.82, reason: "s2: -21.54 (stage 1b -21.37; 0.9.9 -20.42)"}
+  - {match: "hq/FELT/FX/[AB]/chord-mid", metric: lu, min: -1.48, max: -0.88, reason: "s2: -20.33 (stage 1b -20.12; 0.9.9 -19.15)"}
+  - {match: "hq/FELT/FXOFF/[AB]/chord-high", metric: cb, min: -1.86, max: -1.26, reason: "s2: 43.14 (stage 1b 43.29; 0.9.9 44.70)"}
+  - {match: "hq/FELT/FXOFF/[AB]/chord-low", metric: lu, min: -1.42, max: -0.82, reason: "s2: -21.58 (stage 1b -21.41; 0.9.9 -20.46)"}
+  - {match: "hq/FELT/FXOFF/[AB]/chord-mid", metric: lu, min: -1.48, max: -0.88, reason: "s2: -20.32 (stage 1b -20.10; 0.9.9 -19.14)"}
+  - {match: "hq/FELT/FXOFF/[AB]/pedal", metric: cb, min: -1.82, max: -1.22, reason: "s2: 43.21 (stage 1b 43.37; 0.9.9 44.73)"}
+  - {match: "hq/MARIMBA/FX/[AB]/chord-low", metric: cb, min: -1.83, max: -1.23, reason: "s2: 35.13 (stage 1b 35.42; 0.9.9 36.66)"}
+  - {match: "hq/MARIMBA/FXOFF/[AB]/chord-mid", metric: cb, min: -1.89, max: -1.29, reason: "s2: 28.95 (stage 1b 29.19; 0.9.9 30.54)"}
+  - {match: "hq/ST77/FX/[AB]/chord-low", metric: lu, min: -1.45, max: -0.85, reason: "s2: -21.43 (stage 1b -21.25; 0.9.9 -20.28)"}
+  - {match: "hq/ST77/FX/[AB]/chord-mid", metric: lu, min: -1.35, max: -0.75, reason: "s2: -20.30 (stage 1b -20.08; 0.9.9 -19.25)"}
+  - {match: "hq/ST77/FX/[AB]/pedal", metric: lu, min: -1.41, max: -0.81, reason: "s2: -20.04 (stage 1b -19.91; 0.9.9 -18.93)"}
+  - {match: "hq/ST77/FXOFF/[AB]/chord-low", metric: lu, min: -1.45, max: -0.85, reason: "s2: -21.48 (stage 1b -21.31; 0.9.9 -20.33)"}
+  - {match: "hq/ST77/FXOFF/[AB]/chord-mid", metric: lu, min: -1.32, max: -0.72, reason: "s2: -20.27 (stage 1b -20.06; 0.9.9 -19.25)"}
+  - {match: "hq/ST77/FXOFF/[AB]/pedal", metric: lu, min: -1.42, max: -0.82, reason: "s2: -20.04 (stage 1b -19.89; 0.9.9 -18.92)"}
+  - {match: "hq/SUIT/FX/[AB]/chord-mid", metric: lu, min: -1.37, max: -0.77, reason: "s2: -19.74 (stage 1b -19.52; 0.9.9 -18.67)"}
+  - {match: "hq/SUIT/FXOFF/[AB]/chord-low", metric: lu, min: -1.30, max: -0.70, reason: "s2: -21.41 (stage 1b -21.27; 0.9.9 -20.41)"}
+  - {match: "hq/SUIT/FXOFF/[AB]/chord-mid", metric: lu, min: -1.33, max: -0.73, reason: "s2: -19.69 (stage 1b -19.49; 0.9.9 -18.66)"}
+  - {match: "hq/VIBES/FX/[AB]/chord-low", metric: lu, min: -1.36, max: -0.76, reason: "s2: -20.83 (stage 1b -20.73; 0.9.9 -19.77)"}
+  - {match: "hq/VIBES/FXOFF/[AB]/chord-low", metric: lu, min: -1.40, max: -0.80, reason: "s2: -20.95 (stage 1b -20.82; 0.9.9 -19.85)"}
