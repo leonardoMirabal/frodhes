@@ -16,45 +16,52 @@
 #define text_cb frui_text_default
 
 /* ---- presets.c's factory records used in the pictures (id / value pairs, 0xFF ends), and their names */
-static const uint8_t PR_F05[] = {FRP_TYPE, 1, FRP_NOISE, 44, FRP_DRIVE, 20, FRP_TW_SW, 1, FRP_TW_MODE, 0, FRP_TW_DEPTH, 72,
-    FRP_TW_RATE, 88, FRP_CMP_SW, 1, FRP_CMP_AMT, 50, FRP_CMP_RATIO, 1, FRP_CMP_ATK, 80, FRP_CMP_REL, 72, FRP_CMP_GAIN, 8,
-    FRP_RV_DEPTH, 24, FRP_RV_TYPE, 2, FRP_RV_LOCUT, 70, FRP_LEVEL, 46, 0xFF};
-static const uint8_t PR_F06[] = {FRP_TYPE, 0, FRP_NOISE, 48, FRP_CMP_SW, 1, FRP_CMP_AMT, 40, FRP_CMP_RATIO, 2, FRP_CMP_ATK, 70,
-    FRP_CMP_GAIN, 16, FRP_DRIVE, 64, FRP_DRV_SW, 2, FRP_DRV_TONE, 72, FRP_BARK, 96, FRP_HAMMER, 80, FRP_DL_SW, 3,
-    FRP_DL_DEPTH, 12, FRP_DL_SYNC, 8, FRP_DL_FDBK, 40, FRP_DL_TONE, 56, FRP_RV_DEPTH, 18, FRP_RV_TYPE, 2, FRP_RV_LOCUT, 80,
-    FRP_LEVEL, 45, 0xFF};
-static const uint8_t PR_F07[] = {FRP_TYPE, 0, FRP_TONE, 56, FRP_BELL, 76, FRP_NOISE, 40, FRP_CMP_SW, 1, FRP_CMP_AMT, 50,
-    FRP_CMP_RATIO, 1, FRP_CMP_ATK, 80, FRP_CMP_REL, 72, FRP_CMP_GAIN, 8, FRP_CP_SW, 1, FRP_CP_DEPTH, 56, FRP_CP_SPEED, 40,
-    FRP_DL_SW, 1, FRP_DL_DEPTH, 12, FRP_DL_SYNC, 9, FRP_DL_FDBK, 30, FRP_DL_TONE, 50, FRP_RV_DEPTH, 48, FRP_RV_TYPE, 2,
-    FRP_RV_DECAY, 84, FRP_RV_PREDLY, 40, FRP_RV_LOCUT, 70, FRP_LEVEL, 53, 0xFF};
-static const uint8_t PR_F08[] = {FRP_TYPE, 3, FRP_NOISE, 44, FRP_CMP_SW, 1, FRP_CMP_AMT, 50, FRP_CMP_RATIO, 1, FRP_CMP_ATK, 80,
-    FRP_CMP_REL, 72, FRP_CMP_GAIN, 8, FRP_CP_SW, 1, FRP_CP_DEPTH, 70, FRP_CP_SPEED, 56, FRP_DL_SW, 1, FRP_DL_DEPTH, 18,
-    FRP_DL_SYNC, 8, FRP_DL_FDBK, 24, FRP_DL_TONE, 76, FRP_RV_DEPTH, 30, FRP_RV_TYPE, 2, FRP_RV_LOCUT, 80, FRP_LEVEL, 68, 0xFF};
-static const uint8_t PR_F09[] = {FRP_TYPE, 0, FRP_NOISE, 48, FRP_DRIVE, 34, FRP_DRV_SW, 5, FRP_BARK, 76, FRP_CMP_SW, 1,
-    FRP_CMP_AMT, 50, FRP_CMP_RATIO, 1, FRP_CMP_ATK, 80, FRP_CMP_REL, 72, FRP_CMP_GAIN, 8, FRP_PH_SW, 1, FRP_PH_DEPTH, 85,
-    FRP_PH_SPEED, 30, FRP_PH_FDBK, 64, FRP_DL_SW, 2, FRP_DL_DEPTH, 12, FRP_DL_SYNC, 9, FRP_DL_FDBK, 30, FRP_DL_TONE, 50,
-    FRP_RV_DEPTH, 22, FRP_RV_TYPE, 2, FRP_RV_LOCUT, 70, FRP_LEVEL, 60, 0xFF};
-static const uint8_t PR_F10[] = {FRP_TYPE, 0, FRP_NOISE, 48, FRP_CMP_SW, 1, FRP_CMP_AMT, 56, FRP_CMP_RATIO, 3, FRP_CMP_ATK, 20,
-    FRP_CMP_REL, 40, FRP_CMP_GAIN, 26, FRP_DRIVE, 44, FRP_DRV_SW, 3, FRP_TW_SW, 2, FRP_TW_DEPTH, 92, FRP_TW_RATE, 72,
-    FRP_BARK, 84, FRP_RV_DEPTH, 14, FRP_RV_TYPE, 1, FRP_RV_LOCUT, 80, FRP_LEVEL, 42, 0xFF};
-static const uint8_t PR_F11[] = {FRP_TYPE, 0, FRP_NOISE, 48, FRP_CMP_SW, 1, FRP_CMP_AMT, 50, FRP_CMP_RATIO, 1, FRP_CMP_ATK, 80,
-    FRP_CMP_REL, 72, FRP_CMP_GAIN, 8, FRP_DRIVE, 53, FRP_DRV_SW, 4, FRP_DRV_TONE, 60, FRP_FL_TYPE, 1, FRP_FL_FREQ, 76,
-    FRP_FL_RESO, 88, FRP_FL_LFO, 64, FRP_LFO_SHAPE, 1, FRP_LFO_SYNC, 13, FRP_DL_SW, 1, FRP_DL_DEPTH, 14, FRP_DL_SYNC, 9,
-    FRP_DL_FDBK, 40, FRP_DL_TONE, 60, FRP_RV_DEPTH, 22, FRP_RV_TYPE, 1, FRP_RV_LOCUT, 80, FRP_LEVEL, 18, 0xFF};
+/* (regenerated 2026-11-10 from presets.c's factory records, the proposed 19 v2: tools/gen_move_presets.presets_c) */
+static const uint8_t PR_F07[] = {FRP_TYPE, 0, FRP_TONE, 56, FRP_BELL, 76, FRP_NOISE, 40, FRP_CMP_SW, 1, FRP_CMP_AMT, 36,
+    FRP_CMP_RATIO, 2, FRP_CMP_ATK, 40, FRP_CMP_REL, 72, FRP_CMP_GAIN, 8, FRP_CP_SW, 1, FRP_CP_DEPTH, 56, FRP_CP_SPEED,
+    40, FRP_DL_SW, 1, FRP_DL_DEPTH, 12, FRP_DL_SYNC, 9, FRP_DL_FDBK, 30, FRP_DL_TONE, 50, FRP_RV_DEPTH, 48, FRP_RV_TYPE,
+    2, FRP_RV_DECAY, 84, FRP_RV_PREDLY, 40, FRP_RV_LOCUT, 70, FRP_LEVEL, 59, FRP_BARK, 64, FRP_HAMMER, 64, FRP_DECAY,
+    64, 0xFF};
+static const uint8_t PR_F08[] = {FRP_TYPE, 1, FRP_NOISE, 44, FRP_DRIVE, 20, FRP_TW_SW, 1, FRP_TW_MODE, 0, FRP_TW_DEPTH,
+    72, FRP_TW_RATE, 88, FRP_CMP_SW, 1, FRP_CMP_AMT, 36, FRP_CMP_RATIO, 3, FRP_CMP_ATK, 100, FRP_CMP_REL, 72,
+    FRP_CMP_GAIN, 8, FRP_RV_DEPTH, 24, FRP_RV_TYPE, 2, FRP_RV_LOCUT, 70, FRP_LEVEL, 41, FRP_TONE, 112, FRP_BARK, 80,
+    FRP_BELL, 64, FRP_HAMMER, 96, FRP_DECAY, 72, 0xFF};
+static const uint8_t PR_F09[] = {FRP_TYPE, 0, FRP_NOISE, 48, FRP_DRIVE, 34, FRP_DRV_SW, 5, FRP_BARK, 48, FRP_CMP_SW, 1,
+    FRP_CMP_AMT, 50, FRP_CMP_RATIO, 1, FRP_CMP_ATK, 80, FRP_CMP_REL, 72, FRP_CMP_GAIN, 8, FRP_PH_SW, 1, FRP_PH_DEPTH,
+    85, FRP_PH_SPEED, 30, FRP_PH_FDBK, 64, FRP_DL_SW, 2, FRP_DL_DEPTH, 12, FRP_DL_SYNC, 9, FRP_DL_FDBK, 30, FRP_DL_TONE,
+    50, FRP_RV_DEPTH, 22, FRP_RV_TYPE, 2, FRP_RV_LOCUT, 70, FRP_LEVEL, 75, FRP_TONE, 112, FRP_BELL, 96, FRP_HAMMER, 96,
+    FRP_DECAY, 72, 0xFF};
+static const uint8_t PR_F10[] = {FRP_TYPE, 0, FRP_NOISE, 48, FRP_CMP_SW, 1, FRP_CMP_AMT, 56, FRP_CMP_RATIO, 1,
+    FRP_CMP_ATK, 80, FRP_CMP_REL, 72, FRP_CMP_GAIN, 26, FRP_DRIVE, 44, FRP_DRV_SW, 3, FRP_TW_SW, 2, FRP_TW_DEPTH, 92,
+    FRP_TW_RATE, 72, FRP_BARK, 84, FRP_RV_DEPTH, 14, FRP_RV_TYPE, 1, FRP_RV_LOCUT, 80, FRP_LEVEL, 41, FRP_TONE, 64,
+    FRP_BELL, 64, FRP_HAMMER, 64, FRP_DECAY, 64, 0xFF};
+static const uint8_t PR_F11[] = {FRP_TYPE, 0, FRP_NOISE, 48, FRP_CMP_SW, 1, FRP_CMP_AMT, 50, FRP_CMP_RATIO, 3,
+    FRP_CMP_ATK, 80, FRP_CMP_REL, 72, FRP_CMP_GAIN, 8, FRP_DRIVE, 53, FRP_DRV_SW, 4, FRP_DRV_TONE, 60, FRP_FL_TYPE, 1,
+    FRP_FL_FREQ, 76, FRP_FL_RESO, 88, FRP_FL_LFO, 64, FRP_LFO_SHAPE, 1, FRP_LFO_SYNC, 13, FRP_DL_SW, 1, FRP_DL_DEPTH,
+    14, FRP_DL_SYNC, 9, FRP_DL_FDBK, 40, FRP_DL_TONE, 60, FRP_RV_DEPTH, 22, FRP_RV_TYPE, 1, FRP_RV_LOCUT, 80, FRP_LEVEL,
+    52, FRP_TONE, 64, FRP_BARK, 64, FRP_BELL, 64, FRP_HAMMER, 64, FRP_DECAY, 64, 0xFF};
+static const uint8_t PR_F12[] = {FRP_TYPE, 0, FRP_NOISE, 48, FRP_CMP_SW, 1, FRP_CMP_AMT, 50, FRP_CMP_RATIO, 1,
+    FRP_CMP_ATK, 80, FRP_CMP_REL, 72, FRP_CMP_GAIN, 8, FRP_RV_DEPTH, 20, FRP_RV_TYPE, 2, FRP_RV_LOCUT, 80, FRP_LEVEL,
+    55, FRP_CP_SW, 1, FRP_CP_DEPTH, 64, FRP_CP_SPEED, 44, FRP_DL_SW, 3, FRP_DL_DEPTH, 16, FRP_DL_SYNC, 8, FRP_DL_FDBK,
+    40, FRP_DL_TONE, 58, FRP_TONE, 64, FRP_BARK, 64, FRP_BELL, 64, FRP_HAMMER, 64, FRP_DECAY, 64, 0xFF};
 static const uint8_t PR_F13[] = {FRP_TYPE, 4, FRP_TONE, 64, FRP_BARK, 52, FRP_BELL, 70, FRP_HAMMER, 64, FRP_DECAY, 64,
     FRP_RELEASE, 64, FRP_NOISE, 40, FRP_MOT_ON, 1, FRP_MOT_DEPTH, 90, FRP_MOT_RATE, 66, FRP_MOT_SHAPE, 0, FRP_CMP_SW, 1,
-    FRP_CMP_AMT, 46, FRP_CMP_RATIO, 0, FRP_CMP_ATK, 92, FRP_CMP_REL, 64, FRP_CMP_GAIN, 6, FRP_RV_DEPTH, 20, FRP_RV_TYPE, 1,
-    FRP_RV_PREDLY, 20, FRP_RV_LOCUT, 70, FRP_LEVEL, 55, 0xFF};
+    FRP_CMP_AMT, 46, FRP_CMP_RATIO, 0, FRP_CMP_ATK, 92, FRP_CMP_REL, 64, FRP_CMP_GAIN, 6, FRP_RV_DEPTH, 20, FRP_RV_TYPE,
+    1, FRP_RV_PREDLY, 20, FRP_RV_LOCUT, 70, FRP_LEVEL, 42, 0xFF};
 static const uint8_t PR_F16[] = {FRP_TYPE, 5, FRP_TONE, 60, FRP_BARK, 80, FRP_BELL, 64, FRP_HAMMER, 110, FRP_DECAY, 64,
     FRP_RELEASE, 0, FRP_NOISE, 40, FRP_CMP_SW, 1, FRP_CMP_AMT, 46, FRP_CMP_RATIO, 0, FRP_CMP_ATK, 92, FRP_CMP_REL, 64,
     FRP_CMP_GAIN, 6, FRP_CP_SW, 1, FRP_CP_DEPTH, 40, FRP_CP_SPEED, 44, FRP_DL_SW, 1, FRP_DL_DEPTH, 22, FRP_DL_SYNC, 8,
     FRP_DL_FDBK, 26, FRP_DL_TONE, 50, FRP_RV_DEPTH, 38, FRP_RV_TYPE, 1, FRP_RV_DECAY, 64, FRP_RV_PREDLY, 24,
-    FRP_RV_LOCUT, 80, FRP_LEVEL, 67, 0xFF};
-static const uint8_t PR_F18[] = {FRP_TYPE, 2, FRP_DECAY, 84, FRP_NOISE, 30, FRP_CMP_SW, 1, FRP_CMP_AMT, 46, FRP_CMP_RATIO, 1,
-    FRP_CMP_ATK, 90, FRP_CMP_REL, 80, FRP_CMP_GAIN, 8, FRP_TW_SW, 1, FRP_TW_MODE, 0, FRP_TW_DEPTH, 36, FRP_TW_RATE, 30,
-    FRP_CP_SW, 1, FRP_CP_DEPTH, 60, FRP_CP_SPEED, 30, FRP_DL_SW, 2, FRP_DL_DEPTH, 21, FRP_DL_SYNC, 9, FRP_DL_FDBK, 30,
-    FRP_RV_DEPTH, 76, FRP_RV_TYPE, 1, FRP_RV_DECAY, 104, FRP_RV_PREDLY, 60, FRP_RV_TONE, 56, FRP_RV_MOD, 84,
-    FRP_RV_LOCUT, 80, FRP_LEVEL, 55, 0xFF};
+    FRP_RV_LOCUT, 80, FRP_LEVEL, 17, 0xFF};
+static const uint8_t PR_F17[] = {FRP_TYPE, 0, FRP_TONE, 112, FRP_NOISE, 48, FRP_CMP_SW, 1, FRP_CMP_AMT, 50,
+    FRP_CMP_RATIO, 1, FRP_CMP_ATK, 80, FRP_CMP_REL, 72, FRP_CMP_GAIN, 8, FRP_DRIVE, 22, FRP_DL_SW, 3, FRP_DL_DEPTH, 29,
+    FRP_DL_SYNC, 8, FRP_DL_FDBK, 72, FRP_DL_TONE, 62, FRP_RV_DEPTH, 22, FRP_RV_TYPE, 2, FRP_RV_LOCUT, 80, FRP_LEVEL, 52,
+    FRP_BARK, 48, FRP_BELL, 96, FRP_HAMMER, 96, FRP_DECAY, 64, 0xFF};
+static const uint8_t PR_F18[] = {FRP_TYPE, 2, FRP_DECAY, 72, FRP_NOISE, 30, FRP_CMP_SW, 1, FRP_CMP_AMT, 36,
+    FRP_CMP_RATIO, 0, FRP_CMP_ATK, 40, FRP_CMP_REL, 80, FRP_CMP_GAIN, 8, FRP_TW_SW, 1, FRP_TW_MODE, 0, FRP_TW_DEPTH, 36,
+    FRP_TW_RATE, 30, FRP_CP_SW, 1, FRP_CP_DEPTH, 60, FRP_CP_SPEED, 30, FRP_DL_SW, 2, FRP_DL_DEPTH, 21, FRP_DL_SYNC, 9,
+    FRP_DL_FDBK, 30, FRP_RV_DEPTH, 76, FRP_RV_TYPE, 1, FRP_RV_DECAY, 104, FRP_RV_PREDLY, 60, FRP_RV_TONE, 56,
+    FRP_RV_MOD, 84, FRP_RV_LOCUT, 80, FRP_LEVEL, 47, FRP_TONE, 112, FRP_BARK, 80, FRP_BELL, 127, FRP_HAMMER, 96, 0xFF};
 
 #include "frui_fact.h"   /* FACT[FACT_N]: the factory presets' names and instruments (tools/gen_move_presets.py) */
 /* the list: the factory presets, then nu user presets (named from users[], instruments from utype[]) */
@@ -308,13 +315,13 @@ static int directions(const int *maj7, const int *min9, const int *vib)
             const char *sn = SN[s];
             if (s == 0) { load(&m, PR_F09, "F09", "70S PHASER"); m.tab_l = FRT_DRIVE; m.tab_r = FRT_PHASER; chord(&m, maj7, 5);
                           m.sustain = 1; m.learn_cc[FRP_DRIVE] = 2; }
-            else if (s == 2) { load(&m, PR_F06, "F06", "DRIVEN 77"); m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY;
+            else if (s == 2) { load(&m, PR_F17, "F17", "TAPE ECHO"); m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY;
                                m.settings = 1; m.vel_curve = 0; m.pgm_change = 1; m.tempo_src = 0; m.host_bpm10 = 965;
                                m.sync_all = 0; m.learn_cc[FRP_DRIVE] = 2; m.learn_cc[FRP_FL_FREQ] = 75; m.cc_scroll = 0; }
-            else if (s == 3) { load(&m, PR_F11, "F11", "SWEEP"); m.tab_l = FRT_DRIVE; m.tab_r = FRT_FILTER; chord(&m, min9, 3);
+            else if (s == 3) { load(&m, PR_F11, "F11", "RESO SWEEP"); m.tab_l = FRT_DRIVE; m.tab_r = FRT_FILTER; chord(&m, min9, 3);
                                m.learn_cc[FRP_DRIVE] = 2; m.ctx_knob = FRP_FL_FREQ; m.learning = FRP_FL_FREQ;
                                m.hover = FRUI_WID(FRW_CTX, FRC_LEARN); }
-            else if (s == 4) { load(&m, PR_F06, "F06", "DRIVEN 77"); m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY; m.gr_db = 3.6f; chord(&m, min9, 5); }
+            else if (s == 4) { load(&m, PR_F17, "F17", "TAPE ECHO"); m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY; m.gr_db = 3.6f; chord(&m, min9, 5); }
             else { load(&m, PR_F13, "F13", "VIBES"); m.tab_l = FRT_MOTOR; m.tab_r = FRT_REVERB; chord(&m, vib, 5);
                    m.menu = FRUI_WID(FRW_MENU, FRP_TYPE); m.fx_bypass = 1; }
             for (k = 0; k < 2; k++) {
@@ -402,7 +409,7 @@ int main(int argc, char **argv)
     render(&m, "size-max-1920x1200@2x", 3840, 2400);
 
     /* every tab, on the factory presets that use it */
-    load(&m, PR_F06, "F06", "DRIVEN 77");                   /* COMP + DELAY (TAPE, synced 8D) */
+    load(&m, PR_F17, "F17", "TAPE ECHO");                   /* COMP + DELAY (TAPE, synced 8D) */
     m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY; m.gr_db = 3.6f;
     chord(&m, min9, 5);
     render(&m, "tab-comp-delay", 960, 600);
@@ -410,11 +417,11 @@ int main(int argc, char **argv)
     m.p[FRP_EQ_LO] = 74; m.p[FRP_EQ_MID] = 54; m.p[FRP_EQ_FREQ] = 50; m.p[FRP_EQ_HI] = 60; m.edited = 1;
     m.tab_l = FRT_EQ; m.tab_r = FRT_FILTER;
     render(&m, "tab-eq-filter", 960, 600);
-    load(&m, PR_F05, "F05", "SUIT TREM");                    /* DRIVE (FDRV) + TREM/WAH on PAN */
+    load(&m, PR_F08, "F08", "SUIT TREM");                    /* DRIVE (FDRV) + TREM/WAH on PAN */
     m.tab_l = FRT_DRIVE; m.tab_r = FRT_TREM;
     chord(&m, maj7, 5);
     render(&m, "tab-drive-tremwah", 960, 600);
-    load(&m, PR_F08, "F08", "DYNO 80S");                     /* COMP + CHORUS */
+    load(&m, PR_F12, "F12", "LUSH CHO");                     /* COMP + CHORUS */
     m.tab_l = FRT_COMP; m.tab_r = FRT_CHORUS; m.gr_db = 1.8f;
     render(&m, "tab-comp-chorus", 960, 600);
     load(&m, PR_F07, "F07", "BALLAD");                       /* EQ (flat) + REVERB page 1 */
@@ -434,7 +441,7 @@ int main(int argc, char **argv)
     render(&m, "engine-marimba", 960, 600);
 
     /* interaction states: an open menu (DELAY's SYNC), the keyboard focus ring and a hovered control */
-    load(&m, PR_F06, "F06", "DRIVEN 77");
+    load(&m, PR_F17, "F17", "TAPE ECHO");
     m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY; m.gr_db = 3.6f;
     m.menu = FRUI_WID(FRW_MENU, FRP_DL_SYNC);
     render(&m, "state-menu-open", 960, 600);
@@ -474,7 +481,7 @@ int main(int argc, char **argv)
         render(&m, "save-replace@2x", 1920, 1200);
     }
     /* the effects bypassed (EFFECTS: BYPASS): every effect knob drawn inactive, the voice's knobs as they are */
-    load(&m, PR_F06, "F06", "DRIVEN 77");
+    load(&m, PR_F17, "F17", "TAPE ECHO");
     m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY; m.gr_db = 0.f; m.fx_bypass = 1;
     render(&m, "fx-bypass", 960, 600);
     render(&m, "fx-bypass@2x", 1920, 1200);

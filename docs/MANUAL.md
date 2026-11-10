@@ -1329,7 +1329,7 @@ the project. The host's tempo drives the synced effects; the FM-1's sequencer, a
 the plugin. The downloads, the install and the first-open steps for a plugin that is not signed yet:
 [the README](../README.md#on-your-computer-the-desktop-plugin).
 
-![The desktop plugin's window: the VOICE knobs, two effect sections and a keyboard](manual/img/plugin/plugin-main.png?v=c7391692)
+![The desktop plugin's window: the VOICE knobs, two effect sections and a keyboard](manual/img/plugin/plugin-main.png?v=a6729600)
 
 ---
 
