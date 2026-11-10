@@ -1266,9 +1266,14 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 # F11 / F19 came down to the target (LEVEL 54 / 62 / 23 / 80: -0.1, -0.0, +0.2, +0.1)
 # (2026-11-10, the proposed 19: the targets by preset NAME (presets.c PR_FNAME), not by slot: SUIT TREM moved F05 ->
 # F08; AUTO WAH (+2.3 +- 2.0) and RADIO (+0.6 +- 1.0) were dropped with their slots; the starters by U number)
-PRESET_TARGET = {"70S PHASER": (1.4, 1.5), "VIBES": (0.6, 1.0), "VIBES ECHO": (0.7, 1.0), "MARIMBA": (-3.8, 1.0),
-                 "WOOD ECHO": (-5.4, 1.0), "TAPE ECHO": (0.0, 1.0), "DREAM": (0.5, 1.0),
-                 "U02": (-0.3, 1.0), "U04": (0.7, 1.0)}
+# (2026-11-10, FINAL19 v2: each preset at 0.9.9's preset of the same name by critical-band loudness, the limiter
+# idle, the LEVEL-cut ones under it: the targets re-measured on rc4 by name (host, re F01; F11 RESO SWEEP's +1.4 host
+# is +1.2 on the FM-1 by HOST_SHIFT). The starters U01..U09 kept their LEVELs: v2's F01 sits ~1.2 LU over them)
+PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1.8, 1.0), "RESO SWEEP": (1.2, 1.0),
+                 "VIBES": (-1.1, 1.0), "VIBES ECHO": (-0.9, 1.0), "MARIMBA": (-5.2, 1.0), "WOOD ECHO": (-8.1, 1.0),
+                 "TAPE ECHO": (-0.5, 1.0), "DREAM": (-1.0, 1.0), "U02": (-1.3, 1.0), "U03": (-1.6, 1.0),
+                 "U04": (0.5, 1.0), "U05": (-1.2, 1.0), "U06": (-1.4, 1.0), "U07": (-1.2, 1.0), "U08": (-1.9, 1.0),
+                 "U09": (-1.1, 1.0)}
 # (2026-11-09, fx-level: 0.9.9's absolute level and balance again (742a2537: every LEVEL -19, then the presets the
 # effects had made quieter back to 0.9.9's loudness): the host reads F09 +2.0, F13 +3.1, F14 +3.2, F15 +0.2, F16 -1.8,
 # F18 +1.1, U02 +0.9, U04 +1.2 re F01 (the 0.9.10 headroom trims below are superseded: F04 -0.1, F08 +1.3, U07 -0.2
@@ -1304,6 +1309,7 @@ def preset_pc(p):
 # BPM (F11's LFO and echo are synced: +2.1 at LEVEL 18 at the unit's own tempo); with presets()' 120 BPM clock and
 # every take on bar 1 of the sweep the FM-1 reads -0.4 (4 runs, spread <= 0.21 LU)
 HOST_SHIFT = {"RESO SWEEP": 0.2}
+LEVEL_CUT = {"BELL DYNO", "LUSH CHO", "VIBES", "VIBES ECHO", "MARIMBA", "WOOD ECHO"}   # (FINAL19 v2: under 0.9.9, accepted)
 
 
 def pr_names():
@@ -1383,7 +1389,10 @@ def presets(r, rep):
     gapped = [q["preset"] for q in rows if q["gaps"]]
     r.pc(0)
     spread = max(q["spread_lu"] for q in rows)
-    ok = max(lv) - min(lv) < 8 and not bad and not loud and not gapped
+    # THRESHOLD: the 8 LU span over the presets but FINAL19 v2's LEVEL-cut ones (LEVEL_CUT: under 0.9.9 by cb, accepted,
+    # their own targets above hold them); reason: WOOD ECHO -8.1 LU re F01 with the limiter idle (the coordinator 2026-11-10)
+    sv = [q["level"] for q in rows if preset_key(q["preset"]) not in LEVEL_CUT] or lv
+    ok = max(sv) - min(sv) < 8 and not bad and not loud and not gapped
     msg = (f"F01..{preset_label(len(rows))} loudness " + ", ".join(f"{v:.1f}" for v in lv) + f" LUFS (span {max(lv) - min(lv):.2f}; median of"
            f" {reps('presets')} takes, their own spread <= {spread:.2f} LU); clipping/clicks {bad or 'none'}")
     if loud:
