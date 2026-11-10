@@ -2318,6 +2318,44 @@ def corr_lr(st):
 # ---- round 2: the measures that stand above the floor (the jack's hiss: -92 dBFS; USB's own rounding) and the ones
 # taken against a reference take of the same stimulus (the effect at 0): what the control adds, not the notes' own
 # decay, beating or attack (round 1's failures, re-analysed offline: tools/hil_scan.py --offline)
+FLOOR_SUB_MAX_DB = 10.0      # floor_sub: the floor's subtraction lowers a band's power by at most this much (a band
+                             # at its floor reads 10 dB under its raw value: a bound, not a measure)
+
+
+def floor_sub(p, f, most_db=FLOOR_SUB_MAX_DB):
+    """a band's power p with the source's floor f (the same band of its pre-roll, welch's scale) taken off, never
+    lower than most_db under p; f None (USB: exact zeros) leaves p. MARIMBA's WAH DEPTH 0 on the jack rode its hiss
+    (1-4 kHz, +5.9 dB from 0 to 127 once in 3 runs against the 6 dB limit; USB and the other runs +7.8 / +8.5)"""
+    if f is None:
+        return float(p)
+    return float(max(p - f, p * 10 ** (-most_db / 10)))
+
+
+NOISE_FLOOR_MARGIN_DB = 6.0  # marimba NOISE contact: NOISE de's excess within this of the hiss read the same way is
+                             # the floor (the jack)
+NOISE_FLOOR_XSRC_DB = 6.0    # ... and so is a jack reading this far over USB's (the same strike recorded at once:
+                             # the analogue path cannot add a contact; rc-0.9.9h T2: key 48's jack -50..-53 dB, USB
+                             # -62..-66, the hiss estimate one window low, the flag missed, MISMATCH 14.6 dB)
+
+
+def noise_floor_flags(vals, de, margin=NOISE_FLOOR_MARGIN_DB, xsrc=NOISE_FLOOR_XSRC_DB):
+    """{src: bool} for marimba NOISE's contact row: NOISE de's contact excess (v["c"][de]) stands on the source's
+    floor: within margin of the hiss-only excess (v["cfl"], -240 when there is none), or (the jack) more than xsrc
+    over USB's own reading of the same strike. A source on its floor is not compared (check(floor=...))"""
+    out = {}
+    u = vals.get("usb")
+    for src, v in vals.items():
+        if not v:
+            out[src] = False
+            continue
+        c = v["c"][de]
+        fl = c < v.get("cfl", -240.0) + margin
+        if src == "jack" and u and finite(u["c"][de]) and finite(c):
+            fl = fl or c > u["c"][de] + xsrc
+        out[src] = bool(fl)
+    return out
+
+
 def welch(x, n=4096):
     """the mean power spectrum of hann windows (50 % overlap): per-bin power of one n-window"""
     x = np.asarray(x, float)
@@ -2964,9 +3002,10 @@ def vibes_fx(V, S, stim=None, extra=()):
         """frame_dist of two takes, the same window from each onset"""
         return frame_dist(cut(t1.m(q), t1.on(q)[0], a, b), cut(t2.m(q), t2.on(q)[0], a, b), FDN)
 
-    def band_re(t, r, q, lo, hi, a=0.05, b=1.05):
+    def band_re(t, r, q, lo, hi, a=0.05, b=1.05, sub=False):
         """a band's level (dB) of take t re the reference take r, the same window from each onset; and whether t's
-        band is within 6 dB of its floor (then it reads the floor: an upper bound)"""
+        band is within 6 dB of its floor (then it reads the floor: an upper bound). sub: each take's floor (its
+        pre-roll, the same band) taken off first (floor_sub)"""
         x, y = cut(t.m(q), t.on(q)[0], a, b), cut(r.m(q), r.on(q)[0], a, b)
         n = min(len(x), len(y))
         X, fr = welch(x[:n])
@@ -2974,7 +3013,12 @@ def vibes_fx(V, S, stim=None, extra=()):
         m_ = (fr >= lo) & (fr < hi)
         F, _ = welch(t.pre(q)) if np.any(t.pre(q)) else (None, None)
         lim = F is not None and X[m_].sum() < 4 * F[m_].sum()
-        return float(10 * np.log10(X[m_].sum() / (Y[m_].sum() + 1e-30) + 1e-30)), bool(lim)
+        xp, yp = X[m_].sum(), Y[m_].sum()
+        if sub:
+            G, _ = welch(r.pre(q)) if np.any(r.pre(q)) else (None, None)
+            xp = floor_sub(xp, None if F is None else F[m_].sum())
+            yp = floor_sub(yp, None if G is None else G[m_].sum())
+        return float(10 * np.log10(xp / (yp + 1e-30) + 1e-30)), bool(lim)
 
     def nm(n):
         return f"{n} (CC {P[n]['cc']})"
@@ -3238,10 +3282,12 @@ def vibes_fx(V, S, stim=None, extra=()):
             lambda v: v >= 3, ">= 3 dB", fmt=lambda v: f"{v:.1f} dB")
     # a touch wah: DEPTH is how far the strike opens it (host TREM-WAH). Round 1 compared the spectral distances to
     # dry, which the wah's static filter dominates at any DEPTH (14.1 / 14.2 dB at 127 / 64)
-    wo = S.per(lambda q: [band_re(T[x], dry["ch"], q, 1000, 4000, 0.02, 0.3)[0] for x in (0, 64, 127)])
-    S.check("WAH DEPTH 0 / 64 / 127: the strike opens it", "1-4 kHz re no effect, 20..300 ms", wo,
+    # (each take's hiss taken off first, floor_sub: the jack's DEPTH 0 rode its floor, +5.9 dB once on MARIMBA)
+    wr = S.per(lambda q: [band_re(T[x], dry["ch"], q, 1000, 4000, 0.02, 0.3, sub=True) for x in (0, 64, 127)])
+    wo = {s_: v and [c for c, _ in v] for s_, v in wr.items()}
+    S.check("WAH DEPTH 0 / 64 / 127: the strike opens it", "1-4 kHz re no effect, 20..300 ms, less the floor", wo,
             lambda v: v[0] < v[1] < v[2] and v[2] - v[0] >= 6, "in order, 127 >= 6 dB over 0",
-            fmt=lambda v: " / ".join(f"{c:+.1f}" for c in v) + " dB")
+            fmt=lambda v: " / ".join(f"{c:+.1f}" for c in v) + " dB", floor={s_: bool(v and v[0][1]) for s_, v in wr.items()})
     S.check("WAH DEPTH 64", "vs no effect", S.per(lambda q: sdist(B(T[64], q), B(dry['ch'], q))), lambda v: v >= 1.5,
             ">= 1.5 dB", fmt=lambda v: f"{v:.1f} dB")
 
@@ -4132,15 +4178,19 @@ def marimba_decay(V, S):
             hf = excess_db(p1[-nh:], p0[-nh:]) - nl if nh >= FS // 20 and np.any(p0) else -240.0
             pd = T[de].pre(q)
             nc = min(len(p0), len(pd), int(0.06 * FS))      # the contact's window on hiss alone: NOISE de's floor
-            cf = m_excess_db(pd[-nc:], p0[-nc:]) - ring if nc >= int(0.06 * FS) and np.any(p0) else -240.0
+            # (the hiss's excess over every 60 ms window of the pre-rolls, the loudest: one window read it a few dB
+            # low and key 48's floor flag missed once, rc-0.9.9h T2)
+            nw = min(len(p0), len(pd)) // nc if nc >= int(0.06 * FS) and np.any(p0) else 0
+            cf = max((m_excess_db(pd[len(pd) - (i + 1) * nc:len(pd) - i * nc], p0[len(p0) - (i + 1) * nc:len(p0) - i * nc])
+                      for i in range(min(nw, 8))), default=-240.0 + ring) - ring
             # the contact re the note as the gate reads it (m_contact_db: the aligned difference, rectangular 0..60
             # ms); NOISE de's own reading the same way bounds what the alignment leaves (its tick ~30 dB under 127's)
             ca = {x: m_contact_db(m[x], o[x], m[0], o[0])[0] for x in (de, 127)}
-            return dict(c=c, k=knock_db(m[127], o[127], m[0], o[0]) - nl, hf=hf, cf=c[de] < cf + 6, ca=ca)
+            return dict(c=c, k=knock_db(m[127], o[127], m[0], o[0]) - nl, hf=hf, cfl=cf, ca=ca)
         vals = S.per(nz)
         S.check(f"NOISE (CC {P['NOISE']['cc']}) contact {de} -> 127", f"key {n}, 0..60 ms",
                 {s_: v and v["c"][127] - v["c"][de] for s_, v in vals.items()}, lambda v: v >= 6, ">= +6 dB", level=True,
-                floor={s_: bool(v and v["cf"]) for s_, v in vals.items()})   # (the jack: NOISE de's tick in its hiss)
+                floor=noise_floor_flags(vals, de))   # (the jack: NOISE de's tick in its hiss)
         S.check("NOISE 127 contact re the note", f"key {n}, 0..60 ms, the aligned difference re NOISE 0 (the gate's)",
                 {s_: v and (v["ca"][127], v["ca"][de]) for s_, v in vals.items()},
                 lambda v: v[0] > -35 and v[0] >= v[1] + 10,

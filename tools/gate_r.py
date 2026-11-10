@@ -14,6 +14,12 @@ combinations (Rhodes and VIBES: every effect, the filter types, 8 bass notes v12
 tools/calib_report.py --host's renders (the 4 Rhodes TYPEs, keys 28-103 at v100). The host binary is built here
 (build/gate_r/frodhes) with the Makefile's flags. A change that may not move the sound (a CPU rewrite, a refactor)
 must leave every sha256 equal; a change that moves it on purpose re-saves the baseline in the same commit and says so.
+
+Concurrency (K3, the 0.9.9 release's one-off Gate M DIFF): the generated scripts (build/gate_r/fx, calib) are written
+only when their text changes, and then whole (a temporary file renamed over), so a tool reading one while another
+process runs jobs() never sees it half-written (gate_m.py, engine_ab.py, voices16_study.py read the same list); the
+build and the renders hold the GATE_R lock (tools/lock.py), so two Gate R runs never rebuild the binary or rewrite a
+WAV under each other.
 """
 import argparse
 import hashlib
@@ -95,14 +101,30 @@ def calib_scripts(keys=range(28, 104), vel=100, gap=1.2):
     return res
 
 
-def jobs():
-    """name -> script path (None: the default run)"""
+def write_if_changed(p, text):
+    """p holds text: written only when it differs, and then whole (a temporary file renamed over it: a reader in
+    another process sees the old text or the new, never a part). True when written"""
+    p = Path(p)
+    try:
+        if p.read_text() == text:
+            return False
+    except OSError:
+        pass
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(f'.{p.name}.{os.getpid()}.tmp')
+    tmp.write_text(text)
+    os.replace(tmp, p)
+    return True
+
+
+def jobs(out=None):
+    """name -> script path (None: the default run); the generated scripts under out (default OUT)"""
+    out = Path(out) if out else OUT
     j = {f'scripts/{p.stem}': p for p in sorted((ROOT / 'tests' / 'scripts').glob('*.txt'))}
     j['host/frodhes'] = None
     for name, text in list(fx_scripts().items()) + list(calib_scripts().items()):
-        p = OUT / (name + '.txt')
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text)
+        p = out / (name + '.txt')
+        write_if_changed(p, text)
         j[name] = p
     return j
 
@@ -157,11 +179,17 @@ def main():
         if a.save:
             raise SystemExit('Gate R: --save only from the host build')
     else:
-        binary = OUT / 'frodhes'
-        cc = os.environ.get('CC', 'cc')
-        subprocess.run([cc] + CFLAGS + ['-o', str(binary), 'firmware/src/frodhes.c', '-lm'], cwd=ROOT, check=True)
-        with ThreadPoolExecutor(a.jobs) as ex:
-            got = dict(ex.map(lambda kv: render(binary, *kv), j.items()))
+        sys.path.insert(0, str(ROOT / 'tools'))
+        import lock
+        with lock.Lock('GATE_R', who='gate_r', why='the host binary and renders in build/gate_r', wait_s=3600,
+                       poll_s=5):
+            binary = OUT / 'frodhes'
+            tmp = OUT / f'.frodhes.{os.getpid()}'      # (built aside, renamed into place: never run half-written)
+            cc = os.environ.get('CC', 'cc')
+            subprocess.run([cc] + CFLAGS + ['-o', str(tmp), 'firmware/src/frodhes.c', '-lm'], cwd=ROOT, check=True)
+            os.replace(tmp, binary)
+            with ThreadPoolExecutor(a.jobs) as ex:
+                got = dict(ex.map(lambda kv: render(binary, *kv), j.items()))
     if a.save:
         import release_diff                    # (AGENTS.md 5b: never re-save over a tree the pristine gate fails)
         release_diff.save_guard('Gate R')

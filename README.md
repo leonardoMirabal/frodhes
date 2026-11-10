@@ -10,14 +10,14 @@ Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/le
 
 <table align="center">
   <tr>
-    <td align="center"><img src="docs/manual/img/thumbnail.png?v=23c51997" width="260" alt="Frodhes: the start screen (FRODHES, ELECTRIC PIANO + VIBES + MARIMBA)"></td>
     <td align="center"><img src="docs/manual/img/piano.png?v=d41944c5" width="260" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"></td>
-    <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ba262a7f" width="340" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
+    <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ba262a7f" width="300" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
+    <td align="center"><img src="docs/manual/img/plugin/plugin-main.png?v=c7391692" width="300" alt="The desktop plugin's window: the VOICE knobs, two effect sections and a keyboard"></td>
   </tr>
   <tr>
-    <td align="center">The start screen</td>
     <td align="center"><b>On the M-VAVE FM-1</b>: colour screen, four knobs</td>
     <td align="center"><b>On the Ableton Move</b>: its own screen, eight knobs</td>
+    <td align="center"><b>On your computer</b>: a plugin with its own window</td>
   </tr>
 </table>
 
@@ -84,14 +84,58 @@ Schwung's module catalog, you can also install and update it from there. The ste
   <img src="docs/manual/img/move/move-pages.png?v=7f4bde0a" width="384" alt="The list of pages on the Move">
 </p>
 
-## On your computer
+## On your computer: the desktop plugin
 
-The same sound engine as a plugin for your music software: CLAP, VST3 and Audio Unit on macOS (Apple silicon and
-Intel), CLAP and VST3 on Windows and Linux. It plays the higher-quality version of every instrument and effect, with
-24 voices, at any sample rate, and has the same presets (the FM-1's 19 and the Move's 38 more) and parameters. On
-macOS it opens its own window. Download the package for your system from the
-[release page](https://github.com/leonardoMirabal/frodhes/releases/latest); how to install each:
-[docs/PLUGIN.md](docs/PLUGIN.md#packages).
+Frodhes also runs in your music software as an instrument plugin: CLAP and VST3 on macOS, Windows and Linux, and an
+Audio Unit on macOS.
+
+- The same instruments, effects and factory sounds, computed by the same code. It plays the higher-quality
+  version of every instrument and effect, with 24 voices.
+- Its own window: the FM-1's pages as cards with knobs, resizable. Presets, MIDI learn, the effects' bypass and the
+  sustain latch are in it, and everything is saved with your project.
+- The host's tempo drives the synced effects. Any sample rate. Up to 16 instances in one project.
+- macOS 11 or newer (Apple silicon or Intel), Windows x64, Linux x86_64 or aarch64 (glibc 2.31 or newer). Nothing
+  else to install.
+
+**macOS.** Download
+[`frodhes-plugin-macos.pkg`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-plugin-macos.pkg)
+and open it: it installs the three formats into your own Library. The plugin is not signed by Apple yet, so macOS
+refuses it the first time: right-click the file and choose **Open** (or System Settings > Privacy & Security >
+**Open Anyway**). Or download
+[`frodhes-plugin-macos.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-plugin-macos.zip)
+and copy the format your host uses into its folder (create the folder if it is not there; in the Finder,
+**Go > Go to Folder...** and paste the path):
+
+| Format | File | Folder |
+| --- | --- | --- |
+| CLAP | `Frodhes.clap` | `~/Library/Audio/Plug-Ins/CLAP/` |
+| VST3 | `Frodhes.vst3` | `~/Library/Audio/Plug-Ins/VST3/` |
+| Audio Unit | `Frodhes.component` | `~/Library/Audio/Plug-Ins/Components/` |
+
+Then clear the download flag once, in Terminal:
+
+```sh
+xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/*/Frodhes.*
+```
+
+**Windows.** Download
+[`frodhes-plugin-windows.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-plugin-windows.zip).
+It is not signed yet: before you extract it, right-click it, **Properties**, tick **Unblock**. Copy `Frodhes.clap`
+into `C:\Program Files\Common Files\CLAP\` and `Frodhes.vst3` into `C:\Program Files\Common Files\VST3\`.
+
+**Linux.** Download
+[`frodhes-plugin-linux-x86_64.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-plugin-linux-x86_64.zip)
+(or `-aarch64`) and copy `Frodhes.clap` into `~/.clap/` and `Frodhes.vst3` into `~/.vst3/`.
+
+Then restart your music software, or let it rescan its plugins: it appears as **Frodhes**, an instrument. For the
+Audio Unit, `killall -9 AudioComponentRegistrar` in Terminal (or a restart of the Mac) makes macOS see it at once.
+To remove it, delete the `Frodhes.*` files again. More:
+[the manual](docs/MANUAL.md#17-appendix-the-desktop-plugin).
+
+<p align="center">
+  <img src="docs/manual/img/plugin/plugin-presets.png?v=df0615ed" width="384" alt="The plugin's PRESETS list: every factory and user sound, grouped by instrument">
+  <img src="docs/manual/img/plugin/plugin-effects.png?v=3f468120" width="384" alt="The plugin playing: the compressor and the tape delay on, their knobs and meters live">
+</p>
 
 ## Manual
 
@@ -114,9 +158,9 @@ The files on the [release page](https://github.com/leonardoMirabal/frodhes/relea
 | SMK-37 Pro | `frodhes-smk37-pro.fwsc` |
 | SMK-37 Elite | `frodhes-smk37-elite.fwsc` |
 | MKE-P37 | `frodhes-mke-p37.fwsc` |
-| Plugin, macOS | `frodhes-plugin-macos.pkg` (or `frodhes-plugin-macos.zip`) |
-| Plugin, Windows | `frodhes-plugin-windows.zip` |
-| Plugin, Linux | `frodhes-plugin-linux-x86_64.zip`, `frodhes-plugin-linux-aarch64.zip` |
+| Desktop plugin, macOS | `frodhes-plugin-macos.pkg` or `frodhes-plugin-macos.zip` |
+| Desktop plugin, Windows | `frodhes-plugin-windows.zip` |
+| Desktop plugin, Linux | `frodhes-plugin-linux-x86_64.zip`, `frodhes-plugin-linux-aarch64.zip` |
 
 ## Credits
 

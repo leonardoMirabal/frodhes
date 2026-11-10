@@ -39,6 +39,7 @@ firmware can always be put back ([how](#going-back-to-the-original-firmware)). S
 14. [Specifications](#14-specifications)
 15. [Appendix: the SMK-37](#15-appendix-the-smk-37)
 16. [Appendix: the Ableton Move](#16-appendix-the-ableton-move)
+17. [Appendix: the desktop plugin](#17-appendix-the-desktop-plugin)
 
 ## 1. Getting started
 
@@ -1317,6 +1318,18 @@ screen on the Move, the eight knobs as eight cards a page at a time. Its manual 
 page and what differs: **[MOVE.md](MOVE.md)**.
 
 ![Frodhes' screen on the Move: the DRIVE/FILTER page, eight knobs as eight cards](manual/img/move/move-drive-filter.png?v=18fa53cf)
+
+## 17. Appendix: the desktop plugin
+
+Frodhes also runs in your music software as an instrument plugin: CLAP and VST3 on macOS, Windows and Linux, and an
+Audio Unit on macOS. It has the same instruments, effects and factory sounds as the FM-1, computed by the same code,
+in the higher-quality version, with 24 voices. Everything in this manual applies to the sound. Its own window shows the pages as cards
+with knobs, with the presets, MIDI learn, the effects' bypass and the sustain latch; your host saves everything with
+the project. The host's tempo drives the synced effects; the FM-1's sequencer, arpeggiator and chord mode are not in
+the plugin. The downloads, the install and the first-open steps for a plugin that is not signed yet:
+[the README](../README.md#on-your-computer-the-desktop-plugin).
+
+![The desktop plugin's window: the VOICE knobs, two effect sections and a keyboard](manual/img/plugin/plugin-main.png?v=c7391692)
 
 ---
 

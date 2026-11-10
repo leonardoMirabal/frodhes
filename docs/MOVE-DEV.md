@@ -112,6 +112,51 @@ names the Move (default `ableton@move.local`).
   seccomp and no-allocation guards), `make gate-h` (the HQ renders) and `tools/gate_s.py` (the FM-1 and SMK binaries
   unchanged by the Move work) complete it. `tools/test_map.py` names the gates and device tiers a change needs, per
   target.
+- **After an intended sound change** (an engine's sound, as 0.9.10's Rhodes work; the Move build compiles
+  `firmware/src/frodhes.c`, so it gets every engine change, at 16 voices and with HQ). Gate M will DIFF on purpose.
+  In the same commit as the change:
+  1. `tools/gate_r.py --save` (the 10-voice references, `renders.sha256`: Gate M's references for the renders the
+     Move's 16 voices do not change).
+  2. `tools/gate_m.py --update --engines rhodes` (`--ref` the commit before the change, default `main`; `--dry`
+     writes nothing). It renders every MIDI-driven entry with the host build at the Move's voice count from REF and
+     from the working tree, writes `build/gate_m/update/report.md` and `report.json` (per changed render: the
+     engines it plays, the RMS and peak change, the residual re REF, the largest octave-band change, the spectral
+     centroid, the length) and then rewrites `move16.sha256`. The guard: a render may change only when its script
+     plays one of `--engines` (CC 79 0..95 VIBES, 96..127 MARIMBA, CC 80 a Rhodes type, a program change any engine).
+     A Rhodes-only change that moves a VIBES or MARIMBA render, or one of their effect renders, stops it (exit 1,
+     nothing written). `--engines vibes,marimba` for the bars, `--engines fx` for an effect change (every render may
+     change). A render that changes at 16 voices while `renders.sha256` keeps REF's hash is listed: Gate R was not
+     re-saved, or the change shows only above 10 voices (steals). REF's renders are kept for the next run against
+     the same REF.
+  3. The HQ paths (the Move plays HQ, Gate M plays Classic): `make gate-h` (`renders-hq.sha256`; re-save with
+     `tools/gate_h.py --save` when the change moves HQ too), `tools/gen_rhodes_hq.py --check` and
+     `tools/gen_rhodes_hq_contact.py --check` (the dense velocity table and the live contact derive from the same
+     hammer model and pins as the Classic layers: a change of those regenerates them, or the Move plays the old
+     pulse). A change of the Classic pickup (`rhodes.c`) is mirrored in the HQ 2x pickup (`hq/rhodes_hq.c`
+     `hq_voice_init`, `HQ_PU_R`) for keys 85 and up; `tests/py/test_rhodes_hq.py` checks the constants.
+  4. `make move` and `tools/ci_move.sh` (MT0: Gate U, `make test-move`, Gate M against the new references).
+  5. The parameters: a new parameter or a changed range shows up on the Move's pages when
+     `tools/gen_move_module.py` is rerun (Gate U fails until then; `test_every_parameter_reachable_or_midi_only`
+     wants it on a page or MIDI only; `SAY_NAMES` wants its spoken name). `tools/gen_move_presets.py` stops when a
+     record of F20-F57 no longer matches `params.c` (a parameter added or renumbered, a value over a smaller range);
+     add the new parameter's value to `move/presets/proposed_records.txt` and rerun it.
+  6. The Move's CPU (below): the host estimate, then the device.
+- **The Move's CPU after an engine change.** The bars: one instance's worst callback within U12 (725 us, design
+  600 us), two or three instances each within a third of the block (~967 us; the user, 2026-11-02: three Frodhes at
+  the worst case guaranteed), no Schwung overrun, no click. 0.9.9's one-instance worst was 573 us: over +15 % is a
+  regression to explain even under the bar. The steps, in order:
+  1. Host estimate (no Move): build `move/bench/classic_bench.c` in the Move image (`cc -O2 -std=gnu11 -o
+     build/bench/classic_bench move/bench/classic_bench.c -ldl -lm`) and time REF's `engine.so` against the new one
+     in one interleaved run (`classic_bench -r 15 -s 2 old.so new.so old.so:top new.so:top`; the Mac's arm64 cores
+     run the image natively). Only the ratio counts (another core than the A72): the new one's quiet p99.9 and mean
+     over REF's, per engine. Estimate the Move's worst as 573 us x the ratio; over 660 us, look before the device.
+     The bench takes `engine.so` itself. Its noise on a busy Mac is large: the same file as two cases read 206 and
+     248 us p99.9 (means 48 and 53 us) over 2 rounds on 2026-11-08. So run the full 15 rounds, add REF against
+     itself as a third case to see the spread, and trust the means and the quiet columns over one p99.9.
+  2. One instance on the Move: `tools/move_hil.py d2 --path tap --engines rhodes,vibes,marimba --tests usb-stress`
+     (16 voices, every effect heavy, the pedal; its `cpu` row is the plugin's own callback ring against U12).
+  3. Several: `tools/move_multi_cpu.py --n 1 2 3 --secs 30` (the worst take in N slots at once). It prints a
+     verdict per N (`verdict()`: the bars above) and exits 1 on a FAIL; N = 4 is reported only.
 - `tools/gen_move_module.py` writes `move/module/` (module.json, the pages, help.json, `move_ui.h`,
   `screen.js`: the pages from the FM-1's tables + the screen's code, `move/ui/screen_core.js`, and `canvas.js`: the
   COMPRESSOR page's meter, `move/ui/gr_cell.js`);

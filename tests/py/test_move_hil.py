@@ -547,3 +547,133 @@ def test_clock_probe_cli_fake(tmp_path):
     assert r.returncode == 1 and "PRESS PLAY NOW" in r.stdout and "mb_clock_block" in r.stdout, r.stdout[-2000:]
     r = run("clock-probe", "--fake", "--out", str(tmp_path / "ok"))
     assert r.returncode == 0 and "PASS" in r.stdout, r.stdout[-2000:]
+
+
+# ---- the 0.9.9 d2's fixes (K1): the slot's TUNE, MUTE over the WebSocket, VIBES' motor off
+def _d2b():
+    """the 0.9.9 USB-C d2's saved takes (build/rel099/move/d2b): this checkout's build/, else (a worktree, whose .git
+    file names the main checkout's .git/worktrees/<name>) the main checkout's"""
+    roots = [ROOT]
+    try:
+        g = open(os.path.join(ROOT, ".git")).read().strip()
+        if g.startswith("gitdir:") and "/.git/" in g:
+            roots.append(g.split(None, 1)[1].split("/.git/")[0])
+    except OSError:
+        pass
+    for root in roots:
+        d = os.path.join(root, "build", "rel099", "move", "d2b")
+        if os.path.isdir(d):
+            return d
+    return None
+
+
+def test_tune_for_and_the_offset():
+    """the slot's TUNE as read wins; unknown, a measured offset of 2 c or more is rounded (clamped to +-50); under it
+    the host stays at 0. pitch_offset_c reads a whole-take offset between two renders"""
+    assert mh.tune_for(-8, None) == (-8, "slot") and mh.tune_for("-8.0", 3.0) == (-8, "slot")
+    assert mh.tune_for(None, -7.8) == (-8, "measured") and mh.tune_for(None, 99.0) == (50, "measured")
+    assert mh.tune_for(None, 1.5) == (0, "none") and mh.tune_for(None, None) == (0, "none")
+    assert mh.slot_tune({"s_tune": "-8"}) == -8 and mh.slot_tune({}) is None and mh.slot_tune({"s_tune": ""}) is None
+    sr = 44100
+    _, marks, dur = mh.phrase_events()
+    t = np.arange(int(dur * sr)) / sr
+    ref = np.zeros((len(t), 2))
+    flat = np.zeros((len(t), 2))
+    for _, t0, n in marks:
+        k = (t >= t0) & (t < t0 + mh.NOTE_S)
+        f = mh.note_hz(n)
+        ref[k] += 3000 * np.sin(2 * np.pi * f * t[k])[:, None]
+        flat[k] += 3000 * np.sin(2 * np.pi * f * 2 ** (-8 / 1200) * t[k])[:, None]
+    assert abs(mh.pitch_offset_c(flat, ref, marks, sr) + 8.0) < 0.5
+
+
+def test_usb_host_renders_the_host_at_the_slots_tune(tmp_path):
+    """a Move whose slot was saved at TUNE -8 (the 0.9.9 d2: every note -8 c, DIFFERS everywhere): with the TUNE read
+    (r.tune) the host plays it too and the take passes; unread, the take's own offset gives it (measured); read
+    wrong (0), the take differs and the verdict names the offset left"""
+    class Tuned(mh.FakeRig):
+        def rec(self, dur, events):
+            h = mh.host_phrase(events, dur, 0, None, mh.GLOBAL_CCS, tune=-8)
+            x = np.zeros_like(h)
+            x[300:] = 0.5 * h[:-300]
+            return {"x": np.round(x), "sr": 44100, "xruns": []}
+    r = Tuned()
+    r.tune = -8
+    ok, rep = mh.usb_host(r, str(tmp_path / "a"), out=lambda s: None)
+    assert ok and (rep["tune"], rep["tune_source"]) == (-8, "slot") and abs(rep["pitch_left_c"]) < 1, rep["verdict"]
+    assert "TUNE -8 c (the slot's)" in rep["verdict"]
+    ok, rep = mh.usb_host(Tuned(), str(tmp_path / "b"), out=lambda s: None)
+    assert ok and (rep["tune"], rep["tune_source"]) == (-8, "measured"), rep["verdict"]
+    r.tune = 0
+    ok, rep = mh.usb_host(r, str(tmp_path / "c"), out=lambda s: None)
+    assert not ok and "DIFFERS" in rep["verdict"] and "still -8" in rep["verdict"], rep["verdict"]
+
+
+def test_usb_host_tune_on_the_0_9_9_d2_takes(tmp_path):
+    """the 0.9.9 USB-C d2's own takes (build/rel099/move/d2b, slot TUNE -8, not read then): re-analysed, the Rhodes
+    (F01) and MARIMBA (F15) pass with the measured TUNE -8; VIBES (F13) still differs (its free motor: the d2 now plays
+    its usb-host with the motor off)"""
+    import shutil
+    import pytest
+    src = _d2b()
+    if src is None:
+        pytest.skip("no build/rel099/move/d2b (the 0.9.9 d2's takes)")
+    for e, want in (("rhodes", True), ("marimba", True), ("vibes", False)):
+        d = tmp_path / e
+        shutil.copytree(os.path.join(src, e, "usb-host"), d)
+        ok, rep = mh.usb_host_file(str(d), out=lambda s: None)
+        assert (rep["tune"], rep["tune_source"]) == (-8, "measured"), (e, rep["verdict"])
+        assert ok == want and abs(rep["pitch_left_c"]) < 1, (e, rep["verdict"])
+        assert rep["program"] == mh.D2_PRESET[e]
+
+
+def test_usb_note_judges_the_pitch_against_the_tune(tmp_path):
+    """usb-note: the pitch is judged against the slot's TUNE (the fake plays at TUNE 0: read as -20, it is 20 c off)"""
+    r = mh.FakeRig()
+    r.tune = -20
+    ok, rep = mh.usb_note(r, str(tmp_path), out=lambda s: None)
+    assert not ok and rep["tune"] == -20 and "TUNE -20 c" in rep["verdict"], rep["verdict"]
+    r.tune = -5
+    ok, rep = mh.usb_note(r, str(tmp_path), out=lambda s: None)
+    assert ok, rep["verdict"]
+
+
+def test_cc_param_over_usb_c():
+    """over USB-C CC 103 (MUTE) never reaches the slot: with a WebSocket it is set there (p_release), without the caller
+    learns it was lost; CC 47 (the motor) goes both ways; the tap and the fake take the CC alone"""
+    r = mh.UsbRig.__new__(mh.UsbRig)
+    sent, ws = [], []
+    r._send = lambda kind, a, b=0: sent.append((kind, a, b))
+    assert mh.cc_param(r, 103, 127) is False and mh.cc_param(r, 47, 0) is True and mh.cc_param(r, 28, 64) is True
+    r.ws_set = lambda k, v: ws.append((k, v))
+    assert mh.cc_param(r, 103, 127) is True and mh.cc_param(r, 47, 0) is True and mh.cc_param(r, 28, 64) is True
+    assert ws == [("p_release", 127), ("p_mot_on", 0)] and sent.count(("cc", 103, 127)) == 2
+    f = mh.FakeRig()
+    assert mh.cc_param(f, 103, 127) is True and f.state[103] == 127
+
+
+def test_usb_sus_marimba_mute_over_the_websocket(tmp_path):
+    """MARIMBA usb-sus over USB-C: MUTE (CC 103 127) goes over the WebSocket and back to its default after; with no
+    WebSocket a failing row says it was NOT JUDGED and why"""
+    class Usb(mh.FakeRig):
+        fake = False
+
+    calls = []
+    r = Usb()
+    r.ws_set = lambda k, v: calls.append((k, v))
+    mh.usb_sus(r, str(tmp_path / "a"), engine="marimba", out=lambda s: None)
+    dflt = dict(mh.hs.param_defaults())[103]
+    assert calls == [("p_release", 127), ("p_release", dflt)], calls
+    ok, rep = mh.usb_sus(Usb(inject=[("nosus", 0.0)]), str(tmp_path / "b"), engine="marimba", out=lambda s: None)
+    assert not ok and rep["verdict"].startswith("NOT JUDGED: CC 103 (p_release)") and rep["lost_cc"] == [103], rep
+
+
+def test_d2_vibes_usb_host_motor_off(tmp_path):
+    """d2 plays VIBES' usb-host with the motor off on both sides (CC 47 0 after F13's program change; the host gets
+    it too) and names the slot's TUNE in the summary"""
+    code = mh.d2(mh.FakeEchoRig(), str(tmp_path), ("vibes",), stress_secs=4.0, out=lambda s: None,
+                 only=["usb-host"])
+    rep = __import__("json").load(open(tmp_path / "report.json"))
+    host = next(w for w in rep["rows"] if w["test"] == "usb-host")
+    assert code == 0 and host["report"]["motor_off"] and "motor off" in host["numbers"], host
+    assert "Slot TUNE: not read" in open(tmp_path / "summary.md").read()

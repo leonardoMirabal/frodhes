@@ -40,6 +40,13 @@ the FM-1.
 
 ## The window
 
+![The plugin's window: the VOICE knobs, two effect sections and a keyboard](manual/img/plugin/plugin-main.png?v=c7391692)
+
+<p align="center">
+  <img src="manual/img/plugin/plugin-presets.png?v=df0615ed" width="384" alt="PRESETS: every factory and user sound, grouped by instrument">
+  <img src="manual/img/plugin/plugin-save.png?v=89d10d95" width="384" alt="SAVE: the name field in place of the preset's name">
+</p>
+
 960 x 600 points by default, resizable at 16:10 from 720 x 450 to 1920 x 1200, drawn at the screen's pixel size
 (Retina and high-DPI Windows / Linux screens too), on macOS (Cocoa), Windows (a child window) and Linux (X11, run
 by the host's event loop). The plugin's own renderer (`plugin/ui/`) draws it; the fonts are inside the binary. It repaints only what
@@ -148,7 +155,7 @@ The plugin never holds back the firmware's or the Move's release.
 Today every bundle is signed **ad hoc** (`codesign -s -`) and the `.pkg` is unsigned. macOS then treats them as
 coming from an unidentified developer: the user opens the installer once from System Settings > Privacy & Security >
 Open Anyway, or, for the zip, runs `xattr -dr com.apple.quarantine` on the copied bundles. Hosts load the bundles
-either way (Logic loads the ad-hoc Audio Unit).
+either way (Audio Unit hosts load the ad-hoc signed Audio Unit too).
 
 Signing with an Apple Developer ID removes those steps. It needs the Apple Developer Program (individual, 99 USD a
 year) on the maintainer's own Apple account, so it is not set up yet. When it is:
@@ -252,10 +259,11 @@ What a script cannot do: a real DAW's scan, its browser, its project save and it
 with the packages a release attaches (the `.pkg` on macOS, the zips elsewhere). Close other audio software first; on
 the Mac, a DAW that opens the audio interface may change its sample rate.
 
-1. **Install and scan.** Install the package; rescan plug-ins (some Mac hosts check every Audio Unit at start).
-   Frodhes shows as an instrument, vendor Frodhes, version the release's: in the host's CLAP list, its VST3 list, and
-   its Audio Unit list (Instruments > Frodhes > Frodhes).
-2. **Play.** Put it on a MIDI / instrument track and play: the first sound is F01 STAGE 77. Hold a
+1. **Install and scan.** Install the package; rescan plug-ins (some Audio Unit hosts check new Audio Units only at
+   start). Frodhes shows as an instrument, vendor Frodhes, version the release's: in a CLAP host's CLAP list, in a
+   VST3 host's VST3 list (on each system), and in the Audio Unit host's list on macOS (Instruments > Frodhes >
+   Frodhes).
+2. **Play.** Put it on a MIDI / instrument track and play: the first sound is F01 STAGE 77 on the HQ engine. Hold a
    chord with the sustain pedal (or SUSTAIN in the window), let go: the notes ring out and stop. No click at the start
    of playback or when the track is armed.
 3. **The window.** Open it: 960 x 600 points, sharp on a Retina / high-DPI screen. Drag a knob, double-click its value
@@ -273,9 +281,9 @@ the Mac, a DAW that opens the audio interface may change its sample rate.
    tail is not cut at the end of the last note (extend the render by 3 s if the host asks for a tail length).
 8. **Sample rates.** Switch the project between 44.1, 48 and 96 kHz while it plays: the pitch stays right, no noise.
 
-Hosts on the maintainer's Mac (2026-11): one DAW with VST3 and AU (no CLAP) and one with AU only. Other hosts
-are not installed there; the list above is the same for them (a host with CLAP support loads the CLAP from its
-plug-in preferences).
+Hosts on the maintainer's Mac (2026-11): two DAWs, one that loads VST3 and AU (no CLAP support) and one that loads
+AU only (its version predates VST3 and CLAP support). The list above is the same in any other host; a host with
+CLAP support may need CLAP enabled in its plug-in preferences first.
 
 ## Layout
 

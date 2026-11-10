@@ -12,7 +12,13 @@ click detector on every tap (and on the USB-C audio with --usb).
 Slots above N are emptied for a run (synth:module ""), slots 1..N get "frodhes". Another module in any slot stops the
 run before anything changes (emptying it loses its sound: a re-pick starts on the module's defaults and Schwung saves
 that over the set), unless --take-slots (empties them) or --keep-others (leaves them as they are, idle, and runs the
-instances in the free slots only; the free slots end empty again but for slot 1)."""
+instances in the free slots only). At the end, also after a failure, ctrl-C or SIGTERM, every slot the run changed
+gets its module back, and a slot that held Frodhes its parameters (move_hil.state_restore).
+
+Every write to Schwung is paced: a module change waits for the slot_info that confirms it, and a write the manager
+refuses with "web param set ring full" (its set ring: 32 entries, one a frame) is sent again after a growing pause
+(RING_BACKOFF_S); a take's upload that hits it is uploaded again whole (the 0.9.9 run, 2026-11-08: the third slot's
+upload hit the ring, the other two broke on the barrier, and Frodhes stayed in slots 3-4)."""
 import argparse
 import json
 import os
@@ -111,14 +117,152 @@ def rss_kb():
 def slot_modules(w):
     m = {}
     for s in range(4):
-        st = w.subscribe(s)
+        w.subscribe(s)
         m[s] = (w.info.get(s) or {}).get("synth", "")
     return m
 
 
-def set_module(w, s, mod, wait=5.0):
-    w.set_param(s, "synth:module", mod)
-    w.pump(wait)
+RING_BACKOFF_S = (0.3, 0.6, 1.2, 2.4, 4.8)     # the pauses before each new try after "ring full"
+
+
+def ring_full(e):
+    return isinstance(e, move_ws.SchwungError) and "ring full" in str(e)
+
+
+def paced(fn, sleep=time.sleep, backoff=RING_BACKOFF_S, log=None):
+    """fn() again after each pause in backoff while the manager answers "ring full"; any other error, or the last
+    try's ring full, is raised"""
+    for k in range(len(backoff) + 1):
+        try:
+            return fn()
+        except move_ws.SchwungError as e:
+            if not ring_full(e) or k == len(backoff):
+                raise
+            if log is not None:
+                log.append("ring full: try %d after %.1f s" % (k + 2, backoff[k]))
+            sleep(backoff[k])
+
+
+def set_module(w, s, mod, wait=8.0, settle=0.5, sleep=time.sleep, log=None):
+    """slot s to module mod ("" empties it): written, then the slot_info that confirms it awaited (up to wait s), then
+    settle s for the manager's re-read; "ring full" paced. True when Schwung confirmed it"""
+    def once():
+        w.subscribe(s)
+        if (w.info.get(s) or {}).get("synth", "") == mod:
+            return True
+        w.set_param(s, "synth:module", mod)
+        try:
+            w.until(lambda r: (r.info.get(s) or {}).get("synth", "") == mod, wait)
+        except TimeoutError:
+            return False
+        w.pump(settle)
+        return True
+    return paced(once, sleep=sleep, log=log)
+
+
+class Slots:
+    """with Slots(url, slots) as ks: the modules of slots (and the parameters of those holding Frodhes) read first,
+    put back at the end: on an exception, ctrl-C, SIGTERM (raised as SystemExit) and at interpreter exit (atexit)
+    if the block never ended. ks.report: {"verdict", "modules", "params"} once restored. remote / state_read /
+    state_restore: injectable (tests)"""
+
+    def __init__(self, url, slots, remote=None, state_read=None, state_restore=None, sleep=time.sleep):
+        self.url, self.slots, self.report, self.before, self.state = url, list(slots), None, None, {}
+        self.remote = remote or (lambda: move_ws.Remote(url))
+        self.state_read = state_read or mh.state_read
+        self.state_restore = state_restore or mh.state_restore
+        self.sleep = sleep
+
+    def __enter__(self):
+        import atexit
+        import signal
+        with self.remote() as w:
+            mods = slot_modules(w)
+        self.before = {s: mods.get(s, "") for s in self.slots}
+        for s, m in self.before.items():
+            if m == "frodhes":
+                self.state[s] = self.state_read(self.url, s)
+        atexit.register(self.restore)
+        self._sig = None
+        try:
+            self._sig = signal.signal(signal.SIGTERM, self._term)
+        except ValueError:                           # (not the main thread)
+            pass
+        return self
+
+    @staticmethod
+    def _term(signum, frame):
+        raise SystemExit(128 + signum)
+
+    def restore(self):
+        if self.report is not None or self.before is None:
+            return self.report
+        bad, log, params = [], [], {}
+        try:
+            with self.remote() as w:
+                now = slot_modules(w)
+                for s, m in sorted(self.before.items()):
+                    if now.get(s, "") != m and not set_module(w, s, m, sleep=self.sleep, log=log):
+                        bad.append("slot %d: %r, not %r" % (s + 1, now.get(s, ""), m))
+                now = slot_modules(w)
+            for s, st in sorted(self.state.items()):
+                if now.get(s) != "frodhes":
+                    continue
+                written, diff = paced(lambda: self.state_restore(self.url, s, st), sleep=self.sleep, log=log)
+                params[s + 1] = {"written": len(written), "differ": sorted(diff)}
+                if diff:
+                    bad.append("slot %d: %d param(s) differ (%s)" % (s + 1, len(diff), ", ".join(sorted(diff)[:6])))
+        except Exception as e:                       # (Schwung gone: say so loudly, never pass)
+            bad.append("not restored: %s: %s" % (type(e).__name__, e))
+        self.report = {"verdict": "PASS" if not bad else "FAIL: " + "; ".join(bad),
+                       "modules": {s + 1: m for s, m in self.before.items()}, "params": params, "paced": log}
+        print("slots: " + self.report["verdict"], flush=True)
+        return self.report
+
+    def __exit__(self, *exc):
+        import atexit
+        import signal
+        try:
+            self.restore()
+        finally:
+            atexit.unregister(self.restore)
+            if self._sig is not None:
+                try:
+                    signal.signal(signal.SIGTERM, self._sig)
+                except ValueError:
+                    pass
+        return False
+
+
+def paced_play(remote, up, bar, sleep=time.sleep, backoff=RING_BACKOFF_S, log=None):
+    """remote.play with the uploads one at a time (the manager's set ring), paced: a "ring full" during an upload
+    uploads the take again whole after a pause ("begin" starts it over); then every "go" together (bar: a
+    threading.Barrier; an upload that fails for good aborts it, so no slot waits on it)"""
+    orig_set = remote.set_param
+
+    def play(slot, take, dur_ms, events, lead_ms=100, pace=0.025):
+        with up:
+            def no_go(sl, key, value):
+                if key.endswith(":dev_play") and str(value).startswith("go"):
+                    return
+                orig_set(sl, key, value)
+
+            def upload():
+                remote.set_param = no_go
+                try:
+                    move_ws.Remote.play(remote, slot, take, dur_ms, events, lead_ms, pace)
+                finally:
+                    remote.set_param = orig_set
+                remote.pump(0.5)
+            try:
+                paced(upload, sleep=sleep, backoff=backoff, log=log)
+            except Exception:
+                bar.abort()
+                raise
+        bar.wait()
+        paced(lambda: (orig_set(slot, "synth:dev_play", "go %d" % int(lead_ms)), remote.pump(0.2)),
+              sleep=sleep, backoff=backoff, log=log)
+    remote.play = play
 
 
 JS = {}
@@ -150,10 +294,15 @@ def run_n(n, secs, outdir, seed=1):
     with move_ws.Remote(URL) as w:
         t0 = time.time()
         rss0 = rss_kb()
+        paced_log, unconfirmed = [], []
         for s in FREE:
             on = s in SLOTS[:n]
-            set_module(w, s, "frodhes" if on else "", 6.0 if on else 2.0)
+            if not set_module(w, s, "frodhes" if on else "", 12.0 if on else 4.0, log=paced_log):
+                unconfirmed.append(s + 1)
+        if unconfirmed:
+            raise RuntimeError("Schwung never confirmed the module of slot(s) %s" % unconfirmed)
         res["load_s"] = round(time.time() - t0, 1)
+        res["paced"] = paced_log
         res["rss_kb"] = rss_kb()
         res["rss0_kb"] = rss0
         res["inst"] = ssh("ls -d %s/*/ 2>/dev/null; cat %s/*/load.txt 2>/dev/null" % (INST, INST)).decode()
@@ -167,8 +316,8 @@ def run_n(n, secs, outdir, seed=1):
         r._send("cc", 120, 0)
         for c, v in ccs:
             r._send("cc", c, v)
-        r._set("synth:dev_cpu_log", 1)
-        r.remote.pump(1.5)                           # (the manager's set ring drains: 32 entries, one a frame)
+        paced(lambda: (r._set("synth:dev_cpu_log", 1), r.remote.pump(1.5)))   # (the manager's set ring drains: 32
+        #                                                                        entries, one a frame)
         ev, dur = hc.worst_events(16, secs, np.random.default_rng(seed + s))
         evs[s] = (sorted(ev, key=lambda e: e[0]), dur)
     perf = Perf()
@@ -189,28 +338,8 @@ def run_n(n, secs, outdir, seed=1):
     up = threading.Lock()
     bar = threading.Barrier(n, timeout=120)          # (a slot whose upload failed never hangs the others)
 
-    def two_phase(remote):
-        """Remote.play with the uploads one at a time (the manager's set ring) and every "go" together"""
-        orig_set = remote.set_param
-
-        def play(slot, take, dur_ms, events, lead_ms=100, pace=0.025):
-            with up:
-                def no_go(sl, key, value):
-                    if key.endswith(":dev_play") and str(value).startswith("go"):
-                        return
-                    orig_set(sl, key, value)
-                remote.set_param = no_go
-                try:
-                    move_ws.Remote.play(remote, slot, take, dur_ms, events, lead_ms, pace)
-                finally:
-                    remote.set_param = orig_set
-                remote.pump(0.5)
-            bar.wait()
-            orig_set(slot, "synth:dev_play", "go %d" % int(lead_ms))
-            remote.pump(0.2)
-        remote.play = play
     for r in rigs:
-        two_phase(r.remote)
+        paced_play(r.remote, up, bar, log=res.setdefault("paced", []))
 
     def play(s):
         try:
@@ -254,7 +383,10 @@ def run_n(n, secs, outdir, seed=1):
     ssh("rm -f /data/UserData/schwung/spi_tally_on")
     log_off(made_log)
     for r in rigs:
-        r._set("synth:dev_cpu_log", 0)
+        try:
+            paced(lambda: r._set("synth:dev_cpu_log", 0))
+        except move_ws.SchwungError as e:            # (the rings are read all the same)
+            print("slot %d: dev_cpu_log 0: %s" % (r.slot + 1, e), flush=True)
     time.sleep(0.6)
     # the callback rings, one an instance
     rings = {}
@@ -294,6 +426,44 @@ def run_n(n, secs, outdir, seed=1):
     return res
 
 
+# The pass bars (the user, 2026-11-02: 16 voices stay, three Frodhes at the worst case guaranteed): one instance within
+# U12's working limit (tools/move_hil.py U12_LIMIT_US); two or three instances each within a third of the 128-frame
+# block (2902 us / 3: ~967 us); four is reported only. REF_1_US: one instance's worst on 0.9.9 (573 us), the reference
+# a new engine is compared with (over it by more than REF_TOL: a regression to explain, not a failure by itself)
+BAR_US = {1: mh.U12_LIMIT_US, 2: 967, 3: 967}
+REF_1_US, REF_TOL = 573, 0.15
+
+
+def verdict(r, n):
+    """(PASS / FAIL / INFO, text) for one run_n result: every instance's ring worst within BAR_US[n], no ring gaps,
+    no Schwung overrun during the loads, no gated click on any tap (or on the USB-C audio)"""
+    rings = r.get("rings") or {}
+    worst = max((s.get("worst", 0) for s in rings.values()), default=None)
+    bad = []
+    if worst is None or len(rings) < n:
+        bad.append("rings: %d of %d instances read" % (len(rings), n))
+    elif n in BAR_US and worst > BAR_US[n]:
+        bad.append("worst %d us > %d us" % (worst, BAR_US[n]))
+    if any(s.get("missing") for s in rings.values()):
+        bad.append("ring gaps")
+    ovr = (r.get("perf") or {}).get("overruns")
+    if ovr:
+        bad.append("%d Schwung overruns" % ovr)
+    clicks = sum(t.get("gated", 0) for t in r.get("takes", [])) + (r.get("usb") or {}).get("gated", 0)
+    if clicks:
+        bad.append("%d gated clicks" % clicks)
+    if any("error" in t for t in r.get("takes", [])):
+        bad.append("a take failed")
+    txt = "n=%d: worst %s us (bar %s us)" % (n, worst, BAR_US.get(n, "none"))
+    if n == 1 and worst:
+        txt += ", %+.0f %% re 0.9.9's %d us%s" % (100.0 * (worst / REF_1_US - 1), REF_1_US,
+                                                  " (over +%d %%: explain)" % (100 * REF_TOL)
+                                                  if worst > REF_1_US * (1 + REF_TOL) else "")
+    if n not in BAR_US:
+        return "INFO", txt + ("; " + "; ".join(bad) if bad else "")
+    return ("FAIL" if bad else "PASS"), txt + ("; " + "; ".join(bad) if bad else "")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, nargs="+", default=[1, 2, 3, 4])
@@ -320,13 +490,27 @@ def main():
         elif other and not a.take_slots:
             sys.exit("move_multi_cpu: slots %s hold %s; the run would empty them. Load a test set, or --take-slots"
                      % (", ".join(map(str, other)), ", ".join(sorted(set(other.values())))))
-        for n in a.n:
-            r = run_n(n, a.secs, out)
-            print(json.dumps(r, indent=1, default=str), flush=True)
-            allr.append(r)
-            json.dump(allr, open(os.path.join(out, "report.json"), "w"), indent=1, default=str)
+        with Slots(URL, FREE) as ks:                 # (every slot the run may change: as it was, also on a crash)
+            for n in a.n:
+                try:
+                    r = run_n(n, a.secs, out)
+                except Exception as e:               # (the report keeps what ran; the slots are restored below)
+                    r = {"n": n, "error": "%s: %s" % (type(e).__name__, e)}
+                    print("n %d: %s" % (n, r["error"]), flush=True)
+                print(json.dumps(r, indent=1, default=str), flush=True)
+                allr.append(r)
+                json.dump(allr, open(os.path.join(out, "report.json"), "w"), indent=1, default=str)
+        allr.append({"slots_restored": ks.report})
+        json.dump(allr, open(os.path.join(out, "report.json"), "w"), indent=1, default=str)
     print("report:", os.path.join(out, "report.json"))
+    vs = [verdict(r, n) for r, n in zip(allr, a.n)]   # (an "error" run has no rings: FAIL)
+    for v, txt in vs:
+        print("%-4s %s" % (v, txt))
+    if ks.report["verdict"] != "PASS":
+        print("FAIL the slots not restored: %s" % json.dumps(ks.report, default=str))
+        return 1
+    return 1 if any(v == "FAIL" for v, _ in vs) else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
