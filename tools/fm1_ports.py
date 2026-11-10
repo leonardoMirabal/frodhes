@@ -43,12 +43,15 @@ NEVER = ("textura",)                         # another unit's firmware: never op
 
 FORCED = os.environ.get("FM1_PORT") or None  # force(); FM1_PORT=NAME does the same for every tool
 AUDIO_LOC = int(os.environ["FM1_LOCATION"], 0) if os.environ.get("FM1_LOCATION") else None   # pin_audio()
+FORCED_AUDIO = os.environ.get("FM1_AUDIO") or None   # force(): a stale CoreMIDI name's unit, its audio by the USB name
 
 
 def force(name, loc=None, devs=None):
     """only the ports / audio devices whose name contains `name` from now on (None: the usual choice); the unit
     checked on USB first (devs: usb_devices(), for the tests): exactly one device of that name, at loc if given"""
-    global FORCED
+    global FORCED, FORCED_AUDIO
+    FORCED_AUDIO = None
+    os.environ.pop("FM1_AUDIO", None)
     if name:
         devs = usb_devices() if devs is None else devs
         if devs is None:
@@ -61,6 +64,10 @@ def force(name, loc=None, devs=None):
                 if m:
                     print(f"--port {name!r}: no USB device of that name; taken as {m[0][0]!r} at 0x{loc:08x} (every "
                           "other port is matched elsewhere: CoreMIDI keeps the old name)", file=sys.stderr)
+                    # the audio device carries the USB name, not CoreMIDI's: taken by that name, pinned to loc
+                    FORCED_AUDIO = m[0][0]
+                    os.environ["FM1_AUDIO"] = FORCED_AUDIO
+                    pin_audio(loc)
             where = ", ".join(f"{n!r} at 0x{l:08x}" for n, l in m) or "none"
             if len(m) > 1:
                 sys.exit(f"--port {name!r}: {len(m)} USB devices answer to that name ({where}); their MIDI ports "
@@ -294,6 +301,8 @@ def devices(devs, ch=2, keys=PORT_KEYS, ca=None):
     devs = list(devs)
     ok = [i for i, d in enumerate(devs) if d["max_input_channels"] >= ch]
     names = pick([devs[i]["name"] for i in ok], keys)
+    if FORCED_AUDIO:                          # (force(): the unit by exclusion, its audio by its USB name)
+        names = [devs[i]["name"] for i in ok if FORCED_AUDIO.lower() in devs[i]["name"].lower()]
     sel = [i for i in ok if devs[i]["name"] in names]
     if AUDIO_LOC is None and len(sel) < 2:
         return sel
