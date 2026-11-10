@@ -2868,16 +2868,21 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
      * and at the block's end, over the frames not gated yet (gate_done ..): it opens on the block's peak so far (one
      * core: the whole block's), it counts and falls at the block's end. A change decided after the block's first frames
      * went out takes the gain where one core's ramp from the block's start has it (from gate_g0): the same integers from
-     * there on; the frames before (all under -60 dBFS: that is what kept the gate as it was) had the old ramp */
+     * there on; the frames before (all under -60 dBFS: that is what kept the gate as it was) had the old ramp. An
+     * opening decided after frames went out (a note from silence whose first frames stayed under the threshold:
+     * they went out muted) ramps up from the gain those frames had instead: taken from the block's start, the gain
+     * jumped from 0 to full at the frames sent's end, a step of up to the threshold (0.9.11, tests/py/
+     * test_lat_gate_onset.py); one core opens on the whole block's peak, from the block's start. The thresholds are
+     * one core's (GATE_LO_BARS on the bar engines) */
     {
         static int32_t gate_g0;                        /* the gain at the block's first frame */
         static uint32_t gate_done;                     /* the block's frames gated */
-        int32_t t0 = gate_tgt;
+        int32_t t0 = gate_tgt, glo = eng_cur ? GATE_LO_BARS : GATE_LO;
         if (fxc_e != fxc_ce - FR_LAT_TAIL && !FXC_Z) return;
         if (!gate_done) gate_g0 = gate_g;
-        if (pk >= GATE_HI) { gate_quiet = 0; gate_tgt = 32768; }
-        else if (FXC_Z && pk < GATE_LO && ++gate_quiet >= GATE_HOLD) { gate_quiet = GATE_HOLD; gate_tgt = 0; }
-        if (gate_tgt != t0 && gate_done) {
+        if (pk >= glo) { gate_quiet = 0; gate_tgt = 32768; }
+        else if (FXC_Z && ++gate_quiet >= GATE_HOLD) { gate_quiet = GATE_HOLD; gate_tgt = 0; }
+        if (gate_tgt < t0 && gate_done) {
             int32_t g = gate_g0;
             for (j = 0; j < gate_done; j++) {
                 if (g < gate_tgt) g = g + 512 > gate_tgt ? gate_tgt : g + 512;
