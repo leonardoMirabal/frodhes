@@ -39,7 +39,12 @@ image() {
 }
 in_docker() {   # a command in the container, the repo and the dependencies at their own paths
     "${LOCKRUN[@]}" "${CPUQ[@]}" nice -n 15 docker run --rm --platform "$PLAT" -v "$ROOT:$ROOT" \
-        -v "$LOCAL/plugin-deps:$LOCAL/plugin-deps:ro" -w "$ROOT" "$IMG" bash -c "$1"
+        -v "$LOCAL/plugin-deps:$LOCAL/plugin-deps:ro" -w "$ROOT" "$IMG" \
+        bash -c "git config --global --add safe.directory '*'; $1"
+    # (safe.directory: the container runs as root over a checkout another user owns (the CI runner's uid 1001; on
+    # macOS Docker Desktop maps the owner, so this never showed there), and focal's git (2.25.1 with the 2022
+    # ownership check) then refuses it: plugin/cmake/deps.cmake's "git -C <dep> rev-parse HEAD" read '' and stopped
+    # the configure, the 2026-11-10 linux aarch64 job)
 }
 
 build() {
