@@ -183,7 +183,8 @@ def test_docs_step_writes_the_notes_and_removes_the_fragments(tree, monkeypatch)
     assert "git rm -q docs/changes/a-other.md docs/changes/b-thing.md" in calls
     assert "git add docs/releases/v0.9.3.md" in calls and any(c.startswith("git commit") for c in calls)
     assert not [c for c in calls if c.startswith("git add") and ("README" in c or "MANUAL" in c)]   # nothing bumped
-    assert "doc_links: README.md / docs/MANUAL.md / docs/MOVE.md / docs/MOVE-DEV.md / docs/SMK37.md, 0 problem(s)" in ev
+    assert "doc_links: %s, 0 problem(s)" % " / ".join(rel.doc_links.DOCS) in ev   # (the list: doc_links.DOCS)
+    assert "docs/PLUGIN.md" in rel.doc_links.DOCS
 
 
 def test_docs_step_refuses_stale_links_and_the_next_version(tree, monkeypatch):
