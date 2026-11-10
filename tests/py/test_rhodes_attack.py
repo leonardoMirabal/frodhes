@@ -2,11 +2,11 @@
 """The attack's lift (rhodes.c RH_ATK_A, 2026-11-09). The user heard the 0.9.10 Rhodes weak: its longer mid / upper
 decay, level-matched to 0.9.9, left the first 60 ms of every note 0.9 .. 1.4 dB under 0.9.9 (tools/fx_level_audit.py
 --cmp). The voice's output gain now starts x (1 + RH_ATK_A / 32768) (+1.5 dB) and returns to 1 over ~0.2 s, after the
-pickup, so the tone is the same; up to v96, then less, none at v127 (the user: no hotter signal: the hardest chords'
+pickup, so the tone is the same (stage 2: RH_ATK_A 1000, +0.26 dB); up to v96, then less, none at v127 (the user: no hotter signal: the hardest chords'
 peak stays rc3's). Against a build without it (-DRH_ATK_A=0), the electric piano with the effects off:
 
-- the attack (RMS 0..60 ms) +0.7 .. +1.6 dB on C2 / C4 / C6 / a 4-note chord at v40 / v80 (0.8 .. 0.9 measured),
-  +0.3 .. +1.0 at v110, every TYPE; v127 byte-identical;
+- the attack (RMS 0..60 ms) +0.1 .. +0.3 dB on C2 / C4 / C6 / a 4-note chord at v40 / v80 (stage 2: 0.14 measured;
+  at 6200 0.8 .. 0.9), +0.04 .. +0.2 at v110 (0.08), every TYPE; v127 byte-identical;
 - from 300 ms on the same level (0.15 dB): only the strike is lifted;
 - the tine's harmonics: the gain is the pickup's output gain (linear); the mechanical noises (the knock) are not
   lifted, so a band ratio in the strike's own window moves where the knock dominates it: the dry-distortion gate
@@ -54,7 +54,8 @@ def test_attack_lifted_body_same(nm, ns, v, ty):
         return
     d0 = rms_db(a, 0, 0.06) - rms_db(b, 0, 0.06)
     d1 = rms_db(a, 0.3, 1.4) - rms_db(b, 0.3, 1.4)
-    lo, hi = (0.3, 1.0) if v > 96 else (0.7, 1.6)
+    lo, hi = (0.04, 0.2) if v > 96 else (0.1, 0.3)     # THRESHOLD (0.3, 1.0) / (0.7, 1.6) -> (0.04, 0.2) / (0.1, 0.3):
+    # RH_ATK_A 6200 -> 1000 (stage 2, the coordinator 2026-11-10: the provisional pristine cells under their ceilings)
     assert lo <= d0 <= hi, f"{nm} v{v} TYPE {ty}: attack {d0:+.2f} dB re no lift"
     assert abs(d1) <= 0.15, f"{nm} v{v} TYPE {ty}: 0.3..1.4 s {d1:+.2f} dB re no lift"
 

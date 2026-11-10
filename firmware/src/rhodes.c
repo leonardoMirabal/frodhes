@@ -556,7 +556,10 @@ static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /
  * RH_ATK_V, then less to none at v127: the hardest chords' peak stays where it was (the user: "loudness no need to be
  * a hotter signal") */
 #ifndef RH_ATK_A
-#define RH_ATK_A 6200u                                  /* +1.5 dB */
+#define RH_ATK_A 1000u                                  /* +0.26 dB (6200, +1.5 dB, until stage 2: the provisional
+                                                         * pristine cells, the low keys' H4..H6 through the effects and
+                                                         * DECAY0's k93 H2, back under their ceilings; the coordinator
+                                                         * 2026-11-10) */
 #endif
 #define RH_ATK_V 96u
 
