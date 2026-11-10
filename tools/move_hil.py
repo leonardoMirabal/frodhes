@@ -1642,6 +1642,65 @@ TUNE_MEASURED_MIN_C = 2.0  # usb-host: with the slot's TUNE unknown (no WebSocke
 TUNE_LEFT_C = 3.0          # ... and a pitch offset still this large after the host's TUNE is named in the verdict
 
 
+# usb-host, TAPE (DELAY TAPE with DEPTH > 0): its wow and flutter (fx.c, ~0.7 Hz and ~7 Hz) restart at CC 10, so the
+# echoes depend on how long after CC 10 a note lands, and MIDI over USB plus the Move's own blocks move that by a few
+# ms: the host's own TAPE renders with the notes one or two blocks later differ by -16 .. -22 dB residual (up to the
+# device's -22.8 .. -32 dB, 663 LSB, 2026-11-10), where DIG, the reverb and DEPTH 0 stay exact (-53 dB and under).
+# Such a note is judged on its level and its critical-band spectrum against the host's, not on the sample residual.
+# THRESHOLD (2026-11-10, coordinator): TAPE notes within TAPE_LEVEL_DB in level and TAPE_CB_DB in every critical band
+# (bands within TAPE_CB_RANGE_DB of the note's loudest) in place of the -40 dB residual; reason: the residual reads the
+# wow's phase, not the sound. The host's shifted renders: level <= 0.25 dB, bands <= 1.02 dB (F12, F14, F17, F19)
+TAPE_LEVEL_DB = 0.5
+TAPE_CB_DB = 1.5
+TAPE_CB_RANGE_DB = 50.0
+CB_EDGES = (20, 100, 200, 300, 400, 510, 630, 770, 920, 1080, 1270, 1480, 1720, 2000, 2320, 2700, 3150, 3700, 4400,
+            5300, 6400, 7700, 9500, 12000, 15500, 20000)    # (the critical bands' edges, Hz: tools/engine_ab.py's)
+TAPE_CC_SW, TAPE_CC_DEPTH = 88, 89                          # (DELAY's type and DEPTH; type: 0..127 over OFF DIG ANA TAPE)
+
+
+def program_preset(program):
+    """the factory preset a program change loads (presets.c preset_of_pc): 0..15 F01..F16, 32.. F17..; else None"""
+    if 0 <= program < 16:
+        return program + 1
+    return program - 32 + 17 if program >= 32 else None
+
+
+def take_tape(program, after=()):
+    """True when the take plays DELAY TAPE with DEPTH > 0: the preset's record (F01..F19 presets.c's, F20.. the Move's
+    variants, move/presets/proposed_records.txt), then the CCs the take sends after the program change (after)"""
+    import gen_move_presets as gp
+    f = program_preset(program)
+    if f is None:
+        return False
+    key = ("F%02d" % f, "A") if f < gp.FIRST else ("F%02d" % ((f - gp.FIRST) // 2 + 1), "BC"[(f - gp.FIRST) % 2])
+    rec = gp.records().get(key)
+    if rec is None:
+        return False
+    p = {n: v for n, _, v in rec[1]}
+    sw, dp = p.get("P_DL_SW", 0), p.get("P_DL_DEPTH", 0)
+    for cc, v in after:
+        if cc == TAPE_CC_SW:
+            sw = v * 4 // 128
+        elif cc == TAPE_CC_DEPTH:
+            dp = v
+    return sw == 3 and dp > 0
+
+
+def cb_levels(x, sr):
+    """x's power per critical band (dB, Hann window over the whole of x)"""
+    X = np.abs(np.fft.rfft(np.asarray(x, float) * np.hanning(len(x)))) ** 2
+    f = np.fft.rfftfreq(len(x), 1 / sr)
+    return np.array([10 * np.log10(X[(f >= lo) & (f < hi)].sum() + 1e-30) for lo, hi in zip(CB_EDGES[:-1], CB_EDGES[1:])])
+
+
+def tape_judge(mm, ghm, sr):
+    """(level dB, the largest critical-band difference dB) of the take's note against the host's (after the gain)"""
+    lv = 10 * np.log10((float(np.mean(mm ** 2)) + 1e-18) / (float(np.mean(ghm ** 2)) + 1e-18))
+    cm, ch = cb_levels(mm, sr), cb_levels(ghm, sr)
+    keep = ch > ch.max() - TAPE_CB_RANGE_DB
+    return float(lv), float(np.abs(cm - ch)[keep].max())
+
+
 def pitch_offset_c(mv, h, marks, sr):
     """the Move's pitch against the host's (cents, the median over the notes' steady part, 0.25-0.75 s: no alignment
     needed, the lag is a few ms), None when no note gives both"""
@@ -1705,6 +1764,7 @@ def usb_host(r, d, program=0, out=print, motor_off=False):
         h = host_phrase(ev, dur, program, hq, GLOBAL_CCS, after, tune=tune)
     left_c = pitch_offset_c(mv, h, marks, sr)
     _save(d, "host-phrase", {"x": h, "sr": 44100})
+    tape = take_tape(program, after)
     rows, segs = [], []
     maxlag = int(0.08 * sr)
     for name, t, n in marks:
@@ -1761,6 +1821,9 @@ def usb_host(r, d, program=0, out=print, motor_off=False):
                      "f0_host_c": round(1200 * np.log2(fh / note_hz(n)), 2) if fh else None,
                      "decay_move_s": _decay_s(mm, sr), "decay_host_s": _decay_s(hm, sr),
                      "centroid_move": round(_centroid(mm[st], sr)), "centroid_host": round(_centroid(hm[st], sr))})
+        if tape:                                 # (TAPE: level and spectrum over the held second, not the residual)
+            lv, cbd = tape_judge(mm[held], g * hm[held], sr)
+            rows[-1].update(tape=True, level_db=round(lv, 2), cb_max_db=round(cbd, 2))
     classic_db, classic_res_db = None, None
     if hq != 0:                                  # (HQ, the load's or asked: the take must not be Classic where only HQ
         c = host_phrase(ev, dur, program, 0, GLOBAL_CCS, after, tune=tune)    # differs)
@@ -1799,8 +1862,11 @@ def usb_host(r, d, program=0, out=print, motor_off=False):
            "tune": tune, "tune_source": tune_src, "pitch_left_c": left_c}
     if locked:
         rep["held"] = {k: v for k, (_, v) in locked.items()}
-    bad = [w["note"] for w in rows if w["residual_net_db"] > -40 and w["judged"]]
-    extra = [w["note"] for w in rows if w["extra_db"] > -30]
+    bad = [w["note"] for w in rows if w["residual_net_db"] > -40 and w["judged"] and not w.get("tape")]
+    extra = [w["note"] for w in rows if w["extra_db"] > -30 and not w.get("tape")]
+    bad_tape = [w["note"] for w in rows if w.get("tape") and w["judged"] and
+                (abs(w["level_db"]) > TAPE_LEVEL_DB or w["cb_max_db"] > TAPE_CB_DB)]
+    rep["tape"] = bool(tape)
     again = ["%s +%s ms" % (w["note"], "/".join(str(t) for t in w["again_ms"])) for w in rows if w["again_ms"]]
     classic = False
     if hq != 0:
@@ -1820,7 +1886,12 @@ def usb_host(r, d, program=0, out=print, motor_off=False):
                       "STRUCK AGAIN: %s (a note the host strikes once comes again while it is held: the "
                       "arpeggiator or chord mode on (a build without MB_CC_DROP), or the schedule played twice)" % ", ".join(again)
                       if again else
-                      "PASS: the host's sound (one gain %.2f dB)" % rep["gain_db"] if not bad and not extra else
+                      "DIFFERS (TAPE) at %s (level over %.1f dB or a critical band over %.1f dB: TAPE is judged on "
+                      "its level and spectrum, its wow's phase moves the residual)" % (bad_tape, TAPE_LEVEL_DB, TAPE_CB_DB)
+                      if bad_tape else
+                      "PASS: the host's sound (one gain %.2f dB%s)" % (
+                          rep["gain_db"], "; TAPE: level and spectrum, not the residual" if tape else "")
+                      if not bad and not extra else
                       "DIFFERS at %s (residual over -40 dB after one gain, 0.5-1.0 s into the note)" % bad if bad else
                       "FRODHES = the host (tails), but ANOTHER SOUND plays with the keys at %s (a Move instrument "
                       "on the track, or another slot): silence it and rerun" % extra)
@@ -1846,7 +1917,7 @@ def usb_host(r, d, program=0, out=print, motor_off=False):
                 w["f0_move_c"] or 0, w["f0_host_c"] or 0, w["decay_move_s"], w["decay_host_s"],
                 w["centroid_move"], w["centroid_host"]))
     out(rep["verdict"])
-    return not bad and not extra and not again and not classic, rep
+    return not bad and not extra and not bad_tape and not again and not classic, rep
 
 
 def usb_host_file(d, out=print, tune=None, program=None):

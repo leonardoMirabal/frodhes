@@ -680,3 +680,64 @@ def test_d2_vibes_usb_host_motor_off(tmp_path):
     host = next(w for w in rep["rows"] if w["test"] == "usb-host")
     assert code == 0 and host["report"]["motor_off"] and "motor off" in host["numbers"], host
     assert "Slot TUNE: not read" in open(tmp_path / "summary.md").read()
+
+
+def test_take_tape_reads_the_preset_and_the_ccs():
+    """usb-host's TAPE switch: the preset a program change loads (F12 LUSH CHO, F14 VIBES ECHO, F17 TAPE ECHO, F19 WARM
+    DRIVE and the Move's TAPE variants play DELAY TAPE), then the take's own CCs (88 the type, 89 DEPTH)"""
+    assert mh.program_preset(0) == 1 and mh.program_preset(15) == 16 and mh.program_preset(32) == 17
+    assert mh.program_preset(20) is None                   # (U05: a user slot, no factory record)
+    assert [pc for pc in range(16) if mh.take_tape(pc)] == [11, 13]
+    assert mh.take_tape(32) and not mh.take_tape(33) and mh.take_tape(34)
+    assert mh.take_tape(0, [(88, 127), (89, 64)]) and not mh.take_tape(32, [(89, 0)])
+    assert not mh.take_tape(32, [(88, 40)])                # (DIG)
+
+
+class _Shifted(mh.FakeRig):
+    """the Move as the host build plays it with every note shift s later after CC 10 (MIDI over USB and the Move's
+    blocks: the 2026-11-10 TAPE study), through half the volume and 300 frames of latency; scale: one note's level"""
+    def __init__(self, program, shift, scale=None):
+        super().__init__()
+        self.program, self.shift, self.scale = program, shift, scale
+
+    def rec(self, dur, events):
+        ev = [(t + (self.shift if k != "cc" else 0.0), k, a, b) for t, k, a, b in events]
+        h = mh.host_phrase(ev, dur, self.program, None, mh.GLOBAL_CCS)
+        if self.scale:
+            name, db = self.scale
+            _, marks, _ = mh.phrase_events()
+            t = next(t for nm, t, _ in marks if nm == name) + self.shift
+            a, b = int(t * 44100), int((t + mh.NOTE_S) * 44100)
+            h[a:b] *= 10 ** (db / 20)
+        x = np.zeros_like(h)
+        x[300:] = 0.5 * h[:-300]
+        return {"x": np.round(x), "sr": 44100, "xruns": []}
+
+
+def test_usb_host_judges_tape_on_level_and_spectrum(tmp_path):
+    """F17 TAPE ECHO with the notes one and two blocks later after CC 10 than the host plays them: the residual reads
+    the wow's phase (over -40 dB on some note), so TAPE is judged on level and critical bands and passes; a note 1 dB
+    down fails it; DIG at the same shift (F01 with DELAY DIG) stays on the residual and passes"""
+    for sh in (256 / 44100, 512 / 44100):
+        ok, rep = mh.usb_host(_Shifted(32, sh), str(tmp_path / ("t%d" % int(sh * 1e5))), program=32, out=lambda s: None)
+        assert rep["tape"] and ok, rep["verdict"]
+        assert "TAPE: level and spectrum" in rep["verdict"]
+        assert any(w["residual_net_db"] > -40 for w in rep["rows"] if w["judged"]), "the residual alone would pass"
+        assert all(abs(w["level_db"]) <= mh.TAPE_LEVEL_DB and w["cb_max_db"] <= mh.TAPE_CB_DB for w in rep["rows"])
+    ok, rep = mh.usb_host(_Shifted(32, 256 / 44100, ("60 v100", -1.0)), str(tmp_path / "low"), program=32,
+                          out=lambda s: None)
+    assert not ok and rep["verdict"].startswith("DIFFERS (TAPE)") and "60 v100" in rep["verdict"], rep["verdict"]
+
+
+def test_usb_host_dig_stays_on_the_residual(tmp_path):
+    """DELAY DIG at DEPTH 64 (no wow) on F15 MARIMBA (no LFO effect on): the same one-block shift is exact after the
+    alignment, so DIG stays on the residual and passes"""
+    orig = mh.phrase_events
+    dig = [(0.06, "cc", 88, 40), (0.06, "cc", 89, 64)]
+    try:
+        mh.phrase_events = lambda t0=0.4: (lambda e: (e[0][:1] + dig + e[0][1:], e[1], e[2]))(orig(t0))
+        ok, rep = mh.usb_host(_Shifted(14, 256 / 44100), str(tmp_path / "dig"), program=14, out=lambda s: None)
+    finally:
+        mh.phrase_events = orig
+    assert not rep["tape"] and ok, rep["verdict"]
+    assert all(w["residual_net_db"] <= -40 for w in rep["rows"] if w["judged"])
