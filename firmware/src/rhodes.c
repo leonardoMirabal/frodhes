@@ -1866,7 +1866,7 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
             if (v->m[m].live) sum += fnz ? FR_FAR(rh_mode_f)(&v->m[m]) : FR_FAR(rh_mode_p)(&v->m[m]);
     }
 #ifdef FR_HQ
-    if (hq_v[v - rv].os) Hp = hq_pickup(v, mix, side, Hp); else
+    if (hq_v[v - rv].os) Hp = hq_pickup(v, mix, side, Hp, gain); else   /* (gain: with the lift) */
 #endif
     if (v->fade == 32768) {                               /* pickup, then the per-key gain into the mix: no steal fade
                                                            * (only this loop changes it in a render: the test below would

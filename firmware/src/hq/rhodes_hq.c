@@ -222,12 +222,13 @@ static inline int32_t hq_round(float x) { HQ_FP_STRICT return (int32_t)(x >= 0.0
 
 /* the pickup at 2x for one 32-sample sub-block: rh_x (the tip, in gaps) up, through the flux (hq_dphi), down, the
  * difference times the key's gain into mix; the steal fade and the stereo position as rhodes.c's pickup loops. Hp
- * (the Classic loop's last flux) is passed through: this path keeps its own */
-static int32_t hq_pickup(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t Hp)
+ * (the Classic loop's last flux) is passed through: this path keeps its own. gain: the Classic loops' (v->gain with
+ * the attack's lift, rh_voice_sub), so the two paths carry the same envelope */
+static int32_t hq_pickup(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t Hp, int32_t gain)
 {
     HQ_FP_STRICT
     hq_voice_t *h = &hq_v[v - rv];
-    const float gs = (float)v->gain * (1.0f / 16777216.0f) * HQ_PU_K[v->k->fam & 1u];   /* (Classic: (dH gain) >> 24,
+    const float gs = (float)gain * (1.0f / 16777216.0f) * HQ_PU_K[v->k->fam & 1u];   /* (Classic: (dH gain) >> 24,
                                                 * H in the table's Q28 / A) */
     int32_t pan = v->pan;
     float a[SUB], p[SUB], *xb = h->xb, *eb = h->eb, *ob = h->ob, pp = h->pprev;
