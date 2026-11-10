@@ -66,7 +66,7 @@ Safari and Firefox cannot install, because they cannot send SysEx. Use Chrome or
 **One core or two.** The release has two packages for the FM-1. `frodhes.fwsc` (the default, the one the page
 installs) runs everything on one of the chip's two processor cores and plays 10 voices. `frodhes-c1.fwsc` runs the
 voices on one core and the effects on the other: 14 voices on every instrument, and the reverb types at the full
-sample rate (as on the Move), with the sound 5.8 ms later. Everything else is the same: the pages, the presets, your
+sample rate (as on the Move), with no added delay. Everything else is the same: the pages, the presets, your
 settings and pattern. Install `frodhes-c1.fwsc` from a terminal (see [Updating](#updating)); you can switch between
 the two at any time.
 

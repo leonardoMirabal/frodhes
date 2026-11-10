@@ -147,7 +147,7 @@ def assemble(ver, frags, root=ROOT, move=True, c1=False, plugin=False):
     if c1:
         install += ("\n\n**FM-1, two cores**: `frodhes-c1.fwsc` below, installed from a terminal (`python3 tools/fm1_install.py "
                     "frodhes-c1.fwsc`), plays 14 voices (the "
-                    "voices on one core, the effects on the other; the sound 5.8 ms later). Install either image over "
+                    "voices on one core, the effects on the other, with no added delay). Install either image over "
                     "the other at any time; your settings, presets and pattern are kept.")
     if plugin:
         install += ("\n\n**Computer (plugin)**: `frodhes-plugin-macos.pkg` (or `frodhes-plugin-macos.zip`), "

@@ -55,7 +55,7 @@ What is new in each version: [the release notes](https://github.com/leonardoMira
 **One core or two.** `frodhes.fwsc` plays 10 voices on one of the FM-1's two processor cores. The release also has
 [`frodhes-c1.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-c1.fwsc), which runs
 the voices on one core and the effects on the other: 14 voices on every instrument, and the reverb at the full sample
-rate, with the sound 5.8 ms later. Install it from a terminal (`python3 tools/fm1_install.py frodhes-c1.fwsc`; the emulator page installs `frodhes.fwsc`). You can switch between the two at any time; your
+rate, with no added delay. Install it from a terminal (`python3 tools/fm1_install.py frodhes-c1.fwsc`; the emulator page installs `frodhes.fwsc`). You can switch between the two at any time; your
 settings, presets and pattern stay.
 
 Your settings and presets stay when you update. 0.9.10 changes the factory presets and some of their program numbers
