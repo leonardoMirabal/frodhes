@@ -334,7 +334,7 @@ emulator has no velocity: its keys play at KEY VEL.
 
 ### COMPRESSOR
 
-![COMPRESSOR](manual/img/comp.png?v=ecce6ad9)
+![COMPRESSOR](manual/img/comp.png?v=672989af)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -724,7 +724,7 @@ DRIVE, FILTER, DELAY and REVERB.
 
 ### SETUP
 
-![SETUP](manual/img/setup.png?v=06d50ce1)
+![SETUP](manual/img/setup.png?v=b10197f2)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -943,7 +943,7 @@ MARIMBA (0–95 VIBES); Program Change 14 / 15 loads F15 / F16. **Polyphony:** 1
 
 ## 6. Presets
 
-![Browsing presets](manual/img/browse.png?v=bc223d49)
+![Browsing presets](manual/img/browse.png?v=041a80be)
 
 Turn **PRESETS** to browse: **F01–F19** are the factory sounds (F13 and F14 are VIBES, F15 and F16 MARIMBA), **U01–U16** your own, after F19. A preset loads when you stop
 turning (after 0.4 s). If you did not mean to, **hold SAVE** (0.7 s) to go back to the sound you had before the
@@ -1022,7 +1022,7 @@ The first save writes them to the FM-1 with your preset; from then on they are u
 again to store it, or **HOME** (or **OCT−**) to cancel. The name is made from the type and the effects that are on
 ("SUIT TRM PHA").
 
-![Save mode](manual/img/save.png?v=c0afb277)
+![Save mode](manual/img/save.png?v=1972b9b8)
 
 The save waits for silence: the bottom line says **SAVING...** until the sound has died away, then **SAVED**. INFINITE's SUSTAIN and FREEZE hold their tail without end, so while one of them is on the save waits and the bottom line says **SAVE WAITS: SUSTAIN ON** or **SAVE WAITS: FREEZE ON**; turn DECAY down (or change the type, or switch the reverb OFF), let the tail die away, and the save goes through. The settings are saved the same way, once it is quiet. A user
 preset can be overwritten but not deleted, and browsing skips the empty ones. There is no factory reset: F01–F19 are
@@ -1058,7 +1058,7 @@ crossfade), without changing any setting: compare the dry piano with your sound.
 piano's dynamics and level do not change: with the effects' depths at 0, FX on and off sound the same. The header shows **BYP** while they are off. It is not saved, so the FM-1 always starts with the effects
 on.
 
-![FX bypass](manual/img/bypass.png?v=6aec07a2)
+![FX bypass](manual/img/bypass.png?v=7711c5d8)
 
 The order of the chain: **COMP → EQ → DRIVE → FILTER → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter.** The limiter at the
 end keeps even big chords of ten notes from ever clipping.
@@ -1305,7 +1305,7 @@ sound and the pages; the SMK-37 reaches them with its own buttons, its eight kno
 pads, faders and wheels. Its manual has the files, the flash backup to make first, the install, the way back to stock,
 the controls and what differs: **[SMK37.md](SMK37.md)**.
 
-![The FRODHES page on the SMK-37: the cards on K5..K8](manual/img/smk/smk-frodhes.png?v=6a45f016)
+![The FRODHES page on the SMK-37: the cards on K5..K8](manual/img/smk/smk-frodhes.png?v=c80c649f)
 
 ## 16. Appendix: the Ableton Move
 

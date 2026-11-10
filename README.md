@@ -97,7 +97,7 @@ macOS it opens its own window. Download the package for your system from the
 
 **[The user manual](docs/MANUAL.md)**: every page, knob and button, the presets, the effects and the MIDI map.
 
-![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=0fafd02b)
+![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=93a2d41c)
 
 ## Other keyboards
 

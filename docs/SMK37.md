@@ -13,7 +13,7 @@ This page covers only the SMK-37: the files, the install, the way back and the c
 cards do to the sound is the same on every device and is described once, in the [manual](MANUAL.md) (sections 2-14,
 the [pages](MANUAL.md#4-the-pages) in section 4); the SMK-37 reaches them as below ([The controls](#the-controls)).
 
-![The FRODHES page on the SMK-37: TYPE, TONE and BELL on K5..K7](manual/img/smk/smk-frodhes.png?v=6a45f016)
+![The FRODHES page on the SMK-37: TYPE, TONE and BELL on K5..K7](manual/img/smk/smk-frodhes.png?v=c80c649f)
 
 ## The files
 
