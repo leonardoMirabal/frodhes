@@ -86,12 +86,32 @@ def test_sweep_over_fake_run(tmp_path, monkeypatch, fail_at, expect_steps, why):
 
 def test_fault_code_only_in_diag_builds():
     """FR_FAULT (frodhes.c flt_burn, CC 117 / 118) is in no build the tools make: only APP_DEFS=-DFR_FAULT; never on
-    the host"""
+    the host. Core 1's work items 48 / 49 are every two-core build's since 07d68ed3 (no longer FR_FAULT's), so the
+    check is on what the guards hold, not on how many there are: every line outside an FR_FAULT guard's true branch
+    is free of the burn (its table, its CCs, a direct flt_burn call), and FLT_BURN is a no-op there."""
     src = open(os.path.join(ROOT, "firmware", "src", "frodhes.c")).read()
     import re
+    FAULT = "#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)"
     guards = re.findall(r"^#.*FR_FAULT.*$", src, re.M)
-    assert len(guards) >= 5 and all(g in ("#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)",
-                                          "#if !defined(DINGHY_HOST) && !(defined(FR_FAULT) && FR_C1)") for g in guards), guards
+    assert guards and all(g == FAULT for g in guards), guards
+    inside, outside, stack = [], [], []          # stack: per open #if, True while in an FR_FAULT guard's true branch
+    for line in src.splitlines():
+        t = line.strip()
+        if re.match(r"#\s*if", t):
+            stack.append(t == FAULT)
+        elif re.match(r"#\s*(else|elif)", t) and stack:
+            stack[-1] = False
+        elif re.match(r"#\s*endif", t) and stack:
+            stack.pop()
+        (inside if any(stack) else outside).append(line)
+    inside, outside = "\n".join(inside), "\n".join(outside)
+    for k in ("void flt_burn(", "flt_tab[", "static volatile uint8_t flt_c0, flt_c1;", "#define FLT_BURN(k) flt_burn(k)",
+              "if (cc == 117u) { flt_c0", "if (cc == 118u) { flt_c1", "FLT_BURN(flt_c0);"):
+        assert k in inside, k                    # (the burn's pieces all sit inside the guards)
+    assert "flt_burn" in inside and "flt_tab" not in outside and "flt_burn(" not in outside
+    assert "#define FLT_BURN(k) ((void)0)" in outside
+    assert not re.search(r"cc == 11[78]u", outside)
+    assert src.count("FLT_BURN(flt_c0)") == 1 and src.count("FLT_BURN(flt_c1)") >= 1
     for f in ("tools/build.py", "build.sh", "Makefile", ".github/workflows/release.yml"):
         p = os.path.join(ROOT, f)
         if os.path.exists(p):
