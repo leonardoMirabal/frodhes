@@ -64,6 +64,18 @@ Your settings and presets stay when you update. 0.9.10 changes the factory prese
 firmware:
 [how](docs/MANUAL.md#going-back-to-the-original-firmware).
 
+## Where to find Frodhes
+
+| Where | What it is |
+|---|---|
+| [The Firmware Hub](https://thefirmwarehub.com/#fw-frodhes) | The FM-1's firmware catalogue: install and update from one place |
+| [mutant.cloud](https://mutant.cloud/#/p/frodhes) | Install over USB-MIDI in the browser, no account needed |
+| [fm1-editor.com](https://fm1-editor.com/firmware/#frodhes) | The community's firmware list with pictures |
+| [Web emulator](https://leonardomirabal.github.io/frodhes/) | Play Frodhes in the browser before you install it |
+
+Questions, bugs or ideas: [issues](https://github.com/leonardoMirabal/frodhes/issues). The community's own place is
+[r/MVaveFM1](https://www.reddit.com/r/MVaveFM1/).
+
 ## On the Ableton Move
 
 Frodhes runs on the Move as a sound generator in Schwung, the community module host for the Move.
