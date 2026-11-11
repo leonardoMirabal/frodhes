@@ -9,6 +9,10 @@
 - In the two-core package, on every instrument, more than 5 notes at the same instant start 5 at a time, 2.9 ms
   apart (VIBES and MARIMBA started 14 at a time, 5.8 ms apart; the Rhodes all at once).
 - The FM-1's keys and MIDI notes are read while the screen is being drawn too (every package).
+- In the two-core package's 128-frame build core 1 runs the block's second interrupt's effects in two passes instead
+  of four, the main loop leaves the flash cache to core 1 while core 1 finishes an interrupt's last frames, and core
+  0 hands the frames already final to the USB audio and the jack while it waits for core 1. The same samples; core 1's
+  work per block in the two-core storm ~4670 -> ~3950 us median (hil_c1_soak row 277).
 
 ## Tools
 - `tools/hil_latency.py`: MIDI (USB) to USB audio latency on the FM-1 (median, p10, p90).
@@ -23,13 +27,7 @@
   each against the same note with the gate never shut.
 - `tools/hil_c1_soak.py` keeps a profiling build's stage times (`APP_DEFS="-DRH_PROF_STAGES -DC1_PROF"`, CC 97-99) in
   each read of its report (`st`).
-
-## Build
 - `tools/build.py --c1` places the audio's hot code (`firmware/c1_hot.txt`: core 0's voice code, then core 1's effects
   chain) at a fixed address after `app_audio`, in a measured order: the FM-1 runs code from flash through a 32 KB
   cache (8 ways, 32-byte lines) the two cores share, and the code's layout alone moved core 1's work per block by
   ~500 us. The build fails when a name in the list is gone.
-- In the two-core package's 128-frame build core 1 runs the block's second interrupt's effects in two passes instead
-  of four, the main loop leaves the flash cache to core 1 while core 1 finishes an interrupt's last frames, and core
-  0 hands the frames already final to the USB audio and the jack while it waits for core 1. The same samples; core 1's
-  work per block in the two-core storm ~4670 -> ~3950 us median (hil_c1_soak row 277).
