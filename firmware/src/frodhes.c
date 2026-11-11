@@ -126,6 +126,9 @@ static void fr_ramx_clear(void)
 #ifndef FR_LAT_TAIL
 #define FR_LAT_TAIL 64u
 #endif
+#ifndef C1_LAT_WHOLE
+#define C1_LAT_WHOLE 3                          /* (below: core 1's ranges in the block's second interrupt whole) */
+#endif
 #endif
 #ifndef FR_LAT_HALF
 #define FR_LAT_HALF 256u
@@ -249,7 +252,9 @@ static uint32_t smk_btn_leds;                   /* the SMK's own buttons' LEDs (
  * first chunk). 46-51 one block's own values, not maxima: the block whose app_audio ended latest since the block's
  * start (46, that end) and in it 47 core 0's voices done @, 48 core 0's voice time, 49 its eng_begin, 50 core 1's last
  * frame done @, 51 the blocks since the last Program Change (presets.c preset_load; a count, not us) */
-#define PROF_NST 52u
+#define PROF_NST 56u                            /* (+ 52-55, FR_LAT_TAIL: core 1's ranges per block: 52 the tail's
+                                                 * summed, 53 the others' summed, 54 the calls (a count x 24), 55
+                                                 * fx_pre_c) */
 static volatile uint32_t c1_pf_t0;
 static volatile uint32_t c1_pf_d22;                 /* core 1: this block's item 22 (the snapshot's 50) */
 static volatile uint8_t c1_pf_pc;                   /* the main loop: a Program Change was loaded (preset_load) */
@@ -452,6 +457,16 @@ static int c1_front_take(uint32_t j, uint32_t k)
     return x == y && x < j * k;                 /* core 1 behind: still on the chunks before */
 }
 #endif
+/* C1_LAT_WHOLE (FR_LAT_TAIL): which of core 1's ranges wait to be whole (one pass of the effects chain over all their
+ * frames) instead of taking the frames as they come, 32 at a time. Every pass reads the chain's code (~28 KB with
+ * every effect on) through the flash cache the two cores share (32 KB, 8 ways: a line missed costs ~0.7 us), so a
+ * pass saved is ~150-200 us of core 1's work (K29, the storm: hil_c1_soak row 277). 0 none; 1 every range (the most
+ * saved, but core 0 then waits for the block's first range, its heavy first pass started late: the whole ISR over
+ * 2400 us); 2 the tails; 3 the second interrupt's ranges (FR_C1_LAT's: its frames sent [128, 192) one pass, the tail
+ * another; the first interrupt's front 32 frames at a time, as core 0 renders them) */
+#ifndef C1_LAT_WHOLE
+#define C1_LAT_WHOLE 0
+#endif
 #if FR_LAT && FR_LAT_TAIL
 static int32_t *volatile lat_ob, *volatile lat_sb;   /* (app_audio below: the effects' out for the frames sent, for the tail) */
 #endif
@@ -464,8 +479,28 @@ static int c1_stream_step(void)                 /* the frames ready, not done: t
     if (r != c1_rdy || r <= o || r > n || (r & 31u)) return 0;
 #if FR_LAT && FR_LAT_TAIL
     if (o < fxc_ce - FR_LAT_TAIL && r > fxc_ce - FR_LAT_TAIL) r = fxc_ce - FR_LAT_TAIL;   /* (the tail: its own range) */
+#if C1_LAT_WHOLE == 1
+    if (r != (o < fxc_ce - FR_LAT_TAIL ? fxc_ce - FR_LAT_TAIL : fxc_ce)) return 0;   /* (each range whole: one pass) */
+#elif C1_LAT_WHOLE == 2
+    if (o >= fxc_ce - FR_LAT_TAIL && r != fxc_ce) return 0;   /* (the tail whole: one pass) */
+#elif C1_LAT_WHOLE == 3
+    if (fxc_ce == 256u && r != (o < fxc_ce - FR_LAT_TAIL ? fxc_ce - FR_LAT_TAIL : fxc_ce)) return 0;
+#endif
     fxc_o = o; fxc_e = r; fxc_n = n;
+#if defined(C1PF_ON)
+    {
+        static uint32_t s_t, s_o, s_k;
+        uint32_t a0 = fm1_ticks();
+        fx_process(c1_job.mono, o < fxc_ce - FR_LAT_TAIL ? lat_ob : lat_sb, n);
+        a0 = fm1_ticks() - a0;
+        if (!o) s_t = s_o = s_k = 0;
+        if (o < fxc_ce - FR_LAT_TAIL) s_o += a0; else s_t += a0;
+        s_k++;
+        if (r == n) { C1PF(52, s_t); C1PF(53, s_o); C1PF(54, s_k * 24u); }
+    }
+#else
     fx_process(c1_job.mono, o < fxc_ce - FR_LAT_TAIL ? lat_ob : lat_sb, n);
+#endif
 #else
     fxc_o = o; fxc_e = r; fxc_n = n;
 #if defined(C1PF_ON) && FR_LAT
@@ -474,6 +509,16 @@ static int c1_stream_step(void)                 /* the frames ready, not done: t
         fx_process(c1_job.mono, c1_job.out, n);
         a0 = fm1_ticks() - a0;
         if (r == n) C1PF(23, a0); else if (!o) C1PF(24, a0); else C1PF(25, a0);
+    }
+#elif defined(C1PF_ON)
+    {
+        static uint32_t s_o, s_k;
+        uint32_t a0 = fm1_ticks();
+        fx_process(c1_job.mono, c1_job.out, n);
+        a0 = fm1_ticks() - a0;
+        if (!o) s_o = s_k = 0;
+        s_o += a0; s_k++;
+        if (r == n) { C1PF(53, s_o); C1PF(54, s_k * 24u); }
     }
 #else
     fx_process(c1_job.mono, c1_job.out, n);
@@ -629,7 +674,11 @@ static void c1_lat_job(uint32_t a)              /* core 1, one an interrupt */
     uint32_t j0 = fm1_ticks(), i0 = 0, p0, ce = fxc_ce;
     if (!lat_o) { work = 0; idle = 0; }
 #endif
+#if defined(C1PF_ON)
+    if (!lat_o) { uint32_t q0 = fm1_ticks(); fx_pre_c(); C1PF(55, fm1_ticks() - q0); }
+#else
     if (!lat_o) fx_pre_c();                     /* (the block's start only: it flushes the block before's rows) */
+#endif
 #ifndef DINGHY_HOST
     while (c1_fxd < fxc_ce)
         if (!c1_stream_step()) { p0 = fm1_ticks(); fr_c1_pause(); i0 += fm1_ticks() - p0; }
@@ -703,6 +752,14 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         lat_fx(o, e);
         if (!o) rh_side_on = 0;                 /* (the voices CC 10 ended: as one core) */
     } else {
+#if APP_TAIL_EARLY && FR_LAT_TAIL
+        /* out's first FR_LAT_TAIL frames (the last interrupt's tail) are final once that job is over (above) when the
+         * silence gate leaves them alone: the block before's, gated at its end; this block's, gated at this interrupt's
+         * frames sent, which an open gate (open and staying so: it falls only at a block's end) does not touch. Their
+         * piece of the ISR's tail (platform.c tail_early: MASTER, the clip, the USB tap) then runs before core 0 waits
+         * for core 1 (the same samples) */
+        uint32_t te = !fx_p[FXP_RAW] && (!o || (gate_g == 32768 && gate_tgt == 32768));
+#endif
         if (lat_solo || !fr_c1_run(c1_lat_job, 0)) { solo = 1; if (!o) fx_pre_c(); }
         if (!o) eng_begin(LAT_LB);
 #if FR_LAT_EV
@@ -739,7 +796,11 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
         if (!solo) {
 #ifndef DINGHY_HOST
-            uint32_t el = (fm1_ticks() - t0) / 24u, lim = el + 200u < LAT_DEADLINE_US ? LAT_DEADLINE_US - el : 200u;
+            uint32_t el, lim;
+#if APP_TAIL_EARLY && FR_LAT_TAIL
+            if (te) tail_early(FR_LAT_TAIL);
+#endif
+            el = (fm1_ticks() - t0) / 24u; lim = el + 200u < LAT_DEADLINE_US ? LAT_DEADLINE_US - el : 200u;
 #if FR_LAT_TAIL
             if (lat_wait_fxd(e - FR_LAT_TAIL, lim)) lat_pend = 1;   /* (the frames sent are done; the tail runs on) */
             else
@@ -834,6 +895,27 @@ static void lat_xip_wait(void)                  /* (FL_XIP_OFF_WAIT, the interru
     }
 #endif
 }
+#endif
+#ifndef FR_LAT_YIELD
+#define FR_LAT_YIELD 1
+#endif
+#if FR_LAT_TAIL && FR_LAT_YIELD && !defined(DINGHY_HOST)
+/* FR_LAT_YIELD: the main loop while core 1 runs a tail (its effects after an interrupt): it waits in a short loop, so the flash
+ * cache the two cores share is core 1's meanwhile (K29: the main loop's code and tables evicted the effects' and cost
+ * core 1 ~300 us a block in the two-core storm). At most 1.5 ms; the interrupts run meanwhile */
+static void lat_yield(void)
+{
+    uint32_t t0;
+    if (!lat_pend) return;
+    t0 = fm1_ticks();
+    for (;;) {
+        fr_c1_sync();
+        if (!lat_pend || c1_fxd >= lat_pe || !fr_c1_busy() || fm1_ticks() - t0 > 1500u * FM1_TICKS_PER_US) return;
+        fr_c1_pause();
+    }
+}
+#else
+#define lat_yield() ((void)0)
 #endif
 #if FR_LAT_TAIL && !defined(DINGHY_HOST)
 static int lat_fl_ok(void)                      /* (FL_SLICE_OK, the interrupts off: no job starts meanwhile) */
@@ -1487,6 +1569,9 @@ FR_COLD static void st_old_scan(void)
 #if !FR_LAT
 #define lat_mid() 0                             /* (FR_LAT: a block under way, above) */
 #endif
+#if !(FR_LAT && FR_C1)
+#define lat_yield() ((void)0)                   /* (FR_LAT_TAIL: the main loop leaves core 1 its tail, above) */
+#endif
 /* MIDI in with one message held back: hold 1 keeps every message but a note in the queue (it waits, the notes after
  * it too: the order kept) for the main loop's next pass (FR_LAT: a block under way; LCD_IDLE: inside a strip's draw) */
 static uint8_t mh_st, mh_d1, mh_d2;
@@ -1533,6 +1618,7 @@ static void app_idle(void)
 {
     uint8_t st, d1, d2;
     if (!idle_ok || idle_in) return;
+    lat_yield();
     idle_in = 1;
     keys_pass();
     while (midi_get_h(&st, &d1, &d2, 1)) midi_note(st, d1, d2);
@@ -1618,6 +1704,7 @@ FR_COLD static void app_main(void)
         uint32_t rel, b, lit = 0;
         int src;
         uint8_t st, d1, d2;
+        lat_yield();
 #if FELUCCA_OTA && !defined(DINGHY_HOST)
         if (usb.ota_req) {                      /* an update comes: the auto saves to their end first (the settings'
                                                  * single sector half written would be lost) */

@@ -127,9 +127,16 @@ def decode(msgs):
     """CC (control, value) pairs of one or more replies -> {name: value} (the core-1 items, the record's words as
     "frec": {name: word}, and the profiler's app_us / now_us / shed / whole_us / tail_us, the USB counters)"""
     acc, part, bpart, cur, msb = {}, {}, {}, None, 0
-    got = {}
+    got, scur, smsb = {}, None, 0
     for c, v in msgs:
-        if c == 100:
+        if c == 97:                                      # (a RH_PROF_STAGES build: CC 97 = stage, 98 / 99 = us)
+            scur = v
+        elif c == 98:
+            smsb = v
+        elif c == 99 and scur is not None:
+            st = acc.setdefault("st", {})
+            st[scur] = max(st.get(scur, 0), smsb << 7 | v)
+        elif c == 100:
             cur = v
         elif c == 101:
             msb = v

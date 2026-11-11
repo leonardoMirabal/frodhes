@@ -245,6 +245,20 @@ def build_app():
             raise SystemExit("app.ld: the RAMTEXT lines were not found (--c1 .ramx)")
         txt = txt.replace(a, "RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x8000").replace(
             b, b + "\n    .ramx (NOLOAD) : { . = ALIGN(8); _ramx_start = .; *(.ramx*) . = ALIGN(4); _ramx_end = .; } > RAMTEXT")
+        hot = os.environ.get("C1_HOT_FILE") or str(FW / "c1_hot.txt")
+        if os.path.exists(hot):
+            # --c1: the audio's hot code side by side after app_audio (firmware/c1_hot.txt: core 0's voice code, then
+            # core 1's effects chain, in that order), so where the rest of the code lands no longer decides which of
+            # them share the flash cache's lines with which (K29: the same effects cost 3700 or 4700 us a block on two
+            # layouts of one source, the 256-frame and the 128-frame builds)
+            names = [l.split("#")[0].strip() for l in Path(hot).read_text().splitlines()]
+            k = "*(.text.rh_hermite)"
+            if txt.count(k) != 1:
+                raise SystemExit("app.ld: the rh_hermite line was not found (--c1 hot code)")
+            # (pinned: the hot code starts at a fixed address, 0x02001400 (. inside .text counts from its start 0x02000120), however app_audio's size moves; ld fails if it grows
+            # past it)
+            txt = txt.replace("KEEP(*(.text.app_audio)) " + k, "KEEP(*(.text.app_audio)) . = 0x12E0; " + k +
+                              "".join(f" *(.text.{n})" for n in names if n))
     if txt != ld.read_text():
         ld = OUT / "app.ld"
         ld.write_text(txt)
@@ -447,6 +461,15 @@ def check(img, syms, dis, rt):
     if C1:
         notes.append(f"--c1: .ramx {sym('_ramx_end') - sym('_ramx_start')} B, .ram_text + .ramx end at "
                      f"{sym('_ramx_end'):#x} of 0x1c08000")
+        hot = Path(os.environ.get("C1_HOT_FILE") or FW / "c1_hot.txt")
+        if hot.exists():                 # every name of the hot list a function placed in the hot block (a renamed
+            names = [n for n in (l.split("#")[0].strip() for l in hot.read_text().splitlines()) if n]   # one: stale)
+            lo, hi = 0x02001400, 0x02001400 + 0x20000
+            gone = [n for n in names if not lo <= sym(re.escape(n)) < hi]
+            if gone:
+                errors.append(f"--c1: {hot.name}: {len(gone)} name(s) not in the hot block: {gone[:6]}")
+            else:
+                notes.append(f"--c1: {len(names)} hot functions from {sym('rh_hermite'):#x}")
     # the fonts' tables in the image (UI-SIMPLIFY: the flash they take; a face the code no longer uses is gone):
     # AF_<N>* (aa_font.h, gen_aa_font.py) and FONT_<N>* (felucca_font.h, gfx.c), by objdump -t sizes
     font = {}
