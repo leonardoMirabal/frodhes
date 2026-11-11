@@ -70,8 +70,6 @@ firmware:
 | [The Firmware Hub](https://thefirmwarehub.com/#fw-frodhes) | The FM-1's firmware catalogue: install and update from one place |
 | [mutant.cloud](https://mutant.cloud/#/p/frodhes) | Install over USB-MIDI in the browser, no account needed |
 | [fm1-editor.com](https://fm1-editor.com/firmware/#frodhes) | The community's firmware list with pictures |
-| [awesome-fm-1](https://github.com/cicloid/awesome-fm-1) | The community's list of firmwares, tools and open-source work for the FM-1 |
-| [FM-1 Resource Hub](https://github.com/aroum/fm1-custom-fw) | A directory of custom firmwares, SysEx docs and a flasher |
 | [Web emulator](https://leonardomirabal.github.io/frodhes/) | Play Frodhes in the browser before you install it |
 
 Questions, bugs or ideas: [issues](https://github.com/leonardoMirabal/frodhes/issues). The community's own place is
