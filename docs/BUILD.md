@@ -52,7 +52,19 @@ make test         # the host scripts in tests/scripts
 make pytest       # the Python tests (generators, the C engine against its reference, effects); in parallel
                   # with pytest-xdist (PYTEST_N=auto; PYTEST_N=0 or no xdist: serial)
 make host         # render build/host/frodhes.wav and screen PNGs on the computer, no FM-1 needed
+make test-c1      # every script on the two-core build (FR_C1: 14 voices, the effects on core 1)
+make test-c1-lat  # every script on the two-core package's build (FR_C1_LAT: 128-frame interrupts), in step with the
+                  # 256-frame blocks and in real time (tests/lat/known.txt: scripts whose millisecond expects move)
 ```
+
+**The two-core package's latency build.** `tools/build.py --c1` builds `frodhes-c1.fwsc` with `FR_C1_LAT`
+(`frodhes.c`): 128-frame audio interrupts (2.9 ms), a note starts at the next interrupt (5 notes per interrupt), and
+core 1 runs the effects with a 64-frame tail. `--c1-256` builds the 256-frame interrupts of 0.9.10 for A/B tests only.
+The build places the audio's hot code at a fixed address in the order listed in `firmware/c1_hot.txt` (core 0's
+voice code, then core 1's effects chain): the two cores share the flash cache, and that order was measured best on
+the FM-1. The build fails when a name in the list no longer exists (a renamed or removed function: update the list).
+After a change to the effects chain or to that list, re-measure core 1 on the FM-1 (`tools/hil_c1_soak.py`, row 277:
+core 1's work per block <= 5000 us) before you trust the old order.
 
 `tools/cpu_budget.py` predicts the audio interrupt's worst block on the computer from the FM-1's measured costs.
 
@@ -80,6 +92,9 @@ These tools play the FM-1 over USB-MIDI and analyse its USB audio:
   their effect on the audio, the delay types' echoes, the arpeggiator and the sequencer on the 1/16 grid. It runs
   through a tempo change and a Stop / Start, with CLOCK INT too (`--via int`), and writes one table row
   | INT | EXT-USB | EXT-TRS (`--selftest`, `--dry-run` without the FM-1).
+- `tools/hil_latency.py`: the note latency, a MIDI note-on over USB to the first sound in the USB audio (median, p10,
+  p90, max over 40 notes); `--jack CH` records the headphone jack on input CH of an audio interface (`--dev`)
+  instead. Compare builds on the same unit in the same session.
 - `tools/hil_cpu.py`: the audio interrupt's worst block and the USB audio's health (`--usb 44100|48000` holds a
   DAW-like stream open).
 
