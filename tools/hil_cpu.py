@@ -115,9 +115,13 @@ def usb_line(acc):
 
 CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_TONE=82, DRV_MIX=83, RV_PREDLY=94, RV_TYPE=95, EQ_LO=34, EQ_MID=35, EQ_FREQ=36,
           EQ_HI=37)
-TARGET_US = 4500
+# FRODHES_LAT_HALF=128 (or 64): a build with frodhes.c FR_LAT_HALF: CC 116 reports an interrupt of that many frames;
+# every limit scales with it (4500 / 5000 / 5805 us x N / 256)
+LAT_SCALE = int(os.environ.get("FRODHES_LAT_HALF", "256")) / 256.0
+TARGET_US = round(4500 * LAT_SCALE)
+SHED_US = round(5000 * LAT_SCALE)
 
-BLOCK_US = 5805
+BLOCK_US = round(5805 * LAT_SCALE)
 PC_BURST = [(47, 1), (23, 10), (26, 10), (29, 10), (42, 11), (45, 11), (127, 93), (86, 91), (123, 93), (59, 107),
             (120, 93), (28, 88), (40, 11), (34, 49), (37, 11), (41, 49), (21, 83), (68, 83), (117, 93), (60, 107),
             (33, 1), (36, 1), (27, 83), (19, 85), (22, 88), (25, 88)]   # monkey seed 3037's step (the --worst PC row)
@@ -134,6 +138,9 @@ STAGES = {1: "engine (eng_render)", 2: "fx copy", 3: "compressor", 4: "filter + 
           14: "fx (other)", 15: "after the last stamp",
           # FR_C1 + C1_PROF (frodhes.c C1PF): since the block's start (@), or a span; "blk" = summed over a block
           16: "c0 voices done @", 17: "c0 voices blk", 18: "c1 block-start job", 19: "c0 last wait", 20: "c0 waits before",
+          # (FR_LAT_HALF + C1_PROF: 16 / 21 core 0's voices done @ the block's first / a later interrupt, 20 / 22 the
+          # interrupt's whole, first / later; 23-25 core 1's ranges: the one ending the block, starting it, between)
+          # (on such a build 21 = lat c0 voices done @ (later irq), 22 = lat irq whole (later))
           21: "c0 tail-loop wait", 22: "c1 done @", 44: "front chunks on c0 (count)",
           45: "c0 eng_begin", 46: "SNAP end @", 47: "SNAP c0 voices done @", 48: "SNAP c0 voices blk",
           49: "SNAP c0 eng_begin", 50: "SNAP c1 done @", 51: "SNAP blocks after PC +1 (count)",
@@ -572,8 +579,12 @@ def run_cpu(argv):  # noqa: C901
         whole = query.whole or None
         print(f"whole ISR worst: {str(whole) + ' us' if whole else 'not reported by this firmware'}" +
               (f"; USB counters moved in: {', '.join(usb_bad)}" if usb_bad else ""))
-        bad = worst > TARGET_US or (whole or 0) > TARGET_US or any(sheds) or bool(usb_bad)
-        print("hil_cpu: " + ("FAIL" if bad else "ok"))
+        why = ([f"app_audio worst {worst} us > {TARGET_US}"] if worst > TARGET_US else []) + \
+              ([f"whole ISR {whole} us > {TARGET_US} (app_audio + the USB tail after it)"] if (whole or 0) > TARGET_US else []) + \
+              ([f"{sum(1 for x in sheds if x)} scenario(s) shed a voice"] if any(sheds) else []) + \
+              ([f"USB counters moved in {', '.join(usb_bad)}"] if usb_bad else [])
+        bad = bool(why)
+        print("hil_cpu: " + ("FAIL: " + "; ".join(why) if bad else "ok"))
         return 1 if bad else 0
 
     scen = sys.argv[sys.argv.index("--scenario") + 1].split(",") if "--scenario" in sys.argv else None
@@ -699,8 +710,8 @@ def run_cpu(argv):  # noqa: C901
         reset()
         allrows = list(rows)
         worst = max(w for n, w in rows if not n.startswith("idle"))
-        print(f"\nworst {worst} us with {nv} voices ({100 * worst / BLOCK_US:.0f} %); design target 4500 us "
-              f"(margin {4500 - worst}), shedder 5000 us (margin {5000 - worst})")
+        print(f"\nworst {worst} us with {nv} voices ({100 * worst / BLOCK_US:.0f} %); design target {TARGET_US} us "
+              f"(margin {TARGET_US - worst}), shedder {SHED_US} us (margin {SHED_US - worst})")
         code = verdict(worst)
         return dict(rows=allrows, worst=worst, keyadc=keyadc_check(mido, out, inp, kmode), code=code)
     att = shed0 = 0
@@ -725,8 +736,8 @@ def run_cpu(argv):  # noqa: C901
     reset()
     worst = max(w for _, w in rows)
     print(f"\nworst {worst} us of {BLOCK_US} us per block ({100 * worst / BLOCK_US:.0f} %) with {nv} voices; shedder at "
-          f"5000 us; headroom to the shedder {5000 - worst} us, to real time {BLOCK_US - worst} us; to the 4500 us "
-          f"design target {4500 - worst} us")
+          f"{SHED_US} us; headroom to the shedder {SHED_US - worst} us, to real time {BLOCK_US - worst} us; to the "
+          f"{TARGET_US} us design target {TARGET_US - worst} us")
     code = verdict(worst)
     return dict(rows=list(rows), worst=worst, keyadc=keyadc_check(mido, out, inp, kmode), code=code)
 

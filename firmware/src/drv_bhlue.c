@@ -306,7 +306,7 @@ static int32_t bh_step(int32_t v, int32_t tgt)
     return v < tgt - BHLUE_GSTEP ? v + BHLUE_GSTEP : v > tgt + BHLUE_GSTEP ? v - BHLUE_GSTEP : tgt;
 }
 
-#if FR_C1
+#if FR_CHUNK
 static void drv_bhlue_run(const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)
 {                                                  /* (FR_C1: a chunk, fx.c fxc_o / fxc_e; the rows at the first) */
     int32_t a = c->amount, t = c->tone;

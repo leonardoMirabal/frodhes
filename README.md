@@ -54,14 +54,27 @@ What is new in each version: [the release notes](https://github.com/leonardoMira
 
 **One core or two.** `frodhes.fwsc` plays 10 voices on one of the FM-1's two processor cores. The release also has
 [`frodhes-c1.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-c1.fwsc), which runs
-the voices on one core and the effects on the other: 14 voices on every instrument, and the reverb at the full sample
-rate, with no added delay. Install it from a terminal (`python3 tools/fm1_install.py frodhes-c1.fwsc`; the emulator page installs `frodhes.fwsc`). You can switch between the two at any time; your
+the voices on one core and the effects on the other: 14 voices on every instrument, the reverb at the full sample
+rate, and a quicker answer to a note (about 6.5 ms from MIDI to the headphone jack, against about 10 ms).
+Install it from a terminal (`python3 tools/fm1_install.py frodhes-c1.fwsc`; the emulator page installs `frodhes.fwsc`). You can switch between the two at any time; your
 settings, presets and pattern stay.
 
 Your settings and presets stay when you update. 0.9.10 changes the factory presets and some of their program numbers
 (four new, four gone, SUIT TREM now F08): [the list](docs/MANUAL.md#6-presets). You can always go back to M-VAVE's own
 firmware:
 [how](docs/MANUAL.md#going-back-to-the-original-firmware).
+
+## Where to find Frodhes
+
+| Where | What it is |
+|---|---|
+| [The Firmware Hub](https://thefirmwarehub.com/#fw-frodhes) | The FM-1's firmware catalogue: install and update from one place |
+| [mutant.cloud](https://mutant.cloud/#/p/frodhes) | Install over USB-MIDI in the browser, no account needed |
+| [fm1-editor.com](https://fm1-editor.com/firmware/#frodhes) | The community's firmware list with pictures |
+| [Web emulator](https://leonardomirabal.github.io/frodhes/) | Play Frodhes in the browser before you install it |
+
+Questions, bugs or ideas: [issues](https://github.com/leonardoMirabal/frodhes/issues). The community's own place is
+[r/MVaveFM1](https://www.reddit.com/r/MVaveFM1/).
 
 ## On the Ableton Move
 

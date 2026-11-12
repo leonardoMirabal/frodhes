@@ -1508,11 +1508,19 @@ static void rh_start_pend(rh_voice_t *v)                /* a stolen voice is gon
 #define RH_NA RH_NV                                     /* the voices a strike may take (FR_C1 builds, frodhes.c: fewer
                                                          * once core 1 is held: the one-core fallback) */
 #endif
+#ifdef RH_START_MAX
+static uint32_t rh_starts;                              /* the strikes this interrupt (frodhes.c FR_LAT_HALF: at most
+                                                         * RH_START_MAX; the rest wait, in order) */
+#endif
 static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already waits for a note; try next block */
 {
     uint32_t i, pick = RH_NV, best = 0xFFFFFFFFu;
     for (i = 0; i < RH_NA && rv[i].pend; i++) ;
     if (i == RH_NA) return 0;                           /* (more than RH_NV steals in one block: BUGHUNT #21) */
+#ifdef RH_START_MAX
+    if (rh_starts >= RH_START_MAX) return 0;
+    rh_starts++;
+#endif
 #ifdef DINGHY_HOST
     rh_host_vel = (uint8_t)vel;                         /* (host: the velocity that reached the engine, frodhes.c
                                                          * "engvel"; RESPONSE never rewrites it, tests/py/test_vel_layers.py) */
@@ -1561,8 +1569,11 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
     return 1;
 }
 
-static void rh_events(void)
+static void rh_events(void)                     /* the block's start (rh_render, rh_begin) */
 {
+#ifdef RH_START_MAX
+    rh_starts = 0;
+#endif
     while (ev_r != ev_w) {
         uint32_t e = ev_q[ev_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu, i;
 #ifdef DINGHY_PLUGIN
@@ -2206,7 +2217,7 @@ static __attribute__((noinline)) void rh_render(int32_t *mono_out, uint32_t n)  
     rh_held_bits = held;
     rh_active_bits = act;
 }
-#if defined(FR_C1) && FR_C1
+#if defined(FR_CHUNK) && FR_CHUNK
 /* FR_C1 (engine.c eng_begin / eng_chunk / eng_end, frodhes.c app_audio): the block in chunks of frames [o, e), every
  * voice's frames of a chunk, then that chunk's post chain (the noises, RLC, body, Q15, the side), so core 1 runs one
  * chunk's effects while core 0 renders the next. The same integers as rh_render over the block: rh_voice_sub is per
@@ -2244,11 +2255,17 @@ static uint32_t rhc_ds2;                        /* the side's crossfade chain's 
 #ifdef DINGHY_HOST
 static uint32_t rhc_lfe[RH_NV];                 /* (host: where each felt voice's LFSR must end, checked in rh_end) */
 #endif
+#if FR_LAT_EV
+static uint8_t rhc_rt;                          /* the TYPE rh_begin found (rh_mid_strike) */
+#endif
 static void rh_begin(uint32_t n)
 {
     uint32_t i, sd, r;
     rhc_n = n;
     rh_events();
+#if FR_LAT_EV
+    rhc_rt = rh_type;
+#endif
     rhc_ty = rh_txf_type();
     if (rh_bend_t != rh_bend_used || rh_rt_pend) rh_retune();
     if (rh_shed_req) { rh_shed_req = 0; rh_shed(); }
@@ -2362,6 +2379,64 @@ static void rh_end(void)                        /* after the block's last chunk:
     rh_held_bits = held;
     rh_active_bits = act;
 }
+#if FR_LAT_EV
+/* FR_LAT_EV (frodhes.c FR_LAT_HALF): a note-on between two interrupts of a block starts at the next one's first frame,
+ * where the block's plan (rh_begin) stays true: a free voice, a re-strike of the note still sounding, or a steal whose
+ * voice has no felt noise running (rh_begin planned the felt's LFSR to the block's end: a steal's fade would end it
+ * sooner); the TYPE the block started with, and with SPREAD only while the side runs. Else it waits for the block's
+ * start, as before. A block planned idle (silent) runs from here: its chain at rest and its dither at the start, as
+ * the next block would have them */
+#ifdef DINGHY_HOST
+static uint32_t rh_h_mid[3];                    /* (host: the mid-block starts: free voice, re-strike, steal) */
+#endif
+static int rh_mid_one(uint32_t note, uint32_t vel)
+{
+    uint32_t i, pick = RH_NA, best = 0xFFFFFFFFu, kind = 1;
+    if (rh_type != rhc_rt || (rh_spread && !rh_side_tail)) return 0;
+    for (i = 0; i < RH_NV; i++)
+        if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) break;
+    if (i == RH_NV) {                           /* (not a re-strike) */
+        kind = 0;
+        for (i = 0; i < RH_NA && rv[i].alive; i++) ;
+        if (i == RH_NA) {
+            kind = 2;                       /* (no free voice: the voice rh_strike would steal, as it scores) */
+            for (i = 0; i < RH_NA; i++) {
+                uint32_t m, sum = 0, score;
+                if (rv[i].pend) continue;
+                for (m = 0; m < RH_NM; m++) sum += (uint32_t)rv[i].m[m].peak >> 4;
+                sum = RH_OUT_SUM(&rv[i], sum);
+                score = rv[i].held ? 0x80000000u + (rv[i].age & 0x7FFFFFFFu) : (sum > 0x7FFFFFFFu ? 0x7FFFFFFFu : sum);
+                if (score < best) { best = score; pick = i; }
+            }
+            if (pick == RH_NA || rv[pick].felt_n) return 0;
+        }
+    }
+    if (!rh_strike(note, vel)) return 0;
+#ifdef DINGHY_HOST
+    rh_h_mid[kind]++;
+#else
+    (void)kind;
+#endif
+    if (rhc_idle) { rhc_idle = 0; rh_dith_on = -1; }
+    return 1;
+}
+static int rh_mid_strike(uint32_t note, uint32_t vel)   /* (a note-on from the engine's ring: the Rhodes ring empty) */
+{
+    return ev_r == ev_w && rh_mid_one(note, vel);
+}
+static void rh_mid(void)                        /* an interrupt's start inside a block: the note-ons the block's start
+                                                 * left in the Rhodes ring (RH_START_MAX), from here while they may */
+{
+#ifdef RH_START_MAX
+    rh_starts = 0;
+#endif
+    while (ev_r != ev_w) {
+        uint32_t e = ev_q[ev_r & 31u];
+        if (e >> 28 != EV_NOTE_ON || !rh_mid_one(e >> 16 & 127u, e & 0xFFFFu)) break;
+        ev_r = ev_r + 1u;
+    }
+}
+#endif
 #endif
 #ifdef FR_HQ
 #include "hq/rhodes_hq.c"

@@ -65,10 +65,10 @@ Safari and Firefox cannot install, because they cannot send SysEx. Use Chrome or
 
 **One core or two.** The release has two packages for the FM-1. `frodhes.fwsc` (the default, the one the page
 installs) runs everything on one of the chip's two processor cores and plays 10 voices. `frodhes-c1.fwsc` runs the
-voices on one core and the effects on the other: 14 voices on every instrument, and the reverb types at the full
-sample rate (as on the Move), with no added delay. Everything else is the same: the pages, the presets, your
-settings and pattern. Install `frodhes-c1.fwsc` from a terminal (see [Updating](#updating)); you can switch between
-the two at any time.
+voices on one core and the effects on the other: 14 voices on every instrument, the reverb types at the full sample
+rate (as on the Move), and a quicker answer to a note: about 6.5 ms from a MIDI note to the headphone jack
+(about 10 ms in `frodhes.fwsc`). Everything else is the same: the pages, the presets, your settings and pattern.
+Install `frodhes-c1.fwsc` from a terminal (see [Updating](#updating)); you can switch between the two at any time.
 
 **On a computer.** The same engine runs as a plugin in music software (CLAP, VST3, Audio Unit) on macOS, Windows and
 Linux: [PLUGIN.md](PLUGIN.md#packages).
@@ -1131,9 +1131,11 @@ the latch stays on until you tap REC again.
 chord mode, the arpeggiator and the sequencer play. Striking a note that is still sounding reuses its voice, so
 repeated notes do not use up voices. One note more takes over the quietest released note first, or else the oldest
 held one, with a short fade (1.5 ms), so there is no click. On VIBES and MARIMBA, more notes than voices at the same
-instant (a computer's chord, a sequencer step) start 10 at a time, one audio block (5.8 ms) apart, in order. The
-audio also has a safety guard: if it ever ran late, the quietest released note would be faded out rather than
-letting the sound break up. In testing, with every voice struck and every effect on, the guard never acts.
+instant (a computer's chord, a sequencer step) start 10 at a time, one audio block (5.8 ms) apart, in order. In the
+two-core package, on every instrument, more than 5 notes at the same instant (a chord of 6 or more from a computer)
+start 5 at a time, 2.9 ms apart. The audio also has a safety guard: if it ever ran late, the quietest released note
+would be faded out rather than letting the sound break up. In testing, with every voice struck and every effect on,
+the guard never acts.
 
 ## 11. Sound and volume tips
 
@@ -1274,8 +1276,8 @@ an uneven stream record it cleanly.
 | **Polyphony** | 10 voices (the electric pianos, VIBES and MARIMBA; 14 with the two-core package); an 11th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
 | **Range** | 88 notes, A0–C8 over MIDI (notes outside play the nearest end); the 27 keys play F3–G5, OCT ±2 octaves, TRANSP ±24 semitones, TUNE ±50 cents |
 | **Velocity** | MIDI 1–127. The FM-1's keys: F3–C5 sense how firmly they land (TOUCH LIGHT / MEDIUM / HEAVY, KEY VEL the velocity of a medium press, default 96), C#5–G5 play the recent average; TOUCH FIXED: every key at KEY VEL (1–127) |
-| **Audio** | 44.1 kHz, integer processing, 256-frame blocks (5.8 ms); output limiter; silent between notes (no hiss on the USB audio) |
-| **Latency** | About 14 ms from a MIDI note to the USB audio, including the computer's buffers; about 10 ms to the headphone jack (the two-core package: 5.8 ms more) |
+| **Audio** | 44.1 kHz, integer processing, 256-frame blocks (5.8 ms; the two-core package plays each block in two halves of 2.9 ms, and a note starts at the next half); output limiter; silent between notes (no hiss on the USB audio) |
+| **Latency** | From a MIDI note (USB) to the headphone jack: about 10 ms; the two-core package about 6.5 ms (9 in 10 notes within 8 ms, the slowest 8.5 ms). To the USB audio, including the computer's buffers: about 13 ms; the two-core package about 10.5 ms |
 | **Outputs** | Stereo headphone jack (MASTER); USB audio to the computer, stereo 16-bit, 44.1 or 48 kHz, following MASTER or fixed (USB VOL) |
 | **MIDI in** | USB-MIDI and the TRS jack (on / off); CHANNEL ALL or 1–16 |
 | **MIDI out** | USB only: notes from the keys, chord mode, arpeggiator and sequencer. No clock, CC or program change out |

@@ -111,7 +111,9 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 #include "gfx.c"
 
 #define FS 44100u                               /* the sample rate */
+#ifndef HALF_FRAMES                             /* (Frodhes: the app may set it, frodhes.c FR_LAT_HALF) */
 #define HALF_FRAMES 256u                        /* I2S half buffer: 5.8 ms (as sloopDX: the USB audio band is set for it) */
+#endif
 #define HALF_WORDS (HALF_FRAMES * 2u)
 #define FELUCCA_OTA 1
 #define FELUCCA_CDC 0
@@ -155,7 +157,7 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 /* ---- flash: read anywhere; erase / program only the update's staging area and the app's store (store.h; the app
  * may give its own, tighter allow-list: APP_FL_RANGE) */
 #include "store.h"
-#if FELUCCA_UAC && FELUCCA_UAC_ALIGN
+#if FELUCCA_UAC && FELUCCA_UAC_ALIGN && !defined(FL_SLICE_OK)
 #define FL_SLICE_OK() uac_slice_ok()
 #endif
 #include "fm1_flash.h"
@@ -165,7 +167,9 @@ FR_COLD static int st_read(uint32_t off, void *dst, uint32_t n)
     uint8_t *d = dst;
     while (n) {
         uint32_t k = n > 256u ? 256u : n, f = irq_save();
-        int rc = FL_FAR(fl_read_ram)(off, d, k);
+        int rc;
+        FL_XIP_OFF_WAIT();                      /* (fm1_flash.h: the app's word before the flash leaves XIP) */
+        rc = FL_FAR(fl_read_ram)(off, d, k);
         irq_restore(f);
         if (rc)
             return rc;

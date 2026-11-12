@@ -1,0 +1,12 @@
+# make test-c1-lat, the real-time pass: scripts whose expects time the panel to the millisecond (SELECT / knob turns 2-3
+# ms apart, tap tempo). The FR_C1_LAT build reads the buttons and knobs between 256-frame blocks only (frodhes.c
+# lat_mid: a block renders with one set of parameters), so turns that close together arrive in one read (the
+# acceleration then counts them as one fast turn) and a tap's time moves by up to 2.9 ms. They pass in the sync pass
+# (every script); here they must only run to their end without an abort.
+arp_buttons
+buttons
+cmp_mkup_engine
+drive_select
+fx_panel
+perform
+rev_cc95

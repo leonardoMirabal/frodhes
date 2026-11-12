@@ -64,7 +64,7 @@ RULES = [
     ("usb", ["firmware/src/usb.c", "firmware/src/uac_fir.h", "firmware/src/uac_fir_lock.h"], ALL, (), (USB2,),
      "the USB audio / MIDI stack (the ring the DAW hears)"),
     ("platform", ["firmware/src/platform.c", "firmware/src/store.h", "firmware/src/frodhes_store.h",
-                  "firmware/src/set_store.c", "firmware/src/smk_wheel.h", "firmware/hal/*", "firmware/crt0.S", "firmware/app.ld"], ALL, (),
+                  "firmware/src/set_store.c", "firmware/src/smk_wheel.h", "firmware/hal/*", "firmware/crt0.S", "firmware/app.ld", "firmware/c1_hot.txt"], ALL, (),
      (USB2,), "the platform: the ISRs, the clocks, the memory map (every scenario rides on it)"),
     # (the app's glue, not its DSP: the voices and effects are rhodes.c / bars.c / fx.c, and Gate R on the host
     # proves every render byte-identical, so the full scans wait for a DSP change)

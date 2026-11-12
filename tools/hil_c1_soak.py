@@ -42,6 +42,11 @@ rails, its stack). The pass bars (all of them; a fallback to one core is a FAIL,
     277: <= 4800 us, the user 2026-11-09), 0 voices shed (CC 115); the USB counters clean (underruns, missed,
     overruns 0)
   - core 1: its busiest block (46) < 5000 us, its stack (41) under 11 KB
+  - a FRODHES_LAT_HALF build (128-frame interrupts, the tail): item 46 is core 1's job SPAN, from the block's start to
+    its end, its waits for core 0's second interrupt and the tail included (frodhes.c app_audio fr_c1_block_end), not
+    its work: core 1's real work (48: the job less its waits; every two-core build since 0.9.11) <= 5000 us, the span
+    (46) <= 5805 us (one 256-frame block: a longer job would run into the next block's), and 0 read-again
+    recoveries (42 / 43) as well; a LAT build that reports no work (48) fails
 Read-again recoveries (42 / 43) are information (counted, not a failure: Textura's units show them now and then).
 Report: OUT/<row>-report.md + .json (every read). Exit 0 PASS, 1 FAIL, 2 INCOMPLETE (stopped early)."""
 import argparse
@@ -56,7 +61,7 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build", "h
 # CC 116 = 30: id -> name (hal/fm1_core1.h FR_C1_INFO_* + 30, frodhes.c midi_cc)
 ITEMS = {30: "state", 31: "jobs_lo", 32: "jobs_hi", 33: "refused", 34: "bad", 35: "wait_us", 36: "vdc14_boot",
          37: "sysvdd_boot", 38: "vdc14", 39: "sysvdd", 40: "fault_vec", 41: "stack", 42: "rec1", 43: "rec0",
-         44: "late", 45: "holds", 46: "busy_us", 47: "voices"}
+         44: "late", 45: "holds", 46: "busy_us", 47: "voices", 48: "work_us", 49: "idle_us"}
 STATE = {0: "never started", 1: "live", 2: "held: refusals too often", 3: "held: late job", 4: "held: no answer",
          5: "held: rails not raised", 6: "held: fault of core 1", 7: "parked", 8: "held: mailbox desync"}
 FREC = ("reti", "rete", "retx", "rets", "sp", "psr", "emu_msg", "dbg_msg", "etm0", "etm1", "etm2", "etm3")
@@ -101,22 +106,37 @@ def max_rev(t):
 MAX_DRV = (76, 70, 76)                                   # row 276: the drive TYPE in turn (CC 84): TSH8, KHLON, TSH8
 MAX_SWEEP = dict(FL_FREQ=(0, 127), DL_TIME=(60, 127), PH_DEPTH=(64, 127), TW_DEPTH=(64, 127), CMP_AMT=(60, 127),
                  DRIVE=(64, 127))                        # row 276: CC -> the sweep's range (a triangle, 100 ms steps)
-BARS = dict(app_us=5000, whole_us=4500, c1_busy_us=5000, stack=11 * 1024, vdc14=7, sysvdd=15)
-WHOLE_ROW = {"276": 4800, "277": 4800}                   # the stress rows' whole-ISR bar (the user, 2026-11-09: the
-                                                         # two-core gate 4800; tools/hil_cpu.py stays at 4500)
+LAT_SCALE = int(os.environ.get("FRODHES_LAT_HALF", "256")) / 256.0   # (a frodhes.c FR_LAT_HALF build: per interrupt)
+LAT = LAT_SCALE != 1.0
+BARS = dict(app_us=round(5000 * LAT_SCALE), whole_us=round(4500 * LAT_SCALE), c1_busy_us=5000,   # (core 1's busy: per
+            # 256-frame block in every build, frodhes.c app_audio's fr_c1_block_end; the interrupt's limits scale)
+            stack=11 * 1024, vdc14=7, sysvdd=15)
+LAT_C1 = dict(c1_busy_us=5805, c1_work_us=5000)          # a LAT build: item 46 the job's span (<= one 256-frame block,
+                                                         # 5805 us), item 48 its work (the old busy bar)
+WHOLE_ROW = {"276": round(4800 * LAT_SCALE), "277": round(4800 * LAT_SCALE)}   # the stress rows' whole-ISR bar (the
+                                                         # user, 2026-11-09: the two-core gate 4800; tools/hil_cpu.py
+                                                         # stays at 4500), per interrupt on an FR_LAT_HALF build
 
 
-def bars(row=None):
-    return dict(BARS, whole_us=WHOLE_ROW.get(row, BARS["whole_us"]))
+def bars(row=None, lat=None):
+    b = dict(BARS, whole_us=WHOLE_ROW.get(row, BARS["whole_us"]))
+    return dict(b, **LAT_C1) if (LAT if lat is None else lat) else b
 
 
 def decode(msgs):
     """CC (control, value) pairs of one or more replies -> {name: value} (the core-1 items, the record's words as
     "frec": {name: word}, and the profiler's app_us / now_us / shed / whole_us / tail_us, the USB counters)"""
     acc, part, bpart, cur, msb = {}, {}, {}, None, 0
-    got = {}
+    got, scur, smsb = {}, None, 0
     for c, v in msgs:
-        if c == 100:
+        if c == 97:                                      # (a RH_PROF_STAGES build: CC 97 = stage, 98 / 99 = us)
+            scur = v
+        elif c == 98:
+            smsb = v
+        elif c == 99 and scur is not None:
+            st = acc.setdefault("st", {})
+            st[scur] = max(st.get(scur, 0), smsb << 7 | v)
+        elif c == 100:
             cur = v
         elif c == 101:
             msb = v
@@ -154,10 +174,11 @@ def decode(msgs):
     return acc
 
 
-def judge(reads, row=None):
+def judge(reads, row=None, lat=None):
     """the reads (dicts from decode, in order, each with "t") -> (verdict, [reasons]); verdict PASS / FAIL; row: its
-    bars (bars(row): the stress rows' whole ISR)"""
-    B = bars(row)
+    bars (bars(row): the stress rows' whole ISR); lat: a FRODHES_LAT_HALF build (default: the environment's)"""
+    lat = LAT if lat is None else lat
+    B = bars(row, lat)
     bad, jobs_last, shed0 = [], -1, None
     if not reads:
         return "FAIL", ["no read"]
@@ -180,11 +201,16 @@ def judge(reads, row=None):
             if j < jobs_last:
                 bad.append(f"{t:.0f} s: the jobs counter dropped {jobs_last} -> {j} (a reset)")
             jobs_last = j
-        for k, lim in (("app_us", B["app_us"]), ("whole_us", B["whole_us"]), ("busy_us", B["c1_busy_us"]),
-                       ("stack", B["stack"])):
+        lims = [("app_us", B["app_us"]), ("whole_us", B["whole_us"]), ("busy_us", B["c1_busy_us"]), ("stack", B["stack"])]
+        if lat:
+            lims.append(("work_us", B["c1_work_us"]))
+            if "work_us" not in r:
+                bad.append(f"{t:.0f} s: work_us not reported (item 48: a two-core build before 0.9.11?)")
+        for k, lim in lims:
             if r.get(k, 0) > lim:
                 bad.append(f"{t:.0f} s: {k} {r[k]} > {lim}")
-        for k in ("bad", "refused", "late", "holds", "fault_vec", "underruns", "missed", "overruns"):
+        for k in ("bad", "refused", "late", "holds", "fault_vec", "underruns", "missed", "overruns") + (
+                ("rec1", "rec0") if lat else ()):
             if r.get(k, 0):
                 bad.append(f"{t:.0f} s: {k} {r[k]}")
         for k in ("vdc14", "sysvdd"):
@@ -204,6 +230,17 @@ def judge(reads, row=None):
 
 
 def selftest():
+    """the 256-frame bars whatever FRODHES_LAT_HALF says (the LAT ones by judge's lat argument)"""
+    g = globals()
+    saved = {k: g[k] for k in ("LAT", "BARS", "WHOLE_ROW")}
+    g.update(LAT=False, BARS=dict(BARS, app_us=5000, whole_us=4500), WHOLE_ROW={"276": 4800, "277": 4800})
+    try:
+        _selftest()
+    finally:
+        g.update(saved)
+
+
+def _selftest():
     ok = [(100, 30), (101, 0), (102, 1), (100, 31), (101, 1), (102, 2), (100, 32), (101, 0), (102, 3),
           (100, 34), (101, 0), (102, 0), (100, 38), (101, 0), (102, 7), (100, 39), (101, 0), (102, 15),
           (116, 7), (117, 0), (107, 0), (108, 7), (115, 0)]
@@ -223,6 +260,20 @@ def selftest():
         assert judge([dict(r, t=0, whole_us=4700, holds=1)], row)[0] == "FAIL"
         assert judge([dict(r, t=0, whole_us=4700, shed=0), dict(r, t=5, whole_us=4700, shed=1)], row)[0] == "FAIL"
     assert judge([dict(r, t=0, whole_us=4600)], "274")[0] == "FAIL" and judge([dict(r, t=0, whole_us=4600)], "278")[0] == "FAIL"
+    # 256-frame builds: core 1's busy <= 5000, work and recoveries not judged
+    assert judge([dict(r, t=0, busy_us=5000, rec0=2)], lat=False)[0] == "PASS"
+    assert judge([dict(r, t=0, busy_us=5004)], lat=False)[0] == "FAIL"
+    # a LAT build: the span (46) <= 5805, the work (48) <= 5000, recoveries 0, the work reported
+    w = decode(ok + [(100, 46), (101, 43), (102, 0), (100, 48), (101, 31), (102, 32)])
+    assert w["busy_us"] == 43 << 7 and w["work_us"] == 31 << 7 | 32, w
+    assert judge([dict(w, t=0)], "276", lat=True)[0] == "PASS"
+    assert judge([dict(w, t=0, busy_us=5805, work_us=5000)], "276", lat=True)[0] == "PASS"
+    assert judge([dict(w, t=0, busy_us=5806)], "276", lat=True)[0] == "FAIL"
+    assert judge([dict(w, t=0, work_us=5004)], "276", lat=True)[0] == "FAIL"
+    assert judge([dict(w, t=0, rec1=1)], "276", lat=True)[0] == "FAIL"
+    assert judge([dict(w, t=0, rec0=1)], "276", lat=True)[0] == "FAIL"
+    assert judge([dict(r, t=0, busy_us=100)], "276", lat=True)[0] == "FAIL"   # (no work_us: an old image)
+    assert bars("276", True)["c1_busy_us"] == 5805 and bars("276", False)["c1_busy_us"] == 5000
     assert plan("277", None)["bars"]["whole_us"] == 4800 and plan("274", None)["bars"]["whole_us"] == 4500
     import inspect                                       # (--no-audio: sounddevice imported on the audio path only)
     src = inspect.getsource(run)
@@ -498,7 +549,8 @@ def run(a):  # noqa: C901 (the device run)
                 reads.append(r)
                 print(f"{t:7.0f} s  core1 {r.get('state')} jobs {r.get('jobs')} bad {r.get('bad')} ref "
                       f"{r.get('refused')} late {r.get('late')} holds {r.get('holds')} rec {r.get('rec1')}/"
-                      f"{r.get('rec0')}  app {r.get('app_us')} whole {r.get('whole_us')} c1busy {r.get('busy_us')} "
+                      f"{r.get('rec0')}  app {r.get('app_us')} whole {r.get('whole_us')} c1busy {r.get('busy_us')} work "
+                      f"{r.get('work_us')} "
                       f"wait {r.get('wait_us')} shed {r.get('shed')}", flush=True)
                 next_read = t + p["read_every_s"]
                 if len(reads) % 120 == 0:            # every 10 min: the report so far
@@ -561,8 +613,8 @@ def per_engine(p, reads):
         rs = [r for r in reads if len(p["engines"]) == 1 or int(r.get("t", 0) // 600) % len(p["engines"]) == i]
         if rs:
             out.append(e + " " + "/".join(str(max(r.get(k, 0) for r in rs)) for k in ("app_us", "whole_us", "busy_us",
-                                                                                      "wait_us")))
-    return "; ".join(out) + " (app / whole / c1 busy / wait, us)"
+                                                                                      "work_us", "wait_us")))
+    return "; ".join(out) + " (app / whole / c1 busy / c1 work / wait, us)"
 
 
 def write_report(a, p, reads, rec, complete, interim=False):
@@ -574,8 +626,8 @@ def write_report(a, p, reads, rec, complete, interim=False):
     base = os.path.join(a.out, f"{a.row}-report")
     json.dump(dict(plan=p, reads=reads, frec=rec.get("frec"), verdict=verdict, why=why, complete=complete),
               open(base + ".json", "w"), indent=1)
-    worst = {k: max((r.get(k, 0) for r in reads), default=None) for k in ("app_us", "whole_us", "busy_us", "wait_us",
-                                                                           "stack")}
+    worst = {k: max((r.get(k, 0) for r in reads), default=None) for k in ("app_us", "whole_us", "busy_us", "work_us",
+                                                                           "wait_us", "stack")}
     last = reads[-1] if reads else {}
     with open(base + ".md", "w") as f:
         state = f"RUNNING ({verdict} so far)" if interim else (verdict if complete else "INCOMPLETE")

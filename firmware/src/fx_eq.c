@@ -150,7 +150,7 @@ static uint32_t eq_cost_us(void)                        /* fx_cost_us: each band
     }
     return us;
 }
-#if FR_C1
+#if FR_CHUNK
 /* fx_eq for a chunk (fx.c fxc_o / fxc_e): the targets, which bands run and glide at the first, the rest at the last */
 __attribute__((noinline)) static void fx_eq(int32_t *m, uint32_t n)
 {

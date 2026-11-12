@@ -445,11 +445,15 @@ static uint32_t bar_level_sum(const bar_voice_t *v)
 #define BAR_NA BAR_NV                               /* the voices a strike may take (FR_C1 builds, frodhes.c: fewer once
                                                      * core 1 is held: the one-core fallback) */
 #endif
+#ifndef BAR_START_MAX
+#define BAR_START_MAX BAR_NA                        /* the note starts a block (frodhes.c FR_LAT_HALF: fewer, the block's
+                                                     * starts all fall in its first interrupt) */
+#endif
 static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already waits for a note, or this block started
                                                      * BAR_NV notes; try next block */
 {
     uint32_t i, pick = BAR_NV, best = 0xFFFFFFFFu;
-    if (bar_starts >= BAR_NA) return 0;
+    if (bar_starts >= BAR_START_MAX) return 0;
     for (i = 0; i < BAR_NA && bv[i].pend; i++) ;
     if (i == BAR_NA) return 0;                      /* (more than BAR_NV steals in one block: BUGHUNT #21) */
     bar_starts++;
@@ -1017,7 +1021,7 @@ FR_RAM __attribute__((noinline)) static void bar_pair(bar_voice_t *v, uint32_t o
     }
 }
 
-#if !FR_C1
+#if !FR_CHUNK
 /* the pulse into the force slots BAR_XT(0 .. nF)[2] as F << 12, F exactly the Q15 force of before (the kernels' be scales it) */
 FR_RAM __attribute__((noinline)) static uint32_t bar_force(bar_voice_t *v)
 {
@@ -1087,7 +1091,7 @@ static void bar_damper_step(bar_voice_t *v)
     }
 }
 
-#if !FR_C1
+#if !FR_CHUNK
 /* ---- the output loops (out of line, pointer form): the voice's gain into the mix, = for the block's first voice (no
  * zero pass), += for the others; _rad: + the tube's radiation wt x1 >> 28 (the discs parked open), as bar_x += it
  * before the gain; bar_fade*: the steal fade (Q15, BAR_FADE_STEP a sample, to 0), returns where it ends */
@@ -1691,6 +1695,59 @@ static void bar_begin(uint32_t n)
     bar_c1_hi = bar_c1_lo = 0;
 }
 
+#if FR_LAT_EV
+/* FR_LAT_EV (frodhes.c FR_LAT_HALF): a note-on the block's start left waiting (BAR_START_MAX) starts at a later
+ * interrupt of the block, from its first frame o, on a free voice: bar_init now, the voice planned as bar_begin
+ * plans it but from frame o (the pulse's samples from o, its contact noise from o on, the dither on from o). A note
+ * still ringing (a re-strike) or no free voice (a steal: its fade is the block's) waits for the block's start. The
+ * starts an interrupt stay within BAR_START_MAX, the steals' notes that start at this block's end (bar_end) counted
+ * (the block's last interrupt). The felt noise's LFSR is untouched (a new voice has none) */
+static uint32_t bar_mid_o;                          /* the interrupt's first frame (bar_mid) */
+static void bar_mid(uint32_t o, int last)
+{
+    uint32_t i, k = 0;
+    bar_mid_o = o;
+    if (last)
+        for (i = 0; i < BAR_NV; i++) if (bv[i].alive && bv[i].pend) k++;
+    bar_starts = k;
+}
+static int bar_mid_one(uint32_t note, uint32_t vel)
+{
+    uint32_t i, o = bar_mid_o, L = (uint32_t)BAR_PLEN << 16;
+    int32_t nz0 = bar_nz_e, d;
+    bar_voice_t *v;
+    bar_c1v_t *c;
+    if (bar_starts >= BAR_START_MAX || !o || o >= BAR_N) return 0;
+    for (i = 0; i < BAR_NV; i++)
+        if (bv[i].alive && bv[i].note == note) return 0;   /* (a re-strike, or a steal's note: the block's start) */
+    for (i = 0; i < BAR_NA && (bv[i].alive || bv[i].pend); i++) ;
+    if (i == BAR_NA) return 0;
+    v = &bv[i]; c = &bar_c1v[i];
+    bar_starts++;
+    bar_init(v, note, vel);
+    c->t = v->ptab; c->nf = 0;
+    if (v->ptab) {                                  /* (bar_begin's plan, the block's frames from o on) */
+        uint32_t pos = v->ppos, rate = v->prate, kk = pos >= L ? 1u : (L - pos + rate - 1u) / rate;
+        if (kk > BAR_N - o) kk = BAR_N - o;
+        else v->ptab = 0;
+        c->pos = pos - o * rate;                    /* (bar_force reads pos + j x rate from the block's frame j) */
+        c->nf = o + kk; v->ppos = pos + kk * rate;
+    } else
+        c->pos = v->ppos - o * v->prate;
+    c->ramp = v->ramp != 0;
+    c->fn = 0;
+    d = bar_nz_e - nz0;                             /* (bar_init's contact noise: from frame o on) */
+    bar_c1_nze += d; bar_c1_nzp += d;
+    if (bar_c1_nze) bar_c1_nzon = 1;
+    bar_c1_dm = -1;
+    bar_c1_act |= 1u << i;
+#ifdef DINGHY_HOST
+    if (v->felt_n) { fprintf(stderr, "bars FR_LAT_EV: a new voice with felt noise\n"); abort(); }
+    bar_h_mid++;
+#endif
+    return 1;
+}
+#endif
 __attribute__((noinline)) static void bar_chunk(int32_t *mono_out, uint32_t o, uint32_t e)
 {
     uint32_t i, sb, j, act = bar_c1_act, ty = bar_sub < BAR_NTYPE ? bar_sub : 0u, nb = BAR_TYPE[ty].nbody, r;

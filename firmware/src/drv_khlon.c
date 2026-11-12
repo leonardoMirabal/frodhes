@@ -327,7 +327,7 @@ static void kh_dip_gain(const int32_t *dry, const int32_t *y, uint32_t n)
     g = (log2_q12((uint32_t)ew) - log2_q12((uint32_t)ed)) >> 1;   /* log2 of the RMS ratio, Q12 */
     kh_dg = exp2_q16(g < -8192 ? -8192 : g > 8192 ? 8192 : g) >> 4;           /* x 1/4 .. 4, Q12 */
 }
-#if FR_C1
+#if FR_CHUNK
 /* kh_dip_gain from energies summed every 4th sample (two cores: drv_khlon_run below) */
 static void kh_dg_of(uint64_t ew, uint64_t ed)
 {
@@ -357,7 +357,7 @@ static void kh_fade(const int32_t *in, int32_t *u, int32_t *out, uint32_t n, uin
     else { kh_dip_gain(in, u, n); kh_fade_pass(in, u, out, n, (int32_t)n - 1, -1); }
 }
 
-#if FR_C1
+#if FR_CHUNK
 /* drv_khlon_run for a chunk (fx.c fxc_o / fxc_e): the rows and the dip's step at the first chunk, the passes on the
  * chunk (kh_tmp: the chunk's scratch from its start), the rows' histories and the silence test at the last. The dip's
  * dry gain (kh_dg, one core: from the dip's first block, kh_dip_gain) comes from the block before the dip and the

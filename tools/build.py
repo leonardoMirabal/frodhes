@@ -245,6 +245,20 @@ def build_app():
             raise SystemExit("app.ld: the RAMTEXT lines were not found (--c1 .ramx)")
         txt = txt.replace(a, "RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x8000").replace(
             b, b + "\n    .ramx (NOLOAD) : { . = ALIGN(8); _ramx_start = .; *(.ramx*) . = ALIGN(4); _ramx_end = .; } > RAMTEXT")
+        hot = os.environ.get("C1_HOT_FILE") or str(FW / "c1_hot.txt")
+        if os.path.exists(hot):
+            # --c1: the audio's hot code side by side after app_audio (firmware/c1_hot.txt: core 0's voice code, then
+            # core 1's effects chain, in that order), so where the rest of the code lands no longer decides which of
+            # them share the flash cache's lines with which (K29: the same effects cost 3700 or 4700 us a block on two
+            # layouts of one source, the 256-frame and the 128-frame builds)
+            names = [l.split("#")[0].strip() for l in Path(hot).read_text().splitlines()]
+            k = "*(.text.rh_hermite)"
+            if txt.count(k) != 1:
+                raise SystemExit("app.ld: the rh_hermite line was not found (--c1 hot code)")
+            # (pinned: the hot code starts at a fixed address, 0x02001400 (. inside .text counts from its start 0x02000120), however app_audio's size moves; ld fails if it grows
+            # past it)
+            txt = txt.replace("KEEP(*(.text.app_audio)) " + k, "KEEP(*(.text.app_audio)) . = 0x12E0; " + k +
+                              "".join(f" *(.text.{n})" for n in names if n))
     if txt != ld.read_text():
         ld = OUT / "app.ld"
         ld.write_text(txt)
@@ -447,6 +461,15 @@ def check(img, syms, dis, rt):
     if C1:
         notes.append(f"--c1: .ramx {sym('_ramx_end') - sym('_ramx_start')} B, .ram_text + .ramx end at "
                      f"{sym('_ramx_end'):#x} of 0x1c08000")
+        hot = Path(os.environ.get("C1_HOT_FILE") or FW / "c1_hot.txt")
+        if hot.exists():                 # every name of the hot list a function placed in the hot block (a renamed
+            names = [n for n in (l.split("#")[0].strip() for l in hot.read_text().splitlines()) if n]   # one: stale)
+            lo, hi = 0x02001400, 0x02001400 + 0x20000
+            gone = [n for n in names if not lo <= sym(re.escape(n)) < hi]
+            if gone:
+                errors.append(f"--c1: {hot.name}: {len(gone)} name(s) not in the hot block: {gone[:6]}")
+            else:
+                notes.append(f"--c1: {len(names)} hot functions from {sym('rh_hermite'):#x}")
     # the fonts' tables in the image (UI-SIMPLIFY: the flash they take; a face the code no longer uses is gone):
     # AF_<N>* (aa_font.h, gen_aa_font.py) and FONT_<N>* (felucca_font.h, gfx.c), by objdump -t sizes
     font = {}
@@ -579,6 +602,9 @@ def main():
     ap.add_argument("--o2", action="store_true",
                     help="probe: the app at -O2 -fno-unroll-loops instead of -Os (not with --release; the USB-MIDI "
                          "babbled at -O2 once, 2026-10-13: run the USB checks on such a build)")
+    ap.add_argument("--c1-256", action="store_true",
+                    help="with --c1: the 256-frame interrupts of 0.9.10 (no FR_C1_LAT; developer A/B builds only), "
+                         "file frodhes[-X.Y.Z]-c1-256.fwsc")
     ap.add_argument("--c1", action="store_true",
                     help="two cores (frodhes.c FR_C1: 14 voices on core 0, the effects and the full-rate reverb on "
                          "core 1); the FM-1 only; file frodhes[-X.Y.Z]-c1.fwsc, identity FM-1_958 as every build")
@@ -618,8 +644,8 @@ def main():
         if BOARD != "fm1":
             raise SystemExit("--c1: the FM-1 only")
         C1 = True
-        BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], "-DFR_C1=1"]
-        name = name[:-len(".fwsc")] + "-c1.fwsc"
+        BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], "-DFR_C1=1"] + ([] if a.c1_256 else ["-DFR_C1_LAT=1"])
+        name = name[:-len(".fwsc")] + ("-c1-256.fwsc" if a.c1_256 else "-c1.fwsc")
     if a.usb_name is not None:
         if BOARD != "fm1":
             raise SystemExit("--usb-name: the FM-1 only")

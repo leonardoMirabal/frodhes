@@ -25,7 +25,9 @@
 #define APP_VER "0.0"
 #endif
 #define FS 44100u
-#define HALF_FRAMES 256u
+#ifndef HALF_FRAMES
+#define HALF_FRAMES 256u                        /* (the app may set it: frodhes.c FR_LAT_HALF) */
+#endif
 
 static volatile uint32_t fm1_ms;
 #if BOARD_SMK37
@@ -106,7 +108,21 @@ static void fm1_led_key_glow(uint32_t id, int on) { if (id < 64u) host_glow[id] 
 
 /* the screen: 240 x 240 RGB565, as the ST7789 gets it (gfx.c sends the bytes swapped) */
 static uint16_t fb[240 * 240];
-static void lcd_sync(void) {}
+static void host_ms(void);
+/* FRODHES_LCDMS=N: each lcd_sync lasts N ms (the FM-1 waits there for a strip's DMA, up to ~20 ms at 12 MHz): the
+ * clock, the script and the audio run on meanwhile, and the app's LCD_IDLE (frodhes.c app_idle) once a millisecond */
+static void lcd_sync(void)
+{
+    static int ms = -1;
+    int i;
+    if (ms < 0) ms = getenv("FRODHES_LCDMS") ? atoi(getenv("FRODHES_LCDMS")) : 0;
+    for (i = 0; i < ms; i++) {
+        host_ms();
+#ifdef LCD_IDLE
+        LCD_IDLE();
+#endif
+    }
+}
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c)
 {
     uint32_t i, j;
@@ -166,8 +182,28 @@ static uint8_t host_old_ours = 1;               /* (SMK: the owner tag before 0.
 static __attribute__((unused)) int smk_old_ours(void) { return host_old_ours; }
 static void fm1_wdt_feed(void) {}
 static uint32_t crc32(const uint8_t *p, uint32_t n);   /* presets.c (host) */
+#ifdef FL_XIP_OFF_WAIT                          /* (frodhes.c FR_LAT_TAIL: the flash leaves XIP only with the tail done) */
+static void host_xip_check(void);
+static void host_ms(void);
+static void host_xip_isr(void)                  /* FRODHES_ISR_AT_FLASH=1: the FM-1's audio interrupt may come just
+                                                 * before any flash call (the host renders only between main-loop
+                                                 * passes otherwise): a millisecond here, its half buffers rendered */
+{
+    static int on = -1, in;
+    if (on < 0) on = getenv("FRODHES_ISR_AT_FLASH") && atoi(getenv("FRODHES_ISR_AT_FLASH"));
+    if (on && !in) { in = 1; host_ms(); in = 0; }
+}
+#ifdef HOST_XIP_NOWAIT                          /* (tests/py/test_latency.py: the check without the wait: it fires) */
+#define HOST_XIP() do { host_xip_isr(); host_xip_check(); } while (0)
+#else
+#define HOST_XIP() do { host_xip_isr(); FL_XIP_OFF_WAIT(); host_xip_check(); } while (0)
+#endif
+#else
+#define HOST_XIP() ((void)0)
+#endif
 static int st_read(uint32_t off, void *dst, uint32_t n)
 {
+    HOST_XIP();
     if (off >= sizeof host_mem || n > sizeof host_mem - off) return -1;
     memcpy(dst, host_mem + off, n);
     return 0;
@@ -176,13 +212,14 @@ static uint32_t host_op_t, host_op_ms;
 static int fl_op_start(uint32_t off, const uint8_t *src, uint32_t n)   /* src: a page program, 0: an erase */
 {
     uint32_t i;
+    HOST_XIP();
     if (host_fl_check(src ? "write settings" : "erase settings", off, src ? n : 0x1000u)) return -1;
     if (src) for (i = 0; i < n; i++) host_mem[off + i] &= src[i];   /* (NOR: a program clears bits only) */
     else memset(host_mem + off, 0xFF, 0x1000u);
     host_op_t = fm1_ms; host_op_ms = src ? 0u : HOST_SAVE_MS - 10u;
     return 1;
 }
-static int fl_op_poll(void) { return fm1_ms - host_op_t < host_op_ms ? 1 : 0; }
+static int fl_op_poll(void) { HOST_XIP(); return fm1_ms - host_op_t < host_op_ms ? 1 : 0; }
 static void platform_poll(void);
 #define ST_SAVED() printf("%6u ms  settings saved (%u B)\n", fm1_ms, 256u)
 #define ST_WAIT() platform_poll()               /* (a held save: one millisecond a step) */
@@ -560,9 +597,21 @@ static void host_ms(void)
         step++;
     }
     owed += FS;                                 /* the frames this millisecond is worth, in blocks as the ISR renders */
+#if HALF_FRAMES != 256u
+    /* FR_LAT_HALF (frodhes.c): FRODHES_LAT_SYNC=1 renders a 256-frame block's halves back to back, when the 256-frame
+     * build renders its block (no main loop between them): the events land in the same blocks as there, so the two
+     * builds must give the same integers (tests/py/test_latency.py); unset, a half every HALF_FRAMES as on the FM-1 */
+    static int lat_sync = -1, lat_more;
+    if (lat_sync < 0) lat_sync = getenv("FRODHES_LAT_SYNC") && atoi(getenv("FRODHES_LAT_SYNC"));
+    while (lat_sync ? lat_more || owed >= 1000u * 256u : owed >= 1000u * HALF_FRAMES) {
+        uint32_t i;
+        if (lat_sync) { if (!lat_more) { owed -= 1000u * 256u; lat_more = 256u / HALF_FRAMES; } lat_more--; }
+        else owed -= 1000u * HALF_FRAMES;
+#else
     while (owed >= 1000u * HALF_FRAMES) {
         uint32_t i;
         owed -= 1000u * HALF_FRAMES;
+#endif
 #if APP_OUT_WRITTEN
         for (i = 0; i < 2u * HALF_FRAMES; i++)  /* garbage: the app must write every sample (as on the FM-1) */
             blk[i] = (int32_t)(0x5A5A5A5Au ^ (i * 2654435761u));

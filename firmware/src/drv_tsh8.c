@@ -449,7 +449,7 @@ static void ts_first(int32_t a)
     ts_ok = 1;
 }
 
-#if FR_C1
+#if FR_CHUNK
 static void drv_tsh8_run(const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)
 {                                                  /* (FR_C1: a chunk, fx.c fxc_o / fxc_e; the rows, the table's
                                                     * build and swap at the first, the swap's crossfade in it) */

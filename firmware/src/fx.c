@@ -22,7 +22,7 @@
 #define FX_SIDE rh_side
 #define FX_SIDE_ON rh_side_on
 #endif
-#if FR_C1
+#if FR_CHUNK
 #define FX_SIDE_ONB fxc_side                    /* (FR_C1: latched at the block's first chunk, fx_process) */
 #else
 #define FX_SIDE_ONB FX_SIDE_ON
@@ -151,7 +151,7 @@ __attribute__((noinline)) static void xf_post(int32_t *L, int32_t *R, const int3
     xf_blend(L, dl, n, w0, w1);
     if (R) xf_blend(R, dr, n, w0, w1);
 }
-#if FR_C1
+#if FR_CHUNK
 /* FR_C1's sub-blocks (frodhes.c app_audio): fx_process runs each block as chunks [fxc_o, fxc_e) of the fxc_n (256)
  * samples, one call each, in order, every buffer indexed from the block's start. An effect does its once-a-block work
  * at the first chunk (FXC_1: fxc_o 0) and at the last (FXC_Z: fxc_e fxc_n), keeps what its first chunk worked out in
@@ -159,6 +159,9 @@ __attribute__((noinline)) static void xf_post(int32_t *L, int32_t *R, const int3
  * (tests/py/test_c1_subblock.py: the two-core build = the one-core 14-voice build, sample for sample). The block whole
  * (fxc_o 0, fxc_e fxc_n) is one chunk. Chunks are multiples of 32 samples: every effect's sub-block grid */
 static uint32_t fxc_o, fxc_e = 256u, fxc_n = 256u;
+#if FR_LAT
+static volatile uint32_t fxc_ce = 256u;               /* FR_LAT_HALF (frodhes.c app_audio): this interrupt's last frame + 1 */
+#endif
 #ifdef C1_EST_LOG
 static uint32_t c1_est_blk;                              /* (host diagnostics: the block count, fx_process) */
 #endif
@@ -402,7 +405,7 @@ __attribute__((noinline)) static void fl_xrun(int32_t *m, uint32_t n, const svf_
 static __attribute__((noinline)) void fx_filter(int32_t *m, uint32_t n)
 {
     static const uint8_t POLES[7] = {0, 2, 3, 2, 3, 2, 2};   /* TYPE -> poles; the mode (LP HP BP NOTCH) is in the switch below */
-#if FR_C1
+#if FR_CHUNK
     static uint32_t type, poles, want;                   /* (the block's, from its first chunk) */
     static int open, rest;
     uint32_t inc = fx_lfo_sync_inc ? fx_lfo_sync_inc : FX_LFO_INC[fx_p[FXP_LFO_RATE]], sb, j;
@@ -501,7 +504,7 @@ static __attribute__((noinline)) void fx_filter(int32_t *m, uint32_t n)
             fl_ow = w1;
         }
     }
-#if FR_C1
+#if FR_CHUNK
     if (FXC_Z && want != type && !fl_ow) {
 #else
     if (want != type && !fl_ow) {                       /* dry now: take the new TYPE (it glides in), or rest */
@@ -589,7 +592,7 @@ __attribute__((noinline)) static void dr_general(int32_t *m, const int32_t *ys, 
         m[i] = dr_w == 32768 ? y : x0 + (int32_t)(((int64_t)(y - x0) * dr_w) >> 15);
     }
 }
-#if FR_C1
+#if FR_CHUNK
 /* dr_classic and fx_drive_classic for a chunk: the settings, the ramp and the loop's choice at the first chunk; dr_w's
  * value at the block's end (dr_sal: fx_spread's first chunk reads it) worked out there too */
 static const int32_t *dr_os2_c(const int32_t *m, int32_t gq, int32_t dgq, int32_t bias, int32_t b0);
@@ -897,7 +900,7 @@ static int32_t tw_amp_sub(uint32_t ph, int32_t *tr)   /* a sub-block's gains (AM
 __attribute__((noinline)) static void fx_trem_amp(const int32_t *m, int32_t *L, int32_t *R, uint32_t n, uint32_t inc)
 {
     uint32_t sb;
-#if FR_C1
+#if FR_CHUNK
     if (FXC_1) tw_amp_block(fx_p[FXP_TW_SHAPE], fx_p[FXP_TW_DEPTH]);
     for (sb = fxc_o; sb < fxc_e; sb += 32u) {
 #else
@@ -928,7 +931,7 @@ static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, in
 {
     int32_t depth = fx_p[FXP_TW_DEPTH], rate = fx_p[FXP_TW_RATE], qt = 9830 - rate * 58, wt[32];
     uint32_t inc = fx_tw_sync_inc ? fx_tw_sync_inc : FX_LFO_INC[rate], sb, j;
-#if FR_C1
+#if FR_CHUNK
     if (FXC_1 && sw == 2 && (wah_q < 0 || !wah_xw || fx_quiet_blocks >= 2u)) wah_q = qt;
     if (sw == 1 && fx_p[FXP_TW_SHAPE] > 64) { fx_trem_amp(m, L, R, n, inc); return; }
     for (sb = fxc_o; sb < fxc_e; sb += 32u) {
@@ -1012,7 +1015,7 @@ static int32_t wah_xw;
 static uint8_t tw_o RH_SP_SEC(".bss.fx_two");
 __attribute__((noinline)) static void fx_trem_x(const int32_t *m, int32_t *L, int32_t *R, uint32_t n, int32_t sw)
 {
-#if FR_C1
+#if FR_CHUNK
     int32_t w1, gl = tw_gl, gr = tw_gr;                 /* (this chunk's start: the tremolo's gains and phase) */
     uint32_t ph = tw_ph;
     if (FXC_1 && !wah_xw) {
@@ -1161,10 +1164,10 @@ FX_RAM __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, u
     uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, s;
     int on = fx_p[FXP_PH_SW] != 0;
     int32_t w1;
-#if FR_C1
+#if FR_CHUNK
     if (!on && !ph_w) { if (FXC_1) { ph_cq = -1; ph_ph += inc * n; } return; }
     if (FXC_1) {
-        if (!ph_w) memset(&ph_st, 0, sizeof ph_st);
+        if (!ph_w) FR_FAR(memset)(&ph_st, 0, sizeof ph_st);
         if (ph_cq < 0) { ph_cq = ct; ph_gq = gt; ph_dq = depth << 8; ph_fq = fbk; ph_apv = 0; }
     }
     w1 = FR_FAR(xf_pre_c)(ph_w, on, L, R, n, XF_STEP_CP);
@@ -1176,7 +1179,9 @@ FX_RAM __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, u
                                                          * phaser +4.2 dB over both held renders, the control sweep) */
     if (!ph_w) {                                        /* switched on from rest: the allpasses start from 0 (their
                                                          * states were stale), under the fade in */
-        memset(&ph_st, 0, sizeof ph_st);
+        FR_FAR(memset)(&ph_st, 0, sizeof ph_st);     /* (through a register: fx_phaser is in RAM, libc.c's memset
+                                                         * in flash, beyond a call's reach when the compiler does not
+                                                         * inline it: the one-core link failed so, 0.9.11) */
     }
     if (ph_cq < 0) { ph_cq = ct; ph_gq = gt; ph_dq = depth << 8; ph_fq = fbk; ph_apv = 0; }   /* (switched on: at once) */
     w1 = FR_FAR(xf_pre)(ph_w, on, L, R, n, XF_STEP_CP);
@@ -1224,7 +1229,7 @@ FX_RAM __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, u
         }
         ph_ph += inc * 32u;
     }
-#if FR_C1
+#if FR_CHUNK
     FR_FAR(xf_post_c)(L, R, xf_d[0], xf_d[1], n, ph_w, w1);
     if (FXC_Z) ph_w = w1;
 #else
@@ -1354,7 +1359,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
     uint32_t inc = fx_cp_sync_inc ? fx_cp_sync_inc : FX_LFO_INC[fx_p[FXP_CP_SPEED]] >> 1, sb;
     int on = fx_p[FXP_CP_SW] != 0;
     int32_t w1, mt = (16384 * (2 * depth > 127 ? 127 : 2 * depth)) / 127;
-#if FR_C1
+#if FR_CHUNK
     static int con;                                     /* (the block's: on, the line filled) */
     if (!on && !cho_xw) { cho_el = -1; cho_km = cho_cg = 0; cho_fill = 0; cho_run = 0; return; }
     if (FXC_1) {
@@ -1689,7 +1694,7 @@ static inline int32_t cmp_glide(int32_t mk)              /* cmp_mk one sub-block
     cmp_mk += (d > 15 || d < -15) ? d >> 4 : d;
     return cmp_mk;
 }
-#if FR_C1
+#if FR_CHUNK
 static int32_t cmp_pkc;                                  /* (fx_comp: a switch-on block's input peak so far) */
 static uint8_t cmp_redo;                                 /* (fx_comp: a switch-on block's detector, again at its end) */
 #endif
@@ -1708,7 +1713,7 @@ static void fx_comp(int32_t *m, uint32_t n)
     cmp_gsh = cmp_gsh_of(kr16);
     int32_t w1;
     uint32_t sb, j;
-#if FR_C1
+#if FR_CHUNK
     if (!on && !cmp_xw) { fx_cmp_gr = 0; return; }
     if (!cmp_xw && FXC_1) {                           /* switched on from rest: the detector from the first chunk's
                                                        * peak (one core: the block's; its later samples are not
@@ -2031,7 +2036,7 @@ __attribute__((noinline)) static void dly_type(int32_t sw)
  * nothing to bend: the time jumps (with sound in it, the glide as before) */
 #define DLY_SNAP(sw, target) do { if ((sw) == 2 && dly_sil >= DLY_LEN && !dly_lp && !dly_hp && dly_cur != 3 && !dly_xo) \
                                       dly_d = (target); } while (0)
-#if FR_C1
+#if FR_CHUNK
 /* fx_delay_t for a chunk (dly_tape.c's FR_C1 part: the rows written by the last chunk). Once a block, at the first chunk:
  * the settings, the quiet path, the routing (the one-block code decides it from the whole block's send: ANA with a far
  * TIME change after a silent line routes only if the block carries sound; with the first chunk silent the decision waits
@@ -2578,7 +2583,7 @@ static int32_t sp_aw RH_SP_SEC(".bss.fx_sp_aw"), sp_ad RH_SP_SEC(".bss.fx_sp_ad"
                sp_ay RH_SP_SEC(".bss.fx_sp_ay");        /* the last share; z^-1; the allpass' input and output */
 FX_RAM __attribute__((noinline)) static void fx_spread(const int32_t *mono, int32_t *L, int32_t *R, uint32_t n)
 {
-#if FR_C1
+#if FR_CHUNK
     uint32_t sb;
     const int32_t *side = FX_SIDE;
     static int32_t w0, w1;                              /* (the block's: from its first chunk) */
@@ -2769,7 +2774,7 @@ FX_RAM __attribute__((noinline)) static int32_t fx_lv_ramp(int32_t lvl, int stil
  * instructions a sample, the DC blocker's a stack load more: cpu_check +36 us on VIBES with every effect) */
 FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t *out, uint32_t n)   /* (RAM: 0.9.6) */
 {
-#if FR_C1
+#if FR_CHUNK
     static int32_t lvl, lq, ls, pk, byp;                /* (the block's: from its first chunk) */
     uint32_t j, sb;
     int32_t wet = fx_wet, dl = dc_l, el = dce_l, dr = dc_r, er = dce_r;
@@ -2857,7 +2862,53 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
 #endif
     }
     fx_wet = wet; dc_l = dl; dce_l = el; dc_r = dr; dce_r = er;
-#if FR_C1
+#if FR_CHUNK && FR_LAT
+    /* FR_LAT_HALF (frodhes.c): out holds only the frames this interrupt sends ([fxc_ce - FR_LAT_HALF, fxc_ce), FR_LAT_TAIL
+     * frames later with the tail); the ones before are out of the DMA already. The gate runs at the frames sent's end
+     * and at the block's end, over the frames not gated yet (gate_done ..): it opens on the block's peak so far (one
+     * core: the whole block's), it counts and falls at the block's end. A change decided after the block's first frames
+     * went out takes the gain where one core's ramp from the block's start has it (from gate_g0): the same integers from
+     * there on; the frames before (all under -60 dBFS: that is what kept the gate as it was) had the old ramp. An
+     * opening decided after frames went out (a note from silence whose first frames stayed under the threshold:
+     * they went out muted) ramps up from the gain those frames had instead: taken from the block's start, the gain
+     * jumped from 0 to full at the frames sent's end, a step of up to the threshold (0.9.11, tests/py/
+     * test_lat_gate_onset.py); one core opens on the whole block's peak, from the block's start. The thresholds are
+     * one core's (GATE_LO_BARS on the bar engines) */
+    {
+        static int32_t gate_g0;                        /* the gain at the block's first frame */
+        static uint32_t gate_done;                     /* the block's frames gated */
+        int32_t t0 = gate_tgt, glo = eng_cur ? GATE_LO_BARS : GATE_LO;
+        if (fxc_e != fxc_ce - FR_LAT_TAIL && !FXC_Z) return;
+        if (!gate_done) gate_g0 = gate_g;
+        if (pk >= glo) { gate_quiet = 0; gate_tgt = 32768; }
+        else if (FXC_Z && ++gate_quiet >= GATE_HOLD) { gate_quiet = GATE_HOLD; gate_tgt = 0; }
+        if (gate_tgt < t0 && gate_done) {
+            int32_t g = gate_g0;
+            for (j = 0; j < gate_done; j++) {
+                if (g < gate_tgt) g = g + 512 > gate_tgt ? gate_tgt : g + 512;
+                else if (g > gate_tgt) g = g - GATE_FALL(g) < gate_tgt ? gate_tgt : g - GATE_FALL(g);
+            }
+            gate_g = g;
+        }
+        if (gate_g != 32768 || gate_tgt != 32768) {
+            const int32_t rnd = gate_tgt ? 0 : GATE_RND;
+            for (j = gate_done; j < fxc_e; j++) {
+                if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
+                else if (gate_g > gate_tgt) gate_g = gate_g - GATE_FALL(gate_g) < gate_tgt ? gate_tgt : gate_g - GATE_FALL(gate_g);
+                if (gate_g != 32768) {
+                    out[2u * j] = (out[2u * j] * gate_g + rnd) >> 15;
+                    out[2u * j + 1u] = (out[2u * j + 1u] * gate_g + rnd) >> 15;
+                }
+            }
+        }
+        gate_done = FXC_Z ? 0u : fxc_e;
+    }
+    if (!FXC_Z) return;
+    fx_peak = pk;
+    if (pk < 16) { if (fx_quiet_blocks < 0xFFFFu) fx_quiet_blocks++; } else fx_quiet_blocks = 0;
+    if (gate_g == 0) { if (fx_gz < 0xFFFFu) fx_gz++; } else fx_gz = 0;
+    return;
+#elif FR_CHUNK
     if (!FXC_Z) return;                                /* (the gate: once the block's peak is in, over all of out) */
 #endif
     /* silence gate: the codec mutes itself on digital zero, but while anything at all comes out its analog hiss
@@ -2937,7 +2988,7 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
 #else
     static int32_t m[256];
 #endif
-#if FR_C1
+#if FR_CHUNK
     uint32_t j;
 #ifdef C1_EST_LOG
     if (FXC_1) c1_est_blk++;
@@ -3002,7 +3053,7 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
      * want to change the dynamic of the piano": the bypass had dropped the compressor's make-up, the effects-on sound
      * 1-2.6 dB over the bypass on the factory presets). -DFR_BYP_KEEP_CMP=0: the bypass without the compressor */
     static int32_t dry_c[256];
-#if FR_C1
+#if FR_CHUNK
     for (j = fxc_o; j < fxc_e; j++) dry_c[j] = m[j];   /* (this chunk's: the later chunks' m is not written yet) */
 #else
     for (j = 0; j < n; j++) dry_c[j] = m[j];

@@ -333,7 +333,7 @@ __attribute__((noinline)) static int tp_route(int32_t *L, int32_t *R, uint32_t n
     return 1;
 }
 
-#if FR_C1
+#if FR_CHUNK
 /* ---- FR_C1's chunks (fx.c fxc_o / fxc_e): the delay's line written at the block's end. The send's stereo make-up
  * (fx_delay_t: tg, dly_sg, sg16) is measured over the whole block and ramps every send of it from the block's first
  * sample, so it is known only once the last chunk is in; but every read of a block is at least 257 samples behind its

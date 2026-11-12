@@ -79,6 +79,20 @@ test-c1:                   ## the two-core build on the host (FR_C1: 14 voices, 
 	  if build/host-c1/frodhes build/host-c1/$$n $$s > build/host-c1/$$n.log 2>&1; then echo "ok    $$n"; \
 	  else echo "FAIL  $$n (build/host-c1/$$n.log)"; fail=1; fi; done; exit $$fail
 
+test-c1-lat:               ## the two-core package's build on the host (FR_C1_LAT: 128-frame interrupts, note starts per
+                           ## interrupt, the 64-frame tail): every script with FRODHES_LAT_SYNC=1 (a block's interrupts
+                           ## back to back: the panel as test-c1 sees it), then in real time (tests/lat/known.txt: run
+                           ## to the end, their millisecond panel expects not judged)
+	@$(MAKE) -s build/host-c1lat/frodhes HOSTBIN=build/host-c1lat/frodhes HOST_DEFS="-DFR_C1=1 -DFR_C1_LAT=1"
+	@fail=0; for s in tests/scripts/*.txt tests/scripts14/*.txt; do n=$$(basename $$s .txt); \
+	  case $$s in tests/scripts/*_steal_release.txt) continue;; esac; \
+	  if FRODHES_LAT_SYNC=1 build/host-c1lat/frodhes build/host-c1lat/s_$$n $$s > build/host-c1lat/s_$$n.log 2>&1; then echo "ok    sync $$n"; \
+	  else echo "FAIL  sync $$n (build/host-c1lat/s_$$n.log)"; fail=1; fi; \
+	  build/host-c1lat/frodhes build/host-c1lat/$$n $$s > build/host-c1lat/$$n.log 2>&1; rc=$$?; \
+	  if [ $$rc = 0 ]; then echo "ok    real $$n"; \
+	  elif grep -qx "$$n" tests/lat/known.txt && [ $$rc -lt 64 ]; then echo "ok    real $$n (known: $$rc panel expects)"; \
+	  else echo "FAIL  real $$n (build/host-c1lat/$$n.log)"; fail=1; fi; done; exit $$fail
+
 SMKBIN  := build/host-smk/frodhes
 SMK_DEFS := -DBOARD_SMK37=1 -DFR_VOICES=10u
 $(SMKBIN): firmware/src/*.c firmware/src/*.h firmware/hal/*.h firmware/gen/*.h tests/host.c
