@@ -1,0 +1,47 @@
+name: plugin-attach
+# Builds the desktop plugin from a release tag (plugin.yml at that tag's commit, the tag's version, signed as a
+# release) and attaches the packages to that tag's release, as release.yml's job release does: only the platforms the
+# release commit records as tested (tools/plugin_asset.sh), under the fixed names, replacing any already there.
+# For a release that went out without them (v0.9.11: GitHub left the macOS job without a runner). Run by hand:
+#   gh workflow run plugin-attach.yml -f tag=vX.Y.Z
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'the release tag (vX.Y.Z)'
+        required: true
+        type: string
+permissions:
+  contents: write                    # gh release upload
+jobs:
+  plugin:
+    uses: ./.github/workflows/plugin.yml
+    with:
+      version: ${{ inputs.tag }}
+      sign: true
+      ref: ${{ inputs.tag }}
+    secrets: inherit
+  attach:
+    needs: plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0             # (tools/plugin_asset.sh reads the release commit)
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: plugin-*
+          merge-multiple: true
+          path: build/plugin-ci
+      - name: the packages of the platforms the release commit records as tested, attached to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "plugin-attach: '$TAG' is not a release tag"; exit 1 ;; esac
+          gh release view "$TAG" >/dev/null
+          sh tools/plugin_asset.sh "${TAG#v}" build/plugin-ci build/publish/plugin
+          set -- build/publish/plugin/*
+          if [ ! -e "$1" ]; then echo "no plugin asset for $TAG (no 'Plugin tested:' record)"; exit 1; fi
+          gh release upload "$TAG" "$@" --clobber

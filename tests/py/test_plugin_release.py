@@ -55,7 +55,7 @@ def test_plugin_asset_sh(tmp_path, line, have, code, attached):
 def test_plugin_workflow_artifacts_are_the_fixed_names():
     wf = yaml.safe_load(open(os.path.join(WF, "plugin.yml")))
     on = wf[True]
-    assert set(on["workflow_call"]["inputs"]) == {"version", "sign"}
+    assert set(on["workflow_call"]["inputs"]) == {"version", "sign", "ref"}
     assert {"pull_request", "push", "workflow_dispatch", "workflow_call"} <= set(on)
     paths = []
     for job in wf["jobs"].values():
@@ -77,16 +77,41 @@ def test_plugin_workflow_artifacts_are_the_fixed_names():
     assert "win-x64-clangcl.cmake" in yaml.dump(wf["jobs"]["windows"])   # one Windows toolchain, CI and local
 
 
-def test_release_yml_attaches_the_plugin_without_holding_the_release():
+def test_release_yml_waits_for_the_plugin_and_attaches_it_before_publishing():
+    # v0.9.11 (2026-11-12) went public without its plugin packages while GitHub left the macOS job without a runner:
+    # the release now waits for the plugin and attaches its packages to the draft before it leaves draft
     j = yaml.safe_load(open(os.path.join(WF, "release.yml")))["jobs"]
     assert j["plugin"]["uses"] == "./.github/workflows/plugin.yml"
     assert j["plugin"]["with"] == {"version": "${{ github.ref_name }}", "sign": True}
-    assert j["plugin-release"]["needs"] == ["release", "plugin"]
-    assert "plugin" not in j["release"]["needs"]                     # the firmware never waits for the plugin
-    run = yaml.dump(j["plugin-release"])
-    assert "tools/plugin_asset.sh" in run and "gh release upload" in run
-    co = j["plugin-release"]["steps"][0]
+    assert "plugin-release" not in j
+    assert "plugin" in j["release"]["needs"] and "needs.plugin.result == 'success'" in j["release"]["if"]
+    names = [s.get("name", "") for s in j["release"]["steps"]]
+    att = next(i for i, s in enumerate(j["release"]["steps"]) if "tools/plugin_asset.sh" in s.get("run", ""))
+    assert "gh release upload" in j["release"]["steps"][att]["run"]
+    assert att < names.index("publish the release")
+    co = j["release"]["steps"][0]
     assert co["uses"].startswith("actions/checkout") and co["with"]["fetch-depth"] == 0
+
+
+def test_plugin_attach_and_runner_retry():
+    pl = yaml.safe_load(open(os.path.join(WF, "plugin.yml")))
+    assert pl["jobs"]["macos"]["runs-on"] == "macos-latest"           # not the scarce macos-15 queue
+    on = pl.get("on", pl.get(True))
+    assert on["workflow_call"]["inputs"]["ref"]["default"] == ""
+    for job in pl["jobs"].values():                                  # every checkout builds the asked ref
+        for st in job["steps"]:
+            if st.get("uses", "").startswith("actions/checkout"):
+                assert st["with"]["ref"] == "${{ inputs.ref }}"
+    pa = yaml.safe_load(open(os.path.join(WF, "plugin-attach.yml")))
+    assert pa["jobs"]["plugin"]["with"] == {"version": "${{ inputs.tag }}", "sign": True, "ref": "${{ inputs.tag }}"}
+    run = yaml.dump(pa["jobs"]["attach"])
+    assert "tools/plugin_asset.sh" in run and "gh release upload" in run and "--clobber" in run
+    rr = yaml.safe_load(open(os.path.join(WF, "runner-retry.yml")))
+    on = rr.get("on", rr.get(True))
+    assert on["workflow_run"]["workflows"] == ["ci", "plugin", "release"]
+    assert "run_attempt < 3" in rr["jobs"]["retry"]["if"] and rr["permissions"]["actions"] == "write"
+    body = rr["jobs"]["retry"]["steps"][0]["run"]
+    assert "steps | length" in body and "gh run rerun" in body and "--failed" in body
 
 
 def test_deps_lock_form():
