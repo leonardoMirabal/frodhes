@@ -34,6 +34,10 @@ on:
         description: 'macOS: Developer ID signing + notarization when the secrets exist (release.yml only)'
         type: boolean
         default: false
+      ref:
+        description: 'the commit or tag to build (empty: the calling run''s own)'
+        type: string
+        default: ''
 concurrency:
   group: plugin-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -44,9 +48,13 @@ env:
   PLUGIN_J: '3'
 jobs:
   macos:
-    runs-on: macos-15
+    # macos-latest (the macOS 15 arm64 image), not the macos-15 label: on 2026-11-12 GitHub left the macos-15 queue
+    # unserved for 15 min twice ("not acquired by Runner ... capacity constraints") and v0.9.11 lost its plugin assets
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}           # (empty: the event's own commit; plugin-attach.yml: the tag)
       - uses: actions/cache@v4
         with:
           path: .local/plugin-deps
@@ -138,6 +146,8 @@ jobs:
       - name: LF line endings (the shell scripts and deps.lock are read by sh)
         run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}           # (empty: the event's own commit; plugin-attach.yml: the tag)
       - uses: actions/cache@v4
         with:
           path: .local/plugin-deps
@@ -213,6 +223,8 @@ jobs:
       FRP_LINUX_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}           # (empty: the event's own commit; plugin-attach.yml: the tag)
       - uses: actions/cache@v4
         with:
           path: .local/plugin-deps
@@ -240,6 +252,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}           # (empty: the event's own commit; plugin-attach.yml: the tag)
       - name: the test tools (plugin/deps.lock, Linux builds)
         run: sh tools/plugin_deps.sh
       - uses: actions/download-artifact@v4

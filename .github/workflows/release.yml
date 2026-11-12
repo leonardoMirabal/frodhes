@@ -21,11 +21,13 @@ name: release
 # checked the tag's tarball (one folder frodhes/, module.json's version the tag's). The job release-json then writes
 # release.json to main for Schwung Manager (see that job: it needs a key that may push to main).
 # The desktop plugin: the job plugin runs .github/workflows/plugin.yml on the tag (macOS, Windows, Linux x86_64 and
-# aarch64: built with the tag's version, packaged, checked self-contained, validated); after the release is public the
-# job plugin-release attaches its packages under fixed names (frodhes-plugin-macos.pkg, frodhes-plugin-macos.zip,
+# aarch64: built with the tag's version, packaged, checked self-contained, validated); the job release attaches its
+# packages to the draft under fixed names (frodhes-plugin-macos.pkg, frodhes-plugin-macos.zip,
 # frodhes-plugin-windows.zip, frodhes-plugin-linux-x86_64.zip, frodhes-plugin-linux-aarch64.zip), only those of the
 # platforms the release commit records as tested ("Plugin tested: macos windows linux-x86_64 ...", tools/plugin_asset.sh:
-# no record, no plugin asset). Nothing above waits for it: a plugin failure never holds back the firmware or the Move.
+# no record, no plugin asset). The release waits for the plugin: nothing goes public until every asset is attached
+# (v0.9.11, 2026-11-12: the release went public while GitHub left the plugin's macOS job without a runner, and the
+# docs' plugin links pointed at nothing). runner-retry.yml reruns a job GitHub never started.
 # Tag only what passed the tests on the FM-1 (CLAUDE.md: test and document).
 on:
   push:
@@ -121,12 +123,12 @@ jobs:
           path: build/move/frodhes-module.tar.gz
           if-no-files-found: error
   release:
-    needs: [ci-gate, generators-macos, host, web, move]
+    needs: [ci-gate, generators-macos, host, web, move, plugin]
     # runs when ci passed on this commit (the fallback jobs skipped) or when both fallback jobs passed, and the
     # emulator built and passed its selftest. x86_64: the JieLi toolchain (tools/get_toolchain.sh) runs on nothing else
     if: >-
       !cancelled() && needs.ci-gate.result == 'success' && needs.web.result == 'success' &&
-      needs.move.result == 'success' &&
+      needs.move.result == 'success' && needs.plugin.result == 'success' &&
       (needs.ci-gate.outputs.passed == 'true' ||
        (needs.generators-macos.result == 'success' && needs.host.result == 'success'))
     runs-on: ubuntu-latest
@@ -236,12 +238,26 @@ jobs:
           OWNER=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
           sh tools/pages_wait.sh "$(git -C build/pages rev-parse HEAD)" web/dist \
             "https://$OWNER.github.io/${GITHUB_REPOSITORY#*/}/"
+      - name: the plugin packages built by the job plugin
+        uses: actions/download-artifact@v4
+        with:
+          pattern: plugin-*
+          merge-multiple: true
+          path: build/plugin-ci
+      - name: the plugin packages of the platforms the release commit records as tested, attached to the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sh tools/plugin_asset.sh "${GITHUB_REF_NAME#v}" build/plugin-ci build/publish/plugin
+          set -- build/publish/plugin/*
+          if [ ! -e "$1" ]; then echo "no plugin asset for this release"; exit 0; fi
+          gh release upload "$GITHUB_REF_NAME" "$@" --clobber
       - name: publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
-  # ---- the desktop plugin (see the top): built and validated from the tag by plugin.yml, attached once the release
-  # is public. sign: Developer ID + notarization on macOS when the MACOS_* secrets exist (docs/PLUGIN.md "Signing"),
+  # ---- the desktop plugin (see the top): built and validated from the tag by plugin.yml; the job release waits for
+  # it and attaches the packages to the draft before publishing. sign: Developer ID + notarization on macOS when the MACOS_* secrets exist (docs/PLUGIN.md "Signing"),
   # else ad-hoc signed.
   plugin:
     uses: ./.github/workflows/plugin.yml
@@ -249,28 +265,6 @@ jobs:
       version: ${{ github.ref_name }}
       sign: true
     secrets: inherit
-  plugin-release:
-    needs: [release, plugin]
-    if: ${{ !cancelled() && needs.release.result == 'success' && needs.plugin.result == 'success' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0             # (tools/plugin_asset.sh reads the release commit)
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: plugin-*
-          merge-multiple: true
-          path: build/plugin-ci
-      - name: the packages of the platforms the release commit records as tested
-        run: sh tools/plugin_asset.sh "${GITHUB_REF_NAME#v}" build/plugin-ci build/publish/plugin
-      - name: attach them to the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -- build/publish/plugin/*
-          if [ ! -e "$1" ]; then echo "no plugin asset for this release"; exit 0; fi
-          gh release upload "$GITHUB_REF_NAME" "$@" --clobber
   # ---- release.json on main: Schwung Manager's update check (the Move in Schwung's module catalog) ----
   # After the release is public, and only when it carries the Move package (the job release's output move): writes
   # release.json = {"version": "X.Y.Z", "download_url": the tag's frodhes-module.tar.gz} (tools/move_catalog.py
