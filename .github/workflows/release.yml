@@ -250,8 +250,12 @@ jobs:
         run: |
           sh tools/plugin_asset.sh "${GITHUB_REF_NAME#v}" build/plugin-ci build/publish/plugin
           set -- build/publish/plugin/*
-          if [ ! -e "$1" ]; then echo "no plugin asset for this release"; exit 0; fi
+          if [ ! -e "$1" ]; then echo "no plugin asset for this release (no 'Plugin tested:' record)" >&2; exit 1; fi
           gh release upload "$GITHUB_REF_NAME" "$@" --clobber
+      - name: every required asset on the draft (tools/release_assets.sh; a missing one keeps it a draft)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh tools/release_assets.sh "${GITHUB_REF_NAME#v}"
       - name: publish the release
         env:
           GH_TOKEN: ${{ github.token }}
