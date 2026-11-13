@@ -21,4 +21,61 @@
 #   `tools/release_diff.py --draft FILE` writes the unlisted moves in this form, each with reason TODO (which fails).
 
 against: v0.9.11
-changes: []
+changes:
+# ---- 22. upper-register (2026-11-13): above key 72 the clean top is a ceiling at every velocity (rhodes.c
+#      rh_top_x, RH_TOP_S by tools/rh_top.py CAP_POINTS), its loudness gain back on the ramp's square (v64 and
+#      v127 levels within 0.2 dB of 0.9.11). Decreases only: H2, H3 and the attack's 2 f0 crest at key 81 (the
+#      fast grid's only key over 72 but 93, whose entries already cover it). Ranges: the measured move +-0.5 dB,
+#      clamped at 0 (never a rise).
+# Signed off: PENDING (coordinator), 2026-11-13.
+  - {match: "fm1/DYNO/FX/[AB]/k81v127", metric: H2, min: -21.85, max: -20.85, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -26.77, 0.9.9 -5.42"}
+  - {match: "fm1/DYNO/FX/[AB]/k81v127", metric: H3, min: -42.90, max: -41.90, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -74.16, 0.9.9 -31.76"}
+  - {match: "fm1/DYNO/FX/[AB]/k81v96", metric: H2, min: -20.60, max: -19.60, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -30.41, 0.9.9 -10.31"}
+  - {match: "fm1/DYNO/FXOFF/[AB]/k81v127", metric: H2, min: -21.89, max: -20.89, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -26.98, 0.9.9 -5.59"}
+  - {match: "fm1/DYNO/FXOFF/[AB]/k81v127", metric: H3, min: -43.03, max: -42.03, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -73.92, 0.9.9 -31.39"}
+  - {match: "fm1/DYNO/FXOFF/[AB]/k81v96", metric: H2, min: -20.59, max: -19.59, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -30.67, 0.9.9 -10.58"}
+  - {match: "fm1/DYNO/RAW/[AB]/k81v127", metric: H2, min: -21.88, max: -20.88, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -26.99, 0.9.9 -5.61"}
+  - {match: "fm1/DYNO/RAW/[AB]/k81v127", metric: H3, min: -42.95, max: -41.95, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -73.87, 0.9.9 -31.42"}
+  - {match: "fm1/DYNO/RAW/[AB]/k81v96", metric: H2, min: -20.58, max: -19.58, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -30.68, 0.9.9 -10.60"}
+  - {match: "fm1/FELT/FXOFF/[AB]/k81v127", metric: peak, min: -2.51, max: -1.51, reason: "upper-register: the attack's peak without the 2 f0 crest the ceiling removes (RH_TOP_S; v127 level within 0.2 dB): -17.40, 0.9.9 -15.39"}
+  - {match: "fm1/ST77/FX/[AB]/k81v127", metric: H2, min: -23.19, max: -22.19, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -31.07, 0.9.9 -8.38"}
+  - {match: "fm1/ST77/FX/[AB]/k81v127", metric: H3, min: -46.08, max: -45.08, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -80.09, 0.9.9 -34.51"}
+  - {match: "fm1/ST77/FXOFF/[AB]/k81v127", metric: H2, min: -23.22, max: -22.22, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -31.27, 0.9.9 -8.55"}
+  - {match: "fm1/ST77/FXOFF/[AB]/k81v127", metric: H3, min: -45.59, max: -44.59, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -79.23, 0.9.9 -34.14"}
+  - {match: "fm1/ST77/RAW/[AB]/k81v127", metric: H2, min: -23.22, max: -22.22, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -31.28, 0.9.9 -8.56"}
+  - {match: "fm1/ST77/RAW/[AB]/k81v127", metric: H3, min: -45.73, max: -44.73, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -79.40, 0.9.9 -34.17"}
+  - {match: "fm1/ST77/RAW/[AB]/k81v127", metric: peak, min: -3.61, max: -2.61, reason: "upper-register: the attack's peak without the 2 f0 crest the ceiling removes (RH_TOP_S; v127 level within 0.2 dB): -13.81, 0.9.9 -10.70"}
+  - {match: "fm1/SUIT/FX/[AB]/k81v127", metric: H2, min: -23.05, max: -22.05, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -29.70, 0.9.9 -7.15"}
+  - {match: "fm1/SUIT/FX/[AB]/k81v127", metric: H3, min: -44.66, max: -43.66, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -75.66, 0.9.9 -31.50"}
+  - {match: "fm1/SUIT/FX/[AB]/k81v127", metric: peak, min: -4.83, max: -3.83, reason: "upper-register: the attack's peak without the 2 f0 crest the ceiling removes (RH_TOP_S; v127 level within 0.2 dB): -15.77, 0.9.9 -11.44"}
+  - {match: "fm1/SUIT/FXOFF/[AB]/k81v127", metric: H2, min: -23.08, max: -22.08, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -29.92, 0.9.9 -7.34"}
+  - {match: "fm1/SUIT/FXOFF/[AB]/k81v127", metric: H3, min: -44.58, max: -43.58, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -75.24, 0.9.9 -31.16"}
+  - {match: "fm1/SUIT/FXOFF/[AB]/k81v127", metric: peak, min: -4.77, max: -3.77, reason: "upper-register: the attack's peak without the 2 f0 crest the ceiling removes (RH_TOP_S; v127 level within 0.2 dB): -17.28, 0.9.9 -13.01"}
+  - {match: "fm1/SUIT/RAW/[AB]/k81v127", metric: H2, min: -23.08, max: -22.08, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -29.93, 0.9.9 -7.35"}
+  - {match: "fm1/SUIT/RAW/[AB]/k81v127", metric: H3, min: -44.63, max: -43.63, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -75.32, 0.9.9 -31.19"}
+  - {match: "fm1/SUIT/RAW/[AB]/k81v127", metric: peak, min: -4.20, max: -3.20, reason: "upper-register: the attack's peak without the 2 f0 crest the ceiling removes (RH_TOP_S; v127 level within 0.2 dB): -15.02, 0.9.9 -11.32"}
+  - {match: "hq/DYNO/FX/[AB]/k81v127", metric: H2, min: -21.88, max: -20.88, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -27.01, 0.9.9 -5.63"}
+  - {match: "hq/DYNO/FX/[AB]/k81v127", metric: H3, min: -42.73, max: -41.73, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -74.58, 0.9.9 -32.35"}
+  - {match: "hq/DYNO/FX/[AB]/k81v96", metric: H2, min: -20.60, max: -19.60, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -30.48, 0.9.9 -10.38"}
+  - {match: "hq/DYNO/FXOFF/[AB]/k81v127", metric: H2, min: -21.87, max: -20.87, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -27.20, 0.9.9 -5.83"}
+  - {match: "hq/DYNO/FXOFF/[AB]/k81v127", metric: H3, min: -42.96, max: -41.96, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -74.31, 0.9.9 -31.85"}
+  - {match: "hq/DYNO/FXOFF/[AB]/k81v96", metric: H2, min: -20.59, max: -19.59, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -30.66, 0.9.9 -10.57"}
+  - {match: "hq/DYNO/RAW/[AB]/k81v127", metric: H2, min: -21.89, max: -20.89, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -27.20, 0.9.9 -5.81"}
+  - {match: "hq/DYNO/RAW/[AB]/k81v127", metric: H3, min: -42.93, max: -41.93, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -74.23, 0.9.9 -31.80"}
+  - {match: "hq/DYNO/RAW/[AB]/k81v96", metric: H2, min: -20.58, max: -19.58, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -30.67, 0.9.9 -10.59"}
+  - {match: "hq/ST77/FX/[AB]/k81v127", metric: H2, min: -23.21, max: -22.21, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -31.29, 0.9.9 -8.58"}
+  - {match: "hq/ST77/FX/[AB]/k81v127", metric: H3, min: -45.35, max: -44.35, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -79.93, 0.9.9 -35.08"}
+  - {match: "hq/ST77/FXOFF/[AB]/k81v127", metric: H2, min: -23.20, max: -22.20, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -31.48, 0.9.9 -8.78"}
+  - {match: "hq/ST77/FXOFF/[AB]/k81v127", metric: H3, min: -45.55, max: -44.55, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -79.63, 0.9.9 -34.58"}
+  - {match: "hq/ST77/RAW/[AB]/k81v127", metric: H2, min: -23.22, max: -22.22, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -31.47, 0.9.9 -8.75"}
+  - {match: "hq/ST77/RAW/[AB]/k81v127", metric: H3, min: -45.54, max: -44.54, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -79.56, 0.9.9 -34.52"}
+  - {match: "hq/SUIT/FX/[AB]/k81v127", metric: H2, min: -23.07, max: -22.07, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -29.93, 0.9.9 -7.36"}
+  - {match: "hq/SUIT/FX/[AB]/k81v127", metric: H3, min: -44.19, max: -43.19, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -75.76, 0.9.9 -32.07"}
+  - {match: "hq/SUIT/FX/[AB]/k81v127", metric: peak, min: -4.75, max: -3.75, reason: "upper-register: the attack's peak without the 2 f0 crest the ceiling removes (RH_TOP_S; v127 level within 0.2 dB): -15.95, 0.9.9 -11.70"}
+  - {match: "hq/SUIT/FX/[AB]/k81v96", metric: H3, min: -30.25, max: -29.25, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -73.09, 0.9.9 -43.34"}
+  - {match: "hq/SUIT/FXOFF/[AB]/k81v127", metric: H2, min: -23.07, max: -22.07, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -30.12, 0.9.9 -7.55"}
+  - {match: "hq/SUIT/FXOFF/[AB]/k81v127", metric: H3, min: -44.45, max: -43.45, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -75.48, 0.9.9 -31.53"}
+  - {match: "hq/SUIT/FXOFF/[AB]/k81v127", metric: peak, min: -4.72, max: -3.72, reason: "upper-register: the attack's peak without the 2 f0 crest the ceiling removes (RH_TOP_S; v127 level within 0.2 dB): -15.95, 0.9.9 -11.73"}
+  - {match: "hq/SUIT/RAW/[AB]/k81v127", metric: H2, min: -23.08, max: -22.08, reason: "upper-register: the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S): -30.12, 0.9.9 -7.54"}
+  - {match: "hq/SUIT/RAW/[AB]/k81v127", metric: H3, min: -44.58, max: -43.58, reason: "upper-register: the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S): -75.58, 0.9.9 -31.50"}
+  - {match: "hq/SUIT/RAW/[AB]/k81v127", metric: peak, min: -4.17, max: -3.17, reason: "upper-register: the attack's peak without the 2 f0 crest the ceiling removes (RH_TOP_S; v127 level within 0.2 dB): -15.21, 0.9.9 -11.54"}

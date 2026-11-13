@@ -156,6 +156,8 @@ typedef struct {
      * gain (an output of half an LSB) */
     int32_t pphys;                             /* Q15: the physical force of the strike (rh_left) */
     int32_t kl;                                /* the kill level, sum units (k->kill >> 3 over the gain law) */
+    int32_t okl;                               /* the overtone modes' sleep level: kl, x the ceiling's gain back above
+                                                * key 72 (rh_drv_level: RH_TOP_S keys) */
     uint16_t gq;                               /* Q16: the gain law's value at the note-on */
     uint8_t lt;                                /* RESPONSE at the strike (rh_touch_mode): 0 A, 1 B (rh_dyn) */
     uint32_t pq;                               /* Q12: the tine's physical swing over the modes' (the note-on's
@@ -186,11 +188,13 @@ static uint8_t rh_host_vel;                          /* (host: rh_strike's last 
 #endif
 #ifdef RH_DRIVE
 #define RH_KILL(v, k) ((v)->kl)                /* the kill level in the voice's own gain (rh_init) */
+#define RH_OKILL(v, k) ((v)->okl)              /* the overtone modes' sleep level (rh_drv_level) */
 #define RH_OUT_SUM(v, s) rh_phys_sum(v, s)      /* a steal / shed score: the mode peaks as the tine's physical
                                                 * swing, the order the score had before the drive (the modes' units
                                                 * carry each key's own force scale) */
 #else
 #define RH_KILL(v, k) ((k)->kill >> 3)
+#define RH_OKILL(v, k) RH_KILL(v, k)
 #define RH_OUT_SUM(v, s) (s)
 #endif
 #ifdef RH_DRIVE
@@ -267,16 +271,27 @@ static uint32_t rh_mk_q12(const uint8_t *row, uint32_t vel)      /* Q12, < 2^16 
  * same ramp: the loudness the bark took with it (K-weighted, at v127; never less), so the dynamic range is kept
  * (tools/rh_top.py: the pickup's H2 and the attack's H2 to -14 dB re H1 at v127). The cut runs over 1.25 R velocity
  * steps (0.15 dB a step: the swing still grows, ~0.2 dB a step before), so the knee is per key (127 - 1.25 R) and
- * every velocity under it, and every key with R 0, is the engine as it was. Both velocity methods: the drive's force
- * (RH_PDRV) and make-up, MAP's X and G. Note-on / re-strike only */
+ * every velocity under it, and every key with R 0, is the engine as it was. Above key 72 (2026-11-13, the upper
+ * register cleaner) the cut is a ceiling at every velocity: RH_TOP_S gives the key its own span (the knee earlier, the
+ * ramp as steep as the H2 it holds under tools/rh_top.py CAP_POINTS), and RH_TOP_G on the ramp's square. Both velocity
+ * methods: the drive's force (RH_PDRV) and make-up, MAP's X and G. Note-on / re-strike only */
 #ifdef RH_TOP_Q
 static uint32_t rh_top_x(uint32_t key, uint32_t vel, uint32_t *g8)   /* the cut and the gain back, 1/256 octave */
 {
-    uint32_t r = RH_TOP_R[rh_type & 3u][key], span = r + (r >> 2), u;
+    uint32_t r = RH_TOP_R[rh_type & 3u][key], span = RH_TOP_S[rh_type & 3u][key], g = RH_TOP_G[rh_type & 3u][key], u;
     *g8 = 0;
+    if (span) {                               /* above key 72: the ceiling's own span (1 .. 255 steps); its loudness
+                                               * gain back on the square of the ramp (the fundamental's large-swing
+                                               * part is lost only near v127; v64 keeps its level) */
+        if (!r || vel + span <= 127u) return 0;
+        u = vel + span - 127u;
+        *g8 = (r * 8u * u) / span + (g * 8u * u * u) / (span * span);   /* (32-bit: g <= 8, u <= span <= 255) */
+        return (r * 8u * u) / span;
+    }
+    span = r + (r >> 2);
     if (!r || vel + span <= 127u) return 0;
     u = vel + span - 127u;                                   /* 1 .. span */
-    *g8 = ((r + RH_TOP_G[rh_type & 3u][key]) * 8u * u) / span;   /* (32-bit divides; r + g <= 128) */
+    *g8 = ((r + g) * 8u * u) / span;                         /* (32-bit divides; r + g <= 128) */
     return (r * 8u * u) / span;
 }
 static uint32_t rh_q12_of(uint32_t c8)                       /* 4096 x 2^((c8 - 1024) / 256), c8 8 .. 2047 */
@@ -609,6 +624,23 @@ static uint32_t rh_dyn(uint32_t n, uint32_t vel, uint32_t lt)   /* Q15 (<= 32768
     return g;
 #endif
 }
+/* BELL's top half on the upper register (2026-11-13): BELL above the middle scales the tine's 2nd / 3rd modes (O1 / O2)
+ * up to x3.9 (+11.9 dB at 127, F01's setting). The tables already fit O1 per key from A3 up to its fitted band at
+ * BELL's middle (gen_rhodes strike_fit: 6.3-7.7 f0 in 0-20 ms, -40 dB re H1 at C5, -55 at C6, -65 at C7), and the
+ * boost put the upper register's inharmonic ring back 12 dB over it. The boost (BELL's scale over 1) fades out over
+ * keys 60..72 (smoothstep): the bass and the middle keep BELL as it was, from C5 up BELL's top half is unity. BELL's
+ * lower half (a cut) acts on every key as before. Only ever less of the partials; note-on only (no per-sample cost) */
+#define RH_BELL_K0 60u
+#define RH_BELL_K1 72u
+static const uint16_t RH_BELL_T[RH_BELL_K1 - RH_BELL_K0 - 1u] = {   /* Q15, keys 61..71: 1 - s((n - 60) / 12) */
+    32123, 30341, 27648, 24273, 20442, 16384, 12326, 8495, 5120, 2427, 645};
+static int32_t rh_bell_at(uint32_t n)                       /* Q16: BELL's scale for MIDI key n */
+{
+    int32_t b = rh_bell;
+    if (b <= 65536 || n <= RH_BELL_K0) return b;
+    if (n >= RH_BELL_K1) return 65536;
+    return 65536 + (int32_t)(((int64_t)(b - 65536) * RH_BELL_T[n - RH_BELL_K0 - 1u]) >> 15);
+}
 static int32_t rh_dyn_gain(int32_t gain, uint32_t gd)       /* gain x gd (32768: gain itself, byte-identical) */
 {
     return gd >= 32768u ? gain : (int32_t)(((int64_t)gain * gd) >> 15);
@@ -673,6 +705,17 @@ static void rh_drv_level(rh_voice_t *v, uint32_t ki, uint32_t vel)
         v->gain = gm > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)gm;
         v->kl = (int32_t)(kl < (1u << 19) ? (kl << 12) / mk : (kl / mk) << 12);
     }
+    v->okl = v->kl;
+#ifdef RH_TOP_Q
+    if (RH_TOP_S[rh_type & 3u][ki]) {   /* the ceiling above key 72 swings the tine up to 22.6 dB less and takes it back in
+                                         * the output gain: the overtone modes (V2, O1, O2) sleep where they did before
+                                         * that gain back (their state's few-LSB resting floor, 16-17 in the mode's units,
+                                         * stayed over kl and played under the note as a steady -90 dBFS tone at the O1
+                                         * frequency, DYNO key 81) */
+        uint64_t o = ((uint64_t)(uint32_t)v->kl * rh_top_g12(ki, vel)) >> 12;
+        v->okl = o > 0x7FFFFFFFu ? 0x7FFFFFFF : (int32_t)o;
+    }
+#endif
 }
 static uint32_t rh_vel_old;                    /* a re-strike: the ringing strike's velocity (rh_note_on, for rh_load_pulse) */
 /* a harder re-strike at another level than the ringing note's (the gain law x the make-up): the voice takes the new strike's
@@ -1244,7 +1287,7 @@ static int32_t rh_vm_b(const rh_mode_t *km, uint32_t m, const rh_type_t *ty, uin
 {
     int64_t b = ((int64_t)km->b * RH_DRV_IB[key]) >> 12;
     b = (((b * rh_bark_s) >> 16) * ty->bark) >> 16;
-    if (m == RH_O1 || m == RH_O2) b = (((b * ty->bell) >> 16) * rh_bell) >> 16;
+    if (m == RH_O1 || m == RH_O2) b = (((b * ty->bell) >> 16) * rh_bell_at(key + RH_KEY_LO)) >> 16;
     b = (b * x) >> RH_VM_Q;
     return b > 0x7FFFFFFF ? 0x7FFFFFFF : b < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)b;
 }
@@ -1314,7 +1357,7 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
     const rh_type_t *ty = &RH_TYPE[rh_type];
     uint32_t m, n = note < RH_KEY_LO ? RH_KEY_LO : note > RH_KEY_LO + RH_NKEY - 1u ? RH_KEY_LO + RH_NKEY - 1u : note;
     const rh_key_t *k = &RH_KEYS[n - RH_KEY_LO];
-    int32_t u, t = rh_tune_now();
+    int32_t u, t = rh_tune_now(), bell = rh_bell_at(n);
     uint32_t cp = rh_cc_pub;                    /* the cache, if it holds this note-on's coefficients */
     const rh_cc_t *cc = cp && rh_cc_st[cp - 1u][0] == t && rh_cc_st[cp - 1u][1] == rh_k_decay
                         && rh_cc_st[cp - 1u][2] == rh_k_rel ? rh_cc[cp - 1u][n - RH_KEY_LO] : 0;
@@ -1342,7 +1385,7 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
 #endif
         {   /* force gain: BARK scales the tip (the pickup then barks), BELL the overtones; saturating */
             int64_t b = ((((int64_t)km->b * rh_bark_s) >> 16) * ty->bark) >> 16;
-            if (m == RH_O1 || m == RH_O2) b = (((b * ty->bell) >> 16) * rh_bell) >> 16;
+            if (m == RH_O1 || m == RH_O2) b = (((b * ty->bell) >> 16) * bell) >> 16;
             s->b = b > 0x7FFFFFFF ? 0x7FFFFFFF : b < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)b;
         }
     }
@@ -1937,7 +1980,7 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
         return;
     }
     for (m = 1; m < RH_NM; m++)                           /* sleep overtone modes that have died away */
-        if (v->m[m].live && !v->ptab && v->m[m].peak < RH_KILL(v, k)) {
+        if (v->m[m].live && !v->ptab && v->m[m].peak < RH_OKILL(v, k)) {
             v->m[m].live = 0; v->m[m].x = v->m[m].y = v->m[m].ex = v->m[m].ey = 0;
         }
 }
