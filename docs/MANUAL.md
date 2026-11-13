@@ -1,6 +1,7 @@
 # Frodhes: user manual
 
-**A physically modelled electric piano, vibraphone and marimba for the M-VAVE FM-1 and the Ableton Move.**
+**A physically modelled electric piano, vibraphone and marimba for the M-VAVE FM-1, the Ableton Move, the Akai MPC
+and your computer.**
 
 Frodhes is free firmware that turns the M-VAVE FM-1 into an electric piano, a vibraphone and a marimba. Every note
 is computed live from the physics of the instrument: no recordings are played back. Around the instrument is a stage
@@ -40,6 +41,7 @@ firmware can always be put back ([how](#going-back-to-the-original-firmware)). S
 15. [Appendix: the SMK-37](#15-appendix-the-smk-37)
 16. [Appendix: the Ableton Move](#16-appendix-the-ableton-move)
 17. [Appendix: the desktop plugin](#17-appendix-the-desktop-plugin)
+18. [Appendix: the Akai MPC](#18-appendix-the-akai-mpc)
 
 ## 1. Getting started
 
@@ -1332,6 +1334,17 @@ the plugin. The downloads, the install and the first-open steps for a plugin tha
 [the README](../README.md#on-your-computer-the-desktop-plugin).
 
 ![The desktop plugin's window: the VOICE knobs, two effect sections and a keyboard](manual/img/plugin/plugin-main.png?v=a6729600)
+
+## 18. Appendix: the Akai MPC
+
+Frodhes also runs on Akai MPC standalone hardware as a plugin (MPC OS 3.10.1 or later, External Plugin Support on):
+the desktop plugin's engine in the higher-quality version, 16 voices on every instrument, and the factory presets
+F01-F57 as its programs. Everything in this manual applies to the sound. Its pages on the MPC's screen show the
+plugin's look: eight pages of large knobs in panels of four, each panel one Q-Link group; touching a panel brings it
+under the Q-Links. The MPC's tempo drives the synced effects; the FM-1's sequencer, arpeggiator and chord mode are not
+in the plugin. The download, the install and the page list: [docs/MPC.md](MPC.md).
+
+![Frodhes on the Akai MPC: the VOICE page](manual/img/mpc/mpc-voice.png?v=ab028bbc)
 
 ---
 

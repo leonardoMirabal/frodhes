@@ -1,6 +1,7 @@
 # Frodhes
 
-**An electric piano, vibraphone and marimba, computed live, for the M-VAVE FM-1, the Ableton Move and your computer.**
+**An electric piano, vibraphone and marimba, computed live, for the M-VAVE FM-1, the Ableton Move, the Akai MPC and your
+computer.**
 
 No samples: every note is calculated as you play it, from how the real instrument works. A hammer strikes a tine
 and a pickup turns its motion into sound; a mallet strikes a bar and its tube rings along. Play softly and it is
@@ -13,11 +14,13 @@ Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/le
     <td align="center"><img src="docs/manual/img/piano.png?v=d41944c5" width="260" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"></td>
     <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ba262a7f" width="300" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
     <td align="center"><img src="docs/manual/img/plugin/plugin-main.png?v=a6729600" width="300" alt="The desktop plugin's window: the VOICE knobs, two effect sections and a keyboard"></td>
+    <td align="center"><img src="docs/manual/img/mpc/mpc-voice.png?v=ab028bbc" width="300" alt="Frodhes on the Akai MPC: the VOICE page, two panels of four knobs"></td>
   </tr>
   <tr>
     <td align="center"><b>On the M-VAVE FM-1</b>: colour screen, four knobs</td>
     <td align="center"><b>On the Ableton Move</b>: its own screen, eight knobs</td>
     <td align="center"><b>On your computer</b>: a plugin with its own window</td>
+    <td align="center"><b>On the Akai MPC</b>: its own pages, the Q-Links</td>
   </tr>
 </table>
 

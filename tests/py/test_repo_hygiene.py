@@ -18,7 +18,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 AUDIO_EXT = {".raw", ".wav", ".aif", ".aiff", ".aifc", ".flac", ".mp3", ".ogg", ".opus", ".m4a", ".sf2", ".sfz",
              ".nki", ".ncw", ".npno", ".exs"}
 # binary files may only live here (rendered screenshots, the fonts)
-BINARY_OK = ["docs/manual/img/*.png", "assets/fonts/*.ttf", "assets/fonts/*.otf"]
+BINARY_OK = ["docs/manual/img/*.png", "mpc/skins/*.png", "assets/fonts/*.ttf", "assets/fonts/*.otf"]
 BIG = 1 << 20                                   # text files over 1 MiB: only generated tables / the engines' data
 BIG_OK = ["docs/model/data/*.json", "firmware/gen/*.h"]
 # third-party code copies: never committed, unless a folder is listed here with its licence file

@@ -23,7 +23,7 @@ Reading it:
   B clean too                           this Mac does not show the conversion beat: look elsewhere (hil_scan's T2
                                         log, Capture.add's blocksize, another app holding the FM-1)
 
-Before it: no DAW (pgrep -l "Live|Logic|Reaper"), no other USB-audio tool on any FM-1 (one audio tool at a time),
+Before it: no music software running (no host holding the M6 or the FM-1), no other USB-audio tool on any FM-1 (one audio tool at a time),
 FM1_LOCATION=0x... to pin the unit when two FM-1s are plugged in. Takes the DEVICE lock (tools/lock.py).
 """
 import argparse

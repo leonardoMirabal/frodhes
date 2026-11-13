@@ -117,14 +117,14 @@ def load(root=ROOT):
 
 def tagline(root=ROOT):
     """'a physically modelled ... for the M-VAVE FM-1' (and the devices after it) from docs/MANUAL.md's first bold line"""
-    m = re.search(r"^\*\*A (physically modelled .+? for the M-VAVE FM-1(?: and [^*.]+)?)\.\*\*",
+    m = re.search(r"^\*\*A (physically modelled .+? for the M-VAVE FM-1(?:(?:,| and) [^*.]+)?)\.\*\*",
                   open(os.path.join(root, "docs", "MANUAL.md"), encoding="utf-8").read(), re.M)
     if not m:
         raise Bad("docs/MANUAL.md: no '**A physically modelled ... for the M-VAVE FM-1.**' line for the notes' head")
-    return "a " + m.group(1)
+    return "a " + " ".join(m.group(1).split())    # (the line may wrap)
 
 
-def assemble(ver, frags, root=ROOT, move=True, c1=False, plugin=False):
+def assemble(ver, frags, root=ROOT, move=True, c1=False, plugin=False, mpc=None):
     """the release notes for ver from frags (load()); move: the release ships the Move package (its install route);
     c1: the FM-1's two-core image frodhes-c1.fwsc too; plugin: the desktop plugin's packages (their install routes);
     Bad if there are none or one names ver"""
@@ -158,6 +158,12 @@ def assemble(ver, frags, root=ROOT, move=True, c1=False, plugin=False):
                     "browser: **Install Custom Module > From GitHub URL**, `leonardoMirabal/frodhes`. Or download "
                     "`frodhes-module.tar.gz` below and use **From Tarball**. Details: "
                     f"[the Move manual]({BLOB}MOVE.md#install).")
+    if mpc is None:     # the MPC plugin ships whenever the tree builds it (release.yml's job mpc)
+        mpc = os.path.isfile(os.path.join(root, "mpc", "build.py"))
+    if mpc:
+        install += ("\n\n**Akai MPC**: `frodhes-mpc.zip` below (MPC OS 3.10.1 or later, External Plugin Support on). "
+                    "Copy its folder `Frodhes - VST - Frodhes` into `VST2 Plugins` at the top of the MPC's drive. "
+                    f"Details: [MPC.md]({BLOB}MPC.md#install-and-remove).")
     install += ("\n\n**SMK-37 Pro, SMK-37 Elite, MKE-P37**: `frodhes-smk37-pro.fwsc`, `frodhes-smk37-elite.fwsc` and "
                 f"`frodhes-mke-p37.fwsc` below. Read [SMK37.md]({BLOB}SMK37.md) first.")
     parts = [head,
