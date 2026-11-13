@@ -101,11 +101,11 @@ names the Move (default `ableton@move.local`).
   repository, and a placeholder would point at a file that does not exist. The catalog entry
   (`module-catalog.json` in Schwung's repository, `asset_name` `frodhes-module.tar.gz`) waits for that release.
 - **`make quick` covers the Move too** (`tools/quick.py`, on the HQ host build `build/host-hq/frodhes`, which is
-  `MOVE_DEFS` with the HQ Rhodes on, as the plugin loads): `move-dry` (`tools/dry_dist.py --hq` against 0.9.9's Move
-  build, `tests/baselines/dry_dist_099_hq.json`), `move-fx` (`tools/fx_pristine.py --builds hq`: every effect but
+  `MOVE_DEFS` with the HQ Rhodes on, as the plugin loads): `move-dry` (`tools/dry_dist.py --hq` against 0.9.11's Move
+  build, `tests/baselines/dry_dist_0911_hq.json`), `move-fx` (`tools/fx_pristine.py --builds hq`: every effect but
   DRIVE at 0 / 64 / 127), `move-byp` (`tests/py/test_move_bypass_comp.py`), `move-lvl` (every TYPE and F01..F19,
-  RMS within 1.5 dB and the peak at most + 1 dB of 0.9.9's Move build, `tests/baselines/quick_level_099_hq.json`,
-  saved with `tools/quick.py --save-level --hq` on 456b5da4 only) and `move-ui` (Gate U and
+  RMS within 1.5 dB and the peak at most + 1 dB of 0.9.11's Move build, `tests/baselines/quick_level_0911_hq.json`,
+  saved with `tools/quick.py --save-level --hq` on 279a7aff only) and `move-ui` (Gate U and
   `move/ui/test_chain.mjs`). About 16 s of the run, in parallel with the FM-1's checks.
 - **The gates**: `tools/ci_move.sh` is the Move's MT0 (Gate U: the generated module is current, `make test-move`,
   Gate M: the plugin replays the host renders, and the Move pytest suites). `make gate-p` (ASan + UBSan, the
@@ -340,7 +340,7 @@ names the Move (default `ableton@move.local`).
   `tools/gen_bars_hq.py` and `tools/gen_bars_hq_contact.py` write the two headers in `firmware/gen/hq/`
   (`--check` compares).
 - The dry distortion gate (`tools/dry_dist.py`, `tests/py/test_dry_distortion.py`) holds the HQ build to its own
-  0.9.9 reference, `tests/baselines/dry_dist_099_hq.json`. It is 0.9.9 (456b5da4) built with the Move's defines and
+  0.9.11 reference, `tests/baselines/dry_dist_0911_hq.json`. It is 0.9.11 (279a7aff) built with the Move's defines and
   `HQ_DEFAULT=1` (`dry_dist.HQ_DEFS`; `tools/dry_dist.py --build-hq OUT --src TREE`, then `--hq --save`). The FM-1's
   reference does not hold there: FX on the Move keeps the compressor, so the FXOFF chords differ, and the HQ pickup
   from key 85 moves key 93's H3 by 1-2 dB. `tools/dry_dist.py --hq --judge CELLS.json` judges against it.

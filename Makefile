@@ -284,7 +284,7 @@ gate-d: plugin             ## Gate D: the plugin renders the host build's audio 
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py
 
 DIST_ENGINES ?= hq
-plugin-dist: plugin        ## the dry-distortion gate (tools/dry_dist.py, against 0.9.9) through the CLAP, VST3 and AU
+plugin-dist: plugin        ## the dry-distortion gate (tools/dry_dist.py, against 0.9.11) through the CLAP, VST3 and AU
                            ## (macOS; the plugin's HQ sound; tools/plugin_dist.py)
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/plugin_dist.py --engines $(DIST_ENGINES)
 
