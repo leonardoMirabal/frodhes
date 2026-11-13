@@ -122,13 +122,35 @@ jobs:
           name: move-package
           path: build/move/frodhes-module.tar.gz
           if-no-files-found: error
+  mpc:                               # the Akai MPC plugin from the tag (mpc/build.py: arm32 + arm64, validated, zipped)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: zig 0.15.2, the version the MPC build was checked with (the SDK's own setup takes the newest)
+        run: |
+          python3 -m pip install ziglang==0.15.2
+          Z=$(python3 -c 'import os, ziglang; print(os.path.join(os.path.dirname(ziglang.__file__), "zig"))')
+          "$Z" version | grep -q '^0\.15\.2$'
+          echo "ZIG=$Z" >> "$GITHUB_ENV"
+      - name: build the MPC plugin (the SDK at its pinned commit)
+        run: |
+          python3 mpc/build.py --target all --version "${GITHUB_REF_NAME#v}" -j4
+          sha256sum build/mpc/frodhes-mpc.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mpc-package
+          path: build/mpc/frodhes-mpc.zip
+          if-no-files-found: error
   release:
-    needs: [ci-gate, generators-macos, host, web, move, plugin]
+    needs: [ci-gate, generators-macos, host, web, move, plugin, mpc]
     # runs when ci passed on this commit (the fallback jobs skipped) or when both fallback jobs passed, and the
     # emulator built and passed its selftest. x86_64: the JieLi toolchain (tools/get_toolchain.sh) runs on nothing else
     if: >-
       !cancelled() && needs.ci-gate.result == 'success' && needs.web.result == 'success' &&
-      needs.move.result == 'success' && needs.plugin.result == 'success' &&
+      needs.move.result == 'success' && needs.plugin.result == 'success' && needs.mpc.result == 'success' &&
       (needs.ci-gate.outputs.passed == 'true' ||
        (needs.generators-macos.result == 'success' && needs.host.result == 'success'))
     runs-on: ubuntu-latest
@@ -238,6 +260,20 @@ jobs:
           OWNER=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
           sh tools/pages_wait.sh "$(git -C build/pages rev-parse HEAD)" web/dist \
             "https://$OWNER.github.io/${GITHUB_REPOSITORY#*/}/"
+      - name: the MPC plugin built by the job mpc
+        uses: actions/download-artifact@v4
+        with:
+          name: mpc-package
+          path: build/mpc-ci
+      - name: the MPC plugin attached to the draft (versioned, and the fixed name the docs link)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          mkdir -p build/publish/mpc
+          cp build/mpc-ci/frodhes-mpc.zip build/publish/mpc/frodhes-mpc.zip
+          cp build/mpc-ci/frodhes-mpc.zip "build/publish/mpc/frodhes-$V-mpc.zip"
+          gh release upload "$GITHUB_REF_NAME" build/publish/mpc/frodhes-mpc.zip "build/publish/mpc/frodhes-$V-mpc.zip" --clobber
       - name: the plugin packages built by the job plugin
         uses: actions/download-artifact@v4
         with:

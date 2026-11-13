@@ -155,7 +155,8 @@ To remove it, delete the `Frodhes.*` files again. More:
 An MPC plugin build is in the works: the desktop plugin's engine, 16 voices on every instrument, the factory presets
 as programs, its pages on the MPC's screen and Q-Links. It is tested on a computer only (the MPC Plugin SDK's host
 simulator, Linux ARM): it has not run on an MPC yet. It needs MPC OS 3.10.1 or later with External Plugin Support
-on. Build it with `make mpc`; how to install it and what to report: [docs/MPC.md](docs/MPC.md).
+on. Download [`frodhes-mpc.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-mpc.zip) (or build it with `make mpc`); how to install it and what to report:
+[docs/MPC.md](docs/MPC.md).
 
 ## Manual
 

@@ -30,8 +30,10 @@ report back (the list is in the zip's `INSTALL.txt` and [below](#what-to-report-
 
 ## Install and remove
 
-1. Unzip `frodhes-mpc.zip`. Copy the folder `Frodhes - VST - Frodhes` into a folder named `VST2 Plugins` at the top
-   level of the drive (create it if needed):
+1. Download
+   [`frodhes-mpc.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-mpc.zip) and
+   unzip it. Copy the folder `Frodhes - VST - Frodhes` into a folder named `VST2 Plugins` at the top level of the
+   drive (create it if needed):
    `<drive>/VST2 Plugins/Frodhes - VST - Frodhes/plugin.json`. Keep the folder's name as it is: the MPC finds the
    plugin's pages by it.
 2. Insert the drive; if Frodhes does not show, restart the MPC (it scans at start).
