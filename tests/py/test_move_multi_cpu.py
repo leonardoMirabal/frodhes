@@ -80,6 +80,16 @@ def test_verdict_bars():
     assert _run([600], 1, takes=[{"gated": 1}])[0] == "FAIL"
 
 
+def test_verdict_overruns_over_idle():
+    """K2 (2026-11-13): Schwung's overrun counter runs at idle (173 /s on the Move, Frodhes idle); only the rate the
+    loads add fails a run (the 2026-11-13 runs: 160-173 /s under 2-3 instances against 173 /s idle: PASS)"""
+    assert _run([630, 640], 2, perf={"overruns": 5881, "overruns_per_s": 173.1}, idle={"overruns_per_s": 173.3})[0] == "PASS"
+    assert _run([630, 640], 2, perf={"overruns": 900, "overruns_per_s": 30.0}, idle={"overruns_per_s": 0.0})[0] == "FAIL"
+    assert _run([630, 640], 2, perf={"overruns": 9000, "overruns_per_s": 200.0}, idle={"overruns_per_s": 173.0})[0] == "FAIL"
+    assert _run([630, 640], 2, perf={"overruns": 60, "overruns_per_s": 1.5}, idle={"overruns_per_s": 0.0})[0] == "PASS"
+    assert _run([600], 1, perf={"overruns": 2})[0] == "FAIL"                 # no idle rate read: any overrun counts
+
+
 # ---- pacing and the slots restored (K2: the 0.9.9 run of 2026-11-08, build/move/hil/multi/20261108-003510: the third
 # slot's upload hit "web param set ring full", the others broke on the barrier, Frodhes stayed in slots 3-4)
 RING = mc.move_ws.SchwungError("set_param failed: web param set ring full")
