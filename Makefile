@@ -310,3 +310,15 @@ plugin-hosts: plugin       ## macOS: the VST3 / AU in Apple's AU host and a JUCE
                            ## (tools/plugin_hosts.py; the AU must be installed; pip install pedalboard numpy)
 	$(PY) tools/plugin_hosts.py --bundles $(PLUGIN_BUILD)/bundles --render $(PLUGIN_BUILD)/frp_clap_render \
 	  --au ~/Library/Audio/Plug-Ins/Components/Frodhes.component
+
+# ---- the Akai MPC port (docs/MPC.md): the desktop plugin's engine as an MPC plugin (VST 2.4, arm32 + arm64), built
+# with the MPC Plugin SDK's toolchain (zig; the SDK fetched into .local/mpc-sdk on first use). Nothing is installed.
+MPC_J ?= 2
+.PHONY: mpc test-mpc
+mpc:                       ## build/mpc: the plugin folder (both ARM builds, validated), frodhes-mpc.zip, the native test build
+	nice -n 15 $(PY) mpc/build.py --target all --tools -j$(MPC_J)
+
+test-mpc: mpc plugin       ## the MPC port's tests: the 24-voice build for the comparisons, then tests/py/test_mpc.py (the host
+                           ## simulator, engines, programs, state, tempo, bit-exactness, a soak segment, ARM in Docker)
+	nice -n 15 $(PY) mpc/build.py --target native --voices 24 --out build/mpc24 -j$(MPC_J)
+	$(PY) -m pytest -q tests/py/test_mpc.py

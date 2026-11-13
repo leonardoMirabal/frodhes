@@ -1,0 +1,17 @@
+{
+  "comment": "What mpc/build.py adds to gen_ui.py's skins. keys: the MPC has six function keys under the screen; each holds up to 8 pages (sub-tabs: pressing the key again shows its next page). The pages of mpc/ui.json in this order, a list per key. program: the Program Mode Q-Links (the knobs banked to the plugin rather than to a page), the 16 most-used parameters by name, Q-Link 1..16 (1 = bottom left, 13 = top left).",
+  "keys": [
+    ["SOUND", "VOICE", "VOICE 2", "MOTOR"],
+    ["COMP", "COMP 2", "EQ", "DRIVE"],
+    ["FILTER", "FLT LFO", "TREM", "PHASER"],
+    ["CHORUS", "DELAY", "SYNC"],
+    ["REVERB", "REVERB 2"],
+    ["PLAY", "MORE"]
+  ],
+  "program": [
+    "Reverb mix", "Delay mix", "Tremolo depth", "Level",
+    "Drive amount", "Filter cutoff", "Chorus depth", "Reverb decay",
+    "Decay / ring", "Release / damper", "Hammer / weight", "Bark / mallet",
+    "Type", "Tone / strike", "Bell / tube", "Noise"
+  ]
+}
