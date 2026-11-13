@@ -123,7 +123,8 @@ jobs:
           path: build/move/frodhes-module.tar.gz
           if-no-files-found: error
   mpc:                               # the Akai MPC plugin from the tag (mpc/build.py: arm32 + arm64, validated, zipped)
-    runs-on: ubuntu-latest
+    # macOS: the host the tested builds come from (zig 0.15.2 gives other bytes on a Linux host, same sources)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -138,7 +139,7 @@ jobs:
       - name: build the MPC plugin (the SDK at its pinned commit)
         run: |
           python3 mpc/build.py --target all --version "${GITHUB_REF_NAME#v}" -j4
-          sha256sum build/mpc/frodhes-mpc.zip
+          shasum -a 256 build/mpc/frodhes-mpc.zip
       - uses: actions/upload-artifact@v4
         with:
           name: mpc-package
