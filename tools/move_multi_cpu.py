@@ -432,11 +432,12 @@ def run_n(n, secs, outdir, seed=1):
 # a new engine is compared with (over it by more than REF_TOL: a regression to explain, not a failure by itself)
 BAR_US = {1: mh.U12_LIMIT_US, 2: 967, 3: 967}
 REF_1_US, REF_TOL = 573, 0.15
+OVR_TOL_PER_S, OVR_TOL_FRAC = 2.0, 0.10
 
 
 def verdict(r, n):
     """(PASS / FAIL / INFO, text) for one run_n result: every instance's ring worst within BAR_US[n], no ring gaps,
-    no Schwung overrun during the loads, no gated click on any tap (or on the USB-C audio)"""
+    no Schwung overruns added by the loads (over the idle rate), no gated click on any tap (or on the USB-C audio)"""
     rings = r.get("rings") or {}
     worst = max((s.get("worst", 0) for s in rings.values()), default=None)
     bad = []
@@ -446,8 +447,15 @@ def verdict(r, n):
         bad.append("worst %d us > %d us" % (worst, BAR_US[n]))
     if any(s.get("missing") for s in rings.values()):
         bad.append("ring gaps")
-    ovr = (r.get("perf") or {}).get("overruns")
-    if ovr:
+    # Schwung's overrun counter also runs with no load (73-173 /s idle on 2026-11-03, -08 and -13, Frodhes idle or
+    # not playing): only overruns the loads add count, the rate during them over the idle rate by more than
+    # OVR_TOL_PER_S (or OVR_TOL_FRAC of the idle rate); with no idle rate read, any overrun counts as before
+    perf, idle = r.get("perf") or {}, r.get("idle") or {}
+    ovr, rate, base = perf.get("overruns"), perf.get("overruns_per_s"), idle.get("overruns_per_s")
+    if base is not None and rate is not None:
+        if rate - base > max(OVR_TOL_PER_S, OVR_TOL_FRAC * base):
+            bad.append("Schwung overruns %.1f /s under load vs %.1f /s idle" % (rate, base))
+    elif ovr:
         bad.append("%d Schwung overruns" % ovr)
     clicks = sum(t.get("gated", 0) for t in r.get("takes", [])) + (r.get("usb") or {}).get("gated", 0)
     if clicks:
