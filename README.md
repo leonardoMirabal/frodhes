@@ -150,13 +150,18 @@ To remove it, delete the `Frodhes.*` files again. More:
   <img src="docs/manual/img/plugin/plugin-effects.png?v=0564369e" width="384" alt="The plugin playing: the compressor and the tape delay on, their knobs and meters live">
 </p>
 
-## On the Akai MPC (testers wanted)
+## On the Akai MPC
 
-An MPC plugin build is in the works: the desktop plugin's engine, 16 voices on every instrument, the factory presets
-as programs, its pages on the MPC's screen and Q-Links. It is tested on a computer only (the MPC Plugin SDK's host
-simulator, Linux ARM): it has not run on an MPC yet. It needs MPC OS 3.10.1 or later with External Plugin Support
-on. Download [`frodhes-mpc.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-mpc.zip) (or build it with `make mpc`); how to install it and what to report:
+Frodhes runs on Akai MPC standalone hardware as a plugin (checked by a tester on an MPC): the desktop plugin's engine,
+16 voices on every instrument, the factory presets as programs, and the plugin's look on the MPC's screen: eight
+pages of large knobs in panels of four, one Q-Link group each. It needs MPC OS 3.10.1 or later with External Plugin
+Support on. Download [`frodhes-mpc.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-mpc.zip) (or build it with `make mpc`); how to install it and what to report:
 [docs/MPC.md](docs/MPC.md).
+
+<p align="center">
+  <img src="docs/manual/img/mpc/mpc-voice.png?v=ab028bbc" width="384" alt="Frodhes on the MPC: the VOICE page">
+  <img src="docs/manual/img/mpc/mpc-delay.png?v=7bc9cbad" width="384" alt="Frodhes on the MPC: the chorus and the delay">
+</p>
 
 ## Manual
 

@@ -321,4 +321,4 @@ mpc:                       ## build/mpc: the plugin folder (both ARM builds, val
 test-mpc: mpc plugin       ## the MPC port's tests: the 24-voice build for the comparisons, then tests/py/test_mpc.py (the host
                            ## simulator, engines, programs, state, tempo, bit-exactness, a soak segment, ARM in Docker)
 	nice -n 15 $(PY) mpc/build.py --target native --voices 24 --out build/mpc24 -j$(MPC_J)
-	$(PY) -m pytest -q tests/py/test_mpc.py
+	$(PY) -m pytest -q tests/py/test_mpc.py tests/py/test_mpc_skin.py

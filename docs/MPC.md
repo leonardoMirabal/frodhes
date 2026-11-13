@@ -6,9 +6,12 @@ MPC's plugin format, a VST 2.4 plugin for its 32-bit and 64-bit ARM models, buil
 [MPC Plugin SDK](https://github.com/inmusic-software/mpc-plugin-builder-sdk). It plays 16 voices on every instrument
 (as on the Move) and has the factory presets F01-F57 as its programs.
 
-**Status: not yet run on an MPC.** Everything below was tested on a computer: in the SDK's host simulator (a host
-that behaves like the MPC's), in our own VST 2.4 host, and on Linux ARM in Docker. If you try it on an MPC, please
-report back (the list is in the zip's `INSTALL.txt` and [below](#what-to-report-back)).
+**Status: runs on an Akai MPC** (checked by a tester on their MPC: it loads, plays and its pages and Q-Links work).
+Everything below is also tested on a computer: in the SDK's host simulator (a host that behaves like the MPC's), in
+our own VST 2.4 host, and on Linux ARM in Docker. If you try it on an MPC, please report back (the list is in the
+zip's `INSTALL.txt` and [below](#what-to-report-back)).
+
+![The VOICE page on the MPC's screen: the aluminium plate, two panels of four knobs](manual/img/mpc/mpc-voice.png?v=ab028bbc)
 
 ## Contents
 
@@ -45,21 +48,57 @@ a plugin runs inside the MPC software.
 
 ## The pages and the Q-Links
 
-The 19 pages hold four controls each, grouped as on the FM-1 and the desktop plugin, on the MPC's six function keys
-(press a key again for its next page):
+The screen is the desktop plugin's look, drawn for the MPC: a rounded brushed-aluminium plate with the FRODHES
+wordmark and the page's name on its rail, round a black body that holds two panels, one above the other. Each panel
+is one group of four Q-Links: its title (with a lamp when the section has a switch), its switches in its header as on
+the plugin (touch them; a menu opens with a tap), and four cards in a row, each a large knob (the plugin's knob: a
+black skirt, a spun-aluminium cap, a scale whose ticks light up to the value) with its name above and its value
+below, or a segmented switch. The MPC draws its own header (track, plugin, preset) above and its function keys below.
 
-| Key | Pages |
-|---|---|
-| 1 | SOUND (TYPE, TONE, BELL, VELOCITY RESPONSE), VOICE (BARK, HAMMER, DECAY, RELEASE), VOICE 2 (NOISE, SPREAD, TUNE, LEVEL), MOTOR |
-| 2 | COMP, COMP 2, EQ, DRIVE |
-| 3 | FILTER, FLT LFO, TREM, PHASER |
-| 4 | CHORUS, DELAY, SYNC |
-| 5 | REVERB, REVERB 2 |
-| 6 | PLAY (PRESET, SUSTAIN, EFFECTS BYPASS), MORE |
+Eight pages on the MPC's six function keys (press a key again for its next page):
+
+| Key | Page | Top panel (Q-Links 13-16) | Lower panel (Q-Links 9-12) |
+|---|---|---|---|
+| 1 | VOICE | VOICE, how the note is struck: TONE, BARK, BELL, HAMMER | VOICE, how notes die away: DECAY, RELEASE, NOISE, TUNE |
+| 1 | PLAY | INSTRUMENT: TYPE, RESPONSE, SPREAD, LEVEL | PLAY: PRESET (a wide card), SUSTAIN, EFFECTS BYPASS |
+| 2 | COMP EQ | COMP (OFF/ON, RATIO): THRESHOLD, ATTACK, RELEASE, MAKE-UP | EQ: LOW, MID, MID FREQ, HIGH |
+| 2 | DRIVE | DRIVE: TYPE, AMOUNT, TONE, MIX | MOTOR (OFF/ON): DEPTH, SPEED, SHAPE, SYNC |
+| 3 | FILTER | FILTER: TYPE, FREQ, RESO, LFO AMOUNT | FILTER LFO: SHAPE, RATE, SYNC, TRIGGER |
+| 4 | MOD | TREM/WAH (OFF/TRM/WAH, PAN/AM): DEPTH, RATE, SHAPE, SYNC | PHASER (OFF/ON): DEPTH, SPEED, FEEDBACK, SYNC |
+| 5 | DELAY | CHORUS (OFF/ON): DEPTH, SPEED, FEEDBACK, SYNC | DELAY (OFF/DIG/ANA/TAPE, SYNC): MIX, TIME, FEEDBACK, TONE |
+| 6 | REVERB | REVERB: TYPE, MIX, DECAY, TONE | REVERB, the room: PRE-DELAY, SIZE, MODULATION, LOW CUT |
+
+Every one of the 72 parameters is on a page. On an MPC with 16 Q-Links the top two rows of knobs play the two panels
+(the knob next to a card turns it); on one with four, the knobs play the top panel first, and touching a card brings
+its panel under them (the focus rectangle wraps the panel). A double tap on a card opens the MPC's large editor (a
+list for TYPE, SYNC, PRESET and the other named choices).
+
+<p align="center">
+  <img src="manual/img/mpc/mpc-play.png?v=ecc85df1" width="384" alt="PLAY: the instrument, the preset, SUSTAIN and EFFECTS BYPASS">
+  <img src="manual/img/mpc/mpc-comp_eq.png?v=1e691902" width="384" alt="COMP EQ: the compressor with its switch and ratio, the EQ">
+  <img src="manual/img/mpc/mpc-drive.png?v=7f1d8c3a" width="384" alt="DRIVE: the drive and the motor">
+  <img src="manual/img/mpc/mpc-filter.png?v=832bbdec" width="384" alt="FILTER: the filter and its LFO">
+  <img src="manual/img/mpc/mpc-mod.png?v=0d472ba1" width="384" alt="MOD: tremolo / wah and the phaser">
+  <img src="manual/img/mpc/mpc-delay.png?v=7bc9cbad" width="384" alt="DELAY: the chorus and the delay">
+  <img src="manual/img/mpc/mpc-reverb.png?v=c4faa54c" width="384" alt="REVERB: the reverb and the room">
+</p>
+
+(The pictures are the pages composed on a computer, with the MPC's header and keys sketched round them; on the MPC the
+values are in its own font.)
 
 In Program mode the 16 Q-Links play the most-used controls: Q-Link 1-4 reverb mix, delay mix, tremolo depth,
 level; 5-8 drive, filter cutoff, chorus depth, reverb decay; 9-12 decay, release, hammer, bark; 13-16 type, tone,
-bell, noise. The layout lives in `mpc/ui.json` (the pages) and `mpc/skin.json` (the keys and the Q-Links).
+bell, noise.
+
+The skin is hand-made, not generated by the SDK: `mpc/skin.json` holds the layout (the keys, the pages, the panels,
+the cards, the Program-mode Q-Links) and `mpc/tools/make_skin.py` draws it into `mpc/skins/` (`TUI.json`,
+`Q-Links.json` and the pictures), which `mpc/build.py` copies into the plugin folder as it is, after checking it still
+matches the layout and the plugin's parameters. The pictures are painted with the desktop plugin's own drawing code
+(`plugin/ui/frui_gfx.c`, its fonts, and copies of its plate, panel, knob, switch and lamp in
+`mpc/tools/skin_draw.c`) at twice the plugin's size, so the MPC shows the plugin's parts; the same inputs give the
+same files, byte for byte. To change the layout, edit `mpc/skin.json` and run
+`python3 mpc/tools/make_skin.py --preview build/mpc/skin-preview` (after `make mpc`, which writes the parameters it
+reads; Pillow for the previews).
 
 ## What it does
 
@@ -93,6 +132,7 @@ zig the SDK's way (`$ZIG`, `zig` on the PATH, or the SDK's own private venv; che
 framework headers compiled into the plugin are vendored in `mpc/sdk/` (MIT, with the SDK's licence and the commit in
 `mpc/sdk/NOTICE.txt`); the build stops if they differ from the pinned SDK. Options: `--target all|native|arm32|arm64`,
 `--version X.Y.Z`, `--voices N`, `--tools` (the ARM test hosts, for Docker), `-j N`.
+The skin in `mpc/skins/` is made separately (above) and committed.
 
 Outputs in `build/mpc/`: `Frodhes - VST - Frodhes/` (`plugin.json`, `version.xml`, `VST/frodhes-arm32.so`,
 `VST/frodhes-arm64.so`, `Plugin Skins/`), `frodhes-mpc.zip` (the folder, `INSTALL.txt`, `LICENSE.txt`,
@@ -125,7 +165,14 @@ under QEMU (1 million switches); its sound is the host build's, byte for byte, u
 
 ## Tests
 
-`tests/py/test_mpc.py` (`make test-mpc`; each test skips cleanly when its part is not built):
+`tests/py/test_mpc.py` and `tests/py/test_mpc_skin.py` (`make test-mpc`; each test skips cleanly when its part is
+not built):
+
+- **The skin**: up to date with `mpc/skin.json` and the plugin's parameters; every control bound to a parameter
+  that exists, under its name; every parameter on a page; every picture present, used, and fitting the bounds it is
+  drawn in (the MPC does not scale pictures), every part of a control inside it; each page two blocks of four cards
+  filling their focus rectangles, which the Q-Link maps agree with (13-16, 9-12, banked top row first); the panels
+  covering three quarters of the screen; the pictures and the JSON drawn again byte for byte the same.
 
 - **The SDK's checks**: `validate.py` on the folder (0 errors, 0 warnings); the host simulator `host_sim test`
   (the MPC's load sequence, the parameter-0 quirk, block sizes 32-512, a random parameter sweep, the state round
@@ -151,7 +198,9 @@ under QEMU (1 million switches); its sound is the host build's, byte for byte, u
   stream through the desktop plugin byte for byte the same, and its MIDI through the host build the same (so a click
   there is the firmware's own, which `tools/monkey.py` hunts).
 
-Not tested: anything on an MPC (the MPC's own host, its CPU, its memory limits, its screen and Q-Links).
+On an MPC: a tester ran an earlier build (with the SDK's generated pages) on their MPC: it loads and plays, its pages
+and Q-Links work. This skin has not been seen on an MPC yet (its widgets and file format are the ones the MPC's own
+skins and the SDK's generator use); the MPC's CPU and memory figures are not measured.
 
 ## CPU and memory
 

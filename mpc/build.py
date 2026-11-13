@@ -16,11 +16,11 @@ arm-linux-gnueabihf.2.31 -mcpu=cortex_a17 and aarch64-linux-gnu.2.31 -mcpu=corte
 Outputs (build/mpc/ unless --out):
     native/frodhes.(dylib|so)        this machine's build, for the SDK's host simulator and the tests
     Frodhes - VST - Frodhes/         the plugin folder: plugin.json, version.xml, VST/frodhes-arm32.so,
-                                     VST/frodhes-arm64.so, Plugin Skins/ (TUI.json, Q-Links.json, the kit's PNGs)
+                                     VST/frodhes-arm64.so, Plugin Skins/ (mpc/skins/: TUI.json, Q-Links.json, the PNGs)
     frodhes-mpc.zip                  the folder + INSTALL.txt, LICENSE.txt, SOURCE.txt, THIRD-PARTY-NOTICES.txt
-    params.json                      the parameters as the host simulator sees them (the skins are made from it)
+    params.json                      the parameters as the host simulator sees them (the skin is checked against it)
 
-The SDK's tools (host_sim, gen_ui.py, validate.py) come from a checkout of SDK_COMMIT in .local/mpc-sdk (fetched on
+The SDK's tools (host_sim, validate.py) come from a checkout of SDK_COMMIT in .local/mpc-sdk (fetched on
 first use, or $MPC_SDK); the three framework headers compiled into the plugin are vendored in mpc/sdk/ and checked
 against that commit. Exit: 0 ok, 1 a failure (compile, validation), 2 bad arguments or a missing toolchain.
 """
@@ -244,56 +244,20 @@ def test_tools(d, zig, out_dir, arch):
     return where
 
 
-def skins(d, params_json, folder, kit_cache):
+def skins(params_json, folder):
+    """Plugin Skins/: the hand-drawn skin in mpc/skins/ (mpc/tools/make_skin.py renders it from mpc/skin.json),
+    copied as it is, after checking it matches mpc/skin.json and the plugin's parameters"""
     out = os.path.join(folder, "Plugin Skins")
     if os.path.isdir(out):
         shutil.rmtree(out)
-    p = subprocess.run([sys.executable, os.path.join(d, "tools", "gen_ui.py"), "--params", params_json, "--ui",
-                        os.path.join(MPC, "ui.json"), "--out", out, "--kit-cache", kit_cache], capture_output=True, text=True)
+    p = subprocess.run([sys.executable, os.path.join(MPC, "tools", "make_skin.py"), "--check", "--params", params_json],
+                       capture_output=True, text=True)
     if p.returncode:
-        die("gen_ui.py failed:\n" + p.stdout + p.stderr)
-    for line in (p.stdout + p.stderr).splitlines():
-        if ("WARNING" in line or "NOTE" in line) and "six function keys" not in line:   # (the pages go on the six
-            log("  " + line)                                                            # keys below)
-    skin = json.load(open(os.path.join(MPC, "skin.json")))
-    pages = [pg["name"] for pg in json.load(open(os.path.join(MPC, "ui.json")))["pages"]]
-    keys = skin["keys"]
-    if [n for k in keys for n in k] != pages or len(keys) > 6 or max(len(k) for k in keys) > 8:
-        die("mpc/skin.json keys: the pages of mpc/ui.json in their order, at most 6 keys of at most 8 pages")
-    at = [(ki, si) for ki, k in enumerate(keys) for si in range(len(k))]   # each page's (key, sub-tab)
-    # TUI.json: page t on function key at[t][0], sub-tab at[t][1] (gen_ui gives page t key t, sub-tab 0); the text is
-    # edited in place (gen_ui's JSON keeps its key order and repeated keys, which the MPC's parser relies on)
-    tpath = os.path.join(out, "TUI.json")
-    text, it = open(tpath).read(), iter(at)
-
-    def tab(m):
-        k, sub = next(it)
-        return '"fnKeyIndex": %d,%s"fnKeySubIndex": %d,' % (k, m.group(2), sub)
-    text, n = re.subn(r'"fnKeyIndex": (\d+),(\s*)"fnKeySubIndex": 0,', tab, text)
-    if n != len(pages):
-        die("TUI.json: %d tabs, %d pages" % (n, len(pages)))
-    open(tpath, "w").write(text)
-    # Q-Links.json: each page's map entry as Tab key + 1, SubTab sub-tab + 1; Program Mode: skin.json's 16
-    params = {q["name"]: q["index"] for q in json.load(open(params_json))["params"]}
-    names = skin["program"]
-    missing = [nm for nm in names if nm not in params]
-    if len(names) != 16 or missing:
-        die("mpc/skin.json program: 16 parameter names wanted (unknown: %s)" % ", ".join(missing))
-    qpath = os.path.join(out, "Q-Links.json")
-    text, it = open(qpath).read(), iter(at)
-
-    def qtab(m):
-        k, sub = next(it)
-        return '"Tab": %d,%s"SubTab": %d,' % (k + 1, m.group(2), sub + 1)
-    text, n = re.subn(r'"Tab": (\d+),(\s*)"SubTab": 1,', qtab, text)
-    if n != len(pages):
-        die("Q-Links.json: %d tab maps, %d pages" % (n, len(pages)))
-    m = re.search(r'("Program Mode Q-Links"\s*:\s*\{)(.*?)(\})', text, re.S)
-    if not m:
-        die("gen_ui.py's Q-Links.json has no Program Mode Q-Links")
-    body = ", ".join('"Q-Link %d": %d' % (k + 1, params[nm]) for k, nm in enumerate(names))
-    with open(qpath, "w") as f:
-        f.write(text[:m.start(2)] + " " + body + " " + text[m.end(2):])
+        die("the skin:\n" + p.stdout + p.stderr)
+    os.makedirs(out)
+    for fn in sorted(os.listdir(os.path.join(MPC, "skins"))):
+        if fn.endswith((".png", ".json")):
+            shutil.copyfile(os.path.join(MPC, "skins", fn), os.path.join(out, fn))
 
 
 def pad_version(v):
@@ -308,8 +272,8 @@ Frodhes is a physical-model electric piano, vibraphone and marimba with its own 
 Frodhes firmware for the M-VAVE FM-1, here as an instrument plugin for MPC standalone hardware. No samples: every
 note is computed. HQ engine and effects, 16 voices on every instrument.
 
-This build has been tested on a computer only, in the MPC Plugin SDK's host simulator (which behaves like the MPC's
-plugin host). It has NOT been run on an MPC yet: you are the first. Please read "What to report back" below.
+Frodhes runs on Akai MPC standalone hardware (checked by a tester on an MPC); it is also tested on a computer, in the
+MPC Plugin SDK's host simulator. Reports are welcome: see "What to report back" below.
 
 NEEDS
 - MPC OS 3.10.1 or later (Preferences > Info shows the version).
@@ -337,7 +301,8 @@ REMOVE IT (also if it misbehaves)
 
 WHAT TO REPORT BACK (thank you!)
 1. Your MPC model (e.g. MPC One, Live II, Live III, Key 61) and MPC OS version (Preferences > Info).
-2. Does Frodhes appear and load? Do its pages show (SOUND, VOICE, ... PLAY) and do the Q-Link knobs move them?
+2. Does Frodhes appear and load? Do its pages show (VOICE, PLAY, COMP EQ, ... REVERB) and do the Q-Link knobs
+   move them?
 3. The CPU meter (the MPC's CPU display) with one Frodhes playing:
    a) about 10 voices: hold a 10-note chord, or play quickly with the sustain pedal down
    b) the most it can do: 16 voices (hold the sustain pedal and play 16 or more keys), with REVERB TYPE HALL,
@@ -363,7 +328,8 @@ def notices(d):
             "   https://github.com/inmusic-software/mpc-plugin-builder-sdk , under the MIT licence:\n\n%s\n"
             "2. The C++ runtime of the zig toolchain (LLVM libc++, libc++abi, libunwind, compiler-rt), linked in, under\n"
             "   the Apache License 2.0 with LLVM Exceptions (https://llvm.org/LICENSE.txt).\n\n"
-            "Plugin Skins/ holds images rendered by the SDK's ui-kit generator (tools/make_ui_kit.py, MIT, as above).\n"
+            "Plugin Skins/ holds images drawn by Frodhes's own mpc/tools/make_skin.py (GPL-3.0-only, as the plugin); the\n"
+            "text in them is set in Inter Tight and Michroma (SIL Open Font License 1.1, assets/fonts/ in the source).\n"
             % (SDK_COMMIT, open(os.path.join(MPC, "sdk", "LICENSE")).read()))
 
 
@@ -419,7 +385,7 @@ def main():
         f.write("\n")
     for a, lib in libs.items():
         shutil.copyfile(lib, os.path.join(folder, "VST", "%s-%s.so" % (SLUG, a)))
-    skins(d, params_json, folder, os.path.join(out, "kit"))
+    skins(params_json, folder)
     with open(os.path.join(folder, "version.xml"), "w", newline="\n") as f:
         f.write('<?xml version="1.0" encoding="utf-8"?>\n<plugincontent version="1.0">\n    <version>%s</version>\n'
                 '    <uiversion>0.1.0.0</uiversion>\n</plugincontent>\n' % pad_version(args.version))

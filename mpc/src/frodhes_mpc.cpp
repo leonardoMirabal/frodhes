@@ -3,7 +3,7 @@
  * plugin/src/engine_unit.c, the app firmware/src/frodhes.c unchanged) behind the MPC Plugin SDK's VST 2.4 framework
  * (mpc/sdk/mpc_plugin.h, class mpc::Plugin). Nothing of the engine is forked: this file is what
  * plugin/src/frodhes_clap.c is for CLAP, without the window (the MPC draws its own pages from
- * "Plugin Skins", mpc/ui.json).
+ * "Plugin Skins": mpc/skins/, drawn by mpc/tools/make_skin.py).
  *
  *   audio        no input, one stereo output; 44.1 kHz on the MPC (the bridge's own rate: its samples as they are),
  *                any other rate through the bridge's resamplers, as the desktop plugin
