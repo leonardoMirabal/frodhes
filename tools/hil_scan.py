@@ -952,6 +952,9 @@ def effects(r, rep):
                      f"problems: {bad or 'none'}")
 
 
+BYPASS_FX_LU = 3.6                 # bypass: effects on vs bypassed, at most (LU; THRESHOLD in bypass())
+
+
 @test
 def bypass(r, rep):
     """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs the compressor alone (the bypass
@@ -977,7 +980,12 @@ def bypass(r, rep):
     # within 0.5 LU as before; no effects at all is information. Since b2c9ab1b the bypass keeps the compressor, so
     # against no effects it reads its make-up: +2.2 LU on the host (the coordinator saw +0.8 on its run), by design (the
     # user's decision 2026-11-08); bypassed re the compressor alone +0.01 LU (host)
-    ok = abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) < 3
+    # THRESHOLD (2026-11-13): effects on vs bypassed 3 -> 3.6 LU. The bypass keeps the compressor (+2.4 LU here) and
+    # the phaser at DEPTH 80 reads -2.5 LU by design (FXALL_EXPECT, the peak trim), both 0.9.10; so effects on reads
+    # 3.2 LU under the bypass on the FM-1 with 0.9.10 and 0.9.11 (T2, 2026-11-12) and 3.07 on the host (0.9.9: 1.4,
+    # without both). 3.6: the 0.4 LU the limit had over its measured 2.6 when it was set (2026-10-17), over the
+    # device's +-0.3 LU spread
+    ok = abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) < BYPASS_FX_LU
     return ok, (f"no effects {lv[0]:.1f}, compressor alone {lv[3]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} "
                 f"LUFS (bypassed re the compressor alone {lv[2] - lv[3]:+.2f} LU)")
 
@@ -1212,19 +1220,26 @@ def sustain(r, rep):
     return lb - la > 15, f"0.5 s after the key: damped {la:.1f} dB, with the pedal {lb:.1f} dB"
 
 
+# THRESHOLD (2026-11-13): the take 16 -> 18 s and the limit 15.0 -> 17.0 s (still 1 s before the take's end, as set in
+# 2415d303). 0.9.10's held note loses less over the hold (89e4ab30, the release diff's DECAY rows): the held A3 falls
+# ~3.6 dB/s where 0.9.9's fell ~7, so the gate closes at 15.3 s (0.9.9: 7.5). Measured 15.3 s on the FM-1 with 0.9.10
+# and 0.9.11 (T2, 2026-11-12) and 15.33 s on the host (a 45 s take: exact zero from 15.33 s on, the gate closes)
+HELD_TAIL_S, HELD_TAIL_MAX = 18.0, 17.0
+
+
 @test
 def held_tail(r, rep):
     r.dry(REV=40)
     ev = [(0.05, "on", 57, 100)]
-    x = r.take(16.0, ev)
+    x = r.take(HELD_TAIL_S, ev)
     r.note_off(57)
     g = r.lag(x, ev)                                  # times on the event clock (the note-on at 0.05 s)
-    env = [db(x[g + int(t * FS):g + int((t + 0.5) * FS)]) for t in np.arange(0, 15.5, 0.5)]
+    env = [db(x[g + int(t * FS):g + int((t + 0.5) * FS)]) for t in np.arange(0, HELD_TAIL_S - 0.5, 0.5)]
     nz = np.flatnonzero(np.abs(x).max(axis=1) > 0)
     rep["held_tail"] = dict(env_db=env, last_nonzero_s=float((nz[-1] - g) / FS) if len(nz) else 0.0,
                             hiss_8k_db=None)
     last = rep["held_tail"]["last_nonzero_s"]
-    return last < 15.0, f"held A3 with reverb: output reaches exact zero at {last:.1f} s (gate)"
+    return last < HELD_TAIL_MAX, f"held A3 with reverb: output reaches exact zero at {last:.1f} s (gate)"
 
 
 @test
@@ -1412,9 +1427,13 @@ def presets(r, rep):
         jl = [q["jack"] for q in rows]
         rel = [(a - lv[0]) - (b - jl[0]) for a, b in zip(lv, jl)]      # USB vs jack, each re its own F01
         mis = [q["preset"] for q, m in zip(rows, rel) if abs(m) > MISMATCH_DB]
-        ok = ok and max(jl) - min(jl) < 8
+        # THRESHOLD (2026-11-13): the jack's 8 LU span over the same presets as USB's (FINAL19 v2's LEVEL_CUT ones
+        # out, the coordinator 2026-11-10); it had kept them, so WOOD ECHO's -7.8 failed it on the FM-1 with 0.9.10
+        # and 0.9.11 (span 10.6 / 10.5 LU; without LEVEL_CUT 4.8 / 4.6, USB 4.7 / 4.4)
+        sj = [v for q, v in zip(rows, jl) if preset_key(q["preset"]) not in LEVEL_CUT] or jl
+        ok = ok and max(sj) - min(sj) < 8
         msg += (f"; jack (re its own scale) {', '.join(f'{v - jl[0]:+.1f}' for v in jl)} LU re F01 (span"
-                f" {max(jl) - min(jl):.2f}, spread <= {max(q['jack_spread_lu'] for q in rows):.2f}); USB-jack"
+                f" {max(jl) - min(jl):.2f}, without LEVEL_CUT {max(sj) - min(sj):.2f}, spread <={max(q['jack_spread_lu'] for q in rows):.2f}); USB-jack"
                 f" disagreement <= {max(abs(m) for m in rel):.2f} LU{' at F' + str(mis) if mis else ''}")
     return ok, msg
 
@@ -3660,6 +3679,12 @@ def _jump(V, S, jumps, ch=None, extra=()):
         cor = corr_lr(cut(held.usb, held.on("usb")[0], 0.2, 1.8)) if held.usb is not None else 1.0
         tgt = -2.5 if wide and cor < 0.8 else 0.0
         lim = 3.0 if comp else 2.0 if ph else JUMP_LU
+        # THRESHOLD (2026-11-13): the phaser at DEPTH 80 held on, fx_all's own target for it (FXALL_EXPECT -2.5 +- 1.0,
+        # the 0.9.10 peak trim fx.c PH_T) instead of 0 +- 2: VIBES -2.84 stereo / -2.97 left / -2.95 jack, MARIMBA
+        # -2.37 / -2.44 / -2.43 on the FM-1 with 0.9.11 (0.9.10: -2.79 / -2.90 / -2.95, -2.38 / -2.37 / -2.42; T2
+        # 2026-11-12), the host -2.81 / -2.93, -2.37 / -2.36 (0.9.9's FM-1: +0.29 / +0.22, MARIMBA)
+        if ph and name in FXALL_EXPECT:
+            tgt, lim = FXALL_EXPECT[name]
         tlim = 4.0 if comp else JUMP_LU
 
         def static(q, stereo=False):
@@ -3727,8 +3752,18 @@ def _jump(V, S, jumps, ch=None, extra=()):
     V.send(111, 127)
     b = V.take("jump-bypass", *st)
     V.send(111, 0)
+    # THRESHOLD (2026-11-13): the bypass against all on's compressor alone, not against no effects, as fx_all's bypass
+    # since stage 2 (2026-11-10): the FX button keeps the compressor (FR_BYP_KEEP_CMP, 0.9.10). Against no effects it
+    # read the compressor's own level on the FM-1 with 0.9.10 and 0.9.11 (T2, 2026-11-12): VIBES -0.58 / -0.55 LU,
+    # MARIMBA -1.48 / -1.55 (the jack the same within 0.05), the host -0.54 / -1.55. Within 0.5 LU as before
+    cmp_only = [kv for kv in ALL_ON if kv[0].startswith("CMP_")]
+    V.reset(cmp_only + list(extra), label="all on's compressor alone")
+    k = V.take("jump-comp-alone", *st)
+    S.check("FX bypass (CC 111) with everything on", "re the compressor alone (all on's)",
+            S.per(lambda q: lq(b, q, 0, 1.8) - lq(k, q, 0, 1.8)), lambda d: abs(d) <= 0.5,
+            "within 0.5 LU (fx_all: the bypass keeps the compressor)", level=True)
     S.check("FX bypass (CC 111) with everything on", "re no effects", S.per(lambda q: lq(b, q, 0, 1.8) - lq(refs[0], q, 0, 1.8)),
-            lambda d: abs(d) <= 0.5, "within 0.5 LU (fx_all)", level=True)
+            lambda d: True, "information (the compressor's own level)", level=True, info=True)
     S.check("everything on re no effects", "fx_all 'all on'", S.per(lambda q: lq(a, q, 0, 1.8) - lq(refs[0], q, 0, 1.8)),
             lambda d: True, "information", level=True, info=True)
 
@@ -3747,8 +3782,11 @@ MVELS = (8, 24, 40, 64, 88, 100, 117, 127)
 # VIBES's; every MARIMBA strike is held under -0.5 dBFS by the top roll-off and the RING ceiling, so the A3-E4-A4 v100
 # chord reads -1.5 LU re ST77: FM-1 scans 3 and 4, -1.50 USB / -1.48 jack). 0.9.10: MARIMBA unchanged, the Rhodes
 # louder: this suite on the host build (--host) reads -3.22 (0.9.9's host -0.99, its FM-1 -1.50); the FM-1 value to
-# confirm on the next scan
-MLEVEL_DB = -3.2
+# confirm on the next scan.
+# THRESHOLD (2026-11-13): -3.2 -> -1.7 (+-1 LU as before). The FM-1 read -1.71 USB / -1.61 jack with 0.9.10 and
+# -1.67 / -1.63 with 0.9.11 (T2, 2026-11-12); the host (v0.9.11) reads -1.67 too: the -3.22 above was measured on
+# an interim 0.9.10 build
+MLEVEL_DB = -1.7
 M_CAPPED = {(84, "SOFT", "MED")}
 M_FX_RATE, M_FX_JIT, M_FX_SEED, M_FX_VEL = 8.0, 0.0, 1, 80   # marimba_fx's roll: per note, the jitter, the seed (m_fx_roll)          # both contacts at T7f's cap at v100 (marimba_va.capped, VA-M9's exceptions)
 

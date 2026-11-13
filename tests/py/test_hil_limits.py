@@ -183,3 +183,45 @@ def test_comp_attack_by_the_strikes_level():
     # only up to the reduction) lets a slow attack's strike through unlifted: the crest moves too (10.97 / 14.27 /
     # 15.86 dB), still far less than the strike's level (-3.48 / -0.38 / +5.82)
     assert c[127] - c[0] < s[127] - s[0], (c, s)    # the old measure: less than the strike's level
+
+
+# ---- the T2 limits refreshed after 0.9.10's sound (2026-11-13): each on the host, where it reads what the FM-1 read
+# with 0.9.10 and 0.9.11 (T2 2026-11-12; the THRESHOLD notes in tools/hil_scan.py)
+def test_held_tail_on_the_host_closes_inside_the_take():
+    """the held A3 (REV 40): 0.9.10's longer hold closes the gate at 15.33 s (FM-1 15.3, 0.9.9 7.5); the limit stays
+    1 s before the take's end, so a gate that never closes still fails"""
+    r, rep = h.HostRig(1), {}
+    ok, msg = h.held_tail(r, rep)
+    last = rep["held_tail"]["last_nonzero_s"]
+    assert ok, msg
+    assert 14.5 <= last < h.HELD_TAIL_MAX <= h.HELD_TAIL_S - 1.0, last
+
+
+def test_bypass_on_the_host_within_the_refreshed_limit():
+    """bypass: the FX button keeps the compressor, the phaser 80 reads -2.5 LU by design: effects on 3.07 LU under the
+    bypass on the host (FM-1 3.2), under BYPASS_FX_LU (3.6); bypassed re the compressor alone within 0.5"""
+    r, rep = h.HostRig(1), {}
+    ok, msg = h.bypass(r, rep)
+    b = rep["bypass"]
+    assert ok, msg
+    assert 2.5 <= b["bypassed"] - b["fx_on"] < h.BYPASS_FX_LU == 3.6, b
+    assert abs(b["bypassed"] - b["comp_only"]) < 0.5, b
+
+
+@pytest.mark.parametrize("suite", ["vibes_jump", "marimba_jump"])
+def test_jump_rows_on_the_host(monkeypatch, suite):
+    """the rows the FM-1 failed with 0.9.10 and 0.9.11 on stale limits pass on the host at the values the FM-1 read:
+    the phaser 80 held on (FXALL_EXPECT -2.5 +- 1), the bypass re all on's compressor alone, MARIMBA re ST77 (-1.7)"""
+    monkeypatch.setattr(h, "ENGINE", "marimba" if suite.startswith("marimba") else "vibes")
+    V = h.VRig("usb", host=1)
+    S = h.VSuite(suite, V)
+    h.VTESTS[suite](V, S)
+    rows = {(q["check"], q["setting"].split(",")[0]): q for q in S.rows}
+    want = [("phaser 80: on vs off", "held on"),
+            ("FX bypass (CC 111) with everything on", "re the compressor alone (all on's)")]
+    if suite == "marimba_jump":
+        want.append(("MARIMBA re ST77, A3-E4-A4 v100", "LUFS 0..1 s"))
+        assert h.MLEVEL_DB == -1.7
+    for k in want:
+        assert k in rows and rows[k]["status"] == "ok", (k, rows.get(k))
+    assert rows[("FX bypass (CC 111) with everything on", "re no effects")]["status"] == "info"
