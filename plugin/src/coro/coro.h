@@ -4,6 +4,7 @@
  * pass up to its next platform_poll() and switches back. Registers only, no syscall, no allocation:
  *   arm64 (macOS, Linux)    coro_arm64.S: x19-x30, sp, d8-d15
  *   x86_64 (macOS, Linux)   coro_x86_64.S: rbx, rbp, r12-r15, rsp, the resume address
+ *   arm32 (Linux)           coro_arm32.S: r4-r11, sp, lr, d8-d15 (the Akai MPC port's 32-bit build only)
  *   Windows x64             Fibers (below): a hand-made stack switch breaks the thread block's stack limits there.
  *                           The fiber has its own stack (the caller's buffer is not used); a thread that resumes the
  *                           coroutine becomes a fiber the first time and stays one (ConvertThreadToFiberEx once,
@@ -71,8 +72,12 @@ typedef struct { uint64_t r[21]; } coro_regs_t;   /* x19..x30, sp, d8..d15 (coro
 #elif defined(__x86_64__)
 typedef struct { uint64_t r[8]; } coro_regs_t;    /* rbx, rbp, r12..r15, rsp, the resume address (coro_x86_64.S) */
 #define CORO_X86_64 1
+#elif defined(__arm__)
+typedef struct { uint32_t r[10]; uint64_t d[8]; } coro_regs_t;   /* r4..r11, sp, lr; d8..d15 (coro_arm32.S: the
+                                                  * Akai MPC port's 32-bit build, docs/MPC.md) */
+#define CORO_ARM32 1
 #else
-#error "the plugin's coroutine: arm64 or x86_64 (Windows: Fibers)"
+#error "the plugin's coroutine: arm64, x86_64 or arm32 (Windows: Fibers)"
 #endif
 void frp_coro_switch(coro_regs_t *from, const coro_regs_t *to);
 void frp_coro_boot(void);
@@ -92,7 +97,13 @@ static void coro_init(coro_t *c, void *stack, size_t size, coro_fn fn, void *arg
     uint64_t top = (uint64_t)(((uintptr_t)stack + size) & ~(uintptr_t)15);
     c->stack = stack; c->size = size; c->started = 0; c->fake = 0;
     for (i = 0; i < sizeof c->self.r / sizeof c->self.r[0]; i++) c->self.r[i] = 0;
-#ifdef CORO_ARM64
+#if defined(CORO_ARM32)
+    for (i = 0; i < 8u; i++) c->self.d[i] = 0;
+    c->self.r[0] = (uint32_t)(uintptr_t)fn;          /* r4 */
+    c->self.r[1] = (uint32_t)(uintptr_t)arg;         /* r5 */
+    c->self.r[8] = (uint32_t)top;                    /* sp: 16-aligned (AAPCS asks 8 at a call) */
+    c->self.r[9] = (uint32_t)(uintptr_t)frp_coro_boot;   /* lr: where the first switch "returns" */
+#elif defined(CORO_ARM64)
     c->self.r[0] = (uint64_t)(uintptr_t)fn;          /* x19 */
     c->self.r[1] = (uint64_t)(uintptr_t)arg;         /* x20 */
     c->self.r[11] = (uint64_t)(uintptr_t)frp_coro_boot;   /* x30: where the first switch "returns" */
