@@ -551,11 +551,18 @@ class Rig(RigBase):
         time.sleep((t0 + at * per - time.monotonic()) % span)
 
     def capture(self):
-        """the persistent recorder, opened at the first use (the FM-1's USB, stereo)"""
+        """the persistent recorder, opened at the first use (the FM-1's USB, stereo, at FS with the device itself
+        switched to FS and any conversion refused). Not at query_devices()' default_samplerate: PortAudio reads it
+        once, at its first use, so after stress_max (hil_crackle switches the FM-1 to 44.1 kHz) in the same process
+        (--tier full) it still said 48 kHz, the stream opened at 48 kHz on a device at 44.1 kHz and Core Audio
+        converted: the blocks' ADC times then stepped -10 ms and +10 ms 20 ms later every 0.134 s (7.44 Hz, two
+        ~10.7 ms buffer cadences beating), Ring.cut re-anchored on each step, and every USB take of the 0.9.10 /
+        0.9.11 T2 scans (2026-11-12) had a 10 ms hole and a 10 ms overwrite 7.44 times a second
+        (tools/hil_rate_check.py tells this apart from the FM-1's own USB stream on the device in ~2 min)"""
         if self.cap is None:
             import atexit
             self.cap = Capture(self.sd)
-            self.cap.add("usb", self.dev, (0, 1), 2)
+            self.cap.add("usb", self.dev, (0, 1), 2, sr=FS, switch_rate=True)
             atexit.register(self.cap.close)
         return self.cap
 
