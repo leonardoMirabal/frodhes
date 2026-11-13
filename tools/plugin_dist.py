@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """The dry-distortion gate (tools/dry_dist.py) through the plugin: every dry_dist script played through the CLAP, the
-VST3 and the Audio Unit, each judged against 0.9.9 with dry_dist's own cells and limits, and the three formats
-compared sample for sample. The reference is dry_dist's HQ one (tests/baselines/dry_dist_099_hq.json: 0.9.9 built
+VST3 and the Audio Unit, each judged against 0.9.11 with dry_dist's own cells and limits, and the three formats
+compared sample for sample. The reference is dry_dist's HQ one (tests/baselines/dry_dist_0911_hq.json: 0.9.11 built
 with the HQ defines, as the plugin's slots), the scripts without the key cells (the FM-1's own keys: no plugin path).
 
   python3 tools/plugin_dist.py [--bundles DIR] [--render EXE] [--formats clap,vst3,au] [--engines hq]

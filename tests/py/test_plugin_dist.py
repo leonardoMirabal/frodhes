@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The dry-distortion gate through the plugin (tools/plugin_dist.py): each dry_dist script played through the CLAP,
-the VST3 and the Audio Unit (HQ, the plugin's default engine), every format within 0.9.9's limits
-(tests/baselines/dry_dist_099.json) and the three sample-identical. macOS with a built plugin only (make plugin;
+the VST3 and the Audio Unit (HQ, the plugin's default engine), every format within 0.9.11's limits
+(tests/baselines/dry_dist_0911.json) and the three sample-identical. macOS with a built plugin only (make plugin;
 FRP_BUILD names another build); skipped elsewhere. The whole run with a report: make plugin-dist."""
 import os
 import subprocess
