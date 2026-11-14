@@ -25,8 +25,9 @@ remote = zvenson/dinghy. **`AGENTS.md` is the full operating manual (rules, proc
 
 - Host: `make test` (tests/scripts through tests/host.c), `make pytest`, `make host` (build/host/frodhes.wav and
   screen PNGs; no Docker needed).
-- Firmware: `./build.sh` -> `build/frodhes.fwsc` (JieLi toolchain + 3 AC79 SDK files in `.local/`, Docker on macOS).
-- Device: `echo y | python3 tools/fm1_install.py build/frodhes.fwsc`, then `tools/hil_scan.py`, `tools/hil_cpu.py`,
+- Firmware: `./build.sh --c1` -> `build/frodhes-c1.fwsc`, the FM-1's only package (two cores, 14 voices; the release
+  publishes it as `frodhes.fwsc`). JieLi toolchain + 3 AC79 SDK files in `.local/`, Docker on macOS.
+- Device: `echo y | python3 tools/fm1_install.py build/frodhes-c1.fwsc`, then `tools/hil_c1_soak.py --row 277`, `tools/hil_scan.py`, `tools/hil_cpu.py`,
   `tools/hil_seq.py`, `tools/hil_jack.py` (sandbox off for CoreAudio). Test the FM-1 yourself over MIDI + USB audio;
   say what could not be tested.
 

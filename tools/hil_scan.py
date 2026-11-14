@@ -968,6 +968,27 @@ def effects(r, rep):
 BYPASS_FX_LU = 3.6                 # bypass: effects on vs bypassed, at most (LU; THRESHOLD in bypass())
 
 
+def c1_image():
+    """the two-core FM-1 image (FR_C1) under test: FRODHES_IMAGE=c1 (or --c1) for the FM-1; on the host the build's
+    HOST_DEFS -DFR_C1=1. The C1_KNOWN rows apply only there"""
+    return os.environ.get("FRODHES_IMAGE", "").lower() == "c1" or \
+        bool(re.search(r"-DFR_C1=1\b", os.environ.get("HOST_DEFS", "")))
+
+
+_C1_REV = ("USER DECISION 2026-11-14: two-core reverb's chord-dependent early reflections; structural fix planned for "
+           "the next release. Chord re dry, LUFS 0..1.1 s at REV 32 / 50 / 64, host: A3-C4-E4 one core +0.21 / +0.58 / "
+           "+1.06, two cores -0.10 / +0.10 / +0.50; six chords' mean one core +0.29 / +0.70 / +1.16, two cores +0.09 / "
+           "+0.35 / +0.69 (E2-B2-G3 -0.40 at 64, G4-B4-D5 +2.26); the wet's level matches (-13.8 vs -13.7 dB), its "
+           "cross term with the dry swings more (sd 1.34 vs 0.80 LU over 80-1600 Hz)")
+# the two-core image's KNOWN items (classic suites; c1_image() only, each only inside its band; the one-core limits
+# unchanged): (band, reason)
+C1_KNOWN = {
+    "bypass": (4.1, _C1_REV + "; effects on vs bypassed 3.8 LU (host; one core 3.1), limit 3.6: band <= 4.1 LU"),
+    "presets U04": (-0.9, _C1_REV + "; U04 DREAM PAD (INFINITE) -0.54 LU re F01 (host; one core +0.1), target +0.5 "
+                          "+-1.0: band >= -0.9 LU"),
+}
+
+
 @test
 def bypass(r, rep):
     """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs the compressor alone (the bypass
@@ -999,8 +1020,12 @@ def bypass(r, rep):
     # without both). 3.6: the 0.4 LU the limit had over its measured 2.6 when it was set (2026-10-17), over the
     # device's +-0.3 LU spread
     ok = abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) < BYPASS_FX_LU
-    return ok, (f"no effects {lv[0]:.1f}, compressor alone {lv[3]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} "
-                f"LUFS (bypassed re the compressor alone {lv[2] - lv[3]:+.2f} LU)")
+    msg = (f"no effects {lv[0]:.1f}, compressor alone {lv[3]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} "
+           f"LUFS (bypassed re the compressor alone {lv[2] - lv[3]:+.2f} LU)")
+    band, why = C1_KNOWN["bypass"]
+    if not ok and c1_image() and abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) <= band:
+        ok, msg = "KNOWN", msg + f"; effects on {abs(lv[1] - lv[2]):.2f} LU under the bypass: KNOWN (two cores): {why}"
+    return ok, msg
 
 
 FXALL = [  # (name, settings, expected: LU re clean within +-tol)
@@ -1328,6 +1353,7 @@ PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1
 # the user bank's starters (presets.c PR_NS: U01..U09 in a bank never saved): judged on the host only (a device's bank
 # may hold the player's own presets), each within 1 LU of F01 on the chord; presets 20.. in the rows = U01..
 PR_STARTERS = 9
+PR_GAP_RETAKES = 2      # presets(): a take with a recording gap is taken again up to this many times
 
 
 def preset_pc(p):
@@ -1384,20 +1410,31 @@ def presets(r, rep):
         for p in range(PR_COUNT + (PR_STARTERS if isinstance(r, HostRig) else 0)):
             r.cc_raw(120, 0)
             r.pc(preset_pc(p))
-            ks = []
+            ks, retakes = [], 0
             for k in range(reps("presets")):
-                quiet = r.settle()                         # (False: no exact silence in 10 s, a note still sounds)
-                r.clock_align(192)                         # bar 1 of 2: F11 swings 5 LU over its 2BAR sweep (0, 1/3, 2/3: -0.4, -5.6, -4.4 re F01); its phase 0 is the host's
-                if jk:
-                    dd = r.both(2.0, with_reset(CHORD), jack=True)
-                    x, j = dd["usb"] * 32768, dd["jack"][:, 0]
-                else:
-                    x, j = r.take(2.0, CHORD), None
+                # a take whose recording stream had a gap (Ring.cut: a block's ADC time off its frames, the cut
+                # re-anchored there) is not the preset's sound: taken again, up to PR_GAP_RETAKES times, and flagged
+                # only if every one has a gap. 0.9.12's T2 flagged F15 for one take with a step-and-back pair while
+                # its three levels agreed within 0.0005 LU
+                for g in range(PR_GAP_RETAKES + 1):
+                    quiet = r.settle()                     # (False: no exact silence in 10 s, a note still sounds)
+                    r.clock_align(192)                     # bar 1 of 2: F11 swings 5 LU over its 2BAR sweep (0, 1/3, 2/3: -0.4, -5.6, -4.4 re F01); its phase 0 is the host's
+                    if jk:
+                        dd = r.both(2.0, with_reset(CHORD), jack=True)
+                        x, j = dd["usb"] * 32768, dd["jack"][:, 0]
+                    else:
+                        x, j = r.take(2.0, CHORD), None
+                    gaps = [str(g_) for g_ in getattr(r, "xruns", []) if "gap" in str(g_)]
+                    if not gaps:
+                        break
+                    if g < PR_GAP_RETAKES:
+                        retakes += 1
+                        print(f"   {preset_label(p + 1)} take {k + 1}: a recording gap ({'; '.join(gaps[:2])}): taken again",
+                              flush=True)
                 lv, i = level(x / 32768.0, 200 / 32768)
                 q = dict(level=lv, onset_ms=1000 * i / FS, rms_db=db(x[i:i + int(1.1 * FS)]),
                          peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12),
-                         clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x), quiet=bool(quiet),
-                         gaps=[str(g) for g in getattr(r, "xruns", []) if "gap" in str(g)])
+                         clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x), quiet=bool(quiet), gaps=gaps)
                 if j is not None:
                     floor = float(np.abs(j[:int(0.04 * FS)]).max()) if len(j) else 0.0
                     q["jack"], ij = level(j, max(4 * floor, 0.01 * float(np.abs(j).max())))
@@ -1410,7 +1447,7 @@ def presets(r, rep):
                        rms_db=float(np.median([q["rms_db"] for q in ks])), peak_db=max(q["peak_db"] for q in ks),
                        clipped=max(q["clipped"] for q in ks), clicks=max(q["clicks"] for q in ks),
                        onset_ms=[round(q["onset_ms"], 1) for q in ks], not_quiet=sum(not q["quiet"] for q in ks),
-                       gaps=sum(len(q["gaps"]) for q in ks))
+                       gaps=sum(len(q["gaps"]) for q in ks), gap_retakes=retakes)
             if jk:
                 jl = [q["jack"] for q in ks]
                 row.update(jack=float(np.median(jl)), jack_spread_lu=float(max(jl) - min(jl)),
@@ -1432,13 +1469,16 @@ def presets(r, rep):
     if loud:
         msg += f"; no exact silence before a take at {[preset_label(q) for q in loud]} (a note still sounding: those levels are not the preset)"
     if gapped:
-        msg += f"; a recording gap at F{gapped}"
+        msg += f"; a recording gap at {[preset_label(q) for q in gapped]} (after {PR_GAP_RETAKES} retakes)"
     # each preset re F01 against its target (PRESET_TARGET): the Rhodes F01..F12 within 1.5 LU (AGENTS.md's rule; F07
     # -1.9, F08 -1.7, F10 -4.0 LU until their LEVEL was set, 2026-10-24), VIBES and MARIMBA by their own level
     host = isinstance(r, HostRig)
     off = [(q["preset"], v - lv[0]) for q, v in zip(rows, lv)
            if abs(v - lv[0] - preset_target(q["preset"], host)[0]) > preset_target(q["preset"], host)[1]]
     rep["presets_off_target"] = [dict(preset=p, lu=float(d)) for p, d in off]
+    band, why = C1_KNOWN["presets U04"]
+    kn = [(p, d) for p, d in off if c1_image() and preset_label(p) == "U04" and d >= band]
+    off = [o for o in off if o not in kn]
     ok = ok and not off
     msg += ("; re F01 " + ", ".join(f"{preset_label(q['preset'])} {v - lv[0]:+.1f}" for q, v in zip(rows, lv) if q["preset"] > 1) +
             " LU; off target: " + (", ".join(f"{preset_label(p)} {d:+.1f}" for p, d in off) or "none"))
@@ -1454,6 +1494,10 @@ def presets(r, rep):
         msg += (f"; jack (re its own scale) {', '.join(f'{v - jl[0]:+.1f}' for v in jl)} LU re F01 (span"
                 f" {max(jl) - min(jl):.2f}, without LEVEL_CUT {max(sj) - min(sj):.2f}, spread <={max(q['jack_spread_lu'] for q in rows):.2f}); USB-jack"
                 f" disagreement <= {max(abs(m) for m in rel):.2f} LU{' at F' + str(mis) if mis else ''}")
+    if kn and ok:
+        ok = "KNOWN"
+    if kn:
+        msg += f"; U04 {kn[0][1]:+.2f}: KNOWN (two cores): {why}"
     return ok, msg
 
 
@@ -2455,6 +2499,40 @@ def p2p(d, lo=2, hi=98):
     return float(np.percentile(d, hi) - np.percentile(d, lo))
 
 
+LFO_FLOOR_LSB = 4.0     # lfo_sweep's floor: white noise of this rms (LSB of 16 bits), ~-78 dBFS
+
+
+def lfo_sweep(t, r, q, a, b, lo, hi, lsb=LFO_FLOOR_LSB):
+    """rel_trace's band level of take t re the reference r (dB, detrended), both over a floor: the take's pre-roll
+    (the jack's hiss) or white noise of lsb LSB rms, whichever is higher. A held VIBES chord decays ~50 dB in the
+    5 s trace, so the filter's low phase takes USB's band down to the 16-bit LSBs, where the ratio is quantisation
+    noise and its slopes run to 3000 dB/s; the jack's hiss held the same dips smooth (0.9.12's T2: one take, SINE's
+    steepest slope 13.7 on USB, 7.2 on the jack). With the floor the host reads SINE 7.1, SQR 22-23 (seeds 1-3), and
+    7.1 with the SINE take requantised to 8-LSB steps (61.2 without the floor)"""
+    x, y = cut(t.m(q), t.on(q)[0], a, b), cut(r.m(q), r.on(q)[0], a, b)
+    n = min(len(x), len(y))
+    A, fps = band_trace(x[:n], lo, hi)
+    B, _ = band_trace(y[:n], lo, hi)
+    m = np.count_nonzero((np.fft.rfftfreq(2048, 1 / FS) >= lo) & (np.fft.rfftfreq(2048, 1 / FS) < hi))
+    F = float(np.sum(np.hanning(2048) ** 2)) * m * (lsb / 32768) ** 2     # white noise: E|X_k|^2 = var * sum(w^2)
+    fl = t.pre(q)
+    if len(fl) > 2400 and np.any(fl):
+        F = max(F, float(band_trace(fl, lo, hi)[0].mean()))
+    return detrend2(10 * np.log10((A + F) / (B + F))), fps
+
+
+def lfo_steep(d, fps, hz):
+    """an LFO sweep's (lfo_sweep) steepest slope re a sine of its p-p (2..98 %) and rate hz: the median over the
+    trace's half cycles of each one's steepest slope (25 ms smoothed). Every half cycle holds one of a sine's slope
+    peaks and one of a square's steps, so one stray frame (a beat null, a USB cut's re-anchor) moves one half cycle,
+    not the verdict, where the 99th percentile over the whole trace (~10 frames of ~1000) took the strays"""
+    sm = np.convolve(d, np.ones(5) / 5, "same")
+    s = np.abs(np.diff(sm[2:-2])) * fps
+    w = max(2, int(round(fps / (2 * hz))))
+    peaks = [s[i:i + w].max() for i in range(0, len(s) - w + 1, w)]
+    return float(np.median(peaks) / (p2p(d) * hz + 1e-9)) if peaks else 0.0
+
+
 def gain_trace(t, r, q, a, b, hop=240):
     """the linear gain of take t re the reference r per 5 ms frame (a tremolo's own wave: in dB a sine AM of 40+ dB
     is all cusps, round 1's TREM SHAPE read the sine as the squarer one)"""
@@ -3173,11 +3251,10 @@ def vibes_fx(V, S, stim=None, extra=()):
     T = {x: run(f"filter-shape-{x}", with_(lb, ("LFO_SHAPE", x)), ST_LONG) for x in (0, 4, 5)}
 
     def shp(t, q):
-        """the sweep's steepest slope re a sine of its p-p and rate (SINE ~6 with the band's bends, SQR its steps:
+        """the sweep's steepest slope re a sine of its p-p and rate (SINE ~7 with the band's bends, SQR its steps:
         20+), and the spread of its cycle means at the card's rate (S&H holds a new level every cycle)"""
+        slope = lfo_steep(*lfo_sweep(t, lref, q, 0.2, 5.3, 250, 2000), e)
         d, f_ = sweep(t, q)
-        sm = np.convolve(d, np.ones(5) / 5, "same")
-        slope = float(np.percentile(np.abs(np.diff(sm)) * f_, 99) / (p2p(d) * e + 1e-9))
         tt = np.arange(len(d)) / f_
         cyc = [d[(tt >= a0) & (tt < a0 + 1 / e)].mean() for a0 in np.arange(0, tt[-1] - 1 / e, 1 / e)]
         return slope, float(np.std(cyc))
@@ -4571,7 +4648,8 @@ def run_classic(names, r=None, report="report"):
         except Exception as e:  # keep scanning
             ok, msg = False, f"error: {e!r}"
         fails += not ok
-        line = f"{'ok  ' if ok else 'FAIL'}  {n:13s} {msg}  ({time.time() - t0:.0f} s)"
+        st = "KNOWN" if isinstance(ok, str) else "ok  " if ok else "FAIL"   # (KNOWN: a C1_KNOWN item, not a failure)
+        line = f"{st}  {n:13s} {msg}  ({time.time() - t0:.0f} s)"
         print(line, flush=True)
         lines.append(line)
     r.dry()
@@ -4617,8 +4695,11 @@ def main(argv=None):
     ap.add_argument("--offline", nargs="?", const=os.path.join(OUT, "vibes"), metavar="DIR",
                     help="VIBES suites: re-analyse the takes saved by --wav (default build/hil/vibes/), no MIDI / audio;"
                          " report build/hil/vibes-offline.md (+ .json)")
+    ap.add_argument("--c1", action="store_true", help="the FM-1 runs the two-core image: its C1_KNOWN items (as FRODHES_IMAGE=c1)")
     ap.add_argument("--rate", type=int, choices=(44100, 48000), help="stress_max: the USB rate (default 44100)")
     a = ap.parse_args(argv)
+    if a.c1:
+        os.environ["FRODHES_IMAGE"] = "c1"
     if a.only and "stress_max" in a.only.split(","):   # the cracks test: tools/hil_crackle.py (its own recorder, rates)
         import hil_crackle
         rest = [n for n in a.only.split(",") if n != "stress_max"]

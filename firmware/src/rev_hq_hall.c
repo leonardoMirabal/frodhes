@@ -51,7 +51,23 @@ static const uint16_t RQH_LEN[RQH_NL] = {1427, 1789, 2161, 2539, 2903, 3271, 363
 #define RQH_LMAX 4019u
 #define RQH_R 4128u                                     /* the ring's rows: >= RQH_LMAX + RQH_SW + 1 + a block, x 32 */
 _Static_assert(RQH_R >= RQH_LMAX + RQH_SW + 1u + 32u && RQH_R % 32u == 0u, "rev_hq_hall.c: the ring");
-#define RQH_KP 340                                      /* TONE's pole per damp step (Q15) */
+#define RQH_KP 340                                      /* TONE's pole per damp step (Q15), damp 0 .. 60 (TONE 64 .. 127) */
+/* TONE darker than its middle (damp 60 .. 150, TONE 63 .. 0): the pole at damp 60, 70 .. 150, linear between. The
+ * linear law (damp x 340) reached its 31500 cap at damp 93 and from there lost ~100 dB/s at 440 Hz against the half-rate
+ * HALL's ~3-28: TONE 0 killed the tail's fundamental too (vibes_fx REVERB TONE, the FR_C1 host: the tail 20 dB down,
+ * V2 re V1 -9.3 / -11.6 / +1.7 dB at TONE 0 / 64 / 127, brighter at 0 than at 64). Now 1 - pole falls geometrically
+ * from damp 60's (12368) to 3000 at 150: TONE 0's tail keeps its fundamental as the half-rate HALL's does (A4 v108, the
+ * tail's V1 8.3 dB under TONE 64's; one core 8.5), V2 re V1 -32.1 / -11.6 / +1.7 dB (one core -38.4 / -12.6 / -5.9).
+ * (The cap's 31500 left 1 - pole 1268.) Computed when TONE moves, not per sample */
+static const uint16_t RQH_KD[10] = {20400, 22201, 23740, 25055, 26178, 27138, 27958, 28658, 29257, 29768};
+static int32_t rqh_pole(int32_t d)
+{
+    int32_t i;
+    if (d <= 60) return clampi(d * RQH_KP, 0, 20400);
+    if (d >= 150) return RQH_KD[9];
+    i = (d - 60) / 10;
+    return RQH_KD[i] + (((int32_t)RQH_KD[i + 1] - (int32_t)RQH_KD[i]) * (d - 60 - i * 10)) / 10;
+}
 #define RQH_SGN 0x96u                                   /* the input's sign per line (bit k: - for line k) */
 #define RQH_OUT 13800                                   /* the taps (Q13 of the row / 16 x 16: the half-rate HALL's Bark
                                                          * loudness; rev_hq.c's return takes the 16 out) */
@@ -221,7 +237,7 @@ static __attribute__((noinline)) void rev_hqh_run(rev_hqh_t *s, const int32_t *i
     if (c->size != s->gsz)                              /* (SIZE / MIX moved: the gains glide one size step a control
                                                          * block, 2.3 % of T60: a jump would step the tail) */
         rqh_gains(s, s->gsz < 0 ? c->size : s->gsz + (c->size > s->gsz ? 1 : -1));
-    if (c->damp != s->gdmp) { s->p = clampi(c->damp * RQH_KP, 0, 31500); s->gdmp = c->damp; }
+    if (c->damp != s->gdmp) { s->p = rqh_pole(c->damp); s->gdmp = c->damp; }
     for (i = 0; i < RQ_NC; i++) { s->x[i] = in[i]; act |= in[i]; }
     lo = s->amax < 2u * RQH_LOUD;
     FR_FAR(rqh_dif)(s, s->x, lo);
