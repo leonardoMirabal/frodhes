@@ -10,6 +10,10 @@ import subprocess
 
 import pytest
 
+# the host emulator is a one-core build (the two-core FR_C1 image cannot be built for it): the HIL tools' host and
+# self-test paths take its 256-frame limits and 10 voices (fm1_ports.image; on the FM-1 the default is the two-core
+# package). Tests of the two-core defaults clear it (test_fm1_image.py, test_release_tool.py)
+os.environ.setdefault("FRODHES_IMAGE", "one")
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 GROUPS = {                         # node id prefix -> group
     "test_bars_compat.py": "bars_compat",                           # build/bars_compat/ (the old tree, its binaries)

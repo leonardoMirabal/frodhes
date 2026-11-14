@@ -41,6 +41,32 @@ PORT_KEYS = ("frodhes", "felucca", "fm-1")   # Frodhes since the rename; Felucca
 NEVER = ("textura",)                         # another unit's firmware: never opened, never probed
 
 
+# the image under test (0.9.12 on: the FM-1's one package is the two-core image, FR_C1 + FR_C1_LAT, 14 voices,
+# 128-frame interrupts). FRODHES_IMAGE=one for a one-core image (the SMK files, older FM-1 releases); FRODHES_LAT_HALF
+# overrides the interrupt's frames. Every FM-1 tool takes its limits and voice count from here, never its own default.
+def image():
+    """'c1' (the two-core FM-1 package, the default) or 'one' (FRODHES_IMAGE=one)"""
+    v = os.environ.get("FRODHES_IMAGE", "c1").lower()
+    if v not in ("c1", "one"):
+        sys.exit(f"FRODHES_IMAGE={v!r}: c1 (the FM-1 package) or one (a one-core image)")
+    return v
+
+
+def lat_half():
+    """the audio interrupt's frames: FRODHES_LAT_HALF, else 128 on the two-core image, 256 on a one-core one"""
+    return int(os.environ.get("FRODHES_LAT_HALF") or (128 if image() == "c1" else 256))
+
+
+def image_voices(src_count):
+    """the voices of the image under test: frodhes.c FR_VOICES 14 on the two-core image, else rhodes.c's count"""
+    return 14 if image() == "c1" else src_count
+
+
+def image_line():
+    """one line for a tool's header: which image the limits are for"""
+    return f"image {image()}: {lat_half()}-frame interrupts, limits x {lat_half()}/256"
+
+
 FORCED = os.environ.get("FM1_PORT") or None  # force(); FM1_PORT=NAME does the same for every tool
 AUDIO_LOC = int(os.environ["FM1_LOCATION"], 0) if os.environ.get("FM1_LOCATION") else None   # pin_audio()
 FORCED_AUDIO = os.environ.get("FM1_AUDIO") or None   # force(): a stale CoreMIDI name's unit, its audio by the USB name

@@ -119,7 +119,7 @@ OUT = os.path.join(ROOT, "build", "hil", "stress_max")
 FS_HOST = 44100
 FS_JACK = 48000
 ENGINES = ("rhodes", "vibes", "marimba")
-LAT_SCALE = int(os.environ.get("FRODHES_LAT_HALF", "256")) / 256.0   # (a frodhes.c FR_LAT_HALF build: per interrupt,
+LAT_SCALE = fm1_ports.lat_half() / 256.0   # (a frodhes.c FR_LAT_HALF build: per interrupt,
 CPU_TARGET_US, SHEDDER_US = round(4500 * LAT_SCALE), round(5000 * LAT_SCALE)   # as hil_cpu.py / hil_c1_soak.py)
 CEIL = 24100                                  # fx.c LIM_T 24000 (+ rounding): information
 LIM_ON = 22000                                # a USB peak this high in the last 50 ms: the limiter is working
@@ -159,7 +159,7 @@ def voices(eng):
     """the firmware's voice count for an engine (rhodes.c RH_VOICES / BAR_VOICES)"""
     src = open(os.path.join(ROOT, "firmware", "src", "rhodes.c")).read()
     key = "RH_VOICES" if eng == "rhodes" else "BAR_VOICES"
-    return int(re.search(r"#define " + key + r" (\d+)u", src).group(1))
+    return fm1_ports.image_voices(int(re.search(r"#define " + key + r" (\d+)u", src).group(1)))
 
 
 # ---------------------------------------------------------------------------------------------------- the stimulus

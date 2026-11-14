@@ -56,6 +56,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fm1_ports  # noqa: E402  (the image under test: its interrupt frames)
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build", "hil", "c1soak")
 # CC 116 = 30: id -> name (hal/fm1_core1.h FR_C1_INFO_* + 30, frodhes.c midi_cc)
@@ -106,7 +107,7 @@ def max_rev(t):
 MAX_DRV = (76, 70, 76)                                   # row 276: the drive TYPE in turn (CC 84): TSH8, KHLON, TSH8
 MAX_SWEEP = dict(FL_FREQ=(0, 127), DL_TIME=(60, 127), PH_DEPTH=(64, 127), TW_DEPTH=(64, 127), CMP_AMT=(60, 127),
                  DRIVE=(64, 127))                        # row 276: CC -> the sweep's range (a triangle, 100 ms steps)
-LAT_SCALE = int(os.environ.get("FRODHES_LAT_HALF", "256")) / 256.0   # (a frodhes.c FR_LAT_HALF build: per interrupt)
+LAT_SCALE = fm1_ports.lat_half() / 256.0   # (a frodhes.c FR_LAT_HALF build: per interrupt)
 LAT = LAT_SCALE != 1.0
 BARS = dict(app_us=round(5000 * LAT_SCALE), whole_us=round(4500 * LAT_SCALE), c1_busy_us=5000,   # (core 1's busy: per
             # 256-frame block in every build, frodhes.c app_audio's fr_c1_block_end; the interrupt's limits scale)

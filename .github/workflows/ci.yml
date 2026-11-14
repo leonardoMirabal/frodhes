@@ -8,12 +8,39 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  # A pull request that changes only Markdown (README, docs/**/*.md) runs the docs job alone: the links, the manual
+  # against the code, the release-notes fragments, the repo hygiene. Every other job is then skipped, and a skipped
+  # required job counts as passed (`host` below accepts that only with docs green). A push to main runs everything.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.c.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: c
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != pull_request ]; then echo code=true >> "$GITHUB_OUTPUT"; exit 0; fi
+          git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD | tee files.txt
+          if [ -s files.txt ] && ! grep -qvE '\.md$' files.txt; then echo code=false; else echo code=true; fi | tee -a "$GITHUB_OUTPUT"
+  docs:
+    needs: changes
+    if: needs.changes.outputs.code == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest PyYAML==6.0.3
+      - run: python3 tools/pytest_run.py -q -- tests/py/test_doc_links.py tests/py/test_docs_vs_code.py tests/py/test_changes.py tests/py/test_repo_hygiene.py tests/py/test_move_doc.py
   # arm64 Linux: the same machine as a local `docker run python:3.14` on an Apple-silicon Mac (a replica of these jobs).
   # The host tests in 5 jobs at once: the scripts (make test, make host) and tests/py in 4 shards (tools/pytest_shard.py:
   # whole files, balanced by tests/py/shard_weights.json; together exactly `make pytest`). The required check is the
   # job `host` below: green only when every one of them is.
   host-scripts:
     runs-on: ubuntu-24.04-arm
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 websockets==16.1.1 pytest pytest-xdist==3.8.0 PyYAML==6.0.3
@@ -21,6 +48,8 @@ jobs:
       - run: make host
   host-pytest:
     name: host-pytest ${{ matrix.shard }}/4
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
@@ -34,18 +63,24 @@ jobs:
   host:
     # the branch protection's context `host` (the same meaning as before the split: every host test passed): a failed,
     # cancelled or skipped job above fails it (a skipped required job would count as passed)
-    needs: [host-scripts, host-pytest]
+    # (a Markdown-only pull request: the docs job instead)
+    needs: [changes, docs, host-scripts, host-pytest]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - run: |
+          echo "changes: ${{ needs.changes.result }} (code ${{ needs.changes.outputs.code }}), docs: ${{ needs.docs.result }}"
           echo "host-scripts: ${{ needs.host-scripts.result }}, host-pytest (4 shards): ${{ needs.host-pytest.result }}"
+          test "${{ needs.changes.result }}" = success
+          if [ "${{ needs.changes.outputs.code }}" = false ]; then test "${{ needs.docs.result }}" = success; exit; fi
           test "${{ needs.host-scripts.result }}" = success && test "${{ needs.host-pytest.result }}" = success
   # The engines' tables are generated on macOS (Accelerate); their regeneration must give the committed headers byte
   # for byte on every machine (the solver-sensitive stages are pinned: rhodes_pins.json, bars_fe_pins.json,
   # bars_pins.json). The host job checks it on Linux arm64; this one on macOS, with the same numpy / scipy as the
   # development machine. It is required: a failure fails the run.
   generators-macos:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -66,6 +101,8 @@ jobs:
   # In Playwright's own image (Chromium and WebKit with their system libraries installed): the apt download of
   # WebKit's libraries (`playwright install --with-deps`) took 19 of this job's 20 minutes.
   web:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container: mcr.microsoft.com/playwright/python:v1.64.0-noble
     steps:
@@ -95,6 +132,8 @@ jobs:
   # (Debian bookworm arm64: its glibc), natively on GitHub's arm64 runner. The same script runs locally
   # (tools/ci_move.sh; on macOS its build step uses the arm64 bookworm image).
   move:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04-arm
     container: debian:bookworm
     steps:

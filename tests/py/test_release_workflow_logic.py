@@ -6,6 +6,9 @@ import json
 import os
 import subprocess
 
+import pytest
+import yaml
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 GATE = os.path.join(ROOT, "tools", "ci_gate.sh")
 SHA = "0123456789abcdef0123456789abcdef01234567"
@@ -200,7 +203,12 @@ def test_release_workflow_wiring():
     # the host tests on arm64 in 5 jobs (the scripts, 4 pytest shards); `host` green only when all are
     assert ci["host-scripts"]["runs-on"] == ci["host-pytest"]["runs-on"] == "ubuntu-24.04-arm"
     assert ci["host-pytest"]["strategy"]["matrix"]["shard"] == [1, 2, 3, 4]
-    assert ci["host"]["needs"] == ["host-scripts", "host-pytest"] and ci["host"]["if"] == "always()"
+    assert ci["host"]["needs"] == ["changes", "docs", "host-scripts", "host-pytest"] and ci["host"]["if"] == "always()"
+    # a Markdown-only pull request runs the docs job alone; every other job (the required ones too) needs code
+    for j in ("host-scripts", "host-pytest", "generators-macos", "web", "move"):
+        assert ci[j]["needs"] == "changes" and ci[j]["if"] == "needs.changes.outputs.code == 'true'", j
+    assert ci["docs"]["if"] == "needs.changes.outputs.code == 'false'"
+    assert 'test "${{ needs.docs.result }}" = success' in " ".join(s.get("run", "") for s in ci["host"]["steps"])
     agg = " ".join(s.get("run", "") for s in ci["host"]["steps"])
     assert 'test "${{ needs.host-scripts.result }}" = success' in agg
     assert 'test "${{ needs.host-pytest.result }}" = success' in agg
@@ -578,3 +586,24 @@ def test_release_publishes_the_package_with_the_emulator():
     a = wf.index('sh tools/web_firmware.sh "build/frodhes-$V.fwsc" web/dist "$V"')
     assert all(f'"build/frodhes-$V-{b}.fwsc"' in wf[a:a + 400] for b in ("smk37", "smk37-elite", "smk37-mke"))
     assert a < wf.index("sh tools/deploy_pages.sh web/dist build/pages")
+
+
+@pytest.mark.parametrize("files, event, code", [
+    (["README.md"], "pull_request", "false"),
+    (["README.md", "docs/MANUAL.md"], "pull_request", "false"),
+    (["README.md", "tools/release.py"], "pull_request", "true"),
+    (["docs/manual/img/x.png"], "pull_request", "true"),
+    ([], "pull_request", "true"),
+    (["README.md"], "push", "true"),
+])
+def test_ci_docs_only_detection(tmp_path, files, event, code):
+    """ci.yml's changes step: code=false only for a pull request whose every changed file is Markdown"""
+    ci = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))["jobs"]
+    run = [st for st in ci["changes"]["steps"] if st.get("id") == "c"][0]["run"]
+    run = run.replace("${{ github.event_name }}", event).replace(
+        'git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD', "cat changed.txt")
+    (tmp_path / "changed.txt").write_text("".join(f + "\n" for f in files))
+    out = tmp_path / "out"
+    subprocess.run(["bash", "-c", run], cwd=tmp_path, env=dict(os.environ, GITHUB_OUTPUT=str(out)), check=True,
+                   capture_output=True)
+    assert out.read_text().split() == [f"code={code}"]
