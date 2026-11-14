@@ -95,14 +95,15 @@ def parse(text, name="fragment"):
 
 
 # The notes are for players: what they hear, see and do. No internal details: no source or test paths, no commit
-# hashes, no code constants, no test gates or limits, no private research, no development tooling.
+# hashes, no code constants, no test gates or limits, no private research, no development tooling (brand names:
+# test_repo_hygiene, for every tracked file).
 INTERNAL = [
     (re.compile(r"\b(?:tools|tests|firmware|plugin/src|plugin/ui|mpc/src|move/|build|private)/"), "a source / test path"),
     (re.compile(r"\b[\w-]+\.(?:py|sh|c|h|cpp|m|S|yaml|json)\b"), "a source / test file name"),
     (re.compile(r"(?<![\w/.-])[0-9a-f]{7,40}(?![\w/-])"), "a commit hash"),
     (re.compile(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b"), "a code constant"),
     (re.compile(r"\bGate [A-Z]\b|\bTHRESHOLD\b|\bexpected[_ ]changes\b|\bbaseline", re.I), "test machinery"),
-    (re.compile(r"\b(?:reface|yamaha|study|studies|findings|textura|claude|agent|tracker)\b", re.I),
+    (re.compile(r"\b(?:study|studies|findings|textura|claude|agent|tracker)\b", re.I),
      "private research or development detail"),
 ]
 

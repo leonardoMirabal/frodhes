@@ -115,7 +115,7 @@ def test_notes_publish_no_internal_detail():
            "## Tools\n- `tools/release_diff.py` moved\n": "a source / test path",
            "## Changes\n- fixed in 42846aed\n": "a commit hash",
            "## Changes\n- Gate M references renewed\n": "test machinery",
-           "## Changes\n- closer to the reface\n": "private research",
+           "## Changes\n- closer to the study\n": "private research",
            "## Tested\n- make test\n": "## Tested"}
     for text, what in bad.items():
         hits = ch.internal([("x.md", ch.parse(text, "x.md"))])
