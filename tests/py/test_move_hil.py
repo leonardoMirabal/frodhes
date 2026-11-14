@@ -233,6 +233,35 @@ def test_usb_host_same_sound(tmp_path):
     assert not ok and "ANOTHER SOUND" in rep["verdict"] and abs(rep["gain_db"] + 6.02) < 0.1, rep["verdict"]
 
 
+def test_usb_host_notes_on_other_blocks_pass(tmp_path):
+    """MOVE-LVL 2026-11-14: MARIMBA (F15) on the Move, d2: 60 v100 -33.6 dB "DIFFERS", the host's sound with every note
+    on other blocks after CC 10 (LEVEL's dither, the reverb, the compressor run on from it). The host itself with the
+    notes 6 ms later passes on the timing floor; a note with a sound of its own over that floor still fails"""
+    class Later(mh.FakeRig):
+        extra = 0.0
+
+        def rec(self, dur, events):
+            es = [(t + (0.006 if k != "cc" else 0.0), k, a, b) for t, k, a, b in events]
+            h = mh._HOST_PHRASE(es, dur, 14)
+            x = np.zeros_like(h)
+            x[650:] = 1.69 * h[:-650]
+            if self.extra:                            # (60 v127's last half-second: a -30 dB tone on top)
+                _, marks, _ = mh.phrase_events()
+                t0 = [t for name, t, _ in marks if name == "60 v127"][0] + 0.5 + 0.006
+                i, n = int(t0 * 44100) + 650, int(0.5 * 44100)
+                lv = np.sqrt(np.mean(x[i:i + n, 0] ** 2))
+                x[i:i + n] += (self.extra * lv * np.sqrt(2) * np.sin(2 * np.pi * 523.25 * np.arange(n) / 44100))[:, None]
+            return {"x": np.round(x), "sr": 44100, "xruns": []}
+    ok, rep = mh.usb_host(Later(), str(tmp_path), program=14, out=lambda s: None)
+    w = {r["note"]: r for r in rep["rows"]}
+    assert ok, rep["verdict"]
+    assert w["60 v100"]["residual_net_db"] > -40 and w["60 v100"]["timing_db"] > -40, w["60 v100"]
+    r = Later()
+    r.extra = 10 ** (-20 / 20)
+    ok, rep = mh.usb_host(r, str(tmp_path), program=14, out=lambda s: None)
+    assert not ok and "60 v127" in rep["verdict"], rep["verdict"]
+
+
 def test_usb_host_quiet_mix_aligns_on_time(tmp_path):
     """a take as the 2026-10-30 USB-C run had it: Main Out 17.1 dB under the tap (the track's volume), 14.92 ms late,
     in whole LSB. Every note aligns on the take's one latency and the take passes"""
