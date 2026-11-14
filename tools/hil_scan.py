@@ -1009,7 +1009,8 @@ FXALL = [  # (name, settings, expected: LU re clean within +-tol)
     ("phaser 127 fb127", dict(PH_SW=127, PH_DEPTH=127, PH_FDBK=127)),
     ("chorus 32", dict(CP_SW=64, CP_DEPTH=32)), ("chorus 64", dict(CP_SW=64, CP_DEPTH=64)), ("chorus 127", dict(CP_SW=64, CP_DEPTH=127)),
     ("delay dig 50", dict(DL_SW=48, DL_DEPTH=50)), ("delay ana 127", dict(DL_SW=80, DL_DEPTH=127)),
-    ("reverb 32", dict(REV=32)), ("reverb 127", dict(REV=127)),
+    ("reverb 32", dict(REV=32)), ("reverb 64", dict(REV=64)),   # (0.9.13 E2: "reverb 127" until then; 64 is the send
+    # whole over the dry whole, as 127 was; 127 is now the reverb alone)
     ("all on", dict(DRIVE=30, CMP_SW=127, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=10, TW_SW=64, TW_DEPTH=50, PH_SW=127, PH_DEPTH=60,
                     CP_SW=64, CP_DEPTH=50, DL_SW=48, DL_DEPTH=40, REV=40)),
 ]
@@ -1294,9 +1295,11 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 # (2026-11-10, FINAL19 v2: each preset at 0.9.9's preset of the same name by critical-band loudness, the limiter
 # idle, the LEVEL-cut ones under it: the targets re-measured on rc4 by name (host, re F01; F11 RESO SWEEP's +1.4 host
 # is +1.2 on the FM-1 by HOST_SHIFT). The starters U01..U09 kept their LEVELs: v2's F01 sits ~1.2 LU over them)
+# (0.9.13 E2, the MIX law as Textura's, stored values kept: DREAM's REVERB MIX 76 is past the middle, its dry -1.8 dB:
+# -1.0 -> -2.1 (host -2.15), no LEVEL retune until the user's jack listening; THRESHOLD in the E2 commit)
 PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1.8, 1.0), "RESO SWEEP": (1.2, 1.0),
                  "VIBES": (-1.1, 1.0), "VIBES ECHO": (-0.9, 1.0), "MARIMBA": (-5.2, 1.0), "WOOD ECHO": (-8.1, 1.0),
-                 "TAPE ECHO": (-0.5, 1.0), "DREAM": (-1.0, 1.0), "U02": (-1.3, 1.0), "U03": (-1.6, 1.0),
+                 "TAPE ECHO": (-0.5, 1.0), "DREAM": (-2.1, 1.0), "U02": (-1.3, 1.0), "U03": (-1.6, 1.0),
                  "U04": (0.5, 1.0), "U05": (-1.2, 1.0), "U06": (-1.4, 1.0), "U07": (-1.2, 1.0), "U08": (-1.9, 1.0),
                  "U09": (-1.1, 1.0)}
 # (2026-11-09, fx-level: 0.9.9's absolute level and balance again (742a2537: every LEVEL -19, then the presets the

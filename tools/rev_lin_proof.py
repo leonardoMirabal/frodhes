@@ -28,7 +28,7 @@ import release_diff as rd  # noqa: E402
 
 OUT = os.environ.get("REV_LIN_OUT", os.path.join(rd.ROOT, "build", "rev_lin"))
 X4 = {   # (file, old, new) per tree kind
-    "new": [("#define RV_SEND(v) ((v) * 258 * (254 - (v)) / 127)", "#define RV_SEND(v) ((v) * 258 * (254 - (v)) / 127 * 2)"),
+    "new": [("#define RV_SEND(v) ((v) >= 64 ? 32766 : (v) * 512)", "#define RV_SEND(v) ((v) >= 64 ? 32766 * 2 : (v) * 1024)"),
             ("#define RV_RK ((1 << 29) + 1)", "#define RV_RK ((1 << 28) + 1)")],
     **{("o99" if f == 4 else f"o99/{f}"): [("int32_t send = tgt ? v * 258 : 0,", f"int32_t send = tgt ? v * 258 * {f} : 0,"),
                          ("rk = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;",
@@ -50,17 +50,16 @@ def tree(rev, name, x4):
                            check=True).stdout
     subprocess.run(["tar", "-x", "-C", path], input=a, check=True)
     if x4:
-        for f in ("rev_types.c", "rev_hq.c"):
-            p = os.path.join(path, "firmware", "src", f)
-            s = open(p).read()
-            for old, new in X4[x4]:
-                assert s.count(old) == 1, (name, f, old)
-                s = s.replace(old, new)
-            open(p, "w").write(s)
-        p = os.path.join(path, "firmware", "src", "fx.c")
-        s = open(p).read()
-        assert s.count(CLAMP[0]) == 1
-        open(p, "w").write(s.replace(CLAMP[0], CLAMP[1]))
+        src = {f: open(os.path.join(path, "firmware", "src", f)).read() for f in ("rev_types.c", "rev_hq.c", "fx.c")}
+        for old, new in X4[x4]:     # (in both reverb files; 0.9.13's RV_SEND: fx.c, the two share it)
+            hit = [f for f in src if src[f].count(old) == 1]
+            assert hit in (["rev_types.c", "rev_hq.c"], ["fx.c"]), (name, old, hit)
+            for f in hit:
+                src[f] = src[f].replace(old, new)
+        assert src["fx.c"].count(CLAMP[0]) == 1
+        src["fx.c"] = src["fx.c"].replace(CLAMP[0], CLAMP[1])
+        for f in src:
+            open(os.path.join(path, "firmware", "src", f), "w").write(src[f])
     bins = {}
     for b, defs in (("fm1", []), ("hq", rd.HQ_DEFS)):
         bins[b] = os.path.join(path, b)

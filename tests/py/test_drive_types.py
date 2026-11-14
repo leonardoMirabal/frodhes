@@ -256,19 +256,24 @@ def test_demo_type_drives_and_counts(demo):
     assert np.array_equal(a, y)
 
 
-def wt_of(mix):
-    """a TYPE's wet share at MIX v (drive.c fx_drive_types): on multiples of 256"""
-    return 32768 if mix >= 127 else (mix * 258 + 128) & ~255
+def gains_of(mix):
+    """a TYPE's (wet, dry) gains at MIX v (0.9.13 E2, fx.c DR_WET / DR_DRY, as Textura's MIX): 0..64 the dry whole and
+    the wet rising, 64 both whole, past 64 the wet whole and the dry falling (on multiples of 256, the TYPE's grid)"""
+    return (32768 if mix >= 64 else mix * 512), (32768 if mix <= 64 else ((127 - mix) * 32768 // 63 + 128) & ~255)
 
 
 def test_mix_blends_a_type_exactly(demo):
-    """MIX 64 is the dry signal plus 16640 / 32768 of (wet - dry), sample for sample, once the MIX glide is over (the
-    TYPE runs the same at any MIX); MIX 0 the dry signal"""
+    """MIX v is (dry x d + wet x w) >> 15 with gains_of(v), sample for sample, once the MIX glide is over (the TYPE runs
+    the same at any MIX): 32 the dry whole and half the wet, 64 both whole, 96 the wet whole and 16128 / 32768 of the
+    dry; MIX 0 the dry signal"""
     x = chord(16384)
     full, _, _ = ds.render(demo, x, p("KHLON"))
-    half, cost, _ = ds.render(demo, x, p("KHLON", mix=64))
-    want = x + (((full - x) * wt_of(64)) >> 15)
-    assert wt_of(64) == 16640 and np.array_equal(half[4096:], want[4096:]) and cost == CORE + DEMO_BL
+    assert gains_of(32) == (16384, 32768) and gains_of(64) == (32768, 32768) and gains_of(96) == (32768, 16128)
+    for mix in (32, 64, 96):
+        y, cost, _ = ds.render(demo, x, p("KHLON", mix=mix))
+        w, d = gains_of(mix)
+        want = (x * d + full * w) >> 15
+        assert np.array_equal(y[4096:], want[4096:]) and cost == CORE + DEMO_BL, mix
     zero, _, _ = ds.render(demo, x, p("KHLON", mix=0))
     assert np.array_equal(zero[4096:], x[4096:])
 
@@ -287,23 +292,24 @@ def test_switches_between_types_do_not_click(demo):
 
 
 def test_mix_glide_ramps_every_4_samples(demo):
-    """MIX 127 -> 64 while it sounds: the wet share ramps 64 every 4 samples (4096 a block: the classic drive's 46 ms) to
-    16640, and back up to 127; sample for sample the TYPE's full output blended (the TYPE runs the same at any MIX);
-    the cost all wet + DRV_US_BLEND while it blends, then all wet; no click"""
+    """MIX 127 -> 64 while it sounds: the dry's gain ramps up 64 every 4 samples (4096 a block: the classic drive's
+    46 ms) to whole (the wet stays whole: 0.9.13 E2's law), and back down to 0 at 127; sample for sample the TYPE's full
+    output blended (the TYPE runs the same at any MIX); the cost all wet + DRV_US_BLEND while it blends, then all wet;
+    no click"""
     x = chord(48 * 256)                                  # (from power-on: FDRV fades out, the TYPE in: 16 blocks)
     full, _, _ = ds.render(demo, x, p("KHLON"))
     y, _, _, tr = ds.render(demo, x, p("KHLON"), [(20, "DRV_MIX", 64), (34, "DRV_MIX", 127)], trace=True)
-    w, want = 32768, full.copy()
+    g, want = 0, full.copy()
     for b in range(20, len(x) // 256):
-        wt = 32768 if b >= 34 else wt_of(64)
-        w1 = max(w - 4096, wt) if w > wt else min(w + 4096, wt)
-        ws = w + (np.arange(256) // 4) * ((w1 - w) >> 6)
+        gt = 0 if b >= 34 else gains_of(64)[1]
+        g1 = max(g - 4096, gt) if g > gt else min(g + 4096, gt)
+        gs = g + (np.arange(256) // 4) * ((g1 - g) >> 6)
         a = b * 256
-        want[a:a + 256] = x[a:a + 256] + (((full[a:a + 256] - x[a:a + 256]) * ws) >> 15)
-        w = w1
+        want[a:a + 256] = (x[a:a + 256] * gs + full[a:a + 256] * 32768) >> 15
+        g = g1
     assert np.array_equal(y, want) and not np.array_equal(y, full)
     cs = [c for c, _, _ in tr[20:]]                      # (blending while MIX < 127 and on the way back, then not)
-    assert cs[:17] == [CORE + DEMO_BL] * 17 and set(cs[18:]) == {CORE + DEMO_US}
+    assert cs[:21] == [CORE + DEMO_BL] * 21 and set(cs[21:]) == {CORE + DEMO_US}   # (the dry's 8 blocks down: 21)
     assert jumps(y, 2000, len(x)) <= 1.2 * max(jumps(full, 2000, len(x)), jumps(x, 2000, len(x))) + 40
 
 

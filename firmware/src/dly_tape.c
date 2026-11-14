@@ -288,7 +288,7 @@ __attribute__((noinline)) static int dly_routed(int32_t sw, int32_t target)
 __attribute__((noinline)) static int tp_route(int32_t *L, int32_t *R, uint32_t n, int32_t sw, int32_t target,
                                               int32_t sg16, int32_t fb, int32_t wet, int32_t depth)
 {
-    int32_t dgt = 32768 - depth * depth, osw = dly_cur == 3 ? sw : dly_last;
+    int32_t dgt = DLY_DRY(depth), osw = dly_cur == 3 ? sw : dly_last;
     int32_t col = 2000 + fx_p[FXP_DL_TONE] * 240;
     if (dly_xo) {                                       /* DIG <-> ANA (fx.c dly_xo): the crossfade, tape 2 / 3 */
         dly_fade(L, R, n, dly_ana ? 2 : 3, sw ? -1 : 0, sg16, target, col, fb, wet, sw ? dgt : 32768, 0);
@@ -606,7 +606,7 @@ static struct { uint8_t kind, tape, post; int32_t msk, dgt, gs, gt, col; } tp_rc
                                                         * 2 TAPE; post: 1 the DIG <-> ANA fade's end, 2 TAPE's tail */
 static void tp_route_plan(int32_t sw, int32_t target, int32_t depth)
 {
-    int32_t dgt = 32768 - depth * depth, osw = dly_cur == 3 ? sw : dly_last;
+    int32_t dgt = DLY_DRY(depth), osw = dly_cur == 3 ? sw : dly_last;
     int32_t col = 2000 + fx_p[FXP_DL_TONE] * 240;
     tp_rc.post = 0;
     if (dly_xo) {

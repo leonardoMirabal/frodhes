@@ -1,4 +1,5 @@
 ## Summary
 
-adds Frodhes for the Akai MPC, with the desktop plugin's look on the MPC's screen; the FM-1, Move and desktop plugin
-sound and work as in 0.9.11.
+adds Frodhes for the Akai MPC, a cleaner upper register on every electric piano, richer soft notes on the Move, the
+plugin and the MPC, a new MIX law on DELAY, DRIVE and REVERB, a fuller velocity response on the electric piano, and
+update notices in the desktop plugin.

@@ -2,7 +2,7 @@
 """The desktop plugin's CHECK FOR UPDATES (plugin/src/frp_update.h) without the network: plugin/tests/test_update.c
 compiled on its own with the pure part (versions, the response's tag, the 24 h rule, the settings file's text) and
 the runtime over a stand-in fetch in a scratch home (the thread, the throttle, the off switch, FRODHES_UPDATE_CHECK=0,
-a developer build, failures, a cancel at shutdown). No plugin build needed. The real request per OS:
+a developer build, failures, a cancel at shutdown, the package's download and its digest). No plugin build needed. The real request per OS:
 build/plugin/frp_update_probe (by hand: it needs the network)."""
 import os
 import shutil

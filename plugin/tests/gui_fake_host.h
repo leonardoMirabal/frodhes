@@ -19,6 +19,7 @@ typedef struct {
     char pname[64][24];
     int ptype[64], puser[64];
     char upd[16];                        /* CHECK FOR UPDATES: the newer release the stand-in knows ("": none) */
+    int upd_ready;                       /* its package downloaded (INSTALL) */
     int upd_opens;                       /* the UPDATE key's clicks */
 } fake_host;
 
@@ -97,7 +98,7 @@ static void fh_setting_set(void *ctx, int key, int v)
     if (key == FRP_UI_TUNE) h->v[FRP_TUNE] = v + 50;
     else if (key >= FRS_CHANNEL && key <= FRS_UPDCHK) h->v[key] = v;
 }
-static int fh_update(void *ctx, char ver[16]) { fake_host *h = ctx; snprintf(ver, 16, "%s", h->upd); return h->upd[0] != 0; }
+static int fh_update(void *ctx, char ver[16]) { fake_host *h = ctx; snprintf(ver, 16, "%s", h->upd); return h->upd[0] ? 1 + (h->upd_ready != 0) : 0; }
 static void fh_update_open(void *ctx) { ((fake_host *)ctx)->upd_opens++; }
 static void fh_learn_get(void *ctx, uint8_t cc1[], int n, int *learning)
 {

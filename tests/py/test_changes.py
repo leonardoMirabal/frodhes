@@ -107,3 +107,18 @@ def test_refusals(tmp_path):
     assert "settings saved by 1.2.2 load" in ch.assemble("1.2.4", ch.load(r), r)      # history is fine
     r = write(tmp_path / "c", {"x.md": "## New\n- see 1.2.30 and 11.2.3\n"})
     assert "1.2.30" in ch.assemble("1.2.3", ch.load(r), r)              # another version, not the coming one
+
+
+def test_notes_publish_no_internal_detail():
+    # the notes are for players: paths, file names, hashes, constants, test machinery and private research never pass
+    bad = {"## Changes\n- the limiter's threshold, LIM_T 24000\n": "a code constant",
+           "## Tools\n- `tools/release_diff.py` moved\n": "a source / test path",
+           "## Changes\n- fixed in 42846aed\n": "a commit hash",
+           "## Changes\n- Gate M references renewed\n": "test machinery",
+           "## Changes\n- closer to the study\n": "private research",
+           "## Tested\n- make test\n": "## Tested"}
+    for text, what in bad.items():
+        hits = ch.internal([("x.md", ch.parse(text, "x.md"))])
+        assert hits and what in hits[0], (text, hits)
+    ok = "## Changes\n- **A cleaner upper register**: above C5 the tone stays clear ([MPC.md](https://x/docs/MPC.md)).\n"
+    assert ch.internal([("x.md", ch.parse(ok, "x.md"))]) == []

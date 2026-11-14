@@ -67,8 +67,8 @@ def test_long_sync_from_a_stale_tempo():
 def test_tape_motor_glide_to_a_new_tempo():
     """TAPE, DLY SYNC 1/4, a 120 BPM clock, then 100 BPM: the echo time glides from 500 to 600 ms as the motor's
     one-pole (TAU_UP 1.89 s), sample for sample the design: within 10 ms of 600 - 100 exp(-t / 1.89 s) from 4 beats
-    on, at 600 by 12 beats"""
-    ls = [hostrun.cc(20, CC_DL_SW, 112), hostrun.cc(20, CC_DL_DEPTH, 127), hostrun.cc(20, CC_DL_FDBK, 0),
+    on, at 600 by 12 beats (MIX 64: the dry and the echo whole; 0.9.13 E2: at 127 the echo alone)"""
+    ls = [hostrun.cc(20, CC_DL_SW, 112), hostrun.cc(20, CC_DL_DEPTH, 64), hostrun.cc(20, CC_DL_FDBK, 0),
           hostrun.cc(20, CC_DL_SYNC, band(9, 13))]
     tc = 11000
     ls += ["999 midi 0xFA 0 0"] + pulses(1000, 120, 24 * 20) + pulses(tc, 100, 24 * 26)

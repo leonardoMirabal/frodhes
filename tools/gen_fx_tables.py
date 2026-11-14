@@ -120,9 +120,9 @@ def tape_tables():
             return 0.0109 * 64 + (0.85 - 0.0109 * 64) * ((f - 64) / 50) ** 0.8
         return 1.03 * DLY_OSC(f)                   # (+3 %: the tone low-pass and the DC block's loss around the loop,
                                                     # ~0.97 at TONE 70: so ANA too builds up from about 115)
-    # MIX (0.9.5, the user): the echo's gain (Q15), 0.875 at 64 (the first echo as loud as the eased dry, 32768 - 64^2),
-    # linear below; then up to 32767 at 127 (+5.9 dB re the dry, as before)
-    out.append(arr("FX_DLY_WET", "uint16_t", [d * 448 if d <= 64 else 28672 + (d - 64) * 65 for d in range(128)], 12))
+    # MIX (0.9.13, as Textura's MIX): the echo's gain (Q15) rises from 0 to whole at 64 (the first echo as loud as the
+    # dry, which stays whole up to 64: fx.c DLY_DRY), then stays whole while the dry falls (127: the echoes alone)
+    out.append(arr("FX_DLY_WET", "uint16_t", [min(32768, d * 512) for d in range(128)], 12))
     out.append(arr("FX_DLY_FB", "uint16_t", [min(13926, int(16384 * dly_fb(f))) if f <= 114 else
                                               int(round(16384 * dly_fb(f))) for f in range(128)], 12))
     q = t["Q_BUMP"]

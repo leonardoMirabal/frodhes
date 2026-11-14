@@ -66,6 +66,7 @@ def build(cflags=(), tag="default", tree=None):
     if "rev_poll(" in src_text(tree):
         cflags = ["-DREV_SCAN_POLL", *cflags]
     cflags = [*cflags, *os.environ.get("REV_SCAN_CFLAGS", "").split()]   # (a variant: -DREV_INF_QUARTER=0)
+    cflags = ["-DRV_SCAN_WET", *cflags]     # (0.9.13 E2: MIX past 64 lowers the dry; the scan keeps it whole: wet = out - in)
     subprocess.run(["cc", "-O2", "-w", "-DDINGHY_HOST", '-DAPP_VER="dev"', *cflags,
                     "-I" + os.path.join(tree, "firmware", "src"), "-I" + os.path.join(tree, "firmware", "gen"),
                     "-o", exe, os.path.join(ROOT, "tests", "c", "rev_scan.c"), "-lm"], check=True)

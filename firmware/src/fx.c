@@ -538,19 +538,33 @@ static int32_t dr_gl RH_SP_SEC(".data.fx_drgl") = -1, dr_kl RH_SP_SEC(".bss.fx_d
 static uint8_t dr_os_ok RH_SP_SEC(".bss.dr_os_ok");   /* FDRV's 2x state is valid (0: to rest at the next block;
                                                         * drive.c dr_os2) */
 static int32_t dr_sal RH_SP_SEC(".bss.fx_dr_sal");      /* FDRV's wet share at the block's end (fx_drive; fx_spread) */
-static int32_t dr_w = 32768, dr_tg = 4096, dr_tlp;      /* the wet share (Q15), the shelf's high gain (Q12), its low-pass */
+static int32_t dr_w = 32768, dr_tg = 4096, dr_tlp;      /* the wet's gain (Q15), the shelf's high gain (Q12), its low-pass */
+/* MIX (0.9.13, as Textura's MIX; it was a crossfade, the wet share 258 MIX): two gains, the wet's (dr_w) and the dry's
+ * (dr_d), out = (dry x d + wet x w) >> 15. 0 .. 64 the dry whole, the wet rising to whole (DR_WET); 64 both whole;
+ * 64 .. 127 the wet whole, the dry falling to nothing (DR_DRY). OFF, AMOUNT 0 and a TYPE switch go to w 0, d whole.
+ * Each gain glides on its own, 16 a sample (46 ms whole <-> nothing, as the share did): an OFF from 127 is the old
+ * crossfade (d + w stays whole), from 64 the wet alone fades; d + w never falls under whole on the way. Both are
+ * multiples of 256 (the TYPEs' ramp of 64 every 4 samples lands on them, drive.c) */
+#define DR_WET(v) ((v) >= 64 ? 32768 : (v) * 512)
+#define DR_DRY(v) ((v) <= 64 ? 32768 : (((127 - (v)) * 32768 / 63 + 128) & ~255))
+static int32_t dr_d RH_SP_SEC(".bss.fx_dr_d");          /* the dry's gain (Q15; 0: all wet, as dr_w's 32768 at boot) */
+/* the wet's share of the two (fx_spread aligns the side to it): w / (w + d), Q15; 0 at rest (w 0) */
+static int32_t dr_share(int32_t w, int32_t d) { return w ? (int32_t)(((uint32_t)w << 15) / (uint32_t)(w + d)) : 0; }
 static uint8_t dr_ton;                                  /* the shelf runs (its gain is not 1, or on its way) */
 /* TONE and MIX settled (0.9.5): the gliding loop below with its glides at rest, so each sample does what that loop
  * does then (the shelf at its gain tg when it runs, the wet share w), in registers (that loop: 125 instructions a
- * sample, its state in memory); shelf and full are constants at each use */
+ * sample, its state in memory); shelf and full are constants at each use. full (0.9.13, MIX's two gains, settled on
+ * the law where one of them is whole): 1 all wet, 2 the wet whole and the dry x d, 0 the dry whole and the wet x w,
+ * one multiply each, the same integers as dr_general's (x0 d + y w) >> 15 there (both products in one loop moved the
+ * make-up's multiply onto the stack: 22 -> 30 instructions a sample) */
 /* clampi(v, -230000, 230000) as smax + smin (the same value) */
 static inline int32_t dr_cl(int32_t v) { v = v > -230000 ? v : -230000; return v < 230000 ? v : 230000; }
 /* FDRV's shaper at 2x (drive.c dr_os2): the high-pass, the gain, the curve between the half-bands -> ys[]; the
  * loops below run its low-passes, make-up, TONE shelf and MIX at 1x on ys (dr_hp is dr_os2's) */
 static const int32_t *dr_os2(const int32_t *m, uint32_t n, int32_t gq, int32_t dgq, int32_t bias, int32_t b0);
 static inline __attribute__((always_inline)) void dr_settled(int32_t *m, const int32_t *ys, uint32_t n, int32_t k,
-                                                             int32_t mk, int32_t tg, int32_t w, const int shelf,
-                                                             const int full)
+                                                             int32_t mk, int32_t tg, int32_t w, int32_t d,
+                                                             const int shelf, const int full)
 {
     int32_t lp1 = dr_lp1, lp2 = dr_lp2, tlp = dr_tlp;
     uint32_t i;
@@ -563,15 +577,19 @@ static inline __attribute__((always_inline)) void dr_settled(int32_t *m, const i
             tlp += mulq15(y - tlp, DR_TA);
             y = tlp + (int32_t)(((int64_t)(y - tlp) * tg) >> 12);
         }
-        m[i] = full ? y : x0 + (int32_t)(((int64_t)(y - x0) * w) >> 15);
+        m[i] = full == 1 ? y : full == 2 ? y + (int32_t)(((int64_t)x0 * d) >> 15)   /* (the wet whole, the dry x d) */
+                                         : x0 + (int32_t)(((int64_t)y * w) >> 15);    /* (the dry whole, the wet x w) */
     }
     dr_lp1 = lp1; dr_lp2 = lp2; dr_tlp = tlp;
 }
 /* the gliding loop (TONE / MIX on their way, AMOUNT's ramp): out of app_audio (inlined, its registers moved the
  * defaults' and the settled loops: +1 instruction and a stack load each, 0.9.6); g, k, mk in Q8 from gq / kq / mq by
  * dgq / dkq / dmq a sample (0: constant) */
+/* MIX's two gains ramp straight over the block (Q8: wq / gq by dwq / dgq a sample) to where their 16-a-sample glides end
+ * it (dr_after); the caller sets dr_w / dr_d to those ends */
 __attribute__((noinline)) static void dr_general(int32_t *m, const int32_t *ys, uint32_t n, int32_t kq, int32_t mq,
-                                                 int32_t dkq, int32_t dmq, int32_t tt, int32_t wt)
+                                                 int32_t dkq, int32_t dmq, int32_t tt, int32_t wq, int32_t dwq,
+                                                 int32_t gq, int32_t dgq)
 {
     uint32_t i;
     for (i = 0; i < n; i++) {
@@ -588,27 +606,33 @@ __attribute__((noinline)) static void dr_general(int32_t *m, const int32_t *ys, 
             y = dr_tlp + (int32_t)(((int64_t)(y - dr_tlp) * dr_tg) >> 12);
             if (dr_tg == 4096 && tt == 4096) dr_ton = 0;   /* back to flat: the shelf rests (y is exact again) */
         }
-        if (dr_w != wt) dr_w += dr_w < wt ? (wt - dr_w > 16 ? 16 : wt - dr_w) : -(dr_w - wt > 16 ? 16 : dr_w - wt);
-        m[i] = dr_w == 32768 ? y : x0 + (int32_t)(((int64_t)(y - x0) * dr_w) >> 15);
+        wq += dwq; gq += dgq;
+        m[i] = (int32_t)(((int64_t)x0 * (gq >> 8) + (int64_t)y * (wq >> 8)) >> 15);   /* (all wet: y exactly) */
     }
+}
+/* a gain toward its target at 16 a sample, n samples on (dr_general's glide, at a block's end) */
+static int32_t dr_after(int32_t g, int32_t t, int32_t n)
+{
+    int32_t st = 16 * n;
+    return g < t ? (t - g > st ? g + st : t) : (g - t > st ? g - st : t);
 }
 #if FR_CHUNK
 /* dr_classic and fx_drive_classic for a chunk: the settings, the ramp and the loop's choice at the first chunk; dr_w's
  * value at the block's end (dr_sal: fx_spread's first chunk reads it) worked out there too */
 static const int32_t *dr_os2_c(const int32_t *m, int32_t gq, int32_t dgq, int32_t bias, int32_t b0);
-static struct { int32_t g, k, mk, bias, b0, tt, wt, gq, kq, mq, dgq, dkq, dmq, w_end; uint8_t path; } dr_c;
+static struct { int32_t g, k, mk, bias, b0, tt, wt, dt, gq, kq, mq, dgq, dkq, dmq, w_end, d_end, dwq, ddq; uint8_t path; } dr_c;
 __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t sw)
 {
     uint32_t o = fxc_o, e = fxc_e;
     const int32_t *ys;
     if (FXC_1) {
         int32_t d = fx_p[FXP_DRIVE], row = fx_p[FXP_DRIVE_ROW] & 3, g, k, mk, tv = fx_p[FXP_DRV_TONE], mv = fx_p[FXP_DRV_MIX];
-        int32_t wt = !sw ? 0 : mv >= 127 ? 32768 : mv * 258;
+        int32_t wt = !sw ? 0 : DR_WET(mv), dt = !sw ? 32768 : DR_DRY(mv);
         int32_t tt = tv >= 64 ? 4096 + (((tv - 64) * 4161) >> 6) : tv * 64;
         int32_t gq = -1, kq = 0, mq = 0, dgq = 0, dkq = 0, dmq = 0;
-        if (!d) { wt = 0; d = 1; }
-        dr_c.w_end = dr_w;
-        if (!wt && !dr_w) { dr_ton = 0; dr_tg = 4096; dr_gl = -1; dr_c.path = 0; return; }
+        if (!d) { wt = 0; dt = 32768; d = 1; }
+        dr_c.w_end = dr_w; dr_c.d_end = dr_d;
+        if (!wt && !dr_w && dr_d == 32768) { dr_ton = 0; dr_tg = 4096; dr_gl = -1; dr_c.path = 0; return; }
         if (dr_gl >= 0 && d != dr_dl) d = dr_dl + clampi(d - dr_dl, -DR_DSTEP, DR_DSTEP);
         dr_dl = d;
         g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
@@ -625,18 +649,18 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
             dgq = ((g - dr_gl) << 8) / (int32_t)n; dkq = ((k - dr_kl) << 8) / (int32_t)n; dmq = ((mk - dr_ml) << 8) / (int32_t)n;
         }
         dr_gl = g; dr_kl = k; dr_ml = mk;
-        if (gq < 0 && wt == 32768 && dr_w == 32768 && tt == 4096 && !dr_ton) dr_c.path = 1;
-        else if (gq < 0 && dr_tg == tt && dr_w == wt && (dr_ton ? tt != 4096 : tt == 4096))
-            dr_c.path = !dr_ton ? 2 : wt == 32768 ? 3 : 4;
+        if (gq < 0 && wt == 32768 && dr_w == 32768 && !dt && !dr_d && tt == 4096 && !dr_ton) dr_c.path = 1;
+        else if (gq < 0 && dr_tg == tt && dr_w == wt && dr_d == dt && (wt == 32768 || dt == 32768) &&
+                 (dr_ton ? tt != 4096 : tt == 4096))
+            dr_c.path = !dr_ton ? (wt == 32768 ? 6 : 2) : wt == 32768 && !dt ? 3 : wt == 32768 ? 7 : 4;
         else {
             dr_c.path = 5;
             if (gq < 0) { kq = k << 8; mq = mk << 8; }
-            {   /* (dr_general's glide: 16 a sample toward wt) */
-                int32_t st = 16 * (int32_t)n;
-                dr_c.w_end = dr_w < wt ? (wt - dr_w > st ? dr_w + st : wt) : (dr_w - wt > st ? dr_w - st : wt);
-            }
+            dr_c.w_end = dr_after(dr_w, wt, (int32_t)n);   /* (dr_general's ramps: to the 16-a-sample glides' ends) */
+            dr_c.d_end = dr_after(dr_d, dt, (int32_t)n);
+            dr_c.dwq = ((dr_c.w_end - dr_w) << 8) / (int32_t)n; dr_c.ddq = ((dr_c.d_end - dr_d) << 8) / (int32_t)n;
         }
-        dr_c.g = g; dr_c.k = k; dr_c.mk = mk; dr_c.tt = tt; dr_c.wt = wt;
+        dr_c.g = g; dr_c.k = k; dr_c.mk = mk; dr_c.tt = tt; dr_c.wt = wt; dr_c.dt = dt;
         dr_c.gq = gq; dr_c.kq = kq; dr_c.mq = mq; dr_c.dgq = dgq; dr_c.dkq = dkq; dr_c.dmq = dmq;
     }
     if (!dr_c.path) return;
@@ -652,11 +676,17 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
         }
         dr_lp1 = lp1; dr_lp2 = lp2;
     }
-    else if (dr_c.path == 2) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, 0, 0);
-    else if (dr_c.path == 3) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, 1, 1);
-    else if (dr_c.path == 4) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, 1, 0);
-    else dr_general(m + o, ys + o, e - o, dr_c.kq + dr_c.dkq * (int32_t)o, dr_c.mq + dr_c.dmq * (int32_t)o, dr_c.dkq,
-                    dr_c.dmq, dr_c.tt, dr_c.wt);
+    else if (dr_c.path == 2) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, dr_c.dt, 0, 0);
+    else if (dr_c.path == 6) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, dr_c.dt, 0, 2);
+    else if (dr_c.path == 3) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, dr_c.dt, 1, 1);
+    else if (dr_c.path == 4) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, dr_c.dt, 1, 0);
+    else if (dr_c.path == 7) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, dr_c.dt, 1, 2);
+    else {
+        dr_general(m + o, ys + o, e - o, dr_c.kq + dr_c.dkq * (int32_t)o, dr_c.mq + dr_c.dmq * (int32_t)o, dr_c.dkq,
+                   dr_c.dmq, dr_c.tt, (dr_w << 8) + dr_c.dwq * (int32_t)o, dr_c.dwq, (dr_d << 8) + dr_c.ddq * (int32_t)o,
+                   dr_c.ddq);
+        if (FXC_Z) { dr_w = dr_c.w_end; dr_d = dr_c.d_end; }   /* (the block's last chunk: the ramps' ends) */
+    }
 }
 __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, int32_t sw)
 {
@@ -673,14 +703,15 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
                                                         * (0 while it fades out for another TYPE: drive.c fx_drive) */
 {
     int32_t d = fx_p[FXP_DRIVE], row = fx_p[FXP_DRIVE_ROW] & 3, g, k, mk, bias, b0, tv = fx_p[FXP_DRV_TONE], mv = fx_p[FXP_DRV_MIX];
-    int32_t wt = !sw ? 0 : mv >= 127 ? 32768 : mv * 258;          /* the wet share it goes to */
+    int32_t wt = !sw ? 0 : DR_WET(mv), dt = !sw ? 32768 : DR_DRY(mv);   /* the gains it goes to */
     int32_t tt = tv >= 64 ? 4096 + (((tv - 64) * 4161) >> 6) : tv * 64;         /* the shelf's gain: 0 .. 1 .. 2 (Q12) */
     int32_t gq = -1, kq = 0, mq = 0, dgq = 0, dkq = 0, dmq = 0;   /* (gq >= 0: the ramp, Q8) */
     const int32_t *ys;
-    if (!d) { wt = 0; d = 1; }                          /* AMOUNT 0: off, faded out at AMOUNT 1's settings (it cut
+    if (!d) { wt = 0; dt = 32768; d = 1; }              /* AMOUNT 0: off, faded out at AMOUNT 1's settings (it cut
                                                         * to dry in one sample: AMOUNT 1 is not the dry signal, the
                                                         * high-pass, the bias and the make-up still act; the bug hunt) */
-    if (!wt && !dr_w) { dr_ton = 0; dr_tg = 4096; dr_gl = -1; return; }   /* off, or MIX 0: the dry signal, untouched */
+    if (!wt && !dr_w && dr_d == 32768) { dr_ton = 0; dr_tg = 4096; dr_gl = -1; return; }   /* off, or MIX 0: the dry
+                                                        * signal, untouched */
     if (dr_gl >= 0 && d != dr_dl) d = dr_dl + clampi(d - dr_dl, -DR_DSTEP, DR_DSTEP);
     dr_dl = d;
     g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
@@ -706,7 +737,8 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
     }
     dr_gl = g; dr_kl = k; dr_ml = mk;
     ys = dr_os2(m, n, gq < 0 ? g << 8 : gq, dgq, bias, b0);   /* the shaper at 2x (the gain's ramp in it) */
-    if (gq < 0 && wt == 32768 && dr_w == 32768 && tt == 4096 && !dr_ton) {   /* the defaults: the loop before the page */
+    if (gq < 0 && wt == 32768 && dr_w == 32768 && !dt && !dr_d && tt == 4096 && !dr_ton) {   /* the defaults: the loop
+                                                        * before the page */
         int32_t lp1 = dr_lp1, lp2 = dr_lp2, *e = m + n;   /* (0.9.5: the state in locals) */
         for (; m < e; m++) {
             int32_t y = *ys++;
@@ -717,15 +749,25 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
         dr_lp1 = lp1; dr_lp2 = lp2;
         return;
     }
-    if (gq < 0 && dr_tg == tt && dr_w == wt && (dr_ton ? tt != 4096 : tt == 4096)) {   /* settled: the glides at rest, the
-                                                        * shelf running (and staying on) or resting (dr_tg 4096) */
-        if (!dr_ton) dr_settled(m, ys, n, k, mk, tt, wt, 0, 0);   /* (MIX alone: all wet is the defaults) */
-        else if (wt == 32768) dr_settled(m, ys, n, k, mk, tt, wt, 1, 1);
-        else dr_settled(m, ys, n, k, mk, tt, wt, 1, 0);
+    if (gq < 0 && dr_tg == tt && dr_w == wt && dr_d == dt && (wt == 32768 || dt == 32768) &&
+        (dr_ton ? tt != 4096 : tt == 4096)) {           /* settled: the glides at rest (MIX on its law: one gain whole),
+                                                        * the shelf running (and staying on) or resting (dr_tg 4096) */
+        if (!dr_ton) {                                  /* (MIX alone: all wet is the defaults) */
+            if (wt == 32768) dr_settled(m, ys, n, k, mk, tt, wt, dt, 0, 2);
+            else dr_settled(m, ys, n, k, mk, tt, wt, dt, 0, 0);
+        }
+        else if (wt == 32768 && !dt) dr_settled(m, ys, n, k, mk, tt, wt, dt, 1, 1);
+        else if (wt == 32768) dr_settled(m, ys, n, k, mk, tt, wt, dt, 1, 2);
+        else dr_settled(m, ys, n, k, mk, tt, wt, dt, 1, 0);
         return;
     }
     if (gq < 0) { kq = k << 8; mq = mk << 8; }          /* (no ramp: the steps are 0) */
-    dr_general(m, ys, n, kq, mq, dkq, dmq, tt, wt);
+    {
+        int32_t w1 = dr_after(dr_w, wt, (int32_t)n), g1 = dr_after(dr_d, dt, (int32_t)n);
+        dr_general(m, ys, n, kq, mq, dkq, dmq, tt, dr_w << 8, ((w1 - dr_w) << 8) / (int32_t)n, dr_d << 8,
+                   ((g1 - dr_d) << 8) / (int32_t)n);
+        dr_w = w1; dr_d = g1;
+    }
 }
 /* FDRV, and its silence (0.9.8, the residual after a panic): on zero input the rounding leaves fixed points that are
  * not 0 (the high-pass stops anywhere in -63 .. 64, in Q7 from 0.9.10: -64 .. 63 / 128 LSB; the shaper turns -hp
@@ -1836,6 +1878,9 @@ static int32_t dly_d = 4410 << 8, dly_lp, dly_hp, dly_dg = 32768, dly_sg;   /* d
 /* the dry's glide to its target dgt (Q15): 1/512 a sample, as before, and the last 511 one LSB a sample: the old
  * (dgt - dg) >> 9 stopped up to 511 short rising (x 0.98441, -0.137 dB: DEPTH 0 under the bypass after any take, for
  * good; 2026-11-10, tests/py/test_dly_depth0.py); falling it reached dgt already (the shift rounds down) */
+/* MIX's dry (0.9.13, as Textura's MIX): 0 .. 64 the dry whole (the echo rises: FX_DLY_WET), 64 .. 127 the dry falls to
+ * nothing (the echo whole); Q15. It was 32768 - MIX^2 (-0.7 dB at 50, -5.9 dB at 127) */
+#define DLY_DRY(v) ((v) <= 64 ? 32768 : ((127 - (v)) * 32768 + 31) / 63)
 #define DLY_DG_STEP(dg, dgt) do { int32_t e_ = (dgt) - (dg); (dg) += (e_ >> 9) + (e_ > 0 && e_ < 512); } while (0)
 static int32_t dly_sgk = 65536;                 /* the make-up (Q16) the last block ended on: each block ramps from it */
 static int32_t dly_fbk = -1;                    /* FDBK's feedback gain the last block ended on (-1: none yet): DIG / ANA
@@ -2118,8 +2163,8 @@ static void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
         dly_c.ddr = dr;
     }
     if (dly_c.routed) tp_route_run(L, R, n, dly_c.target, dly_c.fb, dly_c.wet);
-    else if (dly_c.sw == 2) dly_loop_ca(L, R, n, dly_c.target, dly_c.col, dly_c.fb, dly_c.wet, 32768 - dly_c.depth * dly_c.depth);
-    else if (dly_c.sw) dly_loop_cd(L, R, n, dly_c.target, dly_c.col, dly_c.fb, dly_c.wet, 32768 - dly_c.depth * dly_c.depth);
+    else if (dly_c.sw == 2) dly_loop_ca(L, R, n, dly_c.target, dly_c.col, dly_c.fb, dly_c.wet, DLY_DRY(dly_c.depth));
+    else if (dly_c.sw) dly_loop_cd(L, R, n, dly_c.target, dly_c.col, dly_c.fb, dly_c.wet, DLY_DRY(dly_c.depth));
     else dly_fade_c(L, R, n, dly_ana, 0, dly_c.target, dly_c.col, dly_c.fb, dly_c.wet, 32768, 0);
     if (FXC_Z) {
         int64_t ee = dly_c.e, m = dly_c.m;
@@ -2160,8 +2205,9 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
     int32_t sw = fx_p[FXP_DL_SW], depth = fx_p[FXP_DL_DEPTH], last = !sw && dly_son;   /* last: the send's last block */
     uint32_t sync = fx_dly_sync_samples, j;
     int32_t target = (int32_t)(sync ? sync : FX_DLY_T[fx_p[FXP_DL_TIME]]);
-    /* MIX (0.9.5, the user): the first echo as loud as the dry at 64 (it was -4.8 dB), +5.9 dB at 127 as before: the
-     * wet 0.875 at 64 (linear below), then up to 1.0; the dry's ease-down (dgt below) as it was */
+    /* MIX (0.9.13, as Textura's): 0 the dry alone; to 64 the dry whole and the echo rising to whole (FX_DLY_WET); 64
+     * both whole (the first echo as loud as the dry); past 64 the echo whole and the dry falling (DLY_DRY); 127 the
+     * echoes alone */
     int32_t wet = FX_DLY_WET[depth], fb = FX_DLY_FB[fx_p[FXP_DL_FDBK] & 127], col = 2000 + fx_p[FXP_DL_TONE] * 240, sg16;
     if (last) sw = dly_son;                                 /* the old EFFECT once more, its send ramped to 0 (sg16) */
     dly_son = (uint8_t)fx_p[FXP_DL_SW];
@@ -2218,9 +2264,9 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
         if (tp_route(L, R, n, sw, target, sg16, fb, wet, depth)) { dly_wk = wet; dly_fbk = fb; return; }
     } else dly_last = (uint8_t)sw;                          /* (what a switch to TAPE fades out) */
     if (sw) FR_FAR(dly_ramp)(dly_m, n, sg16);                       /* (dly_loop sets dly_sgk to sg16) */
-    /* the dry eases down as the mix rises (-0.7 dB at 50, -5.9 dB at 127): a full-mix delay no longer jumps +5 LU (0.8) */
-    if (sw == 2) dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, 32768 - depth * depth, rst);
-    else if (sw) dly_loop(L, R, n, 0, -1, sg16, target, col, fb, wet, 32768 - depth * depth, rst);   /* (the send's
+    /* the dry: whole to MIX 64, then falling to nothing at 127 (DLY_DRY) */
+    if (sw == 2) dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, DLY_DRY(depth), rst);
+    else if (sw) dly_loop(L, R, n, 0, -1, sg16, target, col, fb, wet, DLY_DRY(depth), rst);   /* (the send's
                                                              * mask a constant: one register fewer in either loop) */
     else dly_fade(L, R, n, dly_ana, 0, sg16, target, col, fb, wet, 32768, 0);   /* the tail (OFF): DIG's or ANA's,
                                                              * dly_fade's loop at g 1 (the same integers as dly_loop's) */
@@ -2446,6 +2492,35 @@ static int32_t rv_hsz RH_SP_SEC(".bss.fx_rvhsz");      /* HALL's size from SIZE 
                                                         * wet; 0.9.10); at rest SIZE's own (a SIZE that has not moved
                                                         * renders as before) */
 static uint8_t rv_running;
+/* REVERB MIX (0.9.13, as Textura's MIX): 0 the dry alone; to 64 the dry whole and the reverb rising to whole (the send,
+ * RV_SEND: x MIX / 64, the return x0.5: MIX 127's level of 0.9.12's law); 64 both whole; past 64 the reverb whole and
+ * the dry falling (RV_DRY, rv_dry); 127 the reverb alone. It was a send only, v 258 (254 - v) / 127, the dry always
+ * whole. The send never exceeds 0.9.12's MIX 127 (32766): no line runs hotter than it could. INFINITE (rev_types.c)
+ * keeps 0.9.12's line level at every MIX (its level guard and SUSTAIN level are line levels): the send v 258 at the
+ * latched MIX vl, the return the rest, x RV_SEND(vl) / (2 x 258 vl) (rq / 2^15: x0.99 up to 64 .. x0.5 at 127) */
+#define RV_SEND(v) ((v) >= 64 ? 32766 : (v) * 512)
+#define RV_DRY(v) ((v) <= 64 ? 32768 : ((127 - (v)) * 32768 + 31) / 63)
+#define RV_DRYT(v, t, d) ((t) && !((t) == RV_INF && (d) >= 127) ? RV_DRY(v) : 32768)   /* the dry's target: whole with the
+                                                        * reverb OFF, and on INFINITE's FREEZE,
+                                                        * which takes nothing in: what is played over it stays heard (TYPE RV_INF, DECAY 127) */
+#define RV_DG_STEP 16                                   /* the dry's glide: 16 a sample, whole <-> nothing in 46 ms */
+static int32_t rv_dg RH_SP_SEC(".data.fx_rvdg") = 32768;   /* the dry's gain (Q15) as it glides */
+/* the dry x its gain over n samples, gliding toward t (32768 and there: nothing to do, the samples as they are) */
+static __attribute__((noinline)) void rv_dry(int32_t *L, int32_t *R, uint32_t n, int32_t t)
+{
+    int32_t g = rv_dg;
+    uint32_t j;
+#if defined(DINGHY_HOST) && defined(RV_SCAN_WET)
+    return;                                             /* (tests/c/rev_scan.c: the out is the input whole + the wet) */
+#endif
+    if (g == t && g == 32768) return;
+    for (j = 0; j < n; j++) {
+        if (g != t) g += g < t ? (t - g > RV_DG_STEP ? RV_DG_STEP : t - g) : -(g - t > RV_DG_STEP ? RV_DG_STEP : g - t);
+        L[j] = (int32_t)(((int64_t)L[j] * g + 16384) >> 15);
+        R[j] = (int32_t)(((int64_t)R[j] * g + 16384) >> 15);
+    }
+    rv_dg = g;
+}
 static void fx_predelay(int32_t *x, uint32_t tgt)      /* one control block: x[] delayed by the tap */
 {
     uint32_t j;
@@ -2553,6 +2628,7 @@ static void fx_reset_state(void)
     memset(rev_comb, 0, sizeof rev_comb); memset(rev_ap, 0, sizeof rev_ap); memset(&hl, 0, sizeof hl);
     pd_on = 0; rv_running = 0; rev_reset_state();       /* (the pre-delay line: at its next use; the TYPE's
                                                          * state: rev_types.c) */
+    rv_dg = fx_p[FXP_RV_TYPE] ? RV_DRY(fx_p[FXP_RV_DEPTH]) : 32768;   /* (MIX's dry at once) */
     rh_lfsr = 0xACE1u; bar_lfsr = 0x1D872u; bar_mot_ph = 0;
     /* every voice ends and the shared pickup RLC / body states go to 0 (as at an engine change), and this block's
      * voice output is dropped (fx_process): the tails a take left under the gate's -60 dBFS rang on and the next take

@@ -27,12 +27,1138 @@ changes:
   - {match: "*/DYNO/*/*/k81v*", metric: H3, min: -24.3, max: -23.0, reason: "upper register (SND2, 42846aed): the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S); user-approved by ear 2026-11-14"}
   - {match: "*/FELT/*/*/k81v*", metric: H2, min: -15.7, max: -8.3, reason: "upper register (SND2, 42846aed): the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S); level within 0.3 dB; user-approved by ear 2026-11-14"}
   - {match: "*/ST77/*/*/k81v*", metric: H2, min: -15.0, max: -3.5, reason: "upper register (SND2, 42846aed): the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S); level within 0.3 dB; user-approved by ear 2026-11-14"}
-  - {match: "*/ST77/*/*/k81v*", metric: H3, min: -30.0, max: -28.3, reason: "upper register (SND2, 42846aed): the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S); user-approved by ear 2026-11-14"}
+  - {match: "*/ST77/*/*/k81v*", metric: H3, min: -30.0, max: -27.9, reason: "upper register (SND2, 42846aed): the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S); HQ -28.16 with the exact 1x pickup (hq-uplift); user-approved by ear 2026-11-14"}
   - {match: "*/SUIT/*/*/k81v*", metric: H2, min: -13.8, max: -4.5, reason: "upper register (SND2, 42846aed): the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S); level within 0.3 dB; user-approved by ear 2026-11-14"}
   - {match: "*/SUIT/*/*/k81v*", metric: H3, min: -27.1, max: -20.0, reason: "upper register (SND2, 42846aed): the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S); user-approved by ear 2026-11-14"}
-
-# ---- 2. HQ uplift (c9db7e67, merged 351249d4): measured on rel-0912 351249d4 alone (before SND3), its only unlisted cells
-  - {match: "hq/ST77/FX/*/k81v127", metric: H3, min: -28.5, max: -27.9, reason: "HQ uplift (c9db7e67) on SND2's upper-register ceiling: hq ST77 FX k81v127 H3 -51.15 -> -79.31 (move -28.16, SND2's entry ends at -28.3); release diff fast on 351249d4 alone, 2026-11-14; the HQ owner to confirm"}
+# ---- 2. The MIX law (E2): DELAY / DRIVE / REVERB MIX; the presets keep their values, so their wet / dry
+# balance moves (coordinator sign-off pending)
+  - match: '*/BALLAD/*'
+    metric: H3
+    min: 2.7
+    max: 3.7
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F07''s REVERB MIX 48
+      wet +1.7 dB, DELAY 12 wet +1.2 dB, the dry whole: more plate / echo in the harmonic bands (the balance only: tests/mix_law_proof.json
+      method)'
+  - match: '*/DREAM/*'
+    metric: H3
+    min: 2.5
+    max: 4.6
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F18''s REVERB MIX 76
+      is past 64: the dry -1.8 dB, the wet +1.5 dB (wet / dry +3.3 dB); DELAY 21 wet +1.1 dB: more hall against the dry,
+      so lower level / loudness and more reverb energy in every band; at the last release''s ratio (MIX 19 / 54) every cell
+      is back (tests/mix_law_proof.json)'
+  - match: '*/DREAM/*'
+    metric: H4
+    min: 2.7
+    max: 4.7
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F18''s REVERB MIX 76
+      is past 64: the dry -1.8 dB, the wet +1.5 dB (wet / dry +3.3 dB); DELAY 21 wet +1.1 dB: more hall against the dry,
+      so lower level / loudness and more reverb energy in every band; at the last release''s ratio (MIX 19 / 54) every cell
+      is back (tests/mix_law_proof.json)'
+  - match: '*/DREAM/*'
+    metric: cb
+    min: -7.6
+    max: -1.0
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F18''s REVERB MIX 76
+      is past 64: the dry -1.8 dB, the wet +1.5 dB (wet / dry +3.3 dB); DELAY 21 wet +1.1 dB: more hall against the dry,
+      so lower level / loudness and more reverb energy in every band; at the last release''s ratio (MIX 19 / 54) every cell
+      is back (tests/mix_law_proof.json)'
+  - match: '*/DREAM/*'
+    metric: cent
+    min: -0.4
+    max: 0.7
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F18''s REVERB MIX 76
+      is past 64: the dry -1.8 dB, the wet +1.5 dB (wet / dry +3.3 dB); DELAY 21 wet +1.1 dB: more hall against the dry,
+      so lower level / loudness and more reverb energy in every band; at the last release''s ratio (MIX 19 / 54) every cell
+      is back (tests/mix_law_proof.json)'
+  - match: '*/DREAM/*'
+    metric: keyup
+    min: 2.2
+    max: 4.1
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F18''s REVERB MIX 76
+      is past 64: the dry -1.8 dB, the wet +1.5 dB (wet / dry +3.3 dB); DELAY 21 wet +1.1 dB: more hall against the dry,
+      so lower level / loudness and more reverb energy in every band; at the last release''s ratio (MIX 19 / 54) every cell
+      is back (tests/mix_law_proof.json)'
+  - match: '*/DREAM/*'
+    metric: level
+    min: -2.6
+    max: -1.0
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F18''s REVERB MIX 76
+      is past 64: the dry -1.8 dB, the wet +1.5 dB (wet / dry +3.3 dB); DELAY 21 wet +1.1 dB: more hall against the dry,
+      so lower level / loudness and more reverb energy in every band; at the last release''s ratio (MIX 19 / 54) every cell
+      is back (tests/mix_law_proof.json)'
+  - match: '*/DREAM/*'
+    metric: lu
+    min: -2.6
+    max: -0.5
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F18''s REVERB MIX 76
+      is past 64: the dry -1.8 dB, the wet +1.5 dB (wet / dry +3.3 dB); DELAY 21 wet +1.1 dB: more hall against the dry,
+      so lower level / loudness and more reverb energy in every band; at the last release''s ratio (MIX 19 / 54) every cell
+      is back (tests/mix_law_proof.json)'
+  - match: '*/FELT/*'
+    metric: keyup
+    min: 1.7
+    max: 2.7
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): the TYPE''s default
+      reverb a little wetter (wet +0.5 .. 1.2 dB at its MIX), a louder tail after the key-up (PRESET / FX cells, exempt
+      from the key-up ceiling)'
+  - match: '*/MARIMBA/*'
+    metric: clk
+    min: -184.9
+    max: -183.9
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): the TYPE''s default
+      REVERB MIX 30 wet +1.0 dB: the key-up / decay windows near the 1-LSB floor (-104 .. -117 dBFS) read the louder tail;
+      clk where the last release''s ratio was undefined (200)'
+  - match: '*/MARIMBA/*'
+    metric: decay
+    min: -9.6
+    max: -2.7
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): the TYPE''s default
+      REVERB MIX 30 wet +1.0 dB: the key-up / decay windows near the 1-LSB floor (-104 .. -117 dBFS) read the louder tail;
+      clk where the last release''s ratio was undefined (200)'
+  - match: '*/MARIMBA/*'
+    metric: keyup
+    min: 1.6
+    max: 14.3
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): the TYPE''s default
+      REVERB MIX 30 wet +1.0 dB: the key-up / decay windows near the 1-LSB floor (-104 .. -117 dBFS) read the louder tail;
+      clk where the last release''s ratio was undefined (200)'
+  - match: '*/RESO_SWEEP/*'
+    metric: H2
+    min: 3.4
+    max: 4.9
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F11''s DELAY 14 wet
+      +1.2 dB, REVERB 22 +0.7 dB; H2 k81 v20 the engine''s own (as with the delay and reverb off in both releases: tests/mix_law_proof.json),
+      H3 the echo''s sum'
+  - match: '*/RESO_SWEEP/*'
+    metric: H3
+    min: 2.7
+    max: 4.6
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F11''s DELAY 14 wet
+      +1.2 dB, REVERB 22 +0.7 dB; H2 k81 v20 the engine''s own (as with the delay and reverb off in both releases: tests/mix_law_proof.json),
+      H3 the echo''s sum'
+  - match: '*/RESO_SWEEP/*'
+    metric: cb
+    min: 1.5
+    max: 5.1
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F11''s DELAY 14 wet
+      +1.2 dB, REVERB 22 +0.7 dB; H2 k81 v20 the engine''s own (as with the delay and reverb off in both releases: tests/mix_law_proof.json),
+      H3 the echo''s sum'
+  - match: '*/SUIT_TREM/*'
+    metric: cb
+    min: 15.0
+    max: 71.4
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F08''s REVERB 24 wet
+      +0.8 dB; cb moves only in the k28 v20 cell at -128 .. -199 phon (the floor, no sound)'
+  - match: '*/TAPE_ECHO/*'
+    metric: cb
+    min: 1.1
+    max: 2.8
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F17''s DELAY 29 wet
+      +1.1 dB (the dry whole), REVERB 22 +0.7 dB: more echo in the critical bands'
+  - match: '*/WOOD_ECHO/*'
+    metric: cb
+    min: 1.0
+    max: 2.5
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F16''s DELAY 22 wet
+      +1.1 dB, REVERB 38 +1.4 dB: more echo / hall in the bands and after the key-up (a preset: exempt from the key-up ceiling)'
+  - match: '*/WOOD_ECHO/*'
+    metric: keyup
+    min: 1.8
+    max: 5.1
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F16''s DELAY 22 wet
+      +1.1 dB, REVERB 38 +1.4 dB: more echo / hall in the bands and after the key-up (a preset: exempt from the key-up ceiling)'
+  - match: '*/DREAM/*'
+    metric: peak
+    min: -2.9
+    max: -1.0
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F18''s REVERB MIX 76
+      is past 64: the dry -1.8 dB, the wet +1.5 dB (wet / dry +3.3 dB); DELAY 21 wet +1.1 dB: more hall against the dry,
+      so lower level / loudness and more reverb energy in every band; at the last release''s ratio (MIX 19 / 54) every cell
+      is back (tests/mix_law_proof.json)'
+  - match: '*/DREAM/*'
+    metric: H2
+    min: -3.9
+    max: -2.5
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): F18''s REVERB MIX 76
+      is past 64: the dry -1.8 dB, the wet +1.5 dB (wet / dry +3.3 dB); DELAY 21 wet +1.1 dB: more hall against the dry,
+      so lower level / loudness and more reverb energy in every band; at the last release''s ratio (MIX 19 / 54) every cell
+      is back (tests/mix_law_proof.json) (k81 v64 with rel-0912''s upper register)'
+  - match: '*/LUSH_CHO/PRESET/*/k81v127'
+    metric: H3
+    min: -29.5
+    max: -26.5
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling) with the upper register
+      (SND2): H3 at -96 .. -95 dBFS, at the reverb grain''s judging floor; rel-0912 alone reads 0.2 .. 0.4 dB lower and
+      is not judged. The drop is SND2''s cleaner upper register; the MIX law''s wetter reverb lifts the bin over the floor'
+  - match: hq/STAGE_77/PRESET/*/k93v110
+    metric: H3
+    min: -22.5
+    max: -19.5
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling) with the upper register
+      (SND2): H3 at -96 .. -95 dBFS, at the reverb grain''s judging floor; rel-0912 alone reads 0.2 .. 0.4 dB lower and
+      is not judged. The drop is SND2''s cleaner upper register; the MIX law''s wetter reverb lifts the bin over the floor'
+  - match: hq/MARIMBA/FX/B/k84v40
+    metric: keyup
+    silent: false
+    min: -46.0
+    max: -36.0
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): the default REVERB MIX
+      30 wet +1.0 dB: the last release''s key-up window was exact zeros in every shift, the candidate''s tail reaches it
+      (-41 dB; a fast-grid cell: make quick)'
+  - match: fm1/MARIMBA/PRESET/B/k74v20
+    metric: keyup
+    silent: false
+    min: -50.0
+    max: -40.0
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): the MARIMBA reverb''s
+      wet +1.0 dB (MIX 22 / 30): the last release''s keyup window was exact zeros, the candidate''s tail reaches it (-45
+      dB)'
+  - match: fm1/MARIMBA/PRESET/B/k89v40
+    metric: decay
+    silent: false
+    min: 68.0
+    max: 78.0
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): the MARIMBA reverb''s
+      wet +1.0 dB (MIX 22 / 30): the last release''s decay window was exact zeros, the candidate''s tail reaches it (73)'
+  - match: fm1/MARIMBA/FX/A/k81v40
+    metric: decay
+    silent: false
+    min: 79.0
+    max: 89.0
+    reason: 'E2 MIX law (0..64 the dry whole and the wet rising to whole, past 64 the dry falling): the MARIMBA reverb''s
+      wet +1.0 dB (MIX 22 / 30): the last release''s decay window was exact zeros, the candidate''s tail reaches it (84)'
+  - match: fm1/DREAM/PRESET/A/k28v40
+    metric: H3
+    min: 3.8
+    max: 4.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k28v40
+    metric: H6
+    min: 3.2
+    max: 3.9
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k28v64
+    metric: H3
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k28v64
+    metric: H4
+    min: 3.2
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k28v96
+    metric: H3
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k28v96
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k28v96
+    metric: H5
+    min: 3.2
+    max: 3.9
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k28v110
+    metric: H3
+    min: 3.2
+    max: 3.9
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k28v110
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k28v110
+    metric: H5
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k28v127
+    metric: H3
+    min: 3.5
+    max: 4.2
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k28v127
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k28v127
+    metric: H5
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k33v64
+    metric: H3
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k33v96
+    metric: H3
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k33v96
+    metric: H4
+    min: 3.2
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k33v110
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k33v110
+    metric: H5
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k33v127
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k33v127
+    metric: H5
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k45v20
+    metric: inh
+    min: 3.6
+    max: 4.3
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k45v40
+    metric: inh
+    min: 3.6
+    max: 4.3
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k45v64
+    metric: inh
+    min: 3.6
+    max: 4.3
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k45v96
+    metric: H6
+    min: 3.5
+    max: 4.2
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k45v96
+    metric: inh
+    min: 3.7
+    max: 4.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k45v110
+    metric: H5
+    min: 3.4
+    max: 4.1
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k45v110
+    metric: H6
+    min: 3.5
+    max: 4.2
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k45v110
+    metric: inh
+    min: 3.6
+    max: 4.3
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k45v127
+    metric: H4
+    min: 3.6
+    max: 4.3
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k45v127
+    metric: H5
+    min: 3.8
+    max: 4.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k45v127
+    metric: H6
+    min: 3.4
+    max: 4.1
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k45v127
+    metric: inh
+    min: 3.6
+    max: 4.3
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k69v20
+    metric: inh
+    min: 3.3
+    max: 4.0
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k69v40
+    metric: inh
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/A/k69v64
+    metric: inh
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v40
+    metric: H3
+    min: 3.8
+    max: 4.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v40
+    metric: H6
+    min: 3.2
+    max: 3.9
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v64
+    metric: H3
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v64
+    metric: H4
+    min: 3.2
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v96
+    metric: H3
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v96
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v96
+    metric: H5
+    min: 3.2
+    max: 3.9
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v110
+    metric: H3
+    min: 3.2
+    max: 3.9
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v110
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v110
+    metric: H5
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v127
+    metric: H3
+    min: 3.5
+    max: 4.2
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v127
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k28v127
+    metric: H5
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k33v64
+    metric: H3
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k33v96
+    metric: H3
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k33v96
+    metric: H4
+    min: 3.2
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k33v110
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k33v110
+    metric: H5
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k33v127
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k33v127
+    metric: H5
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k45v20
+    metric: inh
+    min: 3.6
+    max: 4.3
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k45v40
+    metric: inh
+    min: 3.6
+    max: 4.3
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k45v64
+    metric: inh
+    min: 3.6
+    max: 4.3
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k45v96
+    metric: H6
+    min: 3.5
+    max: 4.2
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k45v96
+    metric: inh
+    min: 3.7
+    max: 4.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k45v110
+    metric: H5
+    min: 3.4
+    max: 4.1
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k45v110
+    metric: H6
+    min: 3.5
+    max: 4.2
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k45v110
+    metric: inh
+    min: 3.6
+    max: 4.3
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k45v127
+    metric: H4
+    min: 3.6
+    max: 4.3
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k45v127
+    metric: H5
+    min: 3.8
+    max: 4.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k45v127
+    metric: H6
+    min: 3.4
+    max: 4.1
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k45v127
+    metric: inh
+    min: 3.6
+    max: 4.3
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k69v20
+    metric: inh
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k69v40
+    metric: inh
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/DREAM/PRESET/B/k69v64
+    metric: inh
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: fm1/RESO_SWEEP/PRESET/B/k81v20
+    metric: H2
+    min: 4.1
+    max: 4.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the engine''s own harmonic, as with the delay / reverb off in both releases (the last release''s
+      truncated delay dry gain masked it at the int16 grain)'
+  - match: hq/DREAM/PRESET/A/k28v40
+    metric: H4
+    min: 3.2
+    max: 3.9
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k28v40
+    metric: H6
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k28v64
+    metric: H3
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k28v64
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k28v96
+    metric: H4
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k28v96
+    metric: H5
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k28v110
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k28v110
+    metric: H5
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k28v127
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k28v127
+    metric: H5
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k33v64
+    metric: H3
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k33v110
+    metric: H4
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k33v110
+    metric: H5
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k33v127
+    metric: H4
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k33v127
+    metric: H5
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k45v40
+    metric: inh
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k45v64
+    metric: inh
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k45v96
+    metric: H6
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k45v96
+    metric: inh
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k45v110
+    metric: inh
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k45v127
+    metric: H6
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k45v127
+    metric: inh
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k57v40
+    metric: inh
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k57v64
+    metric: inh
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k57v96
+    metric: inh
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k57v110
+    metric: inh
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k57v127
+    metric: inh
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k69v20
+    metric: inh
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k69v40
+    metric: inh
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/A/k69v64
+    metric: inh
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k28v40
+    metric: H4
+    min: 3.2
+    max: 3.9
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k28v40
+    metric: H6
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k28v64
+    metric: H3
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k28v64
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k28v96
+    metric: H4
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k28v96
+    metric: H5
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k28v110
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k28v110
+    metric: H5
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k28v127
+    metric: H4
+    min: 3.1
+    max: 3.8
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k28v127
+    metric: H5
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k33v64
+    metric: H3
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k33v110
+    metric: H4
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k33v110
+    metric: H5
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k33v127
+    metric: H4
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k33v127
+    metric: H5
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k45v20
+    metric: inh
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k45v40
+    metric: inh
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k45v64
+    metric: inh
+    min: 3.0
+    max: 3.7
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k45v96
+    metric: H6
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k45v96
+    metric: inh
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k45v110
+    metric: inh
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k45v127
+    metric: H6
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k45v127
+    metric: inh
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k57v20
+    metric: inh
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k57v40
+    metric: inh
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k57v64
+    metric: inh
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k57v96
+    metric: inh
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k57v110
+    metric: inh
+    min: 2.7
+    max: 3.4
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k57v127
+    metric: inh
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k69v20
+    metric: inh
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k69v40
+    metric: inh
+    min: 2.9
+    max: 3.6
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
+  - match: hq/DREAM/PRESET/B/k69v64
+    metric: inh
+    min: 2.8
+    max: 3.5
+    ceiling_proof: tests/mix_law_proof.json
+    reason: 'E2 MIX law: the preset''s wet / dry balance (under the ceiling at the last release''s ratio, MIX {''89'': 19,
+      ''91'': 54}), not distortion'
 
 # ---- 3. SND3: RESPONSE FULL's convex velocity level curve (rhodes.c RH_DYN_V, tools/gen_rh_dyn.py; the user chose it by ear,
 # 2026-11-14): a gain on the electric piano's output only (the same swing and harmonics), A only (B, LIGHT, untouched), v127

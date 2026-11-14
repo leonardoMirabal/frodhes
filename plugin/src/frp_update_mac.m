@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* CHECK FOR UPDATES on macOS (plugin/src/frp_update.h): the request through NSURLSession (Foundation: TLS verified
- * by the system, an ephemeral session: no cookie, no cache, no credential), the release page through NSWorkspace.
+ * by the system, an ephemeral session: no cookie, no cache, no credential), the browser and the package through
+ * NSWorkspace.
  * Manual reference counting, as plugin/gui_mac.m. */
 #import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
@@ -11,7 +12,7 @@
 static pthread_mutex_t mk = PTHREAD_MUTEX_INITIALIZER;
 static NSURLSessionDataTask *cur;                /* the request under way (retained), for frp_update_fetch_cancel */
 
-int frp_update_fetch(const char *url, char *buf, size_t cap, size_t *len, int timeout_ms)
+int frp_update_fetch(const char *url, char *buf, size_t cap, size_t *len, int timeout_ms, int follow)
 {
     __block int status = -1;
     __block size_t got = 0;
@@ -35,11 +36,13 @@ int frp_update_fetch(const char *url, char *buf, size_t cap, size_t *len, int ti
         cfg.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
         rq = [NSMutableURLRequest requestWithURL:u];
         [rq setValue:@"Frodhes" forHTTPHeaderField:@"User-Agent"];   /* (GitHub's API wants one; no version, no id) */
-        [rq setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
+        [rq setValue:follow ? @"application/octet-stream" : @"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
         s = [NSURLSession sessionWithConfiguration:cfg];
         sem = dispatch_semaphore_create(0);
         t = [s dataTaskWithRequest:rq completionHandler:^(NSData *d, NSURLResponse *r, NSError *e) {
-            if (!e && [r isKindOfClass:[NSHTTPURLResponse class]]) {
+            /* (the session follows redirects: the API's answer must come from its own URL, a package's from https) */
+            if (!e && [r isKindOfClass:[NSHTTPURLResponse class]] && [[r.URL scheme] isEqualToString:@"https"] &&
+                (follow || [r.URL isEqual:u])) {
                 size_t n = d.length < cap - 1 ? d.length : cap - 1;
                 status = (int)((NSHTTPURLResponse *)r).statusCode;
                 memcpy(buf, d.bytes, n);
@@ -74,11 +77,21 @@ void frp_update_fetch_cancel(void)
     [cur cancel];
     pthread_mutex_unlock(&mk);
 }
-int frp_update_open_page(void)
+int frp_update_open_url(const char *url)
 {
-    int ok;
+    int ok = 0;
     @autoreleasepool {
-        ok = [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@FRP_UPDATE_PAGE]];
+        NSURL *u = [NSURL URLWithString:[NSString stringWithUTF8String:url]];
+        if (u && [[u scheme] isEqualToString:@"https"]) ok = [[NSWorkspace sharedWorkspace] openURL:u];
+    }
+    return ok ? 0 : -1;
+}
+int frp_update_reveal(const char *path)          /* the .pkg in Installer (its default application) */
+{
+    int ok = 0;
+    @autoreleasepool {
+        NSString *p = [NSString stringWithUTF8String:path];
+        if (p.length) ok = [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:p]];
     }
     return ok ? 0 : -1;
 }
