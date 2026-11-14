@@ -222,6 +222,57 @@ def test_jump_rows_on_the_host(monkeypatch, suite):
     if suite == "marimba_jump":
         want.append(("MARIMBA re ST77, A3-E4-A4 v100", "LUFS 0..1 s"))
         assert h.MLEVEL_DB == -1.7
+        want.append(("delay DIG 50: switched under a chord", "the step at on / at off (fx_toggle)"))   # (E2: +2.02)
+    else:                                          # (E2, T2 0.9.12: the echoes on a whole dry, +1.56 / +2.19 LU)
+        want += [("delay DIG 50: on vs off", "held on"), ("delay ANA 50: on vs off", "held on"),
+                 ("reverb 50 (no switch: REV 0 -> 50): switched under a chord", "the step at on / at off (fx_toggle)")]
     for k in want:
         assert k in rows and rows[k]["status"] == "ok", (k, rows.get(k))
     assert rows[("FX bypass (CC 111) with everything on", "re no effects")]["status"] == "info"
+
+
+# ---- T2 0.9.12 (2026-11-14): the rows the FM-1 failed on measures 0.9.10's dry width or 0.9.12's MIX law outdated
+def _vsuite(monkeypatch, suite):
+    monkeypatch.setattr(h, "ENGINE", "marimba" if suite.startswith("marimba") else "vibes")
+    V = h.VRig("usb", host=1)
+    S = h.VSuite(suite, V)
+    h.VTESTS[suite](V, S)
+    return {q["check"]: q for q in S.rows}
+
+
+def _num(cell):
+    return float(cell.split()[0].replace("+", ""))
+
+
+@pytest.mark.parametrize("suite, check", [("vibes_vel", "keys F3..F6: neighbour step"),
+                                          ("marimba_vel", "keys C2..C7: neighbour step")])
+def test_key_evenness_as_heard(monkeypatch, suite, check):
+    """the dry width (fx_width: S = -0.2 x the 570-4000 Hz band 10 ms back) is a 100 Hz comb on one channel: USB L
+    zigzags 2.5 dB key to key (the FM-1 2.48-2.58 on USB L and the jack since 0.9.10), the stereo sum 0.47 / 0.48
+    (0.9.9's FM-1: 0.48). The gate reads stereo; the one-channel row is information and shows the comb"""
+    rows = _vsuite(monkeypatch, suite)
+    st, one = rows[check], rows[check + ", one channel"]
+    assert st["status"] == "ok" and _num(st["usb"]) <= 1.0, st
+    assert one["status"] == "info" and _num(one["usb"]) >= 2.0, one
+
+
+@pytest.mark.parametrize("suite", ["vibes_fx", "marimba_fx"])
+def test_predelay_and_delay_mix_rows(monkeypatch, suite):
+    """REVERB PRE-DELAY by the side signals' cross-correlation (the envelopes read 0 ms for 40 under the width's own
+    side); DELAY DEPTH 50 -> 127 by the 1st echo's own level, E2's +2.14 dB (FX_DLY_WET 25600 -> 32768; the old row
+    read the 2nd echo re the 1st at 127, where the dry is gone)"""
+    rows = _vsuite(monkeypatch, suite)
+    for x, ex in ((64, 40), (127, 80)):
+        r = [q for k, q in rows.items() if k.startswith("REVERB PRE-DELAY") and k.endswith(f" {x}")][0]
+        assert r["status"] == "ok" and abs(_num(r["usb"]) - ex) <= 8, r
+    r = rows["DELAY DEPTH 50 -> 127"]
+    assert r["status"] == "ok" and abs(_num(r["usb"]) - 2.14) <= 0.5, r
+
+
+def test_effects_reverb_127_is_the_hall_alone():
+    """E2: REV 127 is the reverb alone; 'the direct sound' is the hall's early part, -8.1 LU (target -8.1 +- 3)"""
+    r, rep = h.HostRig(1), {}
+    ok, msg = h.effects(r, rep)
+    row = [q for q in rep["effects"]["rows"] if q["name"] == "reverb 127"][0]
+    assert ok, msg
+    assert abs(row["delta_lu"] + 8.1) <= 0.5 and row["lr_corr"] < 0.3, row

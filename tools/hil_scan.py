@@ -951,6 +951,12 @@ def effects(r, rep):
         wide = row["lr_corr"] < 0.8
         target = -2.5 if wide and name.startswith("chorus") else 0.0       # the chorus' width compensation (0.8;
         # the phaser has none: FXALL_EXPECT's note)
+        if name == "reverb 127":
+            # THRESHOLD (2026-11-14, T2 0.9.12): E2's MIX law (0.9.12): 127 is the reverb alone, so the "direct
+            # sound" (0..0.25 s) is the hall's early part, the dry gone (L/R correlation 0.04): target 0 -> -8.1 LU,
+            # the same +-3 (FM-1 -8.07, host -8.10; the whole 1.1 s -3.3 dB; 0.9.11, the dry whole: FM-1 +0.7,
+            # host +0.54)
+            target = -8.1
         if abs(row["delta_lu"] - target) > lim or clip or row["clicks"]:
             bad.append(name)
     rep["effects"] = dict(dry_db=db(ref[i0:i0 + int(1.1 * FS)]), rows=rows)
@@ -2979,10 +2985,22 @@ def vibes_vel(V, S):
 
     def med_dev(lv, idx):
         return [abs(lv[i] - np.median(lv[max(0, i - 3):i + 4])) for i in idx]
-    S.check("keys F3..F6: neighbour step", "every key, v100", {s: v and float(np.abs(np.diff(v[0][ins])).max()) for s, v in vals.items()},
+    # THRESHOLD (2026-11-14, T2 0.9.12): the evenness gates on USB stereo (as heard). 0.9.10's dry width (fx.c
+    # fx_width: L = M + S, R = M - S, S = -0.2 x the 570-4000 Hz band 10 ms back) is a 100 Hz comb on each channel
+    # alone, +1.6 / -1.9 dB at a bar's fundamental by its pitch: one channel zigzags key to key (0.9.10 / 0.9.11 /
+    # 0.9.12 FM-1 2.5-2.6 dB on USB L and the jack alike, the host the same; 0.9.9 0.48), the stereo sum does not
+    # (L^2 + R^2 cancels S). USB L and the jack (one channel) stay as information, their difference flagged
+    keys_st = S.usb(lambda q: np.array([lu(cut(t.usb, i, 0, 0.9)) for i in t.on(q)]))
+    S.check("keys F3..F6: neighbour step", "every key, v100, USB stereo (as heard)",
+            {s: None if v is None else float(np.abs(np.diff(v[ins])).max()) for s, v in keys_st.items()},
             lambda d: d <= 1.5, "<= 1.5 dB (bar_scan S9)", fmt=lambda d: f"{d:.2f} dB")
-    S.check("keys F3..F6: off the +-3-key median", "", {s: v and float(max(med_dev(v[0], ins))) for s, v in vals.items()},
+    S.check("keys F3..F6: off the +-3-key median", "USB stereo (as heard)",
+            {s: None if v is None else float(max(med_dev(v, ins))) for s, v in keys_st.items()},
             lambda d: d <= 1.5, "<= 1.5 dB", fmt=lambda d: f"{d:.2f} dB")
+    S.check("keys F3..F6: neighbour step, one channel", "every key, v100, USB L vs jack (the dry width's comb)",
+            {s: v and float(np.abs(np.diff(v[0][ins])).max()) for s, v in vals.items()},
+            lambda d: True, "information (one channel: the width's +1.6 / -1.9 dB comb)", level=True, info=True,
+            fmt=lambda d: f"{d:.2f} dB")
     S.check("keys outside F3..F6 (every 3rd): off the median", "21..50, 92..107",
             {s: v and float(max(med_dev(v[0], out_))) for s, v in vals.items()}, lambda d: d <= 3, "<= 3 dB",
             fmt=lambda d: f"{d:.2f} dB")
@@ -3473,8 +3491,23 @@ def vibes_fx(V, S, stim=None, extra=()):
             S.per(lambda q: (echo_levels(xs(T[0], q), T0, 1)[0], echo_levels(xs(T[50], q), T0, 1)[0])),
             lambda v: v[1] - v[0] >= 6, "50 stands >= 6 dB over 0 (0: the note's own residue)",
             fmt=lambda v: f"{v[0]:.1f} -> {v[1]:.1f} dB")
-    S.check("DELAY DEPTH 50 -> 127", "the 1st echo", S.per(lambda q: echo_levels(xs(T[127], q), T0, 1)[0] - echo_levels(xs(T[50], q), T0, 1)[0]),
-            lambda v: v >= 3, ">= +3 dB", level=True)
+    # THRESHOLD (2026-11-14, T2 0.9.12): E2's MIX law (0.9.12) puts the echo whole from 64 (FX_DLY_WET 25600 at 50,
+    # 32768 at 127: +2.14 dB) and the dry out at 127, so 127 has no direct sound: its first sound is the 1st echo (the
+    # onset lands there) and the row read the 2nd echo re the 1st (FM-1 -0.04 / -0.08, host -0.05; 0.9.11 +8.3, the
+    # dry whole and the echo still rising). Now the 1st echo's own level: 50's re its direct + the direct's peak, 127's
+    # the take's first peak; the law's +2.14 dB +-1
+    def echo1_abs(t, q, wet_only=False):
+        """the 1st echo's peak (dB): echo_levels' window around the direct's peak + T0, or (wet_only) the same
+        window around the take's first peak, which is the echo (the envelope still rises at 50 ms on the bars)"""
+        x = xs(t, q)
+        e = env_lin(x)
+        p0 = int(np.argmax(e[:50]))
+        if not wet_only:
+            return 20 * np.log10(e[p0] + 1e-12) + echo_levels(x, T0, 1)[0]
+        return 20 * np.log10(e[max(0, p0 - max(10, int(0.1 * T0))):p0 + max(15, int(0.1 * T0))].max() + 1e-12)
+    S.check("DELAY DEPTH 50 -> 127", "the 1st echo's level (127: the echo alone, MIX law)",
+            S.per(lambda q: echo1_abs(T[127], q, True) - echo1_abs(T[50], q)),
+            lambda v: abs(v - 2.14) <= 1.0, "+2.1 +-1 dB (E2: echo x 25600 -> 32768)", level=True)
     dl100 = with_(dlb, ("DL_DEPTH", 100))
     dtk = {}
     for x in (0, P["DL_TIME"]["de"], 127):
@@ -3566,19 +3599,27 @@ def vibes_fx(V, S, stim=None, extra=()):
             fmt=lambda v: " / ".join(f"{c:+.1f}" for c in v[:3]) + " dB", floor=rf)
     T = {x: run(f"reverb-pdly-{x}", with_(r100, ("RV_PREDLY", x)), ST_STAC) for x in (0, 64, 127)}
     def side_lag(t, t0, q):
-        """the hall's side signal (L - R; the dry VIBES is mono) of t against PDLY 0's: the lag (ms) of best
-        correlation of their dB envelopes (floor at -60 dB), 0..120 ms. Round 1 took a 10 % threshold crossing, which
-        the hall's own build-up moved (23 ms for 40)"""
-        def env(tk):
+        """the hall's side signal (L - R) of t against PDLY 0's: the lag (ms, 0..120) of their best normalised
+        cross-correlation over 0.5 s. The pre-delay delays the hall's input alone, so the hall's side is PDLY 0's
+        shifted (host r 0.96 / 0.88 at 64 / 127). THRESHOLD (2026-11-14, T2 0.9.12): it compared the side's dB
+        envelopes; since 0.9.10's dry width (fx_width: a side of its own, ~20 dB under the hall's, from the dry note
+        on, at every PDLY) and that hall's slow build-up (~100 ms) the envelopes read 64: 0 ms (expected 40) and
+        127: 97-117 ms (80) on every FM-1 take of 0.9.10 / 0.9.11 / 0.9.12, the host 0 / 0 (0.9.11) and 0 / 102;
+        the signals on the host: 42.8 / 84.9 ms. Round 1 took a 10 % threshold crossing, which the hall's own
+        build-up moved (23 ms for 40)"""
+        def side(tk):
             i = tk.on(q)[0]
-            e_ = edb1(((tk.usb[:, 0] - tk.usb[:, 1]) / 2)[i:i + int(0.6 * FS)])
-            return np.maximum(e_, e_.max() - 60)
-        a_, b_ = env(t), env(t0)
-        c_ = [np.corrcoef(a_[k:k + 400], b_[:400])[0, 1] for k in range(0, 121)]
-        return float(np.argmax(c_))
+            return ((tk.usb[:, 0] - tk.usb[:, 1]) / 2)[i:i + int(0.62 * FS)]
+        a_, b_ = side(t), side(t0)
+        n = int(0.5 * FS)
+        b_ = b_[:n]
+        nb = np.sqrt(np.dot(b_, b_)) + 1e-12
+        c_ = [np.dot(a_[k:k + n], b_) / (nb * (np.sqrt(np.dot(a_[k:k + n], a_[k:k + n])) + 1e-12))
+              for k in range(0, min(int(0.12 * FS), len(a_) - n) + 1)]
+        return 1000 * float(np.argmax(c_)) / FS
     for x in (64, 127):
         ex = pdly_ms(x)
-        S.check(f"REVERB PRE-DELAY {nm('RV_PREDLY')} {x}", f"the side signal re PDLY 0's (envelope lag), expected {ex:.0f} ms",
+        S.check(f"REVERB PRE-DELAY {nm('RV_PREDLY')} {x}", f"the side signal re PDLY 0's (cross-correlation lag), expected {ex:.0f} ms",
                 S.usb(lambda q: side_lag(T[x], T[0], q)), lambda v: abs(v - ex) <= 15, "within 15 ms (USB stereo)",
                 fmt=lambda v: f"{v:.0f} ms")
 
@@ -3699,6 +3740,18 @@ def _jump(V, S, jumps, ch=None, extra=()):
         if ph and name in FXALL_EXPECT:
             tgt, lim = FXALL_EXPECT[name]
         tlim = 4.0 if comp else JUMP_LU
+        # THRESHOLD (2026-11-14, T2 0.9.12): E2's MIX law (0.9.12) keeps the dry whole up to MIX 64 and brings the
+        # effect in on top (0.9.11: the delay's dry fell 0.7-1.1 LU at 50 to make room; the reverb's send at 50 was
+        # 0.63, now 0.78, +1.8 dB of hall). Switched on at 50 the echoes / the hall add to an untouched dry, so the
+        # step is their share: delay 50 held on vs off 1.5 -> 2.5 LU (VIBES FM-1 DIG +1.56 / +1.63 / +1.65, ANA +2.22 /
+        # +2.20 / +2.21 (stereo / USB L / jack); host +1.56 / +1.64, +2.19 / +2.17; 0.9.11 host +0.68, +1.27 with the
+        # direct sound -0.69 / -0.75, now +0.00 / -0.06), switched under a chord 1.5 -> 2.5 LU (MARIMBA DIG on FM-1
+        # +1.72 / +1.73, host +2.02; 0.9.11 host +0.16); reverb 50 switched 1.5 -> 2.0 LU (VIBES FM-1 +1.35 / -1.53,
+        # jack -1.66; host +1.32 / -1.50; 0.9.11 host +1.03 / -1.20)
+        if sw[0] == "DL_SW":
+            lim, tlim = 2.5, 2.5
+        elif sw[0] == "RV_DEPTH":
+            tlim = 2.0
 
         def static(q, stereo=False):
             return lq(held, q, 0, hw, stereo) - np.mean([lq(r, q, 0, hw, stereo) for r in refs])
@@ -3822,9 +3875,12 @@ STRUCK_KNOWN = (
      "USER DECISION 2026-11-05: the echoes of a strike that dies in ~1 s add more to the 1.8 s loudness than on a held "
      "chord (DIG +4.38, ANA +3.31 LU); the direct sound (0..0.25 s, information) is unchanged; band 0 .. +6 LU"),
     (r"^marimba_jump$", r"^reverb 50 \(no switch: REV 0 -> 50\): (on vs off|switched under a chord)", r"",
-     lambda d: max(abs(x) for x in (d if isinstance(d, tuple) else (d,))) <= 3.0,
+     lambda d: max(abs(x) for x in (d if isinstance(d, tuple) else (d,))) <= 3.5,
      "USER DECISION 2026-11-05: the hall over a dying roll is a larger share of its loudness than over a held chord "
-     "(+1.57 LU held, +1.20 / -1.74 switched; limit 1.5); band |step| <= 3 LU"),
+     "(+1.57 LU held, +1.20 / -1.74 switched; limit 1.5); band |step| <= 3.5 LU"),
+    # THRESHOLD (2026-11-14, T2 0.9.12): the band 3.0 -> 3.5 LU: E2's MIX law keeps the dry whole at REV 50, so the
+    # switch adds / takes the whole wet: host +1.99 / -3.02 (0.9.11 host +1.58 / -2.54; the same with the bars' -3 dB
+    # at LEVEL or before the effects)
     (r"^marimba_fx$", r"^CHORUS DEPTH .* 0 -> 127$", r"^spectral motion$", lambda d: d >= 0.6,
      "USER DECISION 2026-11-05: on the roll the chorus moves the spectrum +0.9 / +1.0 dB at DEPTH 127 (limit +1): each "
      "strike resets the bands the chorus would move; band >= +0.6 dB"),
@@ -4303,9 +4359,16 @@ def marimba_vel(V, S):
                       for i, n in zip(o, keys)])
         return lv, c
     vals = S.per(kl)
-    S.check("keys C2..C7: neighbour step", "every key, v100",
-            {s_: v and float(np.abs(np.diff(v[0])).max()) for s_, v in vals.items()}, lambda d: d <= 1.5,
-            "<= 1.5 dB (PLAN M1, D)", fmt=lambda d: f"{d:.2f} dB")
+    # THRESHOLD (2026-11-14, T2 0.9.12): on USB stereo (as heard), as vibes_vel: one channel carries 0.9.10's dry
+    # width comb (FM-1 0.9.10 / 0.9.11 / 0.9.12 2.0-3.7 / 2.57 / 2.53 dB USB L, 2.57-2.58 jack; 0.9.9 0.48)
+    keys_st = S.usb(lambda q: np.array([lu(cut(t.usb, i, 0, 1.0)) for i in t.on(q)]))
+    S.check("keys C2..C7: neighbour step", "every key, v100, USB stereo (as heard)",
+            {s_: None if v is None else float(np.abs(np.diff(v)).max()) for s_, v in keys_st.items()},
+            lambda d: d <= 1.5, "<= 1.5 dB (PLAN M1, D)", fmt=lambda d: f"{d:.2f} dB")
+    S.check("keys C2..C7: neighbour step, one channel", "every key, v100, USB L vs jack (the dry width's comb)",
+            {s_: v and float(np.abs(np.diff(v[0])).max()) for s_, v in vals.items()}, lambda d: True,
+            "information (one channel: the width's +1.6 / -1.9 dB comb)", level=True, info=True,
+            fmt=lambda d: f"{d:.2f} dB")
     # (information, as tools/marimba_scan.py's M1 row, the user 2026-11-05: the 1 s loudness falls 8.6 dB C2 -> C7
     # because the high bars die in ~0.3 s; the peaks are within 4 dB, the neighbour step above gates the evenness)
     S.check("keys C2..C7: level span", "", {s_: v and float(v[0].max() - v[0].min()) for s_, v in vals.items()},
