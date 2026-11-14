@@ -90,6 +90,25 @@ def test_hq_level_matches_half_rate(exe, old, typ):
 
 
 @needs_types
+def test_hq_hall_tone_darker_in_order(exe, old):
+    """HALL's TONE darker than its middle (TONE 64 .. 0, damp 60 .. 150: rev_hq_hall.c rqh_pole): the 1 kHz T60 falls
+    at every step 64 / 48 / 32 / 16 / 0, the 500 Hz one within 25 % of the half rate's. The linear pole (damp x 340,
+    its 31500 cap at damp 93) made TONE 0 .. 40 one pole (T60 1.79 s at 1 kHz for 0, 16 and 32) and killed the tail's
+    fundamental at TONE 0 (vibes_fx REVERB TONE on the FR_C1 host: 0 brighter than 64). Now 1 kHz: 1.01 / 1.29 / 1.79 /
+    2.34 / 2.83 s (TONE 0 .. 64; the half rate 0.70 .. 2.81)"""
+    x = rs.burst(rs.FS)
+    t1 = []
+    for tone in (0, 16, 32, 48, 64):
+        p = dict(RV_TYPE=T["HALL"], RV_DEPTH=100, RV_TONE=tone)
+        wn = rs.render(exe, x, p, blocks=int(8 * rs.FS / BLK))["wet"].astype(float)
+        wo = rs.render(old, x, p, blocks=int(8 * rs.FS / BLK))["wet"].astype(float)
+        a, b = ab.oct_t60(wn, 500), ab.oct_t60(wo, 500)
+        assert a and b and abs(a / b - 1) <= 0.25, f"TONE {tone} 500 Hz: T60 HQ {a} s, half rate {b} s"
+        t1.append(ab.oct_t60(wn, 1000))
+    assert all(t1) and all(u < v for u, v in zip(t1, t1[1:])), t1
+
+
+@needs_types
 @pytest.mark.parametrize("typ", ("HALL", "PLATE", "INFINITE"))
 def test_hq_worst_input_no_overflow(exe, typ):
     """full-scale square bursts (+-32767 both sides, over the clamp of the send) at MIX 127, DECAY 127, TONE 127, MOD
