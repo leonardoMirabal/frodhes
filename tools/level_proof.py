@@ -19,6 +19,15 @@ stored verdict) and proves the cell by one rule:
          with the drive off (CC 84 0) it is under -110 dBFS in both releases, and the cell's total harmonic
          distortion H2..H6 re H1 is lower than the last release's (SND2's cleaner input: FUNK_WAH key 81 H5).
 
+Two rules hold for one named cell each (CELL_RULES; the coordinator's sign-off 2026-11-14, T2 0.9.12):
+
+  floor  c1/FUNK_WAH/PRESET/A/k33v96 H4: the harmonic's absolute power under FLOOR_ABS (-90 dBFS, below the 16-bit
+         floor) in both releases, and the one-core twin (fm1, the same cell) under its own ceiling (int16-grain
+         content);
+  twin   c1/MARIMBA/DECAY0/A/k53v110 clk: the c1 value at most the last release's one-core value of the same cell
+         + TWIN_TOL, and the candidate's one-core value within TWIN_TOL (the released one-core build reads the same:
+         a 6- against a 3-LSB second-difference ratio).
+
 A cell no rule proves is a defect. The cells: the expected-changes entries naming this file as their ceiling_proof
 (default), or --cells FILE (lines "cid label metric").
 
@@ -39,6 +48,24 @@ import release_diff as rd  # noqa: E402
 ROOT = rd.ROOT
 OUT = os.path.join("tests", "level_proof.json")
 ABS_TOL, LEVEL_TOL, RAW_TOL, DRIVE_FLOOR = 0.5, 1.0, 0.5, -110.0
+FLOOR_ABS, TWIN_TOL = -90.0, 0.05
+CELL_RULES = {("c1/FUNK_WAH/PRESET/A/k33v96", "H4"): "floor",          # (one cell each: never a pattern)
+              ("c1/MARIMBA/DECAY0/A/k53v110", "clk"): "twin"}
+LEVELLED = lambda m: m == "inh" or (m[0] == "H" and m[1:].isdigit())   # (the metrics re H1: abs / level apply)
+
+
+def floor_ok(abs_cand, abs_last, twin_v, twin_lim):
+    """the floor rule: the absolute power under FLOOR_ABS in both releases, the one-core twin under its ceiling"""
+    return abs_cand <= FLOOR_ABS and abs_last <= FLOOR_ABS and twin_v <= twin_lim + 1e-9
+
+
+def twin_ok(v, last_fm1, cand_fm1):
+    """the twin rule: at most the last release's one-core value + TWIN_TOL, the candidate's one-core value the same"""
+    return v <= last_fm1 + TWIN_TOL + 1e-9 and abs(v - cand_fm1) <= TWIN_TOL + 1e-9
+
+
+def twin_of(cid):
+    return "fm1/" + cid.split("/", 1)[1]
 RAW_CC = (131, 0xB0, 119, 127)
 DRIVE_OFF = (950, 0xB0, 84, 0)
 
@@ -116,10 +143,11 @@ def main():
     if not cells:
         raise SystemExit("level_proof: no cells")
     ltree = rd.last_tree()
-    cb = rd.tree_bins(ROOT, os.path.join(rd.OUT, "levelproof-cand-bin"))
-    lb = rd.tree_bins(ltree, os.path.join(rd.OUT, "last-bin"))
+    c1 = any(c[0].startswith("c1/") for c in cells)     # (the two-core FM-1's cells: its build in both trees)
+    cb = rd.tree_bins(ROOT, os.path.join(rd.OUT, "levelproof-cand-bin"), c1=c1)
+    lb = rd.tree_bins(ltree, os.path.join(rd.OUT, "last-bin"), c1=c1)
     cc, lc = _cases(ROOT), _cases(ltree)
-    cids = sorted({c[0] for c in cells})
+    cids = sorted({c[0] for c in cells} | {twin_of(c[0]) for c in cells if (f"{c[0]}/{c[1]}", c[2]) in CELL_RULES})
     n = int(os.environ.get("PYTEST_N", os.environ.get("PRISTINE_N", "2")) or 2)
     with Pool(max(1, n)) as pool:
         r = pool.map(_meas, [(cb[cc[c][1]], cc[c], "cand") for c in cids] + [(lb[lc[c][1]], lc[c], "last") for c in cids])
@@ -129,7 +157,7 @@ def main():
             v = cand[cid][lab].get(m)
             b = last[cid][lab].get(m)
             lim = rd.ceiling(cid, lab, m, v, b, cand[cid][lab])
-            if lab.startswith("k") and m != "imd":
+            if lab.startswith("k") and LEVELLED(m):
                 key, vel = (int(t) for t in lab[1:].split("v"))
                 jobs.append(("level", cid, lab, m, (lb[lc[cid][1]], lc[cid], key, tuple(range(1, vel + 1)), "lsweep", ())))
                 if m[0] == "H" and "/PRESET/" in cid:
@@ -151,7 +179,7 @@ def main():
         lim = rd.ceiling(cid, lab, m, v, b, cl)
         row = {"cell": f"{cid}/{lab}", "metric": m, "last": round(b, 2), "cand": round(v, 2),
                "limit": round(lim[0], 2), "over_ceiling": bool(v > lim[0] + 1e-9), "proven": False}
-        if "h1" in cl and "h1" in ll and m != "imd":
+        if "h1" in cl and "h1" in ll and LEVELLED(m):
             row["abs_cand"], row["abs_last"] = round(v + cl["h1"], 2), round(b + ll["h1"], 2)
             if row["abs_cand"] <= row["abs_last"] + ABS_TOL:
                 row["proven"] = "abs"
@@ -173,6 +201,20 @@ def main():
             row["thd_cand"], row["thd_last"] = round(thd(cl), 2), round(thd(ll), 2)
             if max(row["driveoff_abs_cand"], row["driveoff_abs_last"]) <= DRIVE_FLOOR and row["thd_cand"] < row["thd_last"]:
                 row["proven"] = "drive"
+        rule = CELL_RULES.get((f"{cid}/{lab}", m))
+        if not row["proven"] and rule:
+            tw = twin_of(cid)
+            tc, tl = cand[tw][lab], last[tw][lab]
+            row["twin_cand"], row["twin_last"] = round(tc[m], 2), round(tl[m], 2)
+            if rule == "floor":
+                tlim = rd.ceiling(tw, lab, m, tc[m], tl[m], tc)[0]
+                row["twin_limit"] = round(tlim, 2)
+                row.setdefault("abs_cand", round(v + cl["h1"], 2))
+                row.setdefault("abs_last", round(b + ll["h1"], 2))
+                if floor_ok(v + cl["h1"], b + ll["h1"], tc[m], tlim):
+                    row["proven"] = "floor"
+            elif twin_ok(v, tl[m], tc[m]):
+                row["proven"] = "twin"
         bad += not row["proven"]
         rows.append(row)
     doc = {"tool": "tools/level_proof.py", "against": rd.LAST, "verdict": "PASS" if not bad else "FAIL",
@@ -186,7 +228,11 @@ def main():
         why = {"abs": "the absolute power is not higher than the last release's (the reference H1 fell)",
                "level": "the last release at the velocity that plays the candidate's level reads the same (within 1 dB)",
                "raw": "with the effects bypassed the imd equals the last release's (its value was the limiter on the attack)",
-               "drive": "the DRIVE's own product (drive off: under -110 dBFS in both); total distortion re H1 lower"}
+               "drive": "the DRIVE's own product (drive off: under -110 dBFS in both); total distortion re H1 lower",
+               "floor": "the harmonic's absolute power under -90 dBFS in both releases (the 16-bit floor) and the one-core "
+                        "twin under its ceiling: int16-grain content, inaudible",
+               "twin": "at most the last release's one-core value of this cell + 0.05 and equal to the candidate's one-core "
+                       "value: the released one-core reads the same (6 against 3 LSB)"}
         ent = [{"match": r["cell"], "metric": r["metric"],
                 "min": math.floor((r["cand"] - r["last"] - 0.3) * 10) / 10, "max": math.ceil((r["cand"] - r["last"] + 0.3) * 10) / 10,
                 "ceiling_proof": a.out.replace(os.sep, "/"),

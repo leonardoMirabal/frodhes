@@ -82,6 +82,31 @@ def test_the_hq_build_is_the_makefiles():
     assert rd.HQ_DEFS == move + ["-DHQ_DEFAULT=1"]
 
 
+def test_the_two_core_build_is_the_package_and_the_fm1_verdict():
+    """the c1 build (2026-11-14: the FM-1 ships the two-core package only) is tools/build.py --c1's app defines, and
+    full mode judges it on every case the one-core FM-1 build has (TYPEs, voice controls, presets), against the last
+    release's own c1 build; the fast grid (make pristine) keeps fm1 + hq"""
+    src = open(os.path.join(ROOT, "tools", "build.py")).read()
+    line = re.search(r'BOARD_APP_DEFS\[BOARD\], "-DFR_C1=1"\] \+ \(\[\] if a\.c1_256 else \["(-DFR_C1_LAT=1)"\]\)', src)
+    assert line and rd.C1_DEFS == ["-DFR_C1=1", line.group(1)]
+    full = [c for c in rd.cases("full")]
+    fm1 = {c[0].split("/", 1)[1]: c for c in full if c[1] == "fm1"}
+    c1 = {c[0].split("/", 1)[1]: c for c in full if c[1] == "c1"}
+    assert fm1 and set(c1) == set(fm1)
+    for k, c in c1.items():
+        assert c[2:] == fm1[k][2:], k                  # the same setup, keys and kind
+    assert not [c for c in rd.cases("fast") if c[1] == "c1"]
+    calls = []
+    real = rd.cc_build
+    try:
+        rd.cc_build = lambda tree, path, defs=(): calls.append((os.path.basename(path), list(defs))) or path
+        assert set(rd.tree_bins(ROOT, "/nonexistent", c1=True)) == {"fm1", "hq", "c1"}
+        assert ("c1", rd.C1_DEFS) in calls
+        assert set(rd.tree_bins(ROOT, "/nonexistent")) == {"fm1", "hq"}
+    finally:
+        rd.cc_build = real
+
+
 def _quiet_note(amp, n, ph=0.0):
     import numpy as np
     t = np.arange(n) / rd.FS

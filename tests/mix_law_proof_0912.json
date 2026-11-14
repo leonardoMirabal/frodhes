@@ -1,0 +1,2505 @@
+{
+ "tool": "tools/mix_law_proof.py",
+ "law": "0.9.13 E2 MIX law (fx.c DLY_DRY / RV_SEND / RV_DRY)",
+ "verdict": "PASS",
+ "broken": 192,
+ "unproven": 0,
+ "cells": [
+  {
+   "cell": "c1/DREAM/PRESET/A/k28v40",
+   "metric": "H6",
+   "last": -51.72,
+   "cand": -48.37,
+   "limit": -48.72,
+   "at_equivalent_mix": -53.07,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k28v64",
+   "metric": "H4",
+   "last": -48.19,
+   "cand": -44.83,
+   "limit": -45.19,
+   "at_equivalent_mix": -48.92,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k28v96",
+   "metric": "H4",
+   "last": -45.34,
+   "cand": -41.85,
+   "limit": -42.34,
+   "at_equivalent_mix": -45.76,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k28v110",
+   "metric": "H4",
+   "last": -45.02,
+   "cand": -41.55,
+   "limit": -42.02,
+   "at_equivalent_mix": -45.43,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k28v110",
+   "metric": "H5",
+   "last": -58.95,
+   "cand": -55.58,
+   "limit": -55.95,
+   "at_equivalent_mix": -59.66,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k28v127",
+   "metric": "H4",
+   "last": -44.48,
+   "cand": -41.01,
+   "limit": -41.48,
+   "at_equivalent_mix": -44.91,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k28v127",
+   "metric": "H5",
+   "last": -57.04,
+   "cand": -53.76,
+   "limit": -54.04,
+   "at_equivalent_mix": -57.77,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k33v96",
+   "metric": "H4",
+   "last": -63.0,
+   "cand": -59.86,
+   "limit": -60.0,
+   "at_equivalent_mix": -63.55,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k33v110",
+   "metric": "H4",
+   "last": -61.22,
+   "cand": -57.84,
+   "limit": -58.22,
+   "at_equivalent_mix": -62.0,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k33v110",
+   "metric": "H5",
+   "last": -61.46,
+   "cand": -58.08,
+   "limit": -58.46,
+   "at_equivalent_mix": -62.19,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k33v127",
+   "metric": "H4",
+   "last": -60.0,
+   "cand": -56.68,
+   "limit": -57.0,
+   "at_equivalent_mix": -60.61,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k33v127",
+   "metric": "H5",
+   "last": -56.29,
+   "cand": -52.97,
+   "limit": -53.29,
+   "at_equivalent_mix": -56.61,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k45v40",
+   "metric": "inh",
+   "last": -35.1,
+   "cand": -31.79,
+   "limit": -32.1,
+   "at_equivalent_mix": -35.59,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k45v64",
+   "metric": "inh",
+   "last": -34.76,
+   "cand": -31.42,
+   "limit": -31.76,
+   "at_equivalent_mix": -35.25,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k45v96",
+   "metric": "H6",
+   "last": -54.33,
+   "cand": -50.93,
+   "limit": -51.33,
+   "at_equivalent_mix": -54.68,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k45v96",
+   "metric": "inh",
+   "last": -30.44,
+   "cand": -26.88,
+   "limit": -27.44,
+   "at_equivalent_mix": -30.54,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k45v110",
+   "metric": "H6",
+   "last": -48.72,
+   "cand": -45.41,
+   "limit": -45.72,
+   "at_equivalent_mix": -48.98,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k45v110",
+   "metric": "inh",
+   "last": -29.4,
+   "cand": -25.81,
+   "limit": -26.4,
+   "at_equivalent_mix": -29.44,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k45v127",
+   "metric": "H6",
+   "last": -45.22,
+   "cand": -41.8,
+   "limit": -42.22,
+   "at_equivalent_mix": -45.3,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k45v127",
+   "metric": "inh",
+   "last": -29.66,
+   "cand": -26.07,
+   "limit": -26.66,
+   "at_equivalent_mix": -29.72,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k57v64",
+   "metric": "inh",
+   "last": -28.9,
+   "cand": -25.84,
+   "limit": -25.9,
+   "at_equivalent_mix": -29.49,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k57v96",
+   "metric": "inh",
+   "last": -28.27,
+   "cand": -25.07,
+   "limit": -25.27,
+   "at_equivalent_mix": -28.72,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k57v110",
+   "metric": "inh",
+   "last": -28.44,
+   "cand": -25.2,
+   "limit": -25.44,
+   "at_equivalent_mix": -28.84,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k57v127",
+   "metric": "inh",
+   "last": -28.74,
+   "cand": -25.46,
+   "limit": -25.74,
+   "at_equivalent_mix": -29.1,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k69v20",
+   "metric": "inh",
+   "last": -28.94,
+   "cand": -25.85,
+   "limit": -25.94,
+   "at_equivalent_mix": -29.58,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k69v40",
+   "metric": "inh",
+   "last": -28.99,
+   "cand": -25.67,
+   "limit": -25.99,
+   "at_equivalent_mix": -29.53,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/A/k69v64",
+   "metric": "inh",
+   "last": -28.59,
+   "cand": -25.31,
+   "limit": -25.59,
+   "at_equivalent_mix": -29.04,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k28v40",
+   "metric": "H4",
+   "last": -51.85,
+   "cand": -48.38,
+   "limit": -48.85,
+   "at_equivalent_mix": -52.6,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k28v40",
+   "metric": "H6",
+   "last": -51.72,
+   "cand": -48.42,
+   "limit": -48.72,
+   "at_equivalent_mix": -52.27,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k28v64",
+   "metric": "H3",
+   "last": -58.73,
+   "cand": -55.3,
+   "limit": -55.73,
+   "at_equivalent_mix": -59.13,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k28v64",
+   "metric": "H4",
+   "last": -48.19,
+   "cand": -44.77,
+   "limit": -45.19,
+   "at_equivalent_mix": -48.65,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k28v96",
+   "metric": "H4",
+   "last": -45.34,
+   "cand": -41.9,
+   "limit": -42.34,
+   "at_equivalent_mix": -45.85,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k28v96",
+   "metric": "H5",
+   "last": -60.45,
+   "cand": -57.27,
+   "limit": -57.45,
+   "at_equivalent_mix": -61.1,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k28v110",
+   "metric": "H4",
+   "last": -45.02,
+   "cand": -41.55,
+   "limit": -42.02,
+   "at_equivalent_mix": -45.44,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k28v110",
+   "metric": "H5",
+   "last": -58.95,
+   "cand": -55.49,
+   "limit": -55.95,
+   "at_equivalent_mix": -59.48,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k28v127",
+   "metric": "H4",
+   "last": -44.48,
+   "cand": -41.01,
+   "limit": -41.48,
+   "at_equivalent_mix": -44.91,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k28v127",
+   "metric": "H5",
+   "last": -57.04,
+   "cand": -53.76,
+   "limit": -54.04,
+   "at_equivalent_mix": -57.77,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k33v96",
+   "metric": "H4",
+   "last": -63.0,
+   "cand": -59.9,
+   "limit": -60.0,
+   "at_equivalent_mix": -63.59,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k33v110",
+   "metric": "H4",
+   "last": -61.22,
+   "cand": -57.89,
+   "limit": -58.22,
+   "at_equivalent_mix": -61.73,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k33v110",
+   "metric": "H5",
+   "last": -61.46,
+   "cand": -58.08,
+   "limit": -58.46,
+   "at_equivalent_mix": -61.89,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k33v127",
+   "metric": "H4",
+   "last": -60.0,
+   "cand": -56.68,
+   "limit": -57.0,
+   "at_equivalent_mix": -60.61,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k33v127",
+   "metric": "H5",
+   "last": -56.29,
+   "cand": -52.97,
+   "limit": -53.29,
+   "at_equivalent_mix": -56.61,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k45v20",
+   "metric": "inh",
+   "last": -36.62,
+   "cand": -33.3,
+   "limit": -33.62,
+   "at_equivalent_mix": -37.13,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k45v40",
+   "metric": "inh",
+   "last": -35.1,
+   "cand": -31.78,
+   "limit": -32.1,
+   "at_equivalent_mix": -35.62,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k45v64",
+   "metric": "inh",
+   "last": -34.76,
+   "cand": -31.35,
+   "limit": -31.76,
+   "at_equivalent_mix": -35.18,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k45v96",
+   "metric": "H6",
+   "last": -54.33,
+   "cand": -50.98,
+   "limit": -51.33,
+   "at_equivalent_mix": -54.44,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k45v96",
+   "metric": "inh",
+   "last": -30.44,
+   "cand": -26.9,
+   "limit": -27.44,
+   "at_equivalent_mix": -30.57,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k45v110",
+   "metric": "H6",
+   "last": -48.72,
+   "cand": -45.47,
+   "limit": -45.72,
+   "at_equivalent_mix": -48.87,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k45v110",
+   "metric": "inh",
+   "last": -29.4,
+   "cand": -25.82,
+   "limit": -26.4,
+   "at_equivalent_mix": -29.45,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k45v127",
+   "metric": "H6",
+   "last": -45.22,
+   "cand": -41.8,
+   "limit": -42.22,
+   "at_equivalent_mix": -45.3,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k45v127",
+   "metric": "inh",
+   "last": -29.66,
+   "cand": -26.07,
+   "limit": -26.66,
+   "at_equivalent_mix": -29.72,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k57v20",
+   "metric": "inh",
+   "last": -29.54,
+   "cand": -26.48,
+   "limit": -26.54,
+   "at_equivalent_mix": -30.14,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k57v40",
+   "metric": "inh",
+   "last": -29.22,
+   "cand": -26.11,
+   "limit": -26.22,
+   "at_equivalent_mix": -29.77,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k57v64",
+   "metric": "inh",
+   "last": -28.9,
+   "cand": -25.78,
+   "limit": -25.9,
+   "at_equivalent_mix": -29.4,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k57v96",
+   "metric": "inh",
+   "last": -28.27,
+   "cand": -25.05,
+   "limit": -25.27,
+   "at_equivalent_mix": -28.68,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k57v110",
+   "metric": "inh",
+   "last": -28.44,
+   "cand": -25.19,
+   "limit": -25.44,
+   "at_equivalent_mix": -28.84,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k57v127",
+   "metric": "inh",
+   "last": -28.74,
+   "cand": -25.46,
+   "limit": -25.74,
+   "at_equivalent_mix": -29.1,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k69v20",
+   "metric": "inh",
+   "last": -29.07,
+   "cand": -25.71,
+   "limit": -26.07,
+   "at_equivalent_mix": -29.6,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k69v40",
+   "metric": "inh",
+   "last": -28.99,
+   "cand": -25.55,
+   "limit": -25.99,
+   "at_equivalent_mix": -29.44,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "c1/DREAM/PRESET/B/k69v64",
+   "metric": "inh",
+   "last": -28.59,
+   "cand": -25.22,
+   "limit": -25.59,
+   "at_equivalent_mix": -28.98,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k28v64",
+   "metric": "H3",
+   "last": -49.72,
+   "cand": -46.41,
+   "limit": -46.72,
+   "at_equivalent_mix": -50.62,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k28v64",
+   "metric": "H4",
+   "last": -51.94,
+   "cand": -48.53,
+   "limit": -48.94,
+   "at_equivalent_mix": -52.33,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k28v96",
+   "metric": "H3",
+   "last": -48.28,
+   "cand": -44.86,
+   "limit": -45.28,
+   "at_equivalent_mix": -48.98,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k28v96",
+   "metric": "H4",
+   "last": -48.62,
+   "cand": -45.16,
+   "limit": -45.62,
+   "at_equivalent_mix": -49.17,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k28v96",
+   "metric": "H5",
+   "last": -58.56,
+   "cand": -55.1,
+   "limit": -55.56,
+   "at_equivalent_mix": -59.28,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k28v110",
+   "metric": "H3",
+   "last": -48.6,
+   "cand": -45.07,
+   "limit": -45.6,
+   "at_equivalent_mix": -49.33,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k28v110",
+   "metric": "H4",
+   "last": -48.19,
+   "cand": -44.79,
+   "limit": -45.19,
+   "at_equivalent_mix": -48.75,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k28v110",
+   "metric": "H5",
+   "last": -56.63,
+   "cand": -53.18,
+   "limit": -53.63,
+   "at_equivalent_mix": -57.26,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k28v127",
+   "metric": "H3",
+   "last": -50.3,
+   "cand": -46.4,
+   "limit": -47.3,
+   "at_equivalent_mix": -51.09,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k28v127",
+   "metric": "H4",
+   "last": -47.77,
+   "cand": -44.32,
+   "limit": -44.77,
+   "at_equivalent_mix": -48.36,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k28v127",
+   "metric": "H5",
+   "last": -54.75,
+   "cand": -51.31,
+   "limit": -51.75,
+   "at_equivalent_mix": -55.38,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k33v64",
+   "metric": "H3",
+   "last": -55.58,
+   "cand": -52.05,
+   "limit": -52.58,
+   "at_equivalent_mix": -56.2,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k33v96",
+   "metric": "H3",
+   "last": -51.35,
+   "cand": -48.26,
+   "limit": -48.35,
+   "at_equivalent_mix": -51.87,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k33v96",
+   "metric": "H4",
+   "last": -57.25,
+   "cand": -53.76,
+   "limit": -54.25,
+   "at_equivalent_mix": -57.62,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k33v110",
+   "metric": "H4",
+   "last": -55.62,
+   "cand": -52.18,
+   "limit": -52.62,
+   "at_equivalent_mix": -56.27,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k33v110",
+   "metric": "H5",
+   "last": -62.77,
+   "cand": -59.37,
+   "limit": -59.77,
+   "at_equivalent_mix": -63.27,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k33v127",
+   "metric": "H4",
+   "last": -54.25,
+   "cand": -50.84,
+   "limit": -51.25,
+   "at_equivalent_mix": -54.8,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k33v127",
+   "metric": "H5",
+   "last": -58.22,
+   "cand": -54.81,
+   "limit": -55.22,
+   "at_equivalent_mix": -58.95,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v20",
+   "metric": "inh",
+   "last": -32.24,
+   "cand": -28.32,
+   "limit": -29.24,
+   "at_equivalent_mix": -32.61,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v40",
+   "metric": "inh",
+   "last": -31.76,
+   "cand": -27.77,
+   "limit": -28.76,
+   "at_equivalent_mix": -32.39,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v64",
+   "metric": "inh",
+   "last": -31.5,
+   "cand": -27.52,
+   "limit": -28.5,
+   "at_equivalent_mix": -32.17,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v96",
+   "metric": "H5",
+   "last": -64.83,
+   "cand": -59.77,
+   "limit": -60.0,
+   "at_equivalent_mix": -65.54,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v96",
+   "metric": "H6",
+   "last": -54.97,
+   "cand": -51.2,
+   "limit": -51.97,
+   "at_equivalent_mix": -55.41,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v96",
+   "metric": "inh",
+   "last": -29.25,
+   "cand": -25.24,
+   "limit": -26.25,
+   "at_equivalent_mix": -29.94,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v110",
+   "metric": "H5",
+   "last": -62.42,
+   "cand": -58.5,
+   "limit": -59.42,
+   "at_equivalent_mix": -63.64,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v110",
+   "metric": "H6",
+   "last": -50.05,
+   "cand": -46.19,
+   "limit": -47.05,
+   "at_equivalent_mix": -50.55,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v110",
+   "metric": "inh",
+   "last": -28.76,
+   "cand": -24.79,
+   "limit": -25.76,
+   "at_equivalent_mix": -29.43,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v127",
+   "metric": "H4",
+   "last": -62.97,
+   "cand": -58.99,
+   "limit": -59.97,
+   "at_equivalent_mix": -63.61,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v127",
+   "metric": "H5",
+   "last": -59.5,
+   "cand": -55.38,
+   "limit": -56.5,
+   "at_equivalent_mix": -60.37,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v127",
+   "metric": "H6",
+   "last": -46.76,
+   "cand": -42.96,
+   "limit": -43.76,
+   "at_equivalent_mix": -47.22,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k45v127",
+   "metric": "inh",
+   "last": -29.04,
+   "cand": -25.1,
+   "limit": -26.04,
+   "at_equivalent_mix": -29.7,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k69v20",
+   "metric": "inh",
+   "last": -27.69,
+   "cand": -24.09,
+   "limit": -24.69,
+   "at_equivalent_mix": -28.29,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k69v40",
+   "metric": "inh",
+   "last": -26.17,
+   "cand": -23.09,
+   "limit": -23.17,
+   "at_equivalent_mix": -26.9,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/A/k69v64",
+   "metric": "inh",
+   "last": -26.06,
+   "cand": -22.98,
+   "limit": -23.06,
+   "at_equivalent_mix": -26.69,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v40",
+   "metric": "H3",
+   "last": -52.48,
+   "cand": -48.36,
+   "limit": -49.48,
+   "at_equivalent_mix": -53.48,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v40",
+   "metric": "H6",
+   "last": -54.23,
+   "cand": -50.64,
+   "limit": -51.23,
+   "at_equivalent_mix": -54.97,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v64",
+   "metric": "H3",
+   "last": -49.72,
+   "cand": -46.25,
+   "limit": -46.72,
+   "at_equivalent_mix": -50.42,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v64",
+   "metric": "H4",
+   "last": -51.94,
+   "cand": -48.44,
+   "limit": -48.94,
+   "at_equivalent_mix": -52.38,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v96",
+   "metric": "H3",
+   "last": -48.28,
+   "cand": -44.84,
+   "limit": -45.28,
+   "at_equivalent_mix": -48.99,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v96",
+   "metric": "H4",
+   "last": -48.62,
+   "cand": -45.21,
+   "limit": -45.62,
+   "at_equivalent_mix": -49.19,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v96",
+   "metric": "H5",
+   "last": -58.56,
+   "cand": -55.01,
+   "limit": -55.56,
+   "at_equivalent_mix": -59.0,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v110",
+   "metric": "H3",
+   "last": -48.6,
+   "cand": -45.06,
+   "limit": -45.6,
+   "at_equivalent_mix": -49.3,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v110",
+   "metric": "H4",
+   "last": -48.19,
+   "cand": -44.76,
+   "limit": -45.19,
+   "at_equivalent_mix": -48.76,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v110",
+   "metric": "H5",
+   "last": -56.63,
+   "cand": -53.15,
+   "limit": -53.63,
+   "at_equivalent_mix": -57.25,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v127",
+   "metric": "H3",
+   "last": -50.3,
+   "cand": -46.4,
+   "limit": -47.3,
+   "at_equivalent_mix": -51.09,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v127",
+   "metric": "H4",
+   "last": -47.77,
+   "cand": -44.32,
+   "limit": -44.77,
+   "at_equivalent_mix": -48.36,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k28v127",
+   "metric": "H5",
+   "last": -54.75,
+   "cand": -51.31,
+   "limit": -51.75,
+   "at_equivalent_mix": -55.38,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k33v64",
+   "metric": "H3",
+   "last": -55.58,
+   "cand": -52.1,
+   "limit": -52.58,
+   "at_equivalent_mix": -55.91,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k33v96",
+   "metric": "H3",
+   "last": -51.35,
+   "cand": -48.33,
+   "limit": -48.35,
+   "at_equivalent_mix": -51.85,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k33v96",
+   "metric": "H4",
+   "last": -57.25,
+   "cand": -53.75,
+   "limit": -54.25,
+   "at_equivalent_mix": -57.81,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k33v110",
+   "metric": "H4",
+   "last": -55.62,
+   "cand": -52.16,
+   "limit": -52.62,
+   "at_equivalent_mix": -56.21,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k33v110",
+   "metric": "H5",
+   "last": -62.77,
+   "cand": -59.41,
+   "limit": -59.77,
+   "at_equivalent_mix": -63.46,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k33v127",
+   "metric": "H4",
+   "last": -54.25,
+   "cand": -50.84,
+   "limit": -51.25,
+   "at_equivalent_mix": -54.8,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k33v127",
+   "metric": "H5",
+   "last": -58.22,
+   "cand": -54.81,
+   "limit": -55.22,
+   "at_equivalent_mix": -58.95,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k45v20",
+   "metric": "inh",
+   "last": -32.34,
+   "cand": -28.42,
+   "limit": -29.34,
+   "at_equivalent_mix": -32.89,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k45v40",
+   "metric": "inh",
+   "last": -31.76,
+   "cand": -27.84,
+   "limit": -28.76,
+   "at_equivalent_mix": -32.48,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k45v64",
+   "metric": "inh",
+   "last": -31.5,
+   "cand": -27.51,
+   "limit": -28.5,
+   "at_equivalent_mix": -32.2,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k45v96",
+   "metric": "H6",
+   "last": -54.97,
+   "cand": -51.14,
+   "limit": -51.97,
+   "at_equivalent_mix": -55.41,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k45v96",
+   "metric": "inh",
+   "last": -29.25,
+   "cand": -25.24,
+   "limit": -26.25,
+   "at_equivalent_mix": -29.93,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k45v110",
+   "metric": "H5",
+   "last": -62.42,
+   "cand": -58.63,
+   "limit": -59.42,
+   "at_equivalent_mix": -63.48,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k45v110",
+   "metric": "H6",
+   "last": -50.05,
+   "cand": -46.21,
+   "limit": -47.05,
+   "at_equivalent_mix": -50.53,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k45v110",
+   "metric": "inh",
+   "last": -28.76,
+   "cand": -24.78,
+   "limit": -25.76,
+   "at_equivalent_mix": -29.43,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k45v127",
+   "metric": "H4",
+   "last": -62.97,
+   "cand": -58.99,
+   "limit": -59.97,
+   "at_equivalent_mix": -63.61,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k45v127",
+   "metric": "H5",
+   "last": -59.5,
+   "cand": -55.38,
+   "limit": -56.5,
+   "at_equivalent_mix": -60.37,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k45v127",
+   "metric": "H6",
+   "last": -46.76,
+   "cand": -42.96,
+   "limit": -43.76,
+   "at_equivalent_mix": -47.22,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k45v127",
+   "metric": "inh",
+   "last": -29.04,
+   "cand": -25.1,
+   "limit": -26.04,
+   "at_equivalent_mix": -29.7,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k69v20",
+   "metric": "inh",
+   "last": -26.31,
+   "cand": -23.14,
+   "limit": -23.31,
+   "at_equivalent_mix": -26.98,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k69v40",
+   "metric": "inh",
+   "last": -26.17,
+   "cand": -23.06,
+   "limit": -23.17,
+   "at_equivalent_mix": -26.81,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "fm1/DREAM/PRESET/B/k69v64",
+   "metric": "inh",
+   "last": -26.06,
+   "cand": -22.99,
+   "limit": -23.06,
+   "at_equivalent_mix": -26.68,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k28v40",
+   "metric": "H4",
+   "last": -52.1,
+   "cand": -48.92,
+   "limit": -49.1,
+   "at_equivalent_mix": -52.92,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k28v40",
+   "metric": "H6",
+   "last": -51.55,
+   "cand": -48.29,
+   "limit": -48.55,
+   "at_equivalent_mix": -52.44,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k28v64",
+   "metric": "H4",
+   "last": -48.18,
+   "cand": -44.8,
+   "limit": -45.18,
+   "at_equivalent_mix": -48.84,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k28v96",
+   "metric": "H4",
+   "last": -45.38,
+   "cand": -41.82,
+   "limit": -42.38,
+   "at_equivalent_mix": -45.79,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k28v96",
+   "metric": "H5",
+   "last": -60.51,
+   "cand": -57.43,
+   "limit": -57.51,
+   "at_equivalent_mix": -61.48,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k28v110",
+   "metric": "H4",
+   "last": -45.05,
+   "cand": -41.6,
+   "limit": -42.05,
+   "at_equivalent_mix": -45.48,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k28v110",
+   "metric": "H5",
+   "last": -58.89,
+   "cand": -55.72,
+   "limit": -55.89,
+   "at_equivalent_mix": -59.6,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k28v127",
+   "metric": "H4",
+   "last": -44.57,
+   "cand": -41.1,
+   "limit": -41.57,
+   "at_equivalent_mix": -45.0,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k28v127",
+   "metric": "H5",
+   "last": -57.27,
+   "cand": -53.96,
+   "limit": -54.27,
+   "at_equivalent_mix": -57.92,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k33v96",
+   "metric": "H4",
+   "last": -63.03,
+   "cand": -59.52,
+   "limit": -60.0,
+   "at_equivalent_mix": -63.53,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k33v110",
+   "metric": "H4",
+   "last": -61.1,
+   "cand": -57.85,
+   "limit": -58.1,
+   "at_equivalent_mix": -62.22,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k33v110",
+   "metric": "H5",
+   "last": -61.46,
+   "cand": -57.96,
+   "limit": -58.46,
+   "at_equivalent_mix": -62.19,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k33v127",
+   "metric": "H4",
+   "last": -59.75,
+   "cand": -56.55,
+   "limit": -56.75,
+   "at_equivalent_mix": -60.37,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k33v127",
+   "metric": "H5",
+   "last": -56.45,
+   "cand": -53.13,
+   "limit": -53.45,
+   "at_equivalent_mix": -56.74,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k45v40",
+   "metric": "inh",
+   "last": -35.24,
+   "cand": -31.94,
+   "limit": -32.24,
+   "at_equivalent_mix": -35.76,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k45v64",
+   "metric": "inh",
+   "last": -34.82,
+   "cand": -31.5,
+   "limit": -31.82,
+   "at_equivalent_mix": -35.31,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k45v96",
+   "metric": "H6",
+   "last": -54.33,
+   "cand": -50.96,
+   "limit": -51.33,
+   "at_equivalent_mix": -54.56,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k45v96",
+   "metric": "inh",
+   "last": -30.63,
+   "cand": -27.06,
+   "limit": -27.63,
+   "at_equivalent_mix": -30.74,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k45v110",
+   "metric": "H6",
+   "last": -48.9,
+   "cand": -45.5,
+   "limit": -45.9,
+   "at_equivalent_mix": -49.12,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k45v110",
+   "metric": "inh",
+   "last": -29.68,
+   "cand": -26.09,
+   "limit": -26.68,
+   "at_equivalent_mix": -29.74,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k45v127",
+   "metric": "H6",
+   "last": -43.85,
+   "cand": -40.26,
+   "limit": -40.85,
+   "at_equivalent_mix": -43.78,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k45v127",
+   "metric": "inh",
+   "last": -28.37,
+   "cand": -24.74,
+   "limit": -25.37,
+   "at_equivalent_mix": -28.36,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k57v64",
+   "metric": "inh",
+   "last": -28.96,
+   "cand": -25.87,
+   "limit": -25.96,
+   "at_equivalent_mix": -29.54,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k57v96",
+   "metric": "inh",
+   "last": -28.32,
+   "cand": -25.12,
+   "limit": -25.32,
+   "at_equivalent_mix": -28.79,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k57v110",
+   "metric": "inh",
+   "last": -28.49,
+   "cand": -25.23,
+   "limit": -25.49,
+   "at_equivalent_mix": -28.88,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k57v127",
+   "metric": "inh",
+   "last": -28.6,
+   "cand": -25.23,
+   "limit": -25.6,
+   "at_equivalent_mix": -28.89,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k69v20",
+   "metric": "inh",
+   "last": -29.08,
+   "cand": -25.96,
+   "limit": -26.08,
+   "at_equivalent_mix": -29.64,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k69v40",
+   "metric": "inh",
+   "last": -29.06,
+   "cand": -25.76,
+   "limit": -26.06,
+   "at_equivalent_mix": -29.6,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/A/k69v64",
+   "metric": "inh",
+   "last": -28.65,
+   "cand": -25.38,
+   "limit": -25.65,
+   "at_equivalent_mix": -29.14,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k28v40",
+   "metric": "H4",
+   "last": -52.1,
+   "cand": -48.61,
+   "limit": -49.1,
+   "at_equivalent_mix": -52.62,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k28v40",
+   "metric": "H6",
+   "last": -51.55,
+   "cand": -48.31,
+   "limit": -48.55,
+   "at_equivalent_mix": -52.05,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k28v64",
+   "metric": "H3",
+   "last": -58.63,
+   "cand": -55.5,
+   "limit": -55.63,
+   "at_equivalent_mix": -59.35,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k28v64",
+   "metric": "H4",
+   "last": -48.18,
+   "cand": -44.78,
+   "limit": -45.18,
+   "at_equivalent_mix": -48.67,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k28v96",
+   "metric": "H4",
+   "last": -45.38,
+   "cand": -41.96,
+   "limit": -42.38,
+   "at_equivalent_mix": -45.88,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k28v96",
+   "metric": "H5",
+   "last": -60.51,
+   "cand": -57.35,
+   "limit": -57.51,
+   "at_equivalent_mix": -61.28,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k28v110",
+   "metric": "H4",
+   "last": -45.05,
+   "cand": -41.58,
+   "limit": -42.05,
+   "at_equivalent_mix": -45.48,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k28v110",
+   "metric": "H5",
+   "last": -58.89,
+   "cand": -55.61,
+   "limit": -55.89,
+   "at_equivalent_mix": -59.63,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k28v127",
+   "metric": "H4",
+   "last": -44.57,
+   "cand": -41.1,
+   "limit": -41.57,
+   "at_equivalent_mix": -45.0,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k28v127",
+   "metric": "H5",
+   "last": -57.27,
+   "cand": -53.96,
+   "limit": -54.27,
+   "at_equivalent_mix": -57.92,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k33v64",
+   "metric": "H3",
+   "last": -57.87,
+   "cand": -54.78,
+   "limit": -54.87,
+   "at_equivalent_mix": -58.38,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k33v110",
+   "metric": "H4",
+   "last": -61.1,
+   "cand": -57.86,
+   "limit": -58.1,
+   "at_equivalent_mix": -61.6,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k33v110",
+   "metric": "H5",
+   "last": -61.46,
+   "cand": -57.94,
+   "limit": -58.46,
+   "at_equivalent_mix": -61.82,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k33v127",
+   "metric": "H4",
+   "last": -59.75,
+   "cand": -56.55,
+   "limit": -56.75,
+   "at_equivalent_mix": -60.37,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k33v127",
+   "metric": "H5",
+   "last": -56.45,
+   "cand": -53.13,
+   "limit": -53.45,
+   "at_equivalent_mix": -56.74,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k45v20",
+   "metric": "inh",
+   "last": -36.72,
+   "cand": -33.36,
+   "limit": -33.72,
+   "at_equivalent_mix": -37.26,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k45v40",
+   "metric": "inh",
+   "last": -35.24,
+   "cand": -31.95,
+   "limit": -32.24,
+   "at_equivalent_mix": -35.76,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k45v64",
+   "metric": "inh",
+   "last": -34.82,
+   "cand": -31.42,
+   "limit": -31.82,
+   "at_equivalent_mix": -35.26,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k45v96",
+   "metric": "H6",
+   "last": -54.33,
+   "cand": -50.94,
+   "limit": -51.33,
+   "at_equivalent_mix": -54.55,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k45v96",
+   "metric": "inh",
+   "last": -30.63,
+   "cand": -27.07,
+   "limit": -27.63,
+   "at_equivalent_mix": -30.77,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k45v110",
+   "metric": "H6",
+   "last": -48.9,
+   "cand": -45.55,
+   "limit": -45.9,
+   "at_equivalent_mix": -49.02,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k45v110",
+   "metric": "inh",
+   "last": -29.68,
+   "cand": -26.1,
+   "limit": -26.68,
+   "at_equivalent_mix": -29.74,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k45v127",
+   "metric": "H6",
+   "last": -43.85,
+   "cand": -40.26,
+   "limit": -40.85,
+   "at_equivalent_mix": -43.78,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k45v127",
+   "metric": "inh",
+   "last": -28.37,
+   "cand": -24.74,
+   "limit": -25.37,
+   "at_equivalent_mix": -28.36,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k57v20",
+   "metric": "inh",
+   "last": -29.63,
+   "cand": -26.52,
+   "limit": -26.63,
+   "at_equivalent_mix": -30.21,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k57v40",
+   "metric": "inh",
+   "last": -29.28,
+   "cand": -26.18,
+   "limit": -26.28,
+   "at_equivalent_mix": -29.84,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k57v64",
+   "metric": "inh",
+   "last": -28.96,
+   "cand": -25.82,
+   "limit": -25.96,
+   "at_equivalent_mix": -29.45,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k57v96",
+   "metric": "inh",
+   "last": -28.32,
+   "cand": -25.11,
+   "limit": -25.32,
+   "at_equivalent_mix": -28.75,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k57v110",
+   "metric": "inh",
+   "last": -28.49,
+   "cand": -25.23,
+   "limit": -25.49,
+   "at_equivalent_mix": -28.88,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k57v127",
+   "metric": "inh",
+   "last": -28.6,
+   "cand": -25.23,
+   "limit": -25.6,
+   "at_equivalent_mix": -28.89,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k69v20",
+   "metric": "inh",
+   "last": -29.16,
+   "cand": -25.86,
+   "limit": -26.16,
+   "at_equivalent_mix": -29.73,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k69v40",
+   "metric": "inh",
+   "last": -29.06,
+   "cand": -25.61,
+   "limit": -26.06,
+   "at_equivalent_mix": -29.5,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k69v64",
+   "metric": "inh",
+   "last": -28.65,
+   "cand": -25.29,
+   "limit": -25.65,
+   "at_equivalent_mix": -29.05,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  },
+  {
+   "cell": "hq/DREAM/PRESET/B/k69v96",
+   "metric": "inh",
+   "last": -27.33,
+   "cand": -24.32,
+   "limit": -24.33,
+   "at_equivalent_mix": -27.6,
+   "equivalent_mix": {
+    "89": 19,
+    "91": 54
+   },
+   "proven": "balance"
+  }
+ ]
+}

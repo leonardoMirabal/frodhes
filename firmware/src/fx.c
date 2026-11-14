@@ -27,6 +27,13 @@
 #define FX_ENG_K 32768
 #define FX_ENG_G 32768
 #define FX_ENG_DT 0
+#else
+#define FX_ENG_LVL 1                            /* (engine.c's table, indexed by FX_ENG_I) */
+#if FR_CHUNK
+#define FX_ENG_I fxc_eng                        /* (FR_C1: latched at the block's first chunk, as fxc_side) */
+#else
+#define FX_ENG_I (eng_cur & 1u)
+#endif
 #endif
 #ifndef FX_SIDE                                 /* the Rhodes' side signal the effects read (SPREAD): rhodes.c's own */
 #define FX_SIDE rh_side
@@ -176,6 +183,8 @@ static volatile uint32_t fxc_ce = 256u;               /* FR_LAT_HALF (frodhes.c 
 static uint32_t c1_est_blk;                              /* (host diagnostics: the block count, fx_process) */
 #endif
 static uint8_t fxc_side;                                 /* FX_SIDE_ON, latched at the block's first chunk (fx_process) */
+static uint8_t fxc_eng;                                  /* the engine (engc_fx), latched there too: FX_ENG_K / G / DT
+                                                          * of the block core 1 processes, not of the one core 0 began */
 static const int32_t *fxc_mono;                          /* the block's dry voices (fx_process's mono: whole at the last chunk) */
 #define FXC_1 (fxc_o == 0u)
 #define FXC_Z (fxc_e == fxc_n)
@@ -3131,6 +3140,10 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
         }
         else if (dly_rst) dly_clear_step();
         fxc_side = FX_SIDE_ON;                         /* (the engine decides it at its block's start, eng_begin) */
+#ifdef FX_ENG_LVL
+        fxc_eng = engc_fx;                             /* (the bars' level for the level-reading effects, the same:
+                                                        * on a fade block the new engine's, as one core) */
+#endif
         fxc_mono = mono;
     }
     if (fx_p[FXP_RAW]) {
