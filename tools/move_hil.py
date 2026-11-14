@@ -1528,6 +1528,38 @@ def host_phrase(ev, dur, program=0, hq=None, lead=(), after=(), tune=0):
     return np.stack([np.asarray(run.L[i0:], float), np.asarray(run.R[i0:], float)], 1)
 
 
+_HOST_PHRASE = host_phrase                  # (the renderer itself: usb_host_file swaps host_phrase for the saved one)
+
+# usb-host: the host's own residual against itself with every note a block or two later. MIDI over USB lands the
+# take's notes on other blocks after CC 10 than the host's, and three stages run on from CC 10 whatever plays: LEVEL's
+# TPDF dither off unity (fx_out, fx_lv_dith), the reverb's modulated lines and the compressor's sub-block gain. They
+# leave a floor of ~1 LSB (-91 dBFS, the host's scale) under every note that no gain removes. MOVE-LVL 2026-11-14:
+# MARIMBA (F15) usb-host DIFFERS at 60 v100 -33.6 / 60 v127 -37.6 dB on the Move (d2, 01:14); the host against
+# itself, notes 6 ms later: -34.0 / -37.9 (build/snd3/mar_repro.py); RAW (CC 119), or FX off + COMP off + LEVEL 64:
+# exactly 0. THRESHOLD (2026-11-14, needs the coordinator's sign-off): a note DIFFERS only when its residual is also
+# TIMING_MARGIN_DB over that floor (the shifts' larger)
+TIMING_SHIFTS_MS = (6, 12)
+TIMING_MARGIN_DB = 3.0
+
+
+def timing_floor(ev, dur, program, hq, lead, after, tune, h, marks, sr):
+    """{note: dB} the host's residual against itself with the notes TIMING_SHIFTS_MS later (the larger), on the
+    rows' window (the held note's last 0.5 s, re the note, each aligned on its own, gain 1)"""
+    nt, maxlag, fl = int(0.5 * sr), int(0.08 * sr), {}
+    for sh in TIMING_SHIFTS_MS:
+        es = [(t + (sh / 1000.0 if k != "cc" else 0.0), k, a, b) for t, k, a, b in ev]
+        hs = _HOST_PHRASE(es, dur + 0.05, program, hq, lead, after, tune)
+        for name, t, n in marks:
+            a, b = int(t * sr), int((t + NOTE_S) * sr)
+            _, lag = _align(hs, h, a, b, a + int(0.5 * sr), b, -int(0.01 * sr), maxlag)
+            if b + lag > len(hs):
+                continue
+            mm, hm = _mono(hs[a + lag:b + lag])[-nt:], _mono(h[a:b])[-nt:]
+            d = 20 * np.log10((np.sqrt(np.mean((mm - hm) ** 2)) + 1e-9) / (np.sqrt(np.mean(mm ** 2)) + 1e-9))
+            fl[name] = max(fl.get(name, -240.0), float(d))
+    return fl
+
+
 def _lag(a, b, maxlag):
     """the lag (frames) of a against b (a[i + lag] ~ b[i]) by cross-correlation (FFT)"""
     n = len(a) + len(b)
@@ -1857,12 +1889,16 @@ def usb_host(r, d, program=0, out=print, motor_off=False):
                                            np.sqrt(np.mean(dc ** 2)) / (np.sqrt(np.mean(mc ** 2)) + 1e-9))) + 1e-12)
                 probe = {"hq_classic_db": round(float(hc_db), 1), "floor_db": round(float(fl_db), 1),
                          "resolved": bool(fl_db < hc_db - HQ_RESOLVE_DB)}
+    tf = timing_floor(ev, dur, program, hq, GLOBAL_CCS, after, tune, h, marks, sr)
+    for w in rows:
+        w["timing_db"] = round(tf.get(w["note"], -240.0), 1)
     rep = {"program": program, "hq": hq, "motor_off": bool(motor_off), "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
            "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max()),
            "tune": tune, "tune_source": tune_src, "pitch_left_c": left_c}
     if locked:
         rep["held"] = {k: v for k, (_, v) in locked.items()}
-    bad = [w["note"] for w in rows if w["residual_net_db"] > -40 and w["judged"] and not w.get("tape")]
+    bad = [w["note"] for w in rows if w["residual_net_db"] > -40 and w["judged"] and not w.get("tape")
+           and w["residual_net_db"] > w["timing_db"] + TIMING_MARGIN_DB]
     extra = [w["note"] for w in rows if w["extra_db"] > -30 and not w.get("tape")]
     bad_tape = [w["note"] for w in rows if w.get("tape") and w["judged"] and
                 (abs(w["level_db"]) > TAPE_LEVEL_DB or w["cb_max_db"] > TAPE_CB_DB)]
@@ -1892,7 +1928,8 @@ def usb_host(r, d, program=0, out=print, motor_off=False):
                       "PASS: the host's sound (one gain %.2f dB%s)" % (
                           rep["gain_db"], "; TAPE: level and spectrum, not the residual" if tape else "")
                       if not bad and not extra else
-                      "DIFFERS at %s (residual over -40 dB after one gain, 0.5-1.0 s into the note)" % bad if bad else
+                      "DIFFERS at %s (residual over -40 dB after one gain, 0.5-1.0 s into the note, and %.0f dB over the host's "
+                      "against itself a block later)" % (bad, TIMING_MARGIN_DB) if bad else
                       "FRODHES = the host (tails), but ANOTHER SOUND plays with the keys at %s (a Move instrument "
                       "on the track, or another slot): silence it and rerun" % extra)
     if "hq_probe" in rep and not rep["hq_probe"]["resolved"] and rep["verdict"].startswith("PASS"):
@@ -1911,9 +1948,10 @@ def usb_host(r, d, program=0, out=print, motor_off=False):
     out("gain Move/host %.2f dB (peak Move %d, host %d LSB); host TUNE %+d c (%s), left %s c" % (
         rep["gain_db"], rep["peak_move"], rep["peak_host"], tune, tune_src, left_c))
     for w in rows:
-        out("%-8s lag %6.2f ms (tail corr %.4f)  tail residual %6.1f dB  extra %6.1f dB %s  f0 %+6.2f / %+6.2f c  "
-            "decay %s / %s s  centroid %d / %d Hz" % (
-                w["note"], w["lag_ms"], w["tail_corr"], w["residual_db"] if w["judged"] else float("nan"), w["extra_db"], w["extra_hz"],
+        out("%-8s lag %6.2f ms (tail corr %.4f)  tail residual %6.1f dB (timing %6.1f)  extra %6.1f dB %s  f0 %+6.2f / "
+            "%+6.2f c  decay %s / %s s  centroid %d / %d Hz" % (
+                w["note"], w["lag_ms"], w["tail_corr"], w["residual_db"] if w["judged"] else float("nan"), w["timing_db"],
+                w["extra_db"], w["extra_hz"],
                 w["f0_move_c"] or 0, w["f0_host_c"] or 0, w["decay_move_s"], w["decay_host_s"],
                 w["centroid_move"], w["centroid_host"]))
     out(rep["verdict"])
@@ -2031,6 +2069,17 @@ PF_RESID_DB = -40.0                           # the residual after the gain, re 
 PF_RESID_DBFS = -66.0                         # the residual's own level (dBFS RMS): over it, another sound
 PF_CORR_MIC = 0.9                             # Main Out against the tap under this: not the digital Main Out
 PF_GAIN_DB_MIN = -40.0                        # Main Out's gain on the tap under this: Frodhes is not on Main Out
+PF_MIX_MAX_DB = 0.3                           # the mix (Main Out over the tap, less the trim) over this, a WARNING in the
+                                              # preflight's verdict (recorded, not a FAIL: the device run decides): the
+                                              # slot's or the
+                                              # track's volume over unity lifts Frodhes's ceiling (fx.c LIM_T -2.7 dBFS
+                                              # + the trim 2.20 dB = -0.5 dBFS) toward full scale. MOVE-LVL 2026-11-14:
+                                              # the 2026-11-13 run's slot volume 1.36 (+2.67 dB; 2026-11-04 1.94, +5.76)
+                                              # put the ceiling at +2.2 dBFS: usb-stress at unity clipped (100k-134k
+                                              # full-scale samples), not a louder Frodhes (host: the stress take's tap
+                                              # -2.70 dBFS peak, LUFS within 0.3 dB on 0.9.9, 0.9.11 and 0.9.13)
+MIX_SAY = "the slot's volume lifts Main Out over Frodhes's ceiling"
+LIM_DBFS = 20 * np.log10(24000 / 32768.0)     # fx.c LIM_T: the app's own ceiling, dBFS (-2.70)
 MIC_SAY = ("USB-C audio is the microphone: set Settings > USB-C audio out > Main Out (the Move resets it at boot)")
 PLAY_SAY = ("Main Out not silent with no note: something else is playing on the Move (another instrument on the "
             "track, a clip, input monitoring)")
@@ -2328,6 +2377,7 @@ def tap_vs_main(main, sr, tap, t_on=PF_ON, t_off=PF_OFF):
     g = float(np.mean(np.abs(gains)))
     rep.update(kind="ok", tap_offset_s=round((k - a) / sr, 4), corr=round(corr, 5), gain=[round(x, 4) for x in gains],
                gain_db=round(20 * np.log10(g + 1e-12), 2), mix_db=round(20 * np.log10(g / TRIM + 1e-12), 2),
+               main_ceiling_dbfs=round(LIM_DBFS + 20 * np.log10(g + 1e-12), 2),
                resid_db=round(float(rel), 1), resid_dbfs=round(float(hs.db(res)), 1),
                note_dbfs=round(float(hs.db(note)), 1), main_peak=float(np.abs(m).max()),
                resid_peak=round(float(np.abs(res).max()), 1), resid_hz=peaks, resid_bands_hz=near)
@@ -2350,8 +2400,13 @@ def tap_verdict(v, idle=None):
         return False, ("%s: %.1f dB under the note (%.1f dBFS RMS; limits %g dB, %g dBFS), its peaks at %s Hz%s" % (
             FOREIGN_SAY, -v["resid_db"], v["resid_dbfs"], -PF_RESID_DB, PF_RESID_DBFS, v["resid_hz"],
             ", within 20 dB of the note in the bands at %s Hz" % v["resid_bands_hz"] if v["resid_bands_hz"] else ""))
+    warn = ""                     # (recorded, not judged: the device run decides; MOVE-LVL 2026-11-14)
+    if v["mix_db"] > PF_MIX_MAX_DB:
+        warn = ("; WARNING %s: the mix %+.2f dB puts Main Out's ceiling (the limiter's %.1f dBFS x the gain) at %+.1f "
+                "dBFS, a take at the limiter clips (the slot's volume in Schwung 1.0 and the track's mixer 0 dB give "
+                "%.1f)" % (MIX_SAY, v["mix_db"], LIM_DBFS, LIM_DBFS + v["gain_db"], LIM_DBFS + 20 * np.log10(TRIM)))
     return True, "Main Out is Frodhes: residual %.1f dB under the note (%.1f dBFS), gain %.2f dB (trim %+.2f, the mix " \
-                 "%+.2f dB)" % (-v["resid_db"], v["resid_dbfs"], v["gain_db"], 20 * np.log10(TRIM), v["mix_db"])
+                 "%+.2f dB)%s" % (-v["resid_db"], v["resid_dbfs"], v["gain_db"], 20 * np.log10(TRIM), v["mix_db"], warn)
 
 
 class PassiveTap:

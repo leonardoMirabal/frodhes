@@ -58,6 +58,9 @@ def harness(tmp):
 def chord_raw(tmp_path_factory):
     tmp = str(tmp_path_factory.mktemp("mclick"))
     lines = dry_dist.type_base_lines(20) + [H.cc(195, 64, 127)]   # (the voicing at its defaults, not F01's)
+    lines += [H.cc(196, 40, 127)]   # (RESPONSE LIGHT: 0.9.11's level at v90. SND3's FULL curve plays the chord ~4 dB
+    # quieter, and 0.9.5's single-detent step at full volume read 2.45-2.64 against the self-check's 3.0; this checks
+    # the MASTER pass, not the velocity curve)
     for n in (36, 48, 52, 55, 60):
         lines += H.note(200, n, 90, 3600)
     r = H.run("master-chord", lines, 4000, binary=smk_build())

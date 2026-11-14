@@ -9,40 +9,42 @@
 # loudness), its windows +4 dB: neutral -51.8, quick -61.8, slow -41.4 (the order and the gaps as before).
 # 2026-11-08 (the clean Rhodes: the drive no longer folds, the critical-band match back to the RMS one): C5 v100
 # -56.3 / -66.3 / -45.9, the neutral window -58..-49.
+# 0.9.13 (SND3, RESPONSE FULL's convex velocity curve): v100 plays 2.9 dB quieter (the same tone), every window
+# -3 dB (C4 neutral -53.5, quick -61.5, slow -45.3; C5 -58.5 / -68.6 / -48.2); the order and the gaps as before.
 # Run: build/host/frodhes build/host/release_vel tests/scripts/release_vel.txt
 40 midi 0xB0 119 127
 100 midi 0x90 60 100
 600 midi 0x80 60 0
-700 expect rms < -47
-700 expect rms > -55
+700 expect rms < -50
+700 expect rms > -58
 1500 midi 0x90 60 100
 2000 midi 0x80 60 127
-2100 expect rms < -55
+2100 expect rms < -58
 2900 midi 0x90 60 100
 3400 midi 0x80 60 1
-3500 expect rms > -46
+3500 expect rms > -49
 4300 midi 0x90 72 100
 4800 midi 0x80 72 64
-4900 expect rms < -49
-4900 expect rms > -58
+4900 expect rms < -52
+4900 expect rms > -61
 5700 midi 0x90 72 100
 6200 midi 0x80 72 127
-6300 expect rms < -59
+6300 expect rms < -62
 7100 midi 0x90 72 100
 7600 midi 0x80 72 1
-7700 expect rms > -49
+7700 expect rms > -52
 8500 midi 0x90 48 100
 9000 midi 0x80 48 127
-9100 expect rms < -55
+9100 expect rms < -58
 # the FM-1's key C4: no release speed, the neutral release (as 0 / 64 over MIDI)
 9900 keys 0x80
 10400 keys 0
-10500 expect rms < -47
-10500 expect rms > -55
+10500 expect rms < -50
+10500 expect rms > -58
 12500 expect rms < -60
 # RELEASE 127 (CC 103): x8, the long release of before (C4 T60 ~1.4 s): 100 ms after the key-up -32 dB (neutral -50.8)
 12600 midi 0xB0 103 127
 12700 midi 0x90 60 100
 13200 midi 0x80 60 0
-13300 expect rms > -36
+13300 expect rms > -39
 14000 end

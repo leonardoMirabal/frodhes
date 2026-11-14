@@ -576,28 +576,34 @@ static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /
 #define RH_ATK_V 96u
 
 /* The dynamics stage (0.9.10): a key x velocity gain on the voice, set at the strike (no per-sample cost), relative
- * to 0.9.9's loudness. From v40 up both keep 0.9.9's level exactly (2026-11-09, the user: the soft end back toward
- * 0.9.9; it was 0 dB at v60 to -9 dB at v20: v40 -4.5, v50 -1.6 dB, the FM-1's keys' usual range heard weak); below,
- * RESPONSE (rh_touch_mode, taken at the strike) picks the soft end: A (FULL, dynamic) goes quieter on a smoothstep,
- * 0 dB at v40 to -9 dB at v10 and below (no step, no corner, at most 0.45 dB a velocity step: v30 -2.3, v20 -6.7 dB;
- * v1 -> v127 as before); B (LIGHT, the
- * light touch) keeps 0.9.9's velocity law (v20 -> v127 ~25.5 dB). The same sound at every velocity in both, only the
- * soft end's level differs (the same drive, swing and harmonics: B is A x a gain, to the integers' rounding; A = B
- * from v40). A's depth is held by the output gate (fx.c GATE_LO, 16 LSB peak, -66 dBFS, 406 ms): a soft note that
+ * to 0.9.9's loudness. RESPONSE (rh_touch_mode, taken at the strike) picks the curve. B (LIGHT, the light touch) keeps
+ * 0.9.9's velocity law (v20 -> v127 ~25.5 dB). A (FULL, dynamic): two parts, in dB, added (tools/gen_rh_dyn.py makes
+ * the table): the soft end, quieter on a smoothstep, 0 dB at v40 to -9 dB at v10 and below (v30 -2.3, v20 -6.7 dB;
+ * 2026-11-09: 0.9.10's 0 dB at v60 to -9 dB at v20 was heard weak in the FM-1's keys' usual range), and from 0.9.13 a
+ * convex curve, a cut 0 at v24 to about -4.4 dB at v48..v64, back to 0 at v127 (a monotone cubic: no step, no corner):
+ * the level re v127 -19 dB at v64, -13 at v88, -7.6 at v104 (0.9.11: -14.6 / -9.1 / -5.3), slow through the middle,
+ * steep at the top, v127 and v24 and below as they were (the range v20 -> v127 ~32 dB). The same sound at every
+ * velocity in both, only the level differs (the same drive, swing and harmonics: B is A x a gain, to the integers'
+ * rounding). A's depth is held by the output gate (fx.c GATE_LO, 16 LSB peak, -66 dBFS, 406 ms): a soft note that
  * drops under it is faded 0.4 s later; at -9 dB no velocity has more notes under it within 1 s than 0.9.9 at its
  * 32 LSB (keys 21..96 x the TYPEs, LEVEL 64: v1 20, v10 17, v20 10, v30 4 of 104; 0.9.9 20 / 17 / 13 / 8; -12 dB
  * at v1 gave 24 / 19 / 10 / 4), and a v1 note on keys up to ~96 stays ~20 dB over the FM-1 jack's -92.5 dBFS floor.
  * The top keys taper in both, 0 dB at key 82 to -5 dB at key 98 and above (smoothstep: the upper octave thinner,
- * keys 90-100 at v64 ~-6 dB re key 60). Only ever a cut, so no chord gets louder than 0.9.9's. It multiplies the drive's output gain law (rh_drive_g: the note-on's
- * gain, the kill, a re-strike's force ratio) and the noises' scale (the knock, the felt). The tables:
- * round(32768 x 10^(-9 s((40 - v) / 30) / 20)), round(32768 x 10^(-5 s((k - 82) / 16) / 20)), s(t) = 3t^2 - 2t^3 on
- * [0, 1] */
-#define RH_DYN_V_HI 40u
+ * keys 90-100 at v64 ~-6 dB re key 60). Only ever a cut, so no chord gets louder than 0.9.9's. It multiplies the
+ * drive's output gain law (rh_drive_g: the note-on's gain, the kill, a re-strike's force ratio) and the noises' scale
+ * (the knock, the felt). The key table: round(32768 x 10^(-5 s((k - 82) / 16) / 20)), s(t) = 3t^2 - 2t^3 on [0, 1] */
+#define RH_DYN_V_HI 127u
 #define RH_DYN_K_LO 82u
-static const uint16_t RH_DYN_V[RH_DYN_V_HI] = {             /* Q15, v 0..39 (40..127: 32768): RESPONSE A */
+static const uint16_t RH_DYN_V[RH_DYN_V_HI] = {             /* Q15, v 0..126 (127: 32768): RESPONSE A
+                                                * (tools/gen_rh_dyn.py) */
     11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11666, 11781, 11969, 12227, 12554,
-    12949, 13413, 13944, 14543, 15210, 15943, 16744, 17608, 18535, 19519, 20555, 21636, 22754, 23896, 25049, 26197,
-    27322, 28404, 29420, 30347, 31159, 31831, 32338, 32658};
+    12949, 13413, 13944, 14543, 15210, 15943, 16744, 17608, 18535, 19277, 19633, 19693, 19563, 19354, 19176, 19137,
+    19343, 19699, 20028, 20315, 20548, 20714, 20798, 20789, 20675, 20510, 20356, 20213, 20085, 19973, 19877, 19801,
+    19745, 19700, 19658, 19620, 19586, 19558, 19537, 19523, 19519, 19524, 19538, 19560, 19589, 19623, 19661, 19702,
+    19745, 19802, 19884, 19982, 20089, 20196, 20296, 20379, 20439, 20479, 20514, 20544, 20571, 20597, 20621, 20647,
+    20675, 20703, 20727, 20751, 20775, 20801, 20832, 20869, 20915, 20983, 21085, 21215, 21371, 21547, 21739, 21943,
+    22154, 22394, 22685, 23014, 23372, 23748, 24129, 24503, 24857, 25194, 25529, 25863, 26197, 26533, 26873, 27218,
+    27571, 27936, 28313, 28699, 29089, 29477, 29859, 30229, 30581, 30914, 31232, 31540, 31843, 32145, 32451};
 /* the bars' LIGHT level map (bars.c bar_lt_g: 1 / this, up to +9 dB at v20 and below, 0 dB from v60): the electric
  * piano's FULL soft end until 2026-11-09, kept for the bars so their LIGHT stays byte-identical */
 #define RH_DYN_VB_HI 60u

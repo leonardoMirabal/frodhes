@@ -33,40 +33,41 @@
 # MUTE 0: rings on after the key-up (-33.0 / -47.2 / -54.0 / -65.4)
 100 midi 0xB0 103 0
 200 midi 0x90 60 100
-550 expect rms > -36
+# 0.9.13 (SND3 balance): the bars 3 dB down into the mix (bars.c BAR_MIX_G): every 'rms >' floor -3 dB (the '<' ceilings stay)
+550 expect rms > -39
 600 midi 0x80 60 0
-700 expect rms > -50
-800 expect rms > -57
-1000 expect rms > -68
+700 expect rms > -53
+800 expect rms > -60
+1000 expect rms > -71
 # MUTE 64: half a hand (-74.5 at 0.1 s, then silent)
 2600 midi 0xB0 103 64
 2700 midi 0x90 60 100
-3050 expect rms > -36
+3050 expect rms > -39
 3100 midi 0x80 60 0
 3200 expect rms < -65
-3200 expect rms > -85
+3200 expect rms > -88
 3300 expect rms < -150
 # MUTE 127: the full stop (-98.2 at 0.1 s, then silent)
 5100 midi 0xB0 103 127
 5200 midi 0x90 60 100
-5550 expect rms > -36
+5550 expect rms > -39
 5600 midi 0x80 60 0
 5700 expect rms < -90
 5800 expect rms < -150
 # MUTE 127 with the pedal down: the hand never lands (= MUTE 0)
 7600 midi 0xB0 64 127
 7700 midi 0x90 60 100
-8050 expect rms > -36
+8050 expect rms > -39
 8100 midi 0x80 60 0
-8200 expect rms > -50
-8500 expect rms > -68
+8200 expect rms > -53
+8500 expect rms > -71
 # a half pedal (CC 64 50) with MUTE 127: the hand lands at the pedal's weight (-87.2 at 0.1 s)
 10100 midi 0xB0 64 50
 10200 midi 0x90 60 100
-10550 expect rms > -36
+10550 expect rms > -39
 10600 midi 0x80 60 0
 10700 expect rms < -80
-10700 expect rms > -95
+10700 expect rms > -98
 10800 expect rms < -150
 # pedal up; exact silence at the end
 12600 midi 0xB0 64 0

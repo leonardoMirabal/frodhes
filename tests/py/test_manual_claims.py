@@ -153,9 +153,13 @@ def test_comp_from_off_keeps_the_playing_level():
     """COMPRESSOR: THRESH turned up from OFF 'comes on with MAKEUP ... which keeps the volume about the same': a chord
     played after it within 1 dB of the same chord with the compressor off (BUGHUNT #6: 0.9.5 woke it at THRESH -0.3 dB
     with +2.8 dB of make-up, the chord +2.8 dB louder). A quiet, dying tail comes up, as under any compressor: the
-    chord's first 300 ms are judged, where it is played (it was switched on there, under the tail, before)"""
-    on = R([f"{40 + 3 * i} turn 0 1" for i in range(4)] + ["150 turn 2 1"] + chord())
-    off = R([f"{40 + 3 * i} turn 0 1" for i in range(4)] + chord())
+    chord's first 300 ms are judged, where it is played (it was switched on there, under the tail, before).
+    0.9.13 (SND3): five SELECT detents to COMPRESSOR (four stopped on VOICE 3/3 since the velocity page came in, and
+    K1 there turned RESPONSE to LIGHT: the claim was not tested); the engine's make-up refit to FULL's curve (eng_pages.h
+    cmp_mkup 15 -> 10): -0.71 dB at v110 (0.9.11 -0.62 with 15)"""
+    on = R([f"{40 + 3 * i} turn 0 1" for i in range(5)] + ["150 turn 2 1", "200 dump"] + chord())
+    off = R([f"{40 + 3 * i} turn 0 1" for i in range(5)] + chord())
+    assert on.state(200)["page"] == "COMPRESSOR" and on.state(200)["p.33"] == "1", on.state(200)["page"]
     step = lvl(on, 400, 700) - lvl(off, 400, 700)
     assert abs(step) <= 1.0, f"the chord with the compressor woken from OFF: {step:+.2f} dB"
 

@@ -1,4 +1,5 @@
 ## Summary
 
 adds Frodhes for the Akai MPC, a cleaner upper register on every electric piano, richer soft notes on the Move, the
-plugin and the MPC, a new MIX law on DELAY, DRIVE and REVERB, and update notices in the desktop plugin.
+plugin and the MPC, a new MIX law on DELAY, DRIVE and REVERB, a fuller velocity response on the electric piano, and
+update notices in the desktop plugin.

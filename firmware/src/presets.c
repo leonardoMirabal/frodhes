@@ -101,9 +101,9 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     P_RV_DEPTH, 16, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 47, P_TONE, 112, P_BARK, 80, P_BELL, 96, P_HAMMER, 32,
     P_DECAY, 72, 0xFF,
     /* F03 EARLY FELT: the felt hammers, their soft onset, NOISE lower (soft playing), a brighter TONE, a gentle
-     * compressor, a trace of hall */
+     * compressor, a trace of hall (0.9.13 SND3: LEVEL 46 -> 48, back to its level re F01 on FULL's new curve) */
     P_TYPE, 2, P_NOISE, 36, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 1, P_CMP_ATK, 40, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 46, P_TONE, 112, P_BARK, 80, P_BELL, 64, P_HAMMER, 64,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 48, P_TONE, 112, P_BARK, 80, P_BELL, 64, P_HAMMER, 64,
     P_DECAY, 72, 0xFF,
     /* F04 BELL DYNO: the bell voicing (its TYPE), the cards at the middle, a short plate */
     P_TYPE, 3, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,

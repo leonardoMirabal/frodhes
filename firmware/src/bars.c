@@ -114,6 +114,13 @@ static int32_t bar_lsin(const bar_ms_t *s)
     return num > 0 ? (bar_log2_64((uint64_t)num) - bar_log2_32((uint32_t)s->k2) - 32 * 256) >> 1 : 0;
 }
 
+/* the bars' level into the mix (0.9.13, SND3): RESPONSE FULL's convex curve plays the electric piano 2.6-3.0 dB
+ * quieter at middle velocities, so VIBES and MARIMBA come down with it to 0.9.9's balance (MARIMBA re ST77 at v100,
+ * the presets re F01); one gain on the Q20 mix before the dithered cut (bar_render), so the tone and the floor stay */
+#ifndef BAR_MIX_G
+#define BAR_MIX_G 23197                             /* Q15: -3.0 dB */
+#endif
+#define BAR_MIX(x) ((int32_t)(((int64_t)(x) * BAR_MIX_G + 16384) >> 15))
 #define BAR_PZI(pb, f, l) (((pb) * BAR_NFAM + (f)) * BAR_NLAYER + (l))
 static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
 {
@@ -1376,6 +1383,7 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
             bar_bd_m[sb][1] = bar_bd_m[sb][0]; bar_bd_m[sb][0] = o; bar_bd_o[sb][1] = bar_bd_o[sb][0]; bar_bd_o[sb][0] = y;
             o = y;
         }
+        o = BAR_MIX(o);
         if (o > hi) hi = o;
         if (o < lo) lo = o;
         { int32_t d = RH_DITH(r); mono_out[j] = (o + 16 + ((d - 16) & dm)) >> 5; }
@@ -1790,6 +1798,7 @@ __attribute__((noinline)) static void bar_chunk(int32_t *mono_out, uint32_t o, u
             bar_bd_m[sb][1] = bar_bd_m[sb][0]; bar_bd_m[sb][0] = ov; bar_bd_o[sb][1] = bar_bd_o[sb][0]; bar_bd_o[sb][0] = y;
             ov = y;
         }
+        ov = BAR_MIX(ov);
         if (ov > hi) hi = ov;
         if (ov < lo) lo = ov;
         { int32_t d = RH_DITH(r); mono_out[j] = (ov + 16 + ((d - 16) & dm)) >> 5; }

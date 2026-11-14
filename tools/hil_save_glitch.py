@@ -403,8 +403,11 @@ def self_test(eng="rhodes", log=print):
     # +120 found on all three; build/tri/glitch_sweep.py in the triage worktree)
     # rc-0910: each hold placed by slope_at (within 5 ms of its mark, every channel on its slope): single holds at
     # 40-200 ms found 31 of 33 (16 at the fixed marks), so the marks no longer follow the sound
+    # SND3 + the MIX law (2026-11-14): the second hold +120 -> +125 ms. Each alone is still found (single holds at
+    # 40-200 ms: 28 of 33; +65, +120, +125 all found), but +120 after the +65 hold (the sound 12 frames later) lands
+    # where the detector sees little; +115 and +125 are both found after it (build/snd3/glitch_pair.py)
     for name, marks, ms in (("USB dropout 2 ms", (0.06, 0.13), 2), ("jack dropout 3 ms", (0.07,), 3),
-                            ("jack dropout 3 ms", (0.08,), 3), ("USB underrun hold 12 frames", (0.065, 0.120), 0)):
+                            ("jack dropout 3 ms", (0.08,), 3), ("USB underrun hold 12 frames", (0.065, 0.125), 0)):
         u2, j2 = u.copy(), j.copy()
         for m in marks:
             m += t_chord

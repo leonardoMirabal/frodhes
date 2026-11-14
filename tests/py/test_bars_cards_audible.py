@@ -79,7 +79,9 @@ def test_soft_mallets_are_soft_at_any_velocity(n, vel):
         assert m["v3"] <= -25 and m["v2"] <= r["v2"] + 0.5, (n, vel, fam, m["v2"], m["v3"], r["v2"])
     s, y = meas("BARK", SOFT, vs)[(n, vel)], meas("BARK", YARN, vs)[(n, vel)]
     # (-85: the floor; the output's dither (#16) puts a partial that has died out at about -87 re the fundamental on F6)
-    assert s["v2"] <= max(y["v2"], -85) + 0.5 and s["v3"] <= max(y["v3"], -85) + 0.5, (n, vel)
+    # THRESHOLD (2026-11-14, SND3): the floor -85 -> -82. The bars 3 dB down (bars.c BAR_MIX_G) and the dither the same:
+    # the floor re the fundamental 3 dB higher (89 v100: SOFT's 10th partial -83.8 against YARN's -84.3, both floor)
+    assert s["v2"] <= max(y["v2"], -82) + 0.5 and s["v3"] <= max(y["v3"], -82) + 0.5, (n, vel)
     assert s["cen_a"] <= y["cen_a"] * 1.02, (n, vel)
 
 
