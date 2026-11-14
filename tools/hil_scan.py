@@ -4289,6 +4289,21 @@ def marimba_voice(V, S):
                 fmt=lambda v: f"{v[0]:.2f} -> {v[1]:.2f} s")
 
 
+PEDAL_JACK_CEIL = 30.0             # dB/s: the jack's decay ceiling margin (THRESHOLD in pedal_order_ok)
+
+
+def pedal_order_ok(v):
+    """marimba_decay's pedal row: v = [up, half, down, ceiling] dB/s; ceiling: the jack's own MUTE 127 reading of the
+    same key (USB: 1e9, none). down < half < up and up / down >= 3x, except that on the jack half vs up is not judged when
+    up reads within PEDAL_JACK_CEIL of that ceiling: the jack's hiss caps the fastest decay it can read (~700-720
+    dB/s; the same setting reads 779-923 on USB by where the key-up falls on the damper's 32-frame grid), so up and
+    half both read the cap (the 0.9.12 two-core T2: jack 702 / 702 / 46, USB 845 / 759 / 46). USB is judged in full.
+    THRESHOLD (coordinator 2026-11-14): the jack's order judged only when its up < its MUTE 127 - 30 dB/s"""
+    up, half, down, ceil = v
+    order = half < up or up >= ceil - PEDAL_JACK_CEIL
+    return down < half and order and up / down >= 3.0
+
+
 @vtest
 def marimba_decay(V, S):
     """MARIMBA VOICE 2/2: RING, MUTE (the hand), the pedal, NOISE (no knock), TUNE; the MOTOR CCs inert"""
@@ -4336,8 +4351,8 @@ def marimba_decay(V, S):
         S.check("pedal down holds at MUTE 127", f"key {n}", S.per(lambda q: r(("ped", 127), q, True) / r("held", q, True)),
                 lambda v: abs(v - 1) <= 0.01, "within 1 % of the held decay (the envelope's slope)", fmt=lambda v: f"x{v:.3f}")
         S.check("pedal up / half / down (MUTE 127)", f"key {n}",
-                S.per(lambda q: [r(("ped", p_), q) for p_ in (0, 50, 127)]),
-                lambda v: v[2] < v[1] < v[0] and v[0] / v[2] >= 3.0, "down < half < up, up / down >= 3x",
+                S.per(lambda q: [r(("ped", p_), q) for p_ in (0, 50, 127)] + [r(127, q) if q == "jack" else 1e9]),
+                pedal_order_ok, "down < half < up, up / down >= 3x (the jack's half vs up: under its ceiling only)",
                 fmt=lambda v: f"{v[0]:.0f} / {v[1]:.0f} / {v[2]:.0f} dB/s")
     # NOISE: the contact (0..60 ms) and, with no damper, nothing at the key-up
     ev, dur = strikes((48, 60, 84), (100,), gap=3.0, hold=1.5)
