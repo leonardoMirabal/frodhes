@@ -198,3 +198,5 @@ GPL-3.0-only, the same as Dinghy, Felucca and SLOOP ([LICENSING.md](LICENSING.md
 
 Frodhes is an independent open-source project, not affiliated with or endorsed by M-VAVE,
 Ableton, the Rhodes or Fender trademark owners or any instrument maker. It comes with no warranty: install it at your own risk.
+
+You can also try Frodhes in the browser, no flashing needed, in the free community [FM-1 Emulator](https://fm1-emulator.atst.tools/).
