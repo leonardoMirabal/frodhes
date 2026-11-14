@@ -6,6 +6,8 @@
 #                                                          headless: make plugin first)
 #   plugin-effects.png                                     the plugin's own UI code playing a sound with the
 #                                                          compressor and the tape delay on (plugin/ui frui_render)
+#   plugin-update.png                                      SETTINGS with a newer release found: the UPDATE key,
+#                                                          UPDATES ON (plugin/ui frui_render)
 # Then tools/doc_links.py --fix sets the ?v= of every link to the new files.
 #   tools/plugin_doc_shots.sh [PLUGIN_BUILD]               (default build/plugin)
 set -eu
@@ -21,4 +23,5 @@ cp "$T/open.png" "$OUT/plugin-main.png"
 cp "$T/presets.png" "$OUT/plugin-presets.png"
 cp "$T/save-typed.png" "$OUT/plugin-save.png"
 cp "$T/ui/directions-a3/A3-framed-tab-comp-delay@2x.png" "$OUT/plugin-effects.png"
+cp "$T/ui/update-settings@2x.png" "$OUT/plugin-update.png"
 python3 tools/doc_links.py --fix
