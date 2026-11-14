@@ -197,3 +197,53 @@ def test_clk_off_is_judged_per_shift():
     x = np.zeros(rd.FS)
     x[rd.FS // 2 - 100:rd.FS // 2:3] = 1.0                             # a +-1 LSB note: it sounds at the key-up
     assert rd.sounds_at(x, rd.FS // 2) and not rd.sounds_at(x, rd.FS // 2 + int(0.02 * rd.FS))
+
+
+def test_clicks_reference_floor_finds_every_injected_step():
+    """clicks()' reference is floored at one int16 step (CLK_REF_FLOOR, 2026-11-14): a note that decays into exact
+    zeros in more than half its window read its own sine re 1e-9 as a +200 dB click (MARIMBA FX A k89v40 203.7 dB).
+    The floor is not a weaker detector: on rendered cells (quiet bodies whose median frame is 0, ordinary notes, and
+    the key-up tails, silent and sounding) a 1 ms step of 2..256 LSB that the old reference (median + 1e-9) found
+    (> +6 dB over the clean cell, the clk ceiling's margin) the new one finds too; and the bigger steps are found"""
+    import numpy as np
+    from hostrun import BIN, build
+    build()
+    tmp = os.path.join(os.path.dirname(BIN), "py", "clkref-" + os.environ.get("PYTEST_XDIST_WORKER", "w"))
+
+    def frames(y):
+        d = np.abs(np.diff(y, 2))
+        n = len(d) // 44
+        return d[:n * 44].reshape(n, 44).max(1) if n else np.zeros(1)
+
+    def old(x, ref):
+        return max(rd.db((frames(x).max() / (np.median(frames(ref)) + 1e-9)) ** 2), -100.0)
+
+    def step(y, at, a):
+        z = y.copy()
+        z[at:at + 44] += a
+        return z
+
+    tl = lambda t: np.where(np.abs(t) <= rd.LSB_FLOOR, 0.0, t)       # (clk_off's tail, as measure_once)
+    cells = (("fm1/MARIMBA/FX/A", "k89v40"), ("fm1/MARIMBA/FXOFF/A", "k89v127"), ("fm1/MARIMBA/FXOFF/A", "k45v20"),
+             ("fm1/ST77/FXOFF/A", "k45v64"), ("fm1/ST77/FXOFF/A", "k93v20"), ("fm1/DYNO/FXOFF/A", "k28v127"))
+    seen_zero_median, found_new = 0, {}
+    for cid, lab in cells:
+        case = [c for c in rd.cases("full") if c[0] == cid][0]
+        x = rd.render(BIN, os.path.join(tmp, cid.replace("/", "_")), rd.script("full", case[2], case[3])).mean(1)
+        e = [e for e in rd.events("full", case[3])[0] if e[0] == lab][0]
+        i, off = int(e[1] / 1000 * rd.FS), int((e[1] + rd.HOLD) / 1000 * rd.FS)
+        body, pre, tail = x[i + int(0.03 * rd.FS):off], x[off - int(0.2 * rd.FS):off], x[off:off + int(0.3 * rd.FS)]
+        seen_zero_median += np.median(frames(body)) == 0
+        assert rd.clicks(body, body) < 60.0, (cid, lab, rd.clicks(body, body))   # no +200 dB of a smooth note
+        windows = [(lambda a, p=p: (step(body, int(p * rd.FS), a), body), body, body) for p in (0.1, 0.4, 0.7)] + \
+                  [(lambda a: (tl(step(tail, int(0.15 * rd.FS), a)), pre), tl(tail), pre)]
+        for w, (inj, clean, ref) in enumerate(windows):
+            for a in (2, 4, 8, 16, 64, 256):
+                y, r = inj(a)
+                fo = old(y, r) - old(clean, ref) > 6.0
+                fn = rd.clicks(y, r) - rd.clicks(clean, ref) > 6.0
+                assert fn or not fo, (cid, lab, "window", w, "step", a, "found by the old reference only")
+                found_new[(cid, lab, w, a)] = fn
+    assert seen_zero_median >= 2                         # the cells the floor exists for are in the set
+    assert all(found_new[(c, l, 3, a)] for c, l in cells for a in (16, 64, 256))     # every key-up tail
+    assert all(found_new[(c, l, w, 256)] for c, l in cells for w in range(3))         # 256 LSB in every body
