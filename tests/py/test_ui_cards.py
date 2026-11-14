@@ -41,7 +41,7 @@ STYLE = {1: {"amount": "F", "select": "F", "toggle": "F"}, 2: {"amount": "L", "s
 SHORT = {("ASSIGN", "PLAYS", s) for s in ("TRM/WAH", "CMP GAIN", "TRM RATE", "TRM SHP", "PHA SPD", "PHA FDBK",
                                           "CHO SPD", "DLY FDBK")}
 DEF_PX = 24                                                       # aatext.c UI_VAL_PX
-KEYS = M.KEYS + [f"rowbox{k}" for k in range(4)] + ["cards"]
+KEYS = M.KEYS + [f"rowbox{k}" for k in range(4)] + [f"show{k}" for k in range(4)] + ["cards"]
 SYNC_NAMES = {"1/32", "16T", "1/16", "8T", "16D", "1/8", "4T", "8D", "1/4", "4D", "1/2", "1/1", "2BAR", "4BAR"}
 LOOK_C = [False]
 
@@ -126,7 +126,9 @@ def check_row(im, s, k, variant, w, geo):
     if b is None:
         return [f"{w}: no rowbox state"]
     card = s.get(f"card{k}")
-    acc = M.accent_of(im)
+    show = s.get(f"show{k}")                                      # (0.9.13 E2: a MIX card shows DRY / 50/50 / WET, or
+    mix = show is not None and show != card                       # its bar alone, "BAR"; its fill past 64 the accent's
+    acc = M.accent_of(im)                                         # complement, ui.c cd_comp)
     base, cap, vr = b["base"], b["cap"], b["vx1"]
     if geo.setdefault("geo", (base, cap, vr)) != (base, cap, vr):
         errs.append(f"{w}: baseline / cap / value edge {(base, cap, vr)}, the other rows {geo['geo']}")
@@ -134,6 +136,10 @@ def check_row(im, s, k, variant, w, geo):
         errs.append(f"{w}: the value does not fit its room")
     # one size: the value's ink rows (white cores) start on the cap row and are the cap height
     ys = np.nonzero(M.white(im[y0:y0 + RH, x0 + b["vx0"]:x0 + vr]).any(axis=1))[0]
+    if mix and show == "BAR":
+        if len(ys):
+            errs.append(f"{w}: a MIX between its marks draws a value")
+        return errs + check_mix_meter(im, k, b, w)
     if not len(ys):
         return errs + [f"{w}: no value drawn"]
     top, h = int(ys[0]), int(ys[-1] - ys[0] + 1)
@@ -172,10 +178,13 @@ def check_row(im, s, k, variant, w, geo):
         fw = want_fw(kind, v, hi, card)
         if fw is not None and abs(b["fw"] - fw) > 1:
             errs.append(f"{w}: meter {b['fw']} px, the rule says {fw}")
-        band = M.amberish(row[RH - 4:RH] if st == "F" else row[34:37]).sum(axis=0) >= 2
-        end = int(np.nonzero(band)[0][-1]) + 1 if band.any() else 0
-        if abs(end - b["fw"]) > 1:
-            errs.append(f"{w}: the meter ends at {end} on the screen, the firmware says {b['fw']}")
+        if mix:
+            errs += check_mix_meter(im, k, b, w)
+        else:
+            band = M.amberish(row[RH - 4:RH] if st == "F" else row[34:37]).sum(axis=0) >= 2
+            end = int(np.nonzero(band)[0][-1]) + 1 if band.any() else 0
+            if abs(end - b["fw"]) > 1:
+                errs.append(f"{w}: the meter ends at {end} on the screen, the firmware says {b['fw']}")
         if b["fw"] == 0 and amb(inner).sum():
             errs.append(f"{w}: amber in a row at 0 (a stray edge?)")
     elif st == "S":                                               # the blocks' feet: n runs, lit + 1 amber
@@ -218,6 +227,18 @@ def check_row(im, s, k, variant, w, geo):
             errs.append(f"{w}: an accent (an edge?) in a BACK card")
     errs += M.check_value_clear(im, M.row_box(im, k), w)
     return errs
+
+
+def check_mix_meter(im, k, b, w):
+    """a MIX card's meter (0.9.13 E2): lit (any hue: the accent to 64, its complement past it) to the firmware's
+    width, at the card's foot"""
+    row = im[M.ROW_Y0 + M.ROW_DY * k:M.ROW_Y0 + M.ROW_DY * k + RH, M.ROW_X0:M.ROW_X0 + W]
+    band = (np.abs(row[RH - 4:RH]).sum(axis=-1) > 60).sum(axis=0) >= 2
+    band[W * 64 // 127] = False                                   # (the 1 px grey line at 64, ui.c mt.mixl)
+    end = int(np.nonzero(band)[0][-1]) + 1 if band.any() else 0
+    if b["style"] in "F" and abs(end - b["fw"]) > 1:
+        return [f"{w}: the MIX meter ends at {end} on the screen, the firmware says {b['fw']}"]
+    return []
 
 
 def check_page(im, s, where, variant):

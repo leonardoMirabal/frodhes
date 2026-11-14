@@ -498,17 +498,21 @@ def test_old_records_play_as_before(tmp_path):
     # design: its octaves -5 .. +13 dB; VIBES +1.8 dB at 2 kHz), so the reverb is compared, not the instrument: played
     # on VIBES, each build's wet (the render less its own REVERB MIX 0 render) over that dry, per octave from 63 Hz to
     # 4 kHz within 1 dB (measured 0.85 at 4 kHz), 8 kHz is the half-bands' move (+3.2 dB), the
-    # wet's share in all within 0.5 dB)
+    # wet's share in all within 0.5 dB). 0.9.13 E2 (the MIX law, stored values kept): MIX 90 is past 64, the new build's
+    # dry x RV_DRY(90) and its send whole, so its wet is the render less g x its MIX 0 render, and the wet over the dry
+    # is the old build's + 20 log10(32766 / RV_SEND_old(90)) dB (+0.75) less 20 log10(g) (+4.6))
+    g = ((127 - 90) * 32768 + 31) // 63 / 32768                     # (fx.c RV_DRY)
+    law = 20 * np.log10(32766 / (90 * 258 * (254 - 90) // 127)) - 20 * np.log10(g)
     f = np.fft.rfftfreq(n, 1 / FS)
     bands = lambda X: np.array([X[(f >= c / 1.414) & (f < c * 1.414)].sum() for c in 62.5 * 2.0 ** np.arange(8)])
     for x, y, x0, y0 in ((a.L, b.L, a0.L, b0.L), (a.R, b.R, a0.R, b0.R)):
         x, y, x0, y0 = (np.asarray(z[:n], float) for z in (x, y, x0, y0))
-        X, Y, X0, Y0 = (bands(np.abs(np.fft.rfft(z)) ** 2) for z in (x - x0, y - y0, x0, y0))   # (the wet, the dry)
-        d = 10 * np.log10((Y / Y0) / (X / X0))
+        X, Y, X0, Y0 = (bands(np.abs(np.fft.rfft(z)) ** 2) for z in (x - x0, y - g * y0, x0, g * y0))   # (wet, dry)
+        d = 10 * np.log10((Y / Y0) / (X / X0)) - law
         print("octaves 63 Hz .. 8 kHz, the wet over the dry, dB against the old build:", np.round(d, 2))
         assert np.all(np.abs(d[:7]) < 1.0), "the old panel sounds different"
-        w, w0 = y - y0, x - x0
-        lv = 10 * np.log10((np.sum(w * w) / np.sum(y0 * y0)) / (np.sum(w0 * w0) / np.sum(x0 * x0)))
+        w, w0 = y - g * y0, x - x0
+        lv = 10 * np.log10((np.sum(w * w) / np.sum((g * y0) ** 2)) / (np.sum(w0 * w0) / np.sum(x0 * x0))) - law
         print(f"the wet's share {lv:+.2f} dB against the old build")
         assert abs(lv) < 0.5, f"{lv:+.2f} dB against the old build"
 

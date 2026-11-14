@@ -174,7 +174,7 @@ Support on. Download [`frodhes-mpc.zip`](https://github.com/leonardoMirabal/frod
 
 **[The user manual](docs/MANUAL.md)**: every page, knob and button, the presets, the effects and the MIDI map.
 
-![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=93a2d41c)
+![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=1fc7cdc9)
 
 ## Other keyboards
 

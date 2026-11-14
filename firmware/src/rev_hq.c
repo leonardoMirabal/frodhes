@@ -119,8 +119,7 @@ static void rev_reset_state(void)
 
 #define RV_RET(w) ((int32_t)(((int64_t)(w) * rk) >> 30) + (int32_t)((uint32_t)(w) >> 31))
 #define RV_RETH(w) ((int32_t)(((int64_t)(w) * rk + (1ll << 33)) >> 34))   /* (HALL: its taps 16x, rounded) */
-#define RV_SEND(v) ((v) * 258 * (254 - (v)) / 127)    /* MIX's law all in the send, the return x0.5; INFINITE as it
-                                                         * was (rev_types.c) */
+/* MIX's law (fx.c RV_SEND, RV_DRY): the wet in the send, the return x0.5; INFINITE as rev_types.c */
 #define RV_RK ((1 << 29) + 1)
 static int32_t rv_vl RH_SP_SEC(".data.fx_rvvl") = -1, rv_sk RH_SP_SEC(".bss.fx_rvsk"), rv_sko RH_SP_SEC(".bss.fx_rvsko");
 static int32_t rv_mg RH_SP_SEC(".bss.fx_rvmg");
@@ -154,14 +153,14 @@ static FX_RAM __attribute__((noinline)) void rq_ret(int32_t *L, int32_t *R, int3
  * blocks of the chunk */
 static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 {
-    static int32_t v, tgt, zv, sendn, sendo, size, dv, lcv, off, damp, rko, vl, skn, sko, rest;
+    static int32_t v, tgt, zv, sendn, sendo, size, dv, lcv, off, damp, rko, rq, vl, skn, sko, rest, dryt;
     static uint32_t pd;
     static int quiet;
     uint32_t sb, i, j;
     if (FXC_1) {
         int32_t tv;
         v = fx_p[FXP_RV_DEPTH]; tgt = fx_p[FXP_RV_TYPE]; zv = fx_p[FXP_RV_SIZE];
-        sendn = tgt ? RV_SEND(v) : 0; sendo = tgt ? v * 258 : 0; size = 40 + (zv ? zv : v) * 70 / 127;
+        sendn = tgt ? RV_SEND(v) : 0; sendo = tgt ? RV_SEND(v) : 0; size = 40 + (zv ? zv : v) * 70 / 127;
         dv = fx_p[FXP_RV_DECAY]; tv = fx_p[FXP_RV_TONE]; lcv = fx_p[FXP_RV_LOCUT];
         off = ((dv - 64) * 15) / 32;
         damp = tv >= 64 ? 60 - ((tv - 64) * 60) / 63 : 60 + ((64 - tv) * 90) / 64;
@@ -169,36 +168,38 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
         quiet = !rv_running;
         if (tgt >= (int32_t)RV_N) tgt = RV_HALL;
         if (!rv_running) rv_mg = fx_p[FXP_RV_MOD] << 4;
-        if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = sendn; rv_sko = sendo; }
+        if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = sendn; rv_sko = sendo ? v * 258 : 0; }
         vl = rv_vl;
-        if (v != vl && sendo) sendo = (int32_t)(((int64_t)sendo * (254 - v)) / (254 - vl));
-        rko = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;
+        rq = vl > 0 ? (RV_SEND(vl) << 14) / (vl * 258) : 32768;   /* (INFINITE: its return x rq / 2^15) */
+        if (sendo) sendo = v == vl ? v * 258 : (RV_SEND(v) << 14) / rq;
+        rko = (rq << 15) + 1;
         skn = rv_sk; rv_sk = sendn; sko = rv_sko; rv_sko = sendo;
+        dryt = RV_DRYT(v, tgt, dv);
         rest = !sendn && !rv_running && !rv_fade;
-        if (rest) return;
-        rv_running = 1;
+        if (!rest) rv_running = 1;
     }
-    if (rest) return;
+    if (rest) { rv_dry(L + fxc_o, R + fxc_o, fxc_e - fxc_o, 32768); return; }   /* (the dry back to whole) */
     for (sb = fxc_o; sb < fxc_e; sb += CTL) {
 #else
 static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t v = fx_p[FXP_RV_DEPTH], tgt = fx_p[FXP_RV_TYPE], zv = fx_p[FXP_RV_SIZE];
-    int32_t sendn = tgt ? RV_SEND(v) : 0, sendo = tgt ? v * 258 : 0, size = 40 + (zv ? zv : v) * 70 / 127;
+    int32_t sendn = tgt ? RV_SEND(v) : 0, sendo = tgt ? RV_SEND(v) : 0, size = 40 + (zv ? zv : v) * 70 / 127;
     int32_t dv = fx_p[FXP_RV_DECAY], tv = fx_p[FXP_RV_TONE], lcv = fx_p[FXP_RV_LOCUT];
     int32_t off = ((dv - 64) * 15) / 32;
     int32_t damp = tv >= 64 ? 60 - ((tv - 64) * 60) / 63 : 60 + ((64 - tv) * 90) / 64;
     uint32_t sb, i, j, pd = FX_PDLY_SAMPLES(fx_p[FXP_RV_PREDLY]);
-    int32_t rko, vl, skn, sko;
+    int32_t rko, rq, vl, skn, sko, dryt = RV_DRYT(v, tgt, dv);
     int quiet = !rv_running;
     if (tgt >= (int32_t)RV_N) tgt = RV_HALL;
     if (!rv_running) rv_mg = fx_p[FXP_RV_MOD] << 4;
-    if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = sendn; rv_sko = sendo; }
+    if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = sendn; rv_sko = sendo ? v * 258 : 0; }
     vl = rv_vl;
-    if (v != vl && sendo) sendo = (int32_t)(((int64_t)sendo * (254 - v)) / (254 - vl));
-    rko = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;
+    rq = vl > 0 ? (RV_SEND(vl) << 14) / (vl * 258) : 32768;   /* (INFINITE: its return x rq / 2^15) */
+    if (sendo) sendo = v == vl ? v * 258 : (RV_SEND(v) << 14) / rq;
+    rko = (rq << 15) + 1;
     skn = rv_sk; rv_sk = sendn; sko = rv_sko; rv_sko = sendo;
-    if (!sendn && !rv_running && !rv_fade) return;
+    if (!sendn && !rv_running && !rv_fade) { rv_dry(L, R, n, 32768); return; }   /* (the dry back to whole) */
     rv_running = 1;
     for (sb = 0; sb < n; sb += CTL) {
 #endif
@@ -216,6 +217,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
         else
         for (j = 0; j < CTL; j++)
             rv_in[j] = clampi(FX_HC(1, (int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15), -131071, 131071), -131071, 131071);
+        rv_dry(L + sb, R + sb, CTL, dryt);              /* (MIX past 64: the dry falls; the send took it whole) */
         if (lcv || rv_lc) rev_locut(rv_in, lcv);
         if (pd || pd_on) fx_predelay(rv_in, pd);
         if (rv_xin < 32768)                            /* (a TYPE just started: its input fades in) */

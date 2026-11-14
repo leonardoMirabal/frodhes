@@ -152,7 +152,7 @@ def echo_lag(w, want):
 def test_transport_tempo(tmp_path, bpm):
     """a DIG delay synced to 1/4 (Gate D's core tempo script): its echo a quarter note at the MPC transport's tempo
     after the note; and the desktop plugin at that tempo renders the same"""
-    s = ("0 midi 0xB0 88 40\n0 midi 0xB0 89 127\n0 midi 0xB0 26 0\n0 midi 0xB0 25 83\n0 midi 0xB0 91 0\n"
+    s = ("0 midi 0xB0 88 40\n0 midi 0xB0 89 64\n0 midi 0xB0 26 0\n0 midi 0xB0 25 83\n0 midi 0xB0 91 0\n"
          "0 midi 0xB0 106 0\n300 midi 0x90 72 127\n330 midi 0x80 72 0\n3000 end\n")
     w, _ = render(tmp_path, f"t{bpm}", s, "--tempo", bpm)
     want = 60000 / bpm

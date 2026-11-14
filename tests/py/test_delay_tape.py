@@ -115,25 +115,21 @@ def test_tape_feedback_range():
     assert np.abs(late).max() < 0.8 * 32767 and abs(late.mean()) < 6
 
 
-def echo_rel(kind, mix, fb=0, level=None):
+def echo_rel(kind, mix, fb=0, level=None, both=False):
     """the first echo re the chord (dB), first_echo's windows, at this MIX (and LEVEL: 40 is under the output's limiter;
-    at the default LEVEL MIX 127's peaks reach it, so it measured the limiter's gain, not the echo's)"""
+    at the default LEVEL MIX 127's peaks reach it, so it measured the limiter's gain, not the echo's); both: the two
+    windows' levels (dBFS), the chord's and its echo's"""
     lv = [hr.cc(9, 110, level)] if level is not None else []
     r = hr.run(f"dly-rel-{kind}-{mix}-{fb}-{level}", CLEAN + lv + dly(kind, mix, 100, fb) +
                [l for k in (36, 48, 60, 64, 67, 72, 79, 84, 91) for l in hr.note(300, k, 115, 60)], 3000)
     T = int(round(0.020 * 74 ** (100 / 127) * hr.FS))
     a = r.L[int(0.3 * hr.FS):int(0.3 * hr.FS) + 8192]
     b = r.L[int(0.3 * hr.FS) + T:int(0.3 * hr.FS) + T + 8192]
-    return hr.rms_db(b) - hr.rms_db(a)
+    return (hr.rms_db(a), hr.rms_db(b)) if both else hr.rms_db(b) - hr.rms_db(a)
 
 
-# MIX 127's first echo re the dry, measured under the limiter (LEVEL 40): DIG / ANA / TAPE +5.89 / +5.76 / +4.65 dB
-# (0.9.10, rc-0910 and the zipper branch alike), bounded about +-0.5 dB around it. THRESHOLD (2026-11-09; approved for
-# DIG / ANA as 5.4 .. 6.4): at the default LEVEL the chord's peaks reach the output limiter, which took the dry down
-# by more than the echo, so the old 2.0 .. 4.5 measured the limiter (2.48 .. 4.04 as the Rhodes moved), not the delay.
-# TAPE's own +4.65 sits under DIG / ANA's band (its head bump and high-frequency loss through the TONE filter): its
-# band the same +-0.5 around its value. The delay's level itself is unchanged
-E127 = {"DIG": (5.4, 6.4), "ANA": (5.4, 6.4), "TAPE": (4.15, 5.15)}
+# (0.9.13 E2: E127, MIX 127's first echo re the eased dry, +5.9 / +5.8 / +4.7 dB (DIG / ANA / TAPE) under the old law,
+# went with it: at 127 only the echoes play; THRESHOLD in the E2 commit)
 # MIX 64's first echo re the dry: within 1.0 dB (DIG 0.0, ANA -0.1). THRESHOLD (2026-11-09, coordinator sign-off 2026-11-09): TAPE 1.5. Its echo
 # depends on the tape's input level (its saturation) by about 1 dB with the delay's law unchanged (0.9.9's, TP_WET
 # 3867, WET_DB -0.5): 0.9.9 itself reads -0.52 at the default LEVEL and -1.60 at LEVEL 40; this tree -1.24 at both
@@ -146,12 +142,15 @@ E64 = {"DIG": 1.0, "ANA": 1.0, "TAPE": 1.5}
 def test_mix_first_echo_as_loud_as_the_dry_at_64(kind):
     """MIX (0.9.5, the user): the first echo as loud as the dry at 64, in these windows (8192 samples of the chord and
     of its echo, so the chord's own tail is in both; 8d913af: -2.8 / -3.0 / -4.4 dB, the echo's gain -4.8 dB re the
-    eased dry), the same at 127 as before (the gain +5.9 dB: E127), and MIX 32 still clearly under the dry"""
-    e32, e64, e127 = echo_rel(kind, 32), echo_rel(kind, 64), echo_rel(kind, 127, level=40)
+    eased dry), and MIX 32 still clearly under the dry. 0.9.13 E2 (the MIX law, as Textura's): at 127 the echoes alone,
+    the echo as loud as at 64 (the wet whole from 64 on) and the chord gone (its window before the first echo >= 60 dB
+    under MIX 64's); 0.9.12's 127 (the echo +5.9 dB over a dry eased -5.9 dB) went with the old law"""
+    e32, e64 = echo_rel(kind, 32), echo_rel(kind, 64)
     assert abs(e64) < E64[kind], e64
-    lo, hi = E127[kind]
-    assert lo < e127 < hi, e127
     assert e32 < e64 - 3, (e32, e64)
+    (a64, b64), (a127, b127) = echo_rel(kind, 64, level=40, both=True), echo_rel(kind, 127, level=40, both=True)
+    assert abs(b127 - b64) < 0.5, (b64, b127)
+    assert a127 < a64 - 60, (a64, a127)
 
 
 def repeat_loss(kind, mix, fb):

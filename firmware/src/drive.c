@@ -41,9 +41,9 @@
  *                 dispatch, one call): compiled, at most ~85 instructions a block (every path summed), ~0.5 us;
  *   DRV_US_<T>    the TYPE's loop (its file), all wet: in place, MIX 127 at rest (the usual case);
  *   DRV_US_BLEND  the dry / wet blend, outside the TYPE, only while it blends (MIX < 127, a glide, a fade): the TYPE
- *                 writes its wet signal to drv_wet, then drv_blend: compiled 32 instructions per 4 samples (8 a
- *                 sample: 2 loads, subtract, 64-bit multiply, 64-bit shift, add, store, 1/4 of the pointers, ramp
- *                 and loop), 12.8 us;
+ *                 writes its wet signal to drv_wet, then drv_blend: compiled 29 instructions per 4 samples (0.9.13,
+ *                 the two gains: 2 loads, 2 multiply-accumulates, 64-bit shift, store, 1/4 of the pointers, ramps
+ *                 and loop; the old crossfade's 32), 11.6 us, counted 13 as before;
  *   DRV_US_MAX    the budget per TYPE, everything included: 192 us (private drive plan; the user, 2026-10-24:
  *                 120, then 150, then 160, then anti-aliasing on in TSH8, BHLUE and OHCD: 180, just what TSH8's
  *                 anti-aliased kernel needs, 165 us; 0.9.9, KHLON's anti-aliasing on too: 192, what its kernel
@@ -61,22 +61,23 @@ typedef struct {
     int32_t row;                   /* the instrument's drive row 0..3 (params.c TYPE_DRIVE_ROW); a TYPE may ignore it */
 } drv_ctl_t;
 
-/* The dry / wet blend, after the TYPE, the classic drive's own formula, x + ((y - x) w >> 15) (y at w = 32768, x at
- * w = 0, bit for bit), w ramping by d4 every 4 samples (64 steps a block: 4096 = the classic drive's 46 ms; exact,
- * every w here a multiple of 256). Four samples a pass, on pointers. noinline: one copy, its own count
- * (tools/drive_insns.py drv_blend). */
-static __attribute__((noinline)) void drv_blend(int32_t *m, const int32_t *y, uint32_t n, int32_t w, int32_t d4)
+/* The dry / wet blend, after the TYPE, the classic drive's own formula (fx.c, MIX as Textura's, 0.9.13): (x g + y w)
+ * >> 15 (y at w = 32768 and g = 0, x at w = 0 and g = 32768, bit for bit), the wet's gain w ramping by w4 and the dry's
+ * g by g4 every 4 samples (64 steps a block: 4096 = the classic drive's 46 ms; exact, every gain here a multiple of
+ * 256). Four samples a pass, on pointers: 29 instructions a pass (two multiply-accumulates a sample; the old crossfade
+ * x + ((y - x) w >> 15) took 32). noinline: one copy, its own count (tools/drive_insns.py drv_blend). */
+static __attribute__((noinline)) void drv_blend(int32_t *m, const int32_t *y, uint32_t n, int32_t w, int32_t w4,
+                                                int32_t g, int32_t g4)
 {
     int32_t *e = m + (n & ~3u);
     while (m < e) {
-        int32_t a = m[0], b = m[1], c = m[2], d = m[3];
-        m[0] = a + (int32_t)(((int64_t)(y[0] - a) * w) >> 15);
-        m[1] = b + (int32_t)(((int64_t)(y[1] - b) * w) >> 15);
-        m[2] = c + (int32_t)(((int64_t)(y[2] - c) * w) >> 15);
-        m[3] = d + (int32_t)(((int64_t)(y[3] - d) * w) >> 15);
-        m += 4; y += 4; w += d4;
+        m[0] = (int32_t)(((int64_t)m[0] * g + (int64_t)y[0] * w) >> 15);
+        m[1] = (int32_t)(((int64_t)m[1] * g + (int64_t)y[1] * w) >> 15);
+        m[2] = (int32_t)(((int64_t)m[2] * g + (int64_t)y[2] * w) >> 15);
+        m[3] = (int32_t)(((int64_t)m[3] * g + (int64_t)y[3] * w) >> 15);
+        m += 4; y += 4; w += w4; g += g4;
     }
-    for (e += n & 3u; m < e; m++, y++) *m += (int32_t)(((int64_t)(*y - *m) * w) >> 15);
+    for (e += n & 3u; m < e; m++, y++) *m = (int32_t)(((int64_t)*m * g + (int64_t)*y * w) >> 15);
 }
 
 /* ---- shared helpers ------------------------------------------------------------------------------------------- */
@@ -532,41 +533,44 @@ static DRV_DATA uint8_t drv_on = 1; /* ISR: the TYPE that runs (1..DRV_N-1); it 
 static DRV_BSS volatile uint8_t drv_rst_req;
 
 
-/* TYPE drv_on (2..), switch sw (0: OFF, fading out): the TYPE once over the block; all wet (dr_w = wt = 32768): in
- * place, nothing else; else into drv_wet, then the blend with dr_w ramping toward wt by 64 every 4 samples (46 ms,
- * as the classic drive; 4096 a block). The TYPE's wet shares are multiples of 256 (MIX v: (258 v + 128) & ~255), so
- * the ramp's step is exact and every block ends on its value. */
+/* TYPE drv_on (2..), switch sw (0: OFF, fading out): the TYPE once over the block; all wet (dr_w = wt = 32768, dr_d =
+ * dt = 0): in place, nothing else; else into drv_wet, then the blend with dr_w ramping toward wt and dr_d toward dt by
+ * 64 every 4 samples (46 ms, as the classic drive; 4096 a block). The gains are multiples of 256 (fx.c DR_WET,
+ * DR_DRY), so the ramp's step is exact and every block ends on its value. */
 #if FR_CHUNK
 /* fx_drive_types, drv_switch's use and fx_drive for a chunk: the switch, the TYPE's settings and the blend's ramp at the
  * first chunk (dr_sal set there: dr_w's value at the block's end, which fx_spread's first chunk reads); the TYPE's run
  * gets the chunk (drv_<name>_run with fxc_o / fxc_e) */
-static struct { int32_t sw, w0, w1, d4; uint8_t rest, all; drv_ctl_t c; } drv_c;
+static struct { int32_t sw, w0, w1, d4, g0, g1, g4; uint8_t rest, all; drv_ctl_t c; } drv_c;
 static __attribute__((noinline)) void fx_drive_types(int32_t *m, uint32_t n, int32_t sw)
 {
     uint32_t o = fxc_o, k = fxc_e - o;
     if (FXC_1) {
-        int32_t d = fx_p[FXP_DRIVE], mv = fx_p[FXP_DRV_MIX], wt = !sw ? 0 : mv >= 127 ? 32768 : (mv * 258 + 128) & ~255;
+        int32_t d = fx_p[FXP_DRIVE], mv = fx_p[FXP_DRV_MIX], wt = !sw ? 0 : DR_WET(mv), dt = !sw ? 32768 : DR_DRY(mv);
         if (drv_rst_req) { uint32_t t; drv_rst_req = 0; for (t = 2u; t < DRV_N; t++) drv_reset(t); }
-        if (!d) { wt = 0; d = 1; }
-        dr_w &= ~255;
-        drv_c.rest = !wt && !dr_w;
+        if (!d) { wt = 0; dt = 32768; d = 1; }
+        dr_w &= ~255; dr_d &= ~255;
+        drv_c.rest = !wt && !dr_w && dr_d == 32768;
         if (drv_c.rest) return;
         drv_c.c.amount = d; drv_c.c.tone = fx_p[FXP_DRV_TONE]; drv_c.c.row = fx_p[FXP_DRIVE_ROW] & 3;
-        drv_c.all = dr_w == 32768 && wt == 32768;
+        drv_c.all = dr_w == 32768 && wt == 32768 && !dr_d && !dt;
         drv_c.w0 = dr_w; drv_c.w1 = drv_glide(dr_w, wt, (int32_t)(16u * n));
         drv_c.d4 = (drv_c.w1 - drv_c.w0) >> 6;          /* (n: DRV_BLK) */
+        drv_c.g0 = dr_d; drv_c.g1 = drv_glide(dr_d, dt, (int32_t)(16u * n));
+        drv_c.g4 = (drv_c.g1 - drv_c.g0) >> 6;
     }
     if (drv_c.rest) return;
     if (drv_c.all) { drv_run(drv_on, m, m, n, &drv_c.c); return; }
     drv_run(drv_on, m, drv_wet, n, &drv_c.c);
-    drv_blend(m + o, drv_wet + o, k, drv_c.w0 + drv_c.d4 * (int32_t)(o >> 2), drv_c.d4);
-    if (FXC_Z) dr_w = drv_c.w1;
+    drv_blend(m + o, drv_wet + o, k, drv_c.w0 + drv_c.d4 * (int32_t)(o >> 2), drv_c.d4,
+              drv_c.g0 + drv_c.g4 * (int32_t)(o >> 2), drv_c.g4);
+    if (FXC_Z) { dr_w = drv_c.w1; dr_d = drv_c.g1; }
 }
 static __attribute__((noinline)) int32_t drv_switch(uint32_t t)
 {
     if (t >= DRV_N) t = 1u;
     if (t == drv_on) return (int32_t)t;
-    if (dr_w) return 0;
+    if (dr_w || dr_d != 32768) return 0;
     drv_on = (uint8_t)t;
     drv_reset(t);
     dr_ton = 0; dr_tg = 4096;
@@ -579,26 +583,28 @@ static inline void fx_drive(int32_t *m, uint32_t n)
         sw = fx_p[FXP_DRV_SW];
         if (sw && sw != (int32_t)drv_on) sw = drv_switch((uint32_t)sw);
     }
-    if (drv_on == 1u) { fx_drive_classic(m, n, sw); if (FXC_1) dr_sal = dr_c.w_end; }
+    if (drv_on == 1u) { fx_drive_classic(m, n, sw); if (FXC_1) dr_sal = dr_share(dr_c.w_end, dr_c.d_end); }
     else { fx_drive_types(m, n, sw); dr_sal = 0; }
 }
 #else
 static __attribute__((noinline)) void fx_drive_types(int32_t *m, uint32_t n, int32_t sw)
 {
-    int32_t d = fx_p[FXP_DRIVE], mv = fx_p[FXP_DRV_MIX], wt = !sw ? 0 : mv >= 127 ? 32768 : (mv * 258 + 128) & ~255;
-    int32_t w0, w1;
+    int32_t d = fx_p[FXP_DRIVE], mv = fx_p[FXP_DRV_MIX], wt = !sw ? 0 : DR_WET(mv), dt = !sw ? 32768 : DR_DRY(mv);
+    int32_t w0, w1, g0, g1;
     drv_ctl_t c;
     if (drv_rst_req) { uint32_t t; drv_rst_req = 0; for (t = 2u; t < DRV_N; t++) drv_reset(t); }   /* (CC 10) */
-    if (!d) { wt = 0; d = 1; }                           /* AMOUNT 0: dry, faded out (as the classic drive) */
-    dr_w &= ~255;                                        /* (from FDRV's glide: onto the TYPE's grid) */
-    if (!wt && !dr_w) return;                            /* off, or MIX 0: the dry signal, untouched */
+    if (!d) { wt = 0; dt = 32768; d = 1; }               /* AMOUNT 0: dry, faded out (as the classic drive) */
+    dr_w &= ~255; dr_d &= ~255;                          /* (from FDRV's glide: onto the TYPE's grid) */
+    if (!wt && !dr_w && dr_d == 32768) return;           /* off, or MIX 0: the dry signal, untouched */
     if (n > DRV_BLK) n = DRV_BLK;
     c.amount = d; c.tone = fx_p[FXP_DRV_TONE]; c.row = fx_p[FXP_DRIVE_ROW] & 3;
-    if (dr_w == 32768 && wt == 32768) { drv_run(drv_on, m, m, n, &c); return; }   /* all wet */
+    if (dr_w == 32768 && wt == 32768 && !dr_d && !dt) { drv_run(drv_on, m, m, n, &c); return; }   /* all wet */
     w0 = dr_w; w1 = drv_glide(w0, wt, (int32_t)(16u * n));
+    g0 = dr_d; g1 = drv_glide(g0, dt, (int32_t)(16u * n));
     drv_run(drv_on, m, drv_wet, n, &c);
-    drv_blend(m, drv_wet, n, w0, n == DRV_BLK ? (w1 - w0) >> 6 : n >= 4u ? (w1 - w0) / (int32_t)(n >> 2) : 0);
-    dr_w = w1;
+    drv_blend(m, drv_wet, n, w0, n == DRV_BLK ? (w1 - w0) >> 6 : n >= 4u ? (w1 - w0) / (int32_t)(n >> 2) : 0,
+              g0, n == DRV_BLK ? (g1 - g0) >> 6 : n >= 4u ? (g1 - g0) / (int32_t)(n >> 2) : 0);
+    dr_w = w1; dr_d = g1;
 }
 /* the TYPE chosen, t (1..), is not the one that runs: it starts at once while the drive is silent; else the switch
  * the running TYPE sees is OFF (0) until it has faded out, and t starts (from its reset state) in the block after */
@@ -606,7 +612,7 @@ static __attribute__((noinline)) int32_t drv_switch(uint32_t t)
 {
     if (t >= DRV_N) t = 1u;
     if (t == drv_on) return (int32_t)t;
-    if (dr_w) return 0;                                  /* fading out first (AMOUNT 0 fades out too) */
+    if (dr_w || dr_d != 32768) return 0;                 /* fading out first (AMOUNT 0 fades out too) */
     drv_on = (uint8_t)t;
     drv_reset(t);
     dr_ton = 0; dr_tg = 4096;                            /* (FDRV's shelf at rest, as its own OFF leaves it) */
@@ -620,7 +626,8 @@ static inline void fx_drive(int32_t *m, uint32_t n)
 {
     int32_t sw = fx_p[FXP_DRV_SW];
     if (sw && sw != (int32_t)drv_on) sw = drv_switch((uint32_t)sw);
-    if (drv_on == 1u) { fx_drive_classic(m, n, sw); dr_sal = dr_w; }   /* (FDRV's wet share: fx.c fx_spread) */
+    if (drv_on == 1u) { fx_drive_classic(m, n, sw); dr_sal = dr_share(dr_w, dr_d); }   /* (FDRV's wet share: fx.c
+                                                        * fx_spread) */
     else { fx_drive_types(m, n, sw); dr_sal = 0; }
 }
 #endif
@@ -631,7 +638,7 @@ static uint32_t drv_cost_us(uint32_t fdrv)
 {
     uint32_t t = (uint32_t)fx_p[FXP_DRV_SW], a = drv_on, us, ut;
     if (t >= DRV_N) t = 1u;
-    us = a == 1u ? fdrv : DRV_US[a] + (fx_p[FXP_DRV_MIX] < 127 || dr_w != 32768 ? DRV_US_BLEND : 0u);
+    us = a == 1u ? fdrv : DRV_US[a] + (fx_p[FXP_DRV_MIX] < 127 || dr_w != 32768 || dr_d ? DRV_US_BLEND : 0u);
     if (t && t != a) {
         ut = t == 1u ? fdrv : DRV_US[t] + DRV_US_BLEND;
         if (ut > us) us = ut;

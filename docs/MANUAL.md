@@ -183,6 +183,10 @@ letters (Hz, kHz, ms, s, dB, c for cents, %); the EQ's cards show the number onl
 - **An amount** (DEPTH, MIX, a time, a frequency ...): the card is a fader. It fills with warm amber from the left up
   to the value, with a bright amber edge where the fill ends (the edge stops short of the letters, so it never cuts a
   number): empty at 0, full at the top.
+- **A MIX** (DELAY MIX, DRIVE MIX, REVERB MIX): a fader in two colours, split by a thin grey line at the middle (64).
+  Up to the line it fills in the accent colour (the dry sound whole, the effect coming in); past it, in the accent's
+  opposite colour (the effect whole, the dry going out). The card reads **DRY** at 0, **50/50** at 64 and **WET** at
+  127, and shows the bar alone in between.
 - **A selector** (TYPE, EFFECT DIG / ANA / TAPE, a filter type, a note value, a scale, a chord type ...): the card is cut
   into one block per option, and the blocks light up to the option it is on, each with a small cap at its foot (amber
   lit, grey not); the option is written out in full (**STAGE 77**, **LP18**, **1/16**). An option called OFF lights no
@@ -249,7 +253,7 @@ stays dark; see LEDS on the DISPLAY page, and SUSTAIN LEDS on DISPLAY 2).
 
 ### PERFORM
 
-![PERFORM](manual/img/perform.png?v=fee52568)
+![PERFORM](manual/img/perform.png?v=f156e86f)
 
 The first page, made for playing: four knobs for the sound while you play. Out of the box they follow the effects
 chain from left to right: the drive, the filter's cutoff, and the dry / wet of the delay and the reverb:
@@ -386,7 +390,7 @@ LOW, 35 MID, 36 MID FREQ, 37 HIGH (64 = +0.0 dB).
 
 ### DRIVE
 
-![DRIVE](manual/img/drive.png?v=8de4a56b)
+![DRIVE](manual/img/drive.png?v=3ff0b9f8)
 
 The amp drive, right after the compressor and the EQ (before the filter). AMOUNT can also be put on a PERFORM knob (DRIVE on ASSIGN). There are five drives, all
 overdrive types (none of them a fuzz): **FDRV** is the original Frodhes drive, and the other
@@ -398,7 +402,7 @@ live like the instruments, never sampled).
 | K1 | **EFFECT** | The drive's type, or **OFF**: **FDRV**, **KHLON**, **TSH8**, **OHCD** or **BHLUE** (below). Switching it on with AMOUNT at 0 gives it a starting amount. A new type takes over smoothly: the one playing fades out, then the new one fades in (about a tenth of a second); only one type plays at a time |
 | K2 | **AMOUNT** | How hard the piano drives the type, from clean to its fullest (what each type does on the way is below); at 0 there is no drive |
 | K3 | **TONE** | The type's own tone control (below). On FDRV the middle leaves the sound as it is; on the other four TONE is the circuit's own tone knob, so its middle is that circuit's usual voice, not always flat |
-| K4 | **MIX** | Dry / driven, the same on every type: 10.0 is all drive, lower blends the clean piano back in, 0 is clean |
+| K4 | **MIX** | Dry / driven, the same on every type and on every effect's MIX: from 0 (**DRY**, clean) to the middle the clean piano stays whole and the drive comes in; at the middle (**50/50**) both are whole; from there to the top (**WET**, the default) the drive stays whole and the clean piano goes out |
 
 The types:
 
@@ -496,12 +500,12 @@ their weight.
 
 ### DELAY
 
-![DELAY](manual/img/delay.png?v=967f1cb1)
+![DELAY](manual/img/delay.png?v=44b267de)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **EFFECT** | **OFF**, **DIG** (clean digital), **ANA** (darker, with a little wow and flutter), **TAPE** (a tape echo: one playback head, warm saturating repeats, playback-head EQ, wow and flutter) |
-| K2 | **MIX** | How loud the echoes are: at the middle (64) the first echo is as loud as the dry sound, at the top a little louder. Turning it up also lowers the dry sound a little (−1 dB at the middle, −6 dB at the top), so a full mix is not louder overall |
+| K2 | **MIX** | Dry / echoes: from 0 (**DRY**, no echoes) to the middle the dry sound stays whole and the echoes come up; at the middle (**50/50**) the first echo is as loud as the dry sound; from there to the top the echoes stay whole and the dry sound goes out, so at 127 (**WET**) only the echoes play |
 | K3 | **TIME** | Echo time, free in milliseconds; when DLY SYNC is set on TEMPO it shows and steps note values |
 | K4 | **FEEDBK** | How many echoes, the same at any MIX. On ANA and TAPE the top of the knob (from about 115) lets the echoes build up on their own (below) |
 
@@ -523,7 +527,7 @@ back on to the type it last used (TAPE too). Over MIDI, CC 88 picks the type in 
 
 ### REVERB
 
-![REVERB](manual/img/reverb.png?v=d6331413)
+![REVERB](manual/img/reverb.png?v=d4bb9255)
 
 The reverb, the last effect. It has three types: **HALL**, **PLATE** and **INFINITE**. Its second page, **REVERB 2**, has the pre-delay and three more controls. MIX can also be put on a
 PERFORM knob (REVERB on ASSIGN).
@@ -531,7 +535,7 @@ PERFORM knob (REVERB on ASSIGN).
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **TYPE** | **OFF**, **HALL**, **PLATE** or **INFINITE** (below). OFF stops what goes into the reverb and lets the tail ring out. Switching it on with MIX at 0 gives MIX a starting amount. A new type takes over at once: the old tail fades out in a few milliseconds and the new type starts empty, what goes into it fading in as quickly (no step under a ringing chord) |
-| K2 | **MIX** | How much reverb (0 = none, the tail rings out). With SIZE on AUTO (REVERB 2), more MIX also makes the space bigger on HALL and PLATE (on PLATE once the tail has died away; on INFINITE MIX is the level only) |
+| K2 | **MIX** | Dry / reverb: from 0 (**DRY**, no reverb; the tail rings out) to the middle the dry sound stays whole and the reverb comes up; at the middle (**50/50**) both are whole; from there to the top the reverb stays whole and the dry sound goes out, so at 127 (**WET**) only the reverb plays. With SIZE on AUTO (REVERB 2), more MIX also makes the space bigger on HALL and PLATE (on PLATE once the tail has died away; on INFINITE MIX is the level only) |
 | K3 | **DECAY** | How long the tail rings. HALL: 5.0 (the default), 0 about half as long, 10.0 about twice. PLATE: from under a second to about 6 s. INFINITE: from about 4 s to a minute; from 120 (**SUSTAIN**) the tail stops fading and what you play piles up on it, and at the very top, 127 (**FREEZE**), the tail holds exactly as it is and what you play stays dry |
 | K4 | **TONE** | The tail's treble: darker (more damping) or brighter (less); +0.0 (the default) in between. On PLATE it also darkens what goes in |
 
@@ -541,9 +545,9 @@ The types:
 | --- | --- |
 | **HALL** | A concert hall |
 | **PLATE** | A studio plate: dense from the first moment, bright, with no echoes you can pick out. Good for a ballad or a close, polished sound |
-| **INFINITE** | A huge space that no room has: very long, slowly moving tails that pile up into a pad. At DECAY SUSTAIN (120–126) the tail no longer fades: every note adds to it, up to a ceiling. At FREEZE (127) what is ringing holds, without growing or fading, while you play on top of it dry. Turn DECAY down from either and the tail dies away again |
+| **INFINITE** | A huge space that no room has: very long, slowly moving tails that pile up into a pad. At DECAY SUSTAIN (120–126) the tail no longer fades: every note adds to it, up to a ceiling. At FREEZE (127) what is ringing holds, without growing or fading, while you play on top of it dry (the dry sound whole at any MIX, so it is heard even at WET). Turn DECAY down from either and the tail dies away again |
 
-![REVERB on INFINITE: DECAY at the top reads FREEZE (120–126 read SUSTAIN)](manual/img/reverb-inf.png?v=e05f5b1a)
+![REVERB on INFINITE: DECAY at the top reads FREEZE (120–126 read SUSTAIN)](manual/img/reverb-inf.png?v=ebfd1068)
 
 When the reverb is OFF, a REVERB knob on PERFORM shows **OFF**; turning it up there switches the reverb on with the
 type you used last.
@@ -946,7 +950,7 @@ MARIMBA (0–95 VIBES); Program Change 14 / 15 loads F15 / F16. **Polyphony:** 1
 
 ## 6. Presets
 
-![Browsing presets](manual/img/browse.png?v=041a80be)
+![Browsing presets](manual/img/browse.png?v=0757e8ef)
 
 Turn **PRESETS** to browse: **F01–F19** are the factory sounds (F13 and F14 are VIBES, F15 and F16 MARIMBA), **U01–U16** your own, after F19. A preset loads when you stop
 turning (after 0.4 s). If you did not mean to, **hold SAVE** (0.7 s) to go back to the sound you had before the
@@ -1025,7 +1029,7 @@ The first save writes them to the FM-1 with your preset; from then on they are u
 again to store it, or **HOME** (or **OCT−**) to cancel. The name is made from the type and the effects that are on
 ("SUIT TRM PHA").
 
-![Save mode](manual/img/save.png?v=1972b9b8)
+![Save mode](manual/img/save.png?v=9673d68e)
 
 The save waits for silence: the bottom line says **SAVING...** until the sound has died away, then **SAVED**. INFINITE's SUSTAIN and FREEZE hold their tail without end, so while one of them is on the save waits and the bottom line says **SAVE WAITS: SUSTAIN ON** or **SAVE WAITS: FREEZE ON**; turn DECAY down (or change the type, or switch the reverb OFF), let the tail die away, and the save goes through. The settings are saved the same way, once it is quiet. A user
 preset can be overwritten but not deleted, and browsing skips the empty ones. There is no factory reset: F01–F19 are
@@ -1061,7 +1065,7 @@ crossfade), without changing any setting: compare the dry piano with your sound.
 piano's dynamics and level do not change: with the effects' depths at 0, FX on and off sound the same. The header shows **BYP** while they are off. It is not saved, so the FM-1 always starts with the effects
 on.
 
-![FX bypass](manual/img/bypass.png?v=7711c5d8)
+![FX bypass](manual/img/bypass.png?v=cc3f23b4)
 
 The order of the chain: **COMP → EQ → DRIVE → FILTER → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter.** The limiter at the
 end keeps even big chords of ten notes from ever clipping.

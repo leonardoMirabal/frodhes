@@ -1904,6 +1904,18 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "clklock")) snprintf(v, n, "%u", clk_follows());        /* the MIDI clock is followed */
     else if (!strcmp(key, "beatsmp")) snprintf(v, n, "%u", beat_samples());       /* samples a beat */
     else if (!strcmp(key, "dlysync")) snprintf(v, n, "%u", fx_dly_sync_samples);  /* the synced delay time */
+    else if (sscanf(key, "show%u", &a) == 1 && a < 4u) {   /* the text card a draws: a MIX's DRY / 50/50 / WET, "BAR"
+                                                         * between (its bar alone); else the card's own text */
+        uint32_t s = slot_at(ui_page, a);
+        int32_t hi, val = slot_val(s, &hi);
+        slot_text(s, t);
+        if (slot_is_mix(s) && hi > 0 && !cd_eq(t, "OFF")) { const char *x = cd_mix_text(val, hi); snprintf(v, n, "%s", *x ? x : "BAR"); }
+        else snprintf(v, n, "%s", t);
+    }
+    else if (!strcmp(key, "mixg"))                    /* the MIX gains (Q15) as they run: the delay's dry and echo,
+                                                         * the reverb's dry and send, the drive's dry and wet
+                                                         * (tests/py/test_mix_law.py) */
+        snprintf(v, n, "%d/%d/%d/%d/%d/%d", (int)dly_dg, (int)dly_wk, (int)rv_dg, (int)rv_sk, (int)dr_d, (int)dr_w);
     else if (!strcmp(key, "twph")) snprintf(v, n, "%u", tw_ph);                   /* the tremolo's LFO phase (Q32) */
     else if (!strcmp(key, "cpph")) snprintf(v, n, "%u", cp_ph);                   /* the chorus' */
     else if (!strcmp(key, "phph")) snprintf(v, n, "%u", ph_ph);                   /* the phaser's */

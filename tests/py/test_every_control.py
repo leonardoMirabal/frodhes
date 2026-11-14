@@ -1039,8 +1039,9 @@ def _dana():
 @case("DELAY-SYNC")
 def _dsync():
     """DLY SYNC (TEMPO K4): 1/8 at 120 BPM = 250 ms between the note and its echo (+-3 %; the note comes 0.5 s after
-    the change: the line's time slews 1 sample a sample, and an echo written while it moves comes late)"""
-    w = R(CLEAN + SHORT + [cc(30, 88, 48), cc(31, 89, 127), cc(32, 26, 0)] + goto("TEMPO", 40) + detents(5, 1, 6, 100)
+    the change: the line's time slews 1 sample a sample, and an echo written while it moves comes late; MIX 64: the
+    note and its echo whole, 0.9.13 E2)"""
+    w = R(CLEAN + SHORT + [cc(30, 88, 48), cc(31, 89, 64), cc(32, 26, 0)] + goto("TEMPO", 40) + detents(5, 1, 6, 100)
           + ["150 dump"] + note(700, 72, 110, 40), 1700)
     assert w.state(150)[f"card.{PG['TEMPO']}.3"] == "1/8" and w.state(150)[f"card.{PG['DELAY']}.2"] == "1/8"
     x = w.seg(0.6, 1.6)                                                 # the onsets' strength, correlated

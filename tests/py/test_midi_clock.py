@@ -351,7 +351,7 @@ def test_delay_follows(kind):
     ps = pulses(t_fa + 1, bpm, 24 * 16)
     end = int(ps[-1][0]) + 20
     t_note = int(ps[24 * 12][0])                                     # (TAPE's speed takes some beats to settle, as a tape's)
-    lines = [hostrun.cc(20, 88, band(kind, 3)), hostrun.cc(20, 89, 127), hostrun.cc(20, 25, band(9, 13)),
+    lines = [hostrun.cc(20, 88, band(kind, 3)), hostrun.cc(20, 89, 64), hostrun.cc(20, 25, band(9, 13)),
              hostrun.cc(20, 26, 40)] + hostrun.note(t_note, 72, 120, 60) + ["600 midi 0xFA 0 0"] + emit(ps)
     r = run(f"delay-{kind}", lines, end, dumps=[t_note - 5])
     assert abs(int(r.state(t_note - 5)["dlysync"]) / (FS * 60 / bpm) - 1) < 0.001
@@ -873,6 +873,8 @@ def test_auto_saves_one_at_a_time():
     for it (neither busy-finishes the other in the main loop), a note sent meanwhile is taken at once, both are
     written"""
     lines = dry_dist.type_base_lines(10) + seq_pattern()   # (the voicing at its defaults: F01's rings longer)
+    lines += [hostrun.cc(12, 91, 17)]   # (0.9.13 E2's MIX law: REVERB MIX 17, the old 18's wet / dry; the louder tail at 18
+    #                                     goes quiet later and the settings' save no longer meets the pattern's)
     r0 = run("saves-probe", lines, 6000)
     t_pat = [int(t) for t in re.findall(r"^\s*(\d+) ms  pattern . erased", r0.out, re.M)][0]
     found = None

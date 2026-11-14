@@ -140,8 +140,11 @@ BEAT_S = 0.02901                              # 5 render blocks (5 x 256 / 44100
 GATED = ("repeat", "stale", "zero", "clip", "click", "step", "track")
 
 CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_MIX=83, RV_DECAY=92, RV_PREDLY=94, USB_VOL=114)
+# (DL_DEPTH / REV 64, 0.9.13 E2's MIX law: the echo and the reverb whole over the dry whole, the old 127's sound; at
+# 127 only the wet plays and nothing marks the strikes (the detectors' alignment fails); hil_cpu keeps 127, the
+# dry gain's CPU path; hil_must, hil_c1_soak and rh_devcmp as here)
 HEAVY = dict(DRIVE=127, DRV_MIX=64, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127,
-             PH_FDBK=127, CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
+             PH_FDBK=127, CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=64, DL_TIME=127, DL_FDBK=127, REV=64,
              RV_DECAY=127, RV_PREDLY=127, FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # hil_cpu's + the reverb's
 MODERATE = dict(DRIVE=60, CP_SW=64, CP_DEPTH=64, PH_SW=127, PH_DEPTH=64, DL_SW=48, DL_DEPTH=64, DL_TIME=60, REV=80)
 REG = dict(bass=[28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52, 53, 55],   # (13-16: --voices, FR_C1)

@@ -88,7 +88,7 @@ S5_PC = 2                                             # S5: F03 loaded on the ol
 S5_FACTORY_PCS = tuple(range(16)) + (32, 33, 34)     # F01..F16, F17..F19 (presets.c preset_of_pc)
 ENGINE_SEL = dict(rhodes=[(80, hs.type_cc(0))], vibes=[(79, hs.type_cc(4))], marimba=[(79, hs.type_cc(5))])
 HEAVY = dict(DRIVE=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
-             CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
+             CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=64, DL_TIME=127, DL_FDBK=127, REV=64,
              FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)          # hil_cpu's heavy (the filter LP18 + its LFO)
 HEAVY_CC = {94: 127, 83: 64, 92: 127}                 # + RV_PREDLY 127, DRV_MIX 64, RV_DECAY 127 (B's worst case)
 MODERATE = dict(DRIVE=30, CP_SW=64, CP_DEPTH=50, PH_SW=127, PH_DEPTH=60, DL_SW=48, DL_DEPTH=40, REV=40)
