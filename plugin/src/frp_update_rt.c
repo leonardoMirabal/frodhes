@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* CHECK FOR UPDATES, the runtime (plugin/src/frp_update.h): one state per process (every instance's window shares
- * it), cached in memory and kept in the settings file; the check on a thread of its own. The main thread never
- * waits for the network: frp_update_available is a lock and a copy, frp_update_poke a small file read and at most
- * a thread start. */
+ * it), cached in memory and kept in the settings file; the check and the package's download on a thread of their
+ * own. The main thread never waits for the network: frp_update_available is a lock and a copy, frp_update_poke a
+ * small file read and at most a thread start. */
 #include "frp_update.h"
 #include "frp_paths.h"
 #include <stdio.h>
@@ -14,6 +14,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <shlobj.h>
 static SRWLOCK lk = SRWLOCK_INIT, flk = SRWLOCK_INIT;
 #define LOCK(l) AcquireSRWLockExclusive(&(l))
 #define UNLOCK(l) ReleaseSRWLockExclusive(&(l))
@@ -35,11 +36,12 @@ static struct {
     int stop;                            /* the entry is going away: no new check, the one under way is dropped */
     int unsaved;                         /* the file could not be written: this process's own state counts */
     int env_off;                         /* FRODHES_UPDATE_CHECK=0 in the environment: never a check, never a notice */
+    int ready;                           /* st.file exists (checked at load and after the download) */
 #if !defined(_WIN32)
     pthread_t th;
     int joinable;
 #endif
-} U = { .st = { 1, 0, "" }, .own = "0.0.0-dev" };
+} U = { .st = { .check = 1 }, .own = "0.0.0-dev" };
 
 /* ---- the settings file (lk is never held across file calls; flk orders the writers) */
 static int settings_path(char *out, size_t n)
@@ -102,16 +104,89 @@ static int file_save(void)                       /* the state in memory now into
     UNLOCK(flk);
     return r;
 }
+static int exists(const char *path)
+{
+    FILE *f = path[0] ? frp_fopen(path, "rb") : 0;
+    if (f) fclose(f);
+    return f != 0;
+}
 static void ensure_loaded(void)                  /* (main thread: the first call reads the file) */
 {
     frp_update_state s;
-    int loaded;
+    int loaded, r;
     LOCK(lk); loaded = U.loaded; UNLOCK(lk);
     if (loaded) return;
     file_load(&s);
+    r = exists(s.file);
     LOCK(lk);
-    if (!U.loaded) { U.st = s; U.loaded = 1; }
+    if (!U.loaded) { U.st = s; U.loaded = 1; U.ready = r; }
     UNLOCK(lk);
+}
+
+/* ---- the Downloads folder */
+int frp_update_downloads_dir(char *out, size_t n)
+{
+    const char *e = getenv("FRODHES_DOWNLOAD_DIR"), *h;
+    int k;
+    if (n) out[0] = 0;
+    if (e && *e) { k = snprintf(out, n, "%s", e); return k < 0 || (size_t)k >= n ? -1 : 0; }
+#if defined(_WIN32)
+    {
+        static const GUID dl = {0x374de290, 0x123f, 0x4565, {0x91, 0x64, 0x39, 0xc4, 0x92, 0x5e, 0x46, 0x7b}};   /* FOLDERID_Downloads */
+        PWSTR p = 0;
+        int ok = SHGetKnownFolderPath(&dl, 0, 0, &p) == S_OK && p &&
+                 WideCharToMultiByte(CP_UTF8, 0, p, -1, out, (int)n, 0, 0) > 0;
+        if (p) CoTaskMemFree(p);
+        if (ok) return 0;
+        h = getenv("USERPROFILE");
+        if (!h || !*h) return -1;
+        k = snprintf(out, n, "%s\\Downloads", h);
+    }
+#else
+    h = getenv("HOME");
+    if (!h || !*h) return -1;
+#if !defined(__APPLE__)
+    e = getenv("XDG_DOWNLOAD_DIR");              /* (the user-dirs setting, when the session exports it) */
+    if (e && e[0] == '/') { k = snprintf(out, n, "%s", e); return k < 0 || (size_t)k >= n ? -1 : 0; }
+#endif
+    k = snprintf(out, n, "%s/Downloads", h);
+    if (k >= 0 && (size_t)k < n && !frp_dir_usable(out)) k = snprintf(out, n, "%s", h);   /* (no Downloads folder: home) */
+#endif
+    return k < 0 || (size_t)k >= n ? -1 : 0;
+}
+/* this system's package of version ver, from the API's answer: downloaded, its sha256 checked against the answer's
+ * digest, written into the Downloads folder (a .part file, then renamed): 0 and path, else -1 (nothing left) */
+static int download(const char *body, size_t n, const char *ver, char path[1024])
+{
+    char url[512], sha[65], got[65], dir[1024], name[96], part[1100];
+    long long size;
+    size_t len = 0;
+    char *buf;
+    FILE *f;
+    int st, ok;
+    path[0] = 0;
+    if (frp_update_asset(body, n, frp_update_asset_name(FRP_OS_HERE, FRP_UPD_ARCH_HERE), url, &size, sha) ||
+        size > (long long)FRP_UPDATE_MAX_PKG || frp_update_downloads_dir(dir, sizeof dir) ||
+        frp_update_file_name(FRP_OS_HERE, FRP_UPD_ARCH_HERE, ver, name, sizeof name) ||
+        snprintf(path, 1024, "%s%c%s", dir, frp_path_sep(FRP_OS_HERE), name) >= 1024)
+        return path[0] = 0, -1;
+    if (!(buf = malloc((size_t)size + 1))) return path[0] = 0, -1;
+    LOCK(lk); st = U.stop; UNLOCK(lk);
+    if (st) { free(buf); return path[0] = 0, -1; }
+    st = frp_update_fetch(url, buf, (size_t)size + 1, &len, FRP_UPDATE_DL_TIMEOUT_MS, 1);
+    ok = st == 200 && len == (size_t)size;
+    if (ok) { frp_sha256_hex(buf, len, got); ok = !strcmp(got, sha); }   /* (a cut or changed file: refused) */
+    if (ok) {
+        snprintf(part, sizeof part, "%s.part", path);
+        ok = (f = frp_fopen(part, "wb")) != 0;
+        if (ok) {
+            ok = fwrite(buf, 1, len, f) == len;
+            if (fclose(f) || !ok || frp_replace(part, path)) { frp_remove(part); ok = 0; }
+        }
+    }
+    free(buf);
+    if (!ok) path[0] = 0;
+    return ok ? 0 : -1;
 }
 
 /* ---- the check's thread */
@@ -121,14 +196,28 @@ static void check(void)
     size_t len = 0;
     int stop, st = -1;
     LOCK(lk); stop = U.stop; UNLOCK(lk);
-    if (buf && !stop) st = frp_update_fetch(FRP_UPDATE_URL, buf, FRP_UPDATE_MAX_BODY, &len, FRP_UPDATE_TIMEOUT_MS);
+    char path[1024] = "", newer[16];
+    if (buf && !stop) st = frp_update_fetch(FRP_UPDATE_URL, buf, FRP_UPDATE_MAX_BODY, &len, FRP_UPDATE_TIMEOUT_MS, 0);
     if (st == 200) frp_update_tag(buf, len, tag);
+    if (tag[0]) {                                /* a newer release: its package into Downloads, unless it is there */
+        int have, want;
+        LOCK(lk);
+        want = !U.stop && U.st.check && frp_update_newer(U.own, tag, newer);
+        have = !strcmp(U.st.file_ver, tag) && U.ready;
+        UNLOCK(lk);
+        if (want && !have) download(buf, len, tag, path);
+    }
     free(buf);
     LOCK(lk);
     stop = U.stop;
     if (!stop) {                                 /* (done or failed: the next check a day later either way) */
         U.st.checked = (long long)time(0);
         if (tag[0]) memcpy(U.st.latest, tag, sizeof tag);
+        if (path[0]) {
+            memcpy(U.st.file, path, sizeof path);
+            memcpy(U.st.file_ver, tag, sizeof tag);
+            U.ready = 1;
+        }
     }
     UNLOCK(lk);
     if (!stop) file_save();
@@ -191,7 +280,22 @@ void frp_update_shutdown(void)
     U.joinable = 0;
 #endif
     UNLOCK(lk);
-    frp_update_fetch_cancel();
+    {   /* cancel until the thread is done: a cancel between the check's two requests (the answer, then the package)
+         * would be missed by the next one, which starts afresh (bounded: 3 s; then the request's own timeout) */
+        int i, b = 1;
+        for (i = 0; b && i < 600; i++) {
+            frp_update_fetch_cancel();
+            LOCK(lk); b = U.busy; UNLOCK(lk);
+            if (b) {
+#if defined(_WIN32)
+                Sleep(5);
+#else
+                struct timespec t = { 0, 5000000 };
+                nanosleep(&t, 0);
+#endif
+            }
+        }
+    }
 #if !defined(_WIN32)
     if (join) pthread_join(U.th, 0);             /* (cancelled: at once; at worst the request's own timeout) */
 #endif
@@ -210,9 +314,14 @@ void frp_update_poke(void)
                                                   * else the file is the truth, another process's check included) */
         f.check = U.st.check;
         if (U.st.checked > f.checked) { f.checked = U.st.checked; memcpy(f.latest, U.st.latest, sizeof f.latest); }
+        if (!f.file[0]) { memcpy(f.file, U.st.file, sizeof f.file); memcpy(f.file_ver, U.st.file_ver, sizeof f.file_ver); }
     }
     U.st = f;
     U.loaded = 1;
+    UNLOCK(lk);
+    have = exists(f.file);                       /* (the package may have been moved or deleted since) */
+    LOCK(lk);
+    U.ready = have && !strcmp(U.st.file, f.file);
     if (!U.busy && !U.stop && frp_update_plan(&U.st, U.own, (long long)time(0))) {
         U.busy = 1;
         if (start_thread()) U.busy = 0;
@@ -225,6 +334,7 @@ int frp_update_available(char ver[16])
     ensure_loaded();
     LOCK(lk);
     r = U.st.check && !U.env_off && frp_update_newer(U.own, U.st.latest, ver);
+    if (r) r = U.ready && !strcmp(U.st.file_ver, ver) ? FRP_UPD_READY : FRP_UPD_AVAILABLE;
     UNLOCK(lk);
     if (!r) ver[0] = 0;
     return r;
@@ -244,6 +354,16 @@ void frp_update_set_enabled(int on)
     UNLOCK(lk);
     file_save();
     if (on) frp_update_poke();
+}
+int frp_update_open_download(void)
+{
+    char ver[16], file[1024] = "";
+    if (frp_update_available(ver) == FRP_UPD_READY) {
+        LOCK(lk); memcpy(file, U.st.file, sizeof file); UNLOCK(lk);
+        if (exists(file) && !frp_update_reveal(file)) return 0;
+        LOCK(lk); U.ready = 0; UNLOCK(lk);       /* (gone since: the browser's download instead) */
+    }
+    return frp_update_open_url(frp_update_download_url(FRP_OS_HERE, FRP_UPD_ARCH_HERE));
 }
 int frp_update_busy(void)
 {

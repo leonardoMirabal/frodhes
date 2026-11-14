@@ -173,7 +173,8 @@ static int b_preset_index(void *ctx)
 static int b_preset_load(void *ctx, int idx) { return frp_ui_preset_load(PC(ctx), idx); }
 static int b_preset_save_as(void *ctx, const char *name) { return frp_ui_preset_save(PC(ctx), name); }
 static int b_update(void *ctx, char ver[16]) { (void)ctx; return frp_update_available(ver); }
-static void b_update_open(void *ctx) { (void)ctx; frp_update_open_page(); }
+static void b_update_open(void *ctx) { (void)ctx; frp_update_open_download(); }   /* (opens the package, or the
+                                                                                     * browser downloads it) */
 static void bind(frp_gui_clap_t *c)
 {
     frp_ui_host_t *h = &c->uh;

@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* CHECK FOR UPDATES (plugin/src/frp_update.h) without the network: the pure part (versions, the response, the 24 h
- * rule, the settings file's text), then the runtime over a stand-in fetch (defined here) in a scratch home: the
- * thread, the throttle, the file, the off switch, a developer build, a failure, a cancel at shutdown.
+/* CHECK FOR UPDATES (plugin/src/frp_update.h) without the network: the pure part (versions, the response, the
+ * assets, sha256, the 24 h rule, the settings file's text), then the runtime over a stand-in fetch (defined here) in a
+ * scratch home: the thread, the throttle, the file, the off switch, a developer build, a failure, a cancel at
+ * shutdown, the package's download (digest match: INSTALL; mismatch or no digest: nothing kept, the browser's key).
  *   cc -I plugin/src plugin/tests/test_update.c plugin/src/frp_update.c plugin/src/frp_update_rt.c \
  *      plugin/src/frp_paths.c -lpthread -o test_update && ./test_update SCRATCH_DIR
  * (tests/py/test_plugin_update.py builds and runs it) */
@@ -21,19 +22,35 @@ static void nap(int ms) { usleep((useconds_t)ms * 1000u); }
 static void set_env(const char *k, const char *v) { setenv(k, v, 1); }
 #endif
 
+#define D1 "0000000000000000000000000000000000000000000000000000000000000001"
+#define D2 "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+#define D3 "2D711642B726B04401627CA9FBAC32F5C8530FB1903CC4DB02258717921A4881"
 static int fails;
 #define EXPECT(c, ...) do { if (!(c)) { fails++; printf("FAIL %d: ", __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
-/* ---- the stand-in fetch */
-static volatile int n_fetch, fetch_status = 200, fetch_slow, cancelled;
+/* ---- the stand-in fetch: the API's answer (fetch_body), else the package (pkg_body) */
+static volatile int n_fetch, fetch_status = 200, fetch_slow, cancelled, n_pkg, pkg_follow, n_reveal, n_open;
 static const char *fetch_body = "{\"url\":\"x\",\"tag_name\":\"v0.9.13\",\"name\":\"Frodhes 0.9.13\"}";
-static char fetch_url[256];
-int frp_update_fetch(const char *url, char *buf, size_t cap, size_t *len, int timeout_ms)
+static const char *pkg_body = "PKG";
+static char fetch_url[256], pkg_url[512], revealed[1024], opened[256];
+int frp_update_fetch(const char *url, char *buf, size_t cap, size_t *len, int timeout_ms, int follow)
 {
     size_t n = strlen(fetch_body);
     int waited = 0;
     (void)timeout_ms;
+    if (strcmp(url, FRP_UPDATE_URL)) {
+        size_t m = strlen(pkg_body);
+        n_pkg++;
+        pkg_follow = follow;
+        snprintf(pkg_url, sizeof pkg_url, "%s", url);
+        if (m > cap - 1) m = cap - 1;
+        memcpy(buf, pkg_body, m);
+        buf[m] = 0;
+        *len = m;
+        return 200;
+    }
     n_fetch++;
+    if (follow) return -1;                       /* (the API: no redirects) */
     snprintf(fetch_url, sizeof fetch_url, "%s", url);
     while (fetch_slow && !cancelled && waited < 4000) { nap(5); waited += 5; }   /* (a slow network: until cancelled) */
     if (cancelled) return -1;
@@ -45,7 +62,8 @@ int frp_update_fetch(const char *url, char *buf, size_t cap, size_t *len, int ti
     return fetch_status;
 }
 void frp_update_fetch_cancel(void) { cancelled = 1; }
-int frp_update_open_page(void) { return 0; }
+int frp_update_open_url(const char *url) { n_open++; snprintf(opened, sizeof opened, "%s", url); return 0; }
+int frp_update_reveal(const char *path) { n_reveal++; snprintf(revealed, sizeof revealed, "%s", path); return 0; }
 
 static void wait_idle(void) { int i; for (i = 0; i < 400 && frp_update_busy(); i++) nap(5); }
 static char settings[1024];
@@ -69,7 +87,8 @@ static void put(const char *text)
 static void pure(void)
 {
     int v[3], a[3], b[3];
-    char o[16], big[600];
+    char o[16], o2[64], big[600], u[512], h[65];
+    long long sz;
     frp_update_state s;
     long long now = 1800000000LL;
     /* versions */
@@ -123,7 +142,8 @@ static void pure(void)
            frp_update_state_read("{\"a\":1} x", &s), "garbage");
     s.check = 0; s.checked = 1763000001LL; snprintf(s.latest, sizeof s.latest, "0.9.13");
     EXPECT(!frp_update_state_write(0, &s, big, sizeof big) &&
-           !strcmp(big, "{\n  \"update_check\": false,\n  \"update_checked\": 1763000001,\n  \"update_latest\": \"0.9.13\"\n}\n"),
+           !strcmp(big, "{\n  \"update_check\": false,\n  \"update_checked\": 1763000001,\n  \"update_latest\": \"0.9.13\",\n"
+                   "  \"update_file\": \"\",\n  \"update_file_version\": \"\"\n}\n"),
            "write: %s", big);
     {
         frp_update_state r;
@@ -134,6 +154,73 @@ static void pure(void)
            strstr(big, "\"theme\": \"dark\",\n  \"n\": 3,\n  \"s\": \"a,}b\",\n  \"update_check\": false"), "other keys kept: %s", big);
     EXPECT(frp_update_state_write("{\"a\": [1]}", &s, big, sizeof big), "a file that is not flat is never rewritten");
     EXPECT(frp_update_state_write(0, &s, big, 20), "no room");
+    /* the download per system: the release's fixed asset names (tools/release_assets.sh REQ) */
+    EXPECT(!strcmp(frp_update_download_url(FRP_OS_MACOS, FRP_UPD_ARCH_AARCH64),
+                   "https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-plugin-macos.pkg") &&
+           !strcmp(frp_update_download_url(FRP_OS_MACOS, FRP_UPD_ARCH_X86_64), frp_update_download_url(FRP_OS_MACOS, 1)),
+           "macOS: the universal .pkg");
+    EXPECT(!strcmp(frp_update_download_url(FRP_OS_WINDOWS, FRP_UPD_ARCH_X86_64),
+                   "https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-plugin-windows.zip"),
+           "Windows: the zip");
+    EXPECT(!strcmp(frp_update_download_url(FRP_OS_LINUX, FRP_UPD_ARCH_X86_64),
+                   "https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-plugin-linux-x86_64.zip") &&
+           !strcmp(frp_update_download_url(FRP_OS_LINUX, FRP_UPD_ARCH_AARCH64),
+                   "https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-plugin-linux-aarch64.zip"),
+           "Linux: the zip of its architecture");
+    /* the name in the Downloads folder */
+    EXPECT(!frp_update_file_name(FRP_OS_MACOS, FRP_UPD_ARCH_AARCH64, "0.9.13", o2, sizeof o2) &&
+           !strcmp(o2, "frodhes-plugin-macos-0.9.13.pkg"), "macOS file: %s", o2);
+    EXPECT(!frp_update_file_name(FRP_OS_WINDOWS, FRP_UPD_ARCH_X86_64, "v0.10.0", o2, sizeof o2) &&
+           !strcmp(o2, "frodhes-plugin-windows-0.10.0.zip"), "Windows file: %s", o2);
+    EXPECT(!frp_update_file_name(FRP_OS_LINUX, FRP_UPD_ARCH_X86_64, "0.9.13", o2, sizeof o2) &&
+           !strcmp(o2, "frodhes-plugin-linux-x86_64-0.9.13.zip") &&
+           !frp_update_file_name(FRP_OS_LINUX, FRP_UPD_ARCH_AARCH64, "0.9.13", o2, sizeof o2) &&
+           !strcmp(o2, "frodhes-plugin-linux-aarch64-0.9.13.zip"), "Linux files: %s", o2);
+    EXPECT(frp_update_file_name(FRP_OS_LINUX, 0, "../x", o2, sizeof o2) && frp_update_file_name(FRP_OS_MACOS, 0, "0.9.13", o2, 10),
+           "a bad version or no room: none");
+    /* sha256 (FIPS 180-2 vectors) */
+    frp_sha256_hex("", 0, h);
+    EXPECT(!strcmp(h, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"), "sha256 of nothing: %s", h);
+    frp_sha256_hex("abc", 3, h);
+    EXPECT(!strcmp(h, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"), "sha256 of abc: %s", h);
+    frp_sha256_hex("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", 56, h);
+    EXPECT(!strcmp(h, "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"), "sha256 of 56 bytes: %s", h);
+    {
+        static char m[1000001];
+        memset(m, 'a', 1000000);
+        frp_sha256_hex(m, 1000000, h);
+        EXPECT(!strcmp(h, "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"), "sha256 of a million a: %s", h);
+    }
+    /* the answer's assets */
+    {
+        static const char body[] =
+            "{\"tag_name\":\"v0.9.13\",\"author\":{\"name\":\"frodhes-plugin-macos.pkg\"},\"assets\":["
+            "{\"name\":\"frodhes-plugin-windows.zip\",\"size\":10,\"digest\":\"sha256:" D1 "\","
+            "\"browser_download_url\":\"https://github.com/leonardoMirabal/frodhes/releases/download/v0.9.13/frodhes-plugin-windows.zip\"},"
+            "{\"uploader\":{\"name\":\"frodhes-plugin-linux-x86_64.zip\",\"id\":1},\"name\":\"frodhes-plugin-macos.pkg\","
+            "\"label\":null,\"size\":34163587,\"digest\":\"sha256:" D2 "\","
+            "\"browser_download_url\":\"https:\\/\\/github.com\\/leonardoMirabal\\/frodhes\\/releases\\/download\\/v0.9.13\\/frodhes-plugin-macos.pkg\"},"
+            "{\"name\":\"frodhes-plugin-linux-aarch64.zip\",\"size\":5,\"digest\":null,"
+            "\"browser_download_url\":\"https://github.com/leonardoMirabal/frodhes/releases/download/v0.9.13/frodhes-plugin-linux-aarch64.zip\"},"
+            "{\"name\":\"frodhes-plugin-linux-x86_64.zip\",\"size\":5,\"digest\":\"sha256:" D1 "\","
+            "\"browser_download_url\":\"https://example.com/releases/download/v0.9.13/frodhes-plugin-linux-x86_64.zip\"}"
+            "],\"body\":\"x\"}";
+        EXPECT(!frp_update_asset(body, sizeof body - 1, "frodhes-plugin-macos.pkg", u, &sz, h) && sz == 34163587 &&
+               !strcmp(h, D2) &&
+               !strcmp(u, "https://github.com/leonardoMirabal/frodhes/releases/download/v0.9.13/frodhes-plugin-macos.pkg"),
+               "the macOS asset (a nested name ignored): %s %lld %s", u, sz, h);
+        EXPECT(!frp_update_asset(body, sizeof body - 1, "frodhes-plugin-windows.zip", u, &sz, h) && sz == 10 && !strcmp(h, D1),
+               "the Windows asset");
+        EXPECT(frp_update_asset(body, sizeof body - 1, "frodhes-plugin-linux-aarch64.zip", u, &sz, h) && !u[0] && !h[0],
+               "no digest: none");
+        EXPECT(frp_update_asset(body, sizeof body - 1, "frodhes-plugin-linux-x86_64.zip", u, &sz, h),
+               "a URL elsewhere: none");
+        EXPECT(frp_update_asset(body, sizeof body - 1, "frodhes-plugin-nothing.zip", u, &sz, h), "no such asset");
+        EXPECT(frp_update_asset(body, 200, "frodhes-plugin-macos.pkg", u, &sz, h), "a cut answer: none");
+        EXPECT(frp_update_asset("{\"assets\":[{\"name\":\"a\",\"size\":1,\"digest\":\"sha256:" D3 "\","
+                                "\"browser_download_url\":\"https://github.com/leonardoMirabal/frodhes/releases/download/v1/a\"}]}",
+                                250, "a", u, &sz, h), "an upper-case digest: none");
+    }
     /* the plan */
     frp_update_state_default(&s);
     EXPECT(frp_update_plan(&s, "0.9.11", now), "on, never checked, a release: check");
@@ -266,12 +353,126 @@ static void runtime(const char *scratch)
     }
 }
 
+/* the package: downloaded into FRODHES_DOWNLOAD_DIR when its sha256 matches the answer's digest */
+static void downloads(const char *scratch)
+{
+    static char body[2048];
+    char ver[16], dir[1024], path[1100], want[65], d[1024], *t;
+    long long now = (long long)time(0);
+    FILE *f;
+    snprintf(dir, sizeof dir, "%s%cdl", scratch, frp_path_sep(FRP_OS_HERE));
+    frp_mkdirs(dir);
+    set_env("FRODHES_DOWNLOAD_DIR", dir);
+    EXPECT(!frp_update_downloads_dir(d, sizeof d) && !strcmp(d, dir), "the folder: FRODHES_DOWNLOAD_DIR (%s)", d);
+    {
+        char name[96];
+        frp_update_file_name(FRP_OS_HERE, FRP_UPD_ARCH_HERE, "0.9.20", name, sizeof name);
+        snprintf(path, sizeof path, "%s%c%s", dir, frp_path_sep(FRP_OS_HERE), name);
+    }
+    pkg_body = "the package's bytes";
+    frp_sha256_hex(pkg_body, strlen(pkg_body), want);
+#define ANSWER(dig) snprintf(body, sizeof body, "{\"tag_name\":\"v0.9.20\",\"assets\":[{\"name\":\"%s\",\"size\":%u," \
+        "\"digest\":%s,\"browser_download_url\":\"" FRP_UPDATE_ASSET_PREFIX "v0.9.20/%s\"}]}", \
+        frp_update_asset_name(FRP_OS_HERE, FRP_UPD_ARCH_HERE), (unsigned)strlen(pkg_body), dig, \
+        frp_update_asset_name(FRP_OS_HERE, FRP_UPD_ARCH_HERE))
+#define DUE() do { snprintf(d, sizeof d, "{\"update_checked\": %lld, \"update_latest\": \"0.9.15\"}", now - 90000); put(d); } while (0)
+    fetch_body = body;
+    fetch_status = 200;
+    cancelled = 0;
+    frp_update_init("0.9.11");
+
+    /* a mismatch: nothing kept, the browser's key */
+    {
+        char bad[80];
+        snprintf(bad, sizeof bad, "\"sha256:%s\"", D1);
+        ANSWER(bad);
+    }
+    DUE(); n_pkg = 0;
+    frp_update_poke(); wait_idle();
+    EXPECT(n_pkg == 1 && pkg_follow && !strncmp(pkg_url, FRP_UPDATE_ASSET_PREFIX, strlen(FRP_UPDATE_ASSET_PREFIX)),
+           "a newer release: its package fetched, redirects followed (%d %s)", n_pkg, pkg_url);
+    EXPECT(frp_update_available(ver) == FRP_UPD_AVAILABLE && !strcmp(ver, "0.9.20"), "a mismatch: AVAILABLE (%s)", ver);
+    EXPECT(!(f = frp_fopen(path, "rb")), "a mismatch: no file");
+    if (f) fclose(f);
+    snprintf(d, sizeof d, "%s.part", path);
+    EXPECT(!(f = frp_fopen(d, "rb")), "a mismatch: no .part file");
+    if (f) fclose(f);
+    n_open = n_reveal = 0;
+    frp_update_open_download();
+    EXPECT(n_open == 1 && !n_reveal && !strcmp(opened, frp_update_download_url(FRP_OS_HERE, FRP_UPD_ARCH_HERE)),
+           "AVAILABLE: the key opens the browser's download (%s)", opened);
+
+    /* no digest: not downloaded at all */
+    ANSWER("null");
+    DUE(); n_pkg = 0;
+    frp_update_poke(); wait_idle();
+    EXPECT(!n_pkg && frp_update_available(ver) == FRP_UPD_AVAILABLE, "no digest: no download, AVAILABLE (%d)", n_pkg);
+    /* a cut download (the size differs): nothing kept */
+    {
+        char good[80];
+        snprintf(good, sizeof good, "\"sha256:%s\"", want);
+        ANSWER(good);
+    }
+    pkg_body = "the package's byte";
+    DUE(); n_pkg = 0;
+    frp_update_poke(); wait_idle();
+    EXPECT(n_pkg == 1 && frp_update_available(ver) == FRP_UPD_AVAILABLE && !(f = frp_fopen(path, "rb")), "a cut file: nothing");
+    if (f) fclose(f);
+    pkg_body = "the package's bytes";
+
+    /* a match: the file in Downloads, READY, saved, the key reveals it */
+    DUE(); n_pkg = 0;
+    frp_update_poke(); wait_idle();
+    EXPECT(n_pkg == 1 && frp_update_available(ver) == FRP_UPD_READY && !strcmp(ver, "0.9.20"), "a match: READY (%d)", n_pkg);
+    EXPECT((f = frp_fopen(path, "rb")) != 0, "the file: %s", path);
+    if (f) {
+        char got[64] = "";
+        size_t n = fread(got, 1, sizeof got - 1, f);
+        fclose(f);
+        got[n] = 0;
+        EXPECT(!strcmp(got, pkg_body), "its bytes: %s", got);
+    }
+    t = slurp();
+    EXPECT(t && strstr(t, "\"update_file_version\": \"0.9.20\"") && strstr(t, "\"update_file\": \""), "saved: %s", t ? t : "");
+    n_open = n_reveal = 0;
+    frp_update_open_download();
+    EXPECT(n_reveal == 1 && !n_open && !strcmp(revealed, path), "READY: the key opens the file (%s)", revealed);
+    /* a day later, the same release: not downloaded again */
+    t = slurp();
+    if (t) {
+        char *c = strstr(t, "\"update_checked\": ");
+        if (c) { snprintf(d, sizeof d, "%lld", now - 90000); memcpy(c + 18, d, strlen(d)); }
+        put(t);
+    }
+    n_pkg = 0;
+    frp_update_poke(); wait_idle();
+    EXPECT(!n_pkg && frp_update_available(ver) == FRP_UPD_READY, "downloaded once (%d)", n_pkg);
+    /* the file deleted: the key falls back to the browser; next window: AVAILABLE */
+    frp_remove(path);
+    n_open = n_reveal = 0;
+    frp_update_open_download();
+    EXPECT(n_open == 1 && !n_reveal, "the file gone: the browser");
+    frp_update_poke(); wait_idle();
+    EXPECT(frp_update_available(ver) == FRP_UPD_AVAILABLE, "the file gone: AVAILABLE");
+    /* OFF: no notice and no download */
+    frp_update_set_enabled(0);
+    snprintf(d, sizeof d, "{\"update_check\": false, \"update_checked\": %lld, \"update_latest\": \"0.9.20\"}", now - 90000);
+    put(d); n_pkg = 0;
+    frp_update_poke(); wait_idle();
+    EXPECT(!n_pkg && frp_update_available(ver) == FRP_UPD_NONE, "off: nothing");
+    frp_update_set_enabled(1);
+    wait_idle();
+    frp_update_shutdown();
+    set_env("FRODHES_DOWNLOAD_DIR", "");
+}
+
 int main(int argc, char **argv)
 {
     pure();
     if (argc > 1) runtime(argv[1]);
+    if (argc > 1) downloads(argv[1]);
     if (fails) { printf("%d failed\n", fails); return 1; }
     printf("ok    update check: versions, the response, the 24 h rule, the settings file%s\n",
-           argc > 1 ? "; the runtime (thread, throttle, off switch, developer build, failures, shutdown)" : "");
+           argc > 1 ? "; the runtime (thread, throttle, off switch, developer build, failures, shutdown, the package)" : "");
     return 0;
 }
