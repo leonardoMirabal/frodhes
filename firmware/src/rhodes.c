@@ -760,6 +760,9 @@ static void rh_drv_restrike(rh_voice_t *v, uint32_t ki, uint32_t vel)
     if (u > 0x7FFFFFFF) u = 0x7FFFFFFF;
     if (u < -0x7FFFFFFF) u = -0x7FFFFFFF;
     v->Hprev = rh_hermite(RH_PU_PHIM(v->k->fam), u * u);
+#ifdef FR_HQ
+    hq_resync(v);                              /* (the exact pickup's flux from the scaled tip) */
+#endif
 }
 #endif
 static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
@@ -1176,6 +1179,10 @@ static void rh_hd_restrike(rh_voice_t *v, uint32_t vel)
     if (u > 0x7FFFFFFF) u = 0x7FFFFFFF;
     if (u < -0x7FFFFFFF) u = -0x7FFFFFFF;
     v->Hprev = rh_hermite(RH_PU_PHIM(v->k->fam), u * u);
+#ifdef FR_HQ
+    hq_v[v - rv].ys = 0;                       /* (the HQ glide's own lag starts again with Classic's) */
+    hq_resync(v);                              /* (the exact pickup's flux from the same tip) */
+#endif
     rh_hd_target(v, (uint32_t)(v->k - RH_KEYS) + RH_KEY_LO, vel);
 }
 #else
@@ -1324,6 +1331,9 @@ static void __attribute__((noinline)) rh_vm_restrike(rh_voice_t *v, uint32_t vel
         if (u > 0x7FFFFFFF) u = 0x7FFFFFFF;
         if (u < -0x7FFFFFFF) u = -0x7FFFFFFF;
         v->Hprev = rh_hermite(RH_PU_PHIM(v->k->fam), u * u);
+#ifdef FR_HQ
+        hq_resync(v);
+#endif
         rh_vm_level(v, x, g);
         rh_vm_kap(v, key + RH_KEY_LO, ty, x);
     } else {
@@ -1921,6 +1931,7 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
     }
 #ifdef FR_HQ
     if (hq_v[v - rv].os) Hp = hq_pickup(v, mix, side, Hp, gain); else   /* (gain: with the lift) */
+    if (hq_v[v - rv].ex) hq_pickup1(v, mix, side, gain); else        /* (the exact flux at 1x: Hp unused) */
 #endif
     if (v->fade == 32768) {                               /* pickup, then the per-key gain into the mix: no steal fade
                                                            * (only this loop changes it in a render: the test below would
@@ -1963,6 +1974,10 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
         rh_lfsr = lfsr; v->felt_lp = lp; v->felt_n = (uint16_t)(v->felt_n - nf);
     }
 #ifdef RH_HD
+#ifdef FR_HQ
+    if (hq_v[v - rv].ex) { if (v->hd_n && !--v->hd_ph) { v->hd_ph = RH_HD_SUBS; Hp = hq_hd_step(v, Hp); } } else   /* (HQ:
+                                                           * the glide on the exact flux, on to HQ_OFF_MAX) */
+#endif
     if (v->hd_n && !--v->hd_ph) { v->hd_ph = RH_HD_SUBS; Hp = FR_FAR(rh_hd_step)(v, Hp); }   /* the harmonic decay glide */
 #endif
     v->Hprev = Hp;

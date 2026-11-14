@@ -133,7 +133,10 @@ names the Move (default `ableton@move.local`).
      `tools/gen_rhodes_hq_contact.py --check` (the dense velocity table and the live contact derive from the same
      hammer model and pins as the Classic layers: a change of those regenerates them, or the Move plays the old
      pulse). A change of the Classic pickup (`rhodes.c`) is mirrored in the HQ 2x pickup (`hq/rhodes_hq.c`
-     `hq_voice_init`, `HQ_PU_R`) for keys 85 and up; `tests/py/test_rhodes_hq.py` checks the constants.
+     `hq_voice_init`, `HQ_PU_R`) for keys 85 and up, and in the HQ exact 1x pickup (`hq_pickup1`, the same
+     constants) below them; `tests/py/test_rhodes_hq.py` checks the constants. A change of the harmonic decay glide
+     (`rh_hd_*`) is mirrored in `hq_hd_step` (HQ notes run it past `RH_OFF_MAX` to `HQ_OFF_MAX`), and a change of
+     the Classic pulse or `RH_PRATE` moves `hq_ir_tab` (built at load from both pulses: nothing to regenerate).
   4. `make move` and `tools/ci_move.sh` (MT0: Gate U, `make test-move`, Gate M against the new references).
   5. The parameters: a new parameter or a changed range shows up on the Move's pages when
      `tools/gen_move_module.py` is rerun (Gate U fails until then; `test_every_parameter_reachable_or_midi_only`

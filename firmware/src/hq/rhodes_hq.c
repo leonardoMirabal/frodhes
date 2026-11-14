@@ -33,10 +33,13 @@ static const float HQ_G2[HQ_HBP] = {
  * to check at D3); no import added (no mlock) */
 static int16_t hq_pulse_ram[RH_NKEY][127][RH_PLEN + 2];
 static uint32_t hq_prate_ram[RH_NKEY][127];
+static float hq_ir_tab[RH_NKEY][127];          /* the table pulse's force scale per key and velocity (hq_pulse) */
+static void hq_ir_init(void);
 static __attribute__((constructor)) void hq_page_in(void)
 {
     memcpy(hq_pulse_ram, RH_HQ_PULSE, sizeof hq_pulse_ram);
     memcpy(hq_prate_ram, RH_HQ_PRATE, sizeof hq_prate_ram);
+    hq_ir_init();
 }
 
 /* the flux in closed form (tools/pickup.py: Phi(u) = T(u + R) - T(u - R), T(w) = w / (w^2 + 1), u in the family's
@@ -63,24 +66,33 @@ static inline void hq_dphi2(const hq_voice_t *h, float d, float e, float *pd, fl
     *pe = e * (m1 * e2 - m2 * e1) * D * r;
 }
 
+static void hq_consts(hq_voice_t *h, int32_t off, uint32_t fam)   /* hq_dphi2's constants at the offset off */
+{
+    HQ_FP_STRICT
+    float o = (float)off * HQ_GAP, R = HQ_PU_R[fam & 1u];
+    h->b1 = o + R; h->b2 = o - R;
+    h->c1 = 1.0f / (h->b1 * h->b1 + 1.0f); h->c2 = 1.0f / (h->b2 * h->b2 + 1.0f);
+    h->eo = off;
+}
+
 static void hq_voice_init(rh_voice_t *v)       /* rhodes.c rh_init, before rh_load_pulse */
 {
     HQ_FP_STRICT
     hq_voice_t *h = &hq_v[v - rv];
     h->on = hq_mode != 0;
     h->os = (uint8_t)(h->on && v->note >= HQ_OS_LO);
+    h->ex = (uint8_t)(h->on && !h->os);
 #ifdef RH_DRIVE
     h->dr = 1.0f;                              /* (at rest: hq_live finds no motion to scale) */
     h->pa = 1;
     h->drl = 1.0f;
 #endif
+    h->pprev = 0.0f;                           /* (the tip at rest: the flux re the rest point is 0) */
+    h->xl = 0.0f;
+    h->ys = 0;
+    if (!h->on) return;
+    hq_consts(h, v->off, v->k->fam);
     if (!h->os) return;
-    {
-        float o = (float)v->off * HQ_GAP, R = HQ_PU_R[v->k->fam & 1u];
-        h->b1 = o + R; h->b2 = o - R;
-        h->c1 = 1.0f / (h->b1 * h->b1 + 1.0f); h->c2 = 1.0f / (h->b2 * h->b2 + 1.0f);
-    }
-    h->pprev = 0.0f;
     memset(h->xb, 0, sizeof h->xb); memset(h->eb, 0, sizeof h->eb); memset(h->ob, 0, sizeof h->ob);
 }
 
@@ -125,6 +137,58 @@ static int hq_live(rh_voice_t *v, uint32_t key, uint32_t vel)
     return 1;
 }
 
+/* |DTFT| at the angular frequency w (radians a sample) of the force a pulse shape gives (the force loop's samples:
+ * linear between the points, the position advancing by rate, Q16, to the shape's end): the phasor by a recurrence,
+ * its step from Taylor series (no libm: the Move module imports no new symbol) */
+static float hq_pulse_f1(const int16_t *pt, uint32_t rate, float w)
+{
+    HQ_FP_STRICT
+    float w2 = w * w;
+    float c = 1.0f - w2 * (0.5f - w2 * (1.0f / 24.0f - w2 * (1.0f / 720.0f - w2 * (1.0f / 40320.0f))));
+    float s = w * (1.0f - w2 * (1.0f / 6.0f - w2 * (1.0f / 120.0f - w2 * (1.0f / 5040.0f - w2 * (1.0f / 362880.0f)))));
+    float zr = 1.0f, zi = 0.0f, ar = 0.0f, ai = 0.0f, t;
+    uint32_t pos = 0, n;
+    for (n = 0; n < 4096u; n++) {
+        uint32_t i = pos >> 16;
+        float f;
+        if (i >= RH_PLEN) break;
+        f = (float)pt[i] + (float)(pt[i + 1u] - pt[i]) * (float)((pos >> 1) & 0x7FFFu) * (1.0f / 32768.0f);
+        ar += f * zr; ai += f * zi;
+        t = zr * c + zi * s; zi = zi * c - zr * s; zr = t;
+        pos += rate;
+    }
+    return ar * ar + ai * ai > 0.0f ? hq_ck_sqrt(ar * ar + ai * ai) : 0.0f;
+}
+
+/* hq_ir_tab, at load (hq_page_in): per key and velocity the exact contact's force scaled so its spectrum at the key's
+ * fundamental is Classic's pulse's there (its blend of two layers at that velocity and its rate, rh_load_pulse's
+ * integers), so the fundamental and the pickup's harmonics of it start where Classic's do, and the exact shape gives
+ * the overtones. Between the layers the two differ by 0.01 dB; above v120, where Classic's layers end (its v120 shape at
+ * the v127 rate), the exact contact is shorter: unscaled its fundamental played 0.06 dB under Classic's on key 33 v127
+ * (the bark with it), 0.4 dB on key 96. At the HAMMER knob's centre (the rate's scale 1: both pulses scale alike) */
+static void hq_ir_init(void)
+{
+    HQ_FP_STRICT
+    static int16_t pb[RH_PLEN + 2];
+    float w = 6.28318531f * 27.5f / 44100.0f;   /* A0, then a semitone a key */
+    uint32_t key, vel;
+    for (key = 0; key < RH_KEY_LO - 21u; key++) w *= 1.05946309f;
+    for (key = 0; key < RH_NKEY; key++, w *= 1.05946309f)
+        for (vel = 1; vel <= 127u; vel++) {
+            uint32_t i = RH_VPOS_I[vel], f = RH_VPOS_F[vel], l = RH_VLAY_I[vel];
+            const uint16_t *pr = RH_PRATE[key];
+            int32_t lw = RH_VLAY_W[vel];
+            uint32_t rc = (uint32_t)((int32_t)RH_PRATE_B[key] + pr[i] + ((((int32_t)pr[i + 1] - (int32_t)pr[i]) * (int32_t)f) >> 8)) << 4;
+            float a, b;
+            rh_pz(pb, &RH_PZB, RH_PZI(key, l));
+            if (lw) rh_pz_mix(pb, &RH_PZB, RH_PZI(key, l + 1u < RH_NLAYER ? l + 1u : RH_NLAYER - 1u), lw);
+            a = hq_pulse_f1(pb, rc, w);
+            b = hq_pulse_f1(hq_pulse_ram[key][vel - 1u], hq_prate_ram[key][vel - 1u] << 4, w);
+            hq_ir_tab[key][vel - 1u] = b > 0.0f && a / b > 0.5f && a / b < 2.0f ? a / b : 1.0f;   /* (a guard: seen
+                                                * within 1 +- 0.05) */
+        }
+}
+
 /* rhodes.c rh_load_pulse, before the HAMMER scaling: the exact contact's shape and rate at vel (the peak stays
  * Classic's, the velocity law the calibration set); on a re-strike of a ringing tine (keys >= HQ_LIVE_LO, at most
  * HQ_LIVE_MAX a block), the live contact */
@@ -133,6 +197,7 @@ static void hq_pulse(rh_voice_t *v, uint32_t vel)
     uint32_t key = (uint32_t)(v->k - RH_KEYS);
     hq_voice_t *h = &hq_v[v - rv];
     h->lg = 0.0f;
+    h->ir = 1.0f;
     if (!h->on || vel < 1u || vel > 127u) return;
     v->ptab = hq_pulse_ram[key][vel - 1u];
     v->prate = hq_prate_ram[key][vel - 1u] << 4;          /* Q12 -> Q16 */
@@ -148,6 +213,9 @@ static void hq_pulse(rh_voice_t *v, uint32_t vel)
         h->pa = pa;
     }
 #endif
+    if (h->lg <= 0.0f && v->ptab != v->pbuf)   /* the table's pulse: its force at the fundamental Classic's (hq_ir_init;
+                                                * applied in hq_pulse_gain, after Classic's force cap) */
+        h->ir = hq_ir_tab[key][vel - 1u];
 }
 
 /* rhodes.c rh_load_pulse, after the HAMMER scaling and its cap: the live pulse's force re the table's. The force
@@ -158,6 +226,11 @@ static void hq_pulse_gain(rh_voice_t *v)
     HQ_FP_STRICT
     hq_voice_t *h = &hq_v[v - rv];
     float p;
+    if (h->ir != 1.0f) {                       /* the table's pulse: Classic's momentum (hq_pulse) */
+        p = (float)v->pamp * h->ir + 0.5f;
+        v->pamp = p > 65535.0f ? 65535 : (int32_t)p;
+        h->ir = 1.0f;
+    }
     if (h->lg <= 0.0f) return;
 #ifdef RH_DRIVE
     {   /* the live force's ratio within the physical force's range, as before the drive (the physical force after
@@ -256,6 +329,123 @@ static int32_t hq_pickup(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t Hp,
     memmove(ob, ob + SUB, HQ_HIS * sizeof *ob);
     return Hp;
 }
+/* the exact pickup at 1x (rhodes_hq.h, HQ_OFF_MAX's comment): the flux re the rest point in closed form, two samples a
+ * division (hq_dphi2), the difference times the key's gain into mix; the steal fade and the stereo position as
+ * rhodes.c's pickup loops. Classic's Hp is not used (the voice's flux is pprev, re the offset eo) */
+static void hq_pickup1(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t gain)
+{
+    HQ_FP_STRICT
+    hq_voice_t *h = &hq_v[v - rv];
+    const float gs = (float)gain * (1.0f / 16777216.0f) * HQ_PU_K[v->k->fam & 1u];
+    int32_t pan = v->pan;
+    float p[SUB], pp = h->pprev;
+    uint32_t n;
+    if (h->eo != v->off) {                     /* (an offset moved elsewhere, never expected: hq_resync and hq_hd_step
+                                                * keep eo; the flux re-based on the last sample's tip, no step) */
+        float pe;
+        hq_consts(h, v->off, v->k->fam);
+        hq_dphi2(h, h->xl, 0.0f, &pp, &pe);
+    }
+    for (n = 0; n < SUB; n += 2)
+        hq_dphi2(h, (float)rh_x[n] * HQ_GAP, (float)rh_x[n + 1u] * HQ_GAP, &p[n], &p[n + 1u]);
+    for (n = 0; n < SUB; n++) {
+        int32_t o = hq_round((p[n] - pp) * gs);
+        pp = p[n];
+        if (v->fade != 32768) {
+            o = (int32_t)(((int64_t)o * v->fade) >> 15);
+            v->fade -= (int32_t)(32768 / FADE_SAMPLES);
+            if (v->fade < 0) v->fade = 0;
+        }
+        mix[n] += o;
+        if (pan) side[n] += (o * pan) >> 8;
+    }
+    h->pprev = pp;
+    h->xl = (float)rh_x[SUB - 1u] * HQ_GAP;
+}
+
+/* the flux re the rest point taken again from the tip now (the sum of the live modes' states, as rhodes.c takes Hprev
+ * from it): after a re-strike scaled the states, or the offset went back to the strike's (rh_hd_restrike) */
+static void hq_resync(rh_voice_t *v)
+{
+    HQ_FP_STRICT
+    hq_voice_t *h = &hq_v[v - rv];
+    int64_t u = 0;
+    uint32_t m;
+    float pe;
+    if (!h->ex) return;
+    if (h->eo != v->off) hq_consts(h, v->off, v->k->fam);
+    for (m = 0; m < RH_NM; m++) if (v->m[m].live) u += v->m[m].x;
+    if (u > 0x7FFFFFFF) u = 0x7FFFFFFF;
+    if (u < -0x7FFFFFFF) u = -0x7FFFFFFF;
+    h->xl = (float)u * HQ_GAP;
+    hq_dphi2(h, h->xl, 0.0f, &h->pprev, &pe);
+}
+
+#ifdef RH_HD
+/* T(w) = w / (w^2 + 1) and the flux Phi(u) = T(u + R) - T(u - R) (tools/pickup.py), in gaps of the key's family */
+static inline float hq_phi(float u, float R)
+{
+    HQ_FP_STRICT
+    float a = u + R, b = u - R;
+    return a / (a * a + 1.0f) - b / (b * b + 1.0f);
+}
+/* rhodes.c rh_hd_step for an HQ voice on the exact pickup: Classic's lags and steps (the same integers) up to Classic's
+ * limit RH_OFF_MAX; past it, on to HQ_OFF_MAX, a lag of its own at the soft strike's rate (rh_hd_target's a1 at w 0:
+ * V1's decay x RH_HD_RS), in full up to HQ_HD_V0, none from HQ_HD_V1 (a smoothstep between). A mezzo-forte strike's
+ * Classic lags are the hard strike's, fast: run on past the limit with them, its 2nd harmonic rose 10 dB over the
+ * strike's within 2 s (C4 v64; v42 +7 dB), where the soft rate lets it grow as the note decays. Then the fundamental's
+ * gain from the exact flux's secant over V1's swing (Classic: the table's), at most HQ_HD_RCAP, and the flux re-based
+ * at the new offset from the last sample's tip (no step) */
+static int32_t hq_hd_step(rh_voice_t *v, int32_t Hp)
+{
+    HQ_FP_STRICT
+    const rh_key_t *k = v->k;
+    const rh_ms_t *m1 = &v->m[RH_V1];
+    hq_voice_t *h = &hq_v[v - rv];
+    const uint32_t sh = RH_FAM_SH[k->fam];
+    int32_t o, mx = RH_OFF_MAX >> sh, hx, a, e;
+    uint64_t a2;
+    float R = HQ_PU_R[k->fam & 1u], fa, f0, f1, s0, s1, r, pe, t;
+    int64_t g;
+    if (v->hd_w) { v->hd_w--; return Hp; }
+    v->hd_n--;
+    v->hd_y1 += (int32_t)(((int64_t)(v->hd_d - v->hd_y1) * v->hd_a1) >> 30);
+    v->hd_y2 += (int32_t)(((int64_t)(v->hd_y1 - v->hd_y2) * v->hd_a2) >> 30);
+    o = v->hd_off0 + v->hd_y2;
+    if (o > mx) {                              /* (Classic's limit: its lags wait there) */
+        o = mx; v->hd_y2 = mx - v->hd_off0;
+        if (v->hd_y1 > v->hd_y2) v->hd_y1 = v->hd_y2;
+    }
+    t = v->vel <= HQ_HD_V0 ? 1.0f : v->vel >= HQ_HD_V1 ? 0.0f
+        : (float)(HQ_HD_V1 - v->vel) * (1.0f / (float)(HQ_HD_V1 - HQ_HD_V0));
+    t = HQ_HD_EXT ? t * t * (3.0f - 2.0f * t) : 0.0f;
+    hx = mx + ((int32_t)((float)((HQ_OFF_MAX >> sh) - mx) * t));     /* this strike's limit */
+    if (hx > mx && v->hd_d > 0) {              /* (a glide toward the axis: past Classic's limit) */
+        int32_t as = k->m[RH_V1].d * RH_HD_RS;
+        if (as > Q30 / 64) as = Q30 / 64;
+        h->ys += (int32_t)(((int64_t)(v->hd_d - h->ys) * as) >> 30);
+        if (h->ys > hx - v->hd_off0) h->ys = hx - v->hd_off0;
+        e = v->hd_off0 + h->ys - mx;
+        if (e > 0 && o == mx) o = mx + e;
+    }
+    if (o == v->off) return Hp;
+    v->off = o;
+    a2 = (uint64_t)((int64_t)m1->x * m1->x + (int64_t)m1->y * m1->y) >> 22;
+    a = (int32_t)(rh_hd_isqrt(a2 > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t)a2) << 11);
+    if (a < RH_HD_DU) a = RH_HD_DU;
+    if (a > (1 << 26)) a = 1 << 26;
+    fa = (float)a * HQ_GAP; f0 = (float)v->hd_off0 * HQ_GAP; f1 = (float)o * HQ_GAP;
+    s0 = hq_phi(f0 + fa, R) - hq_phi(f0 - fa, R); s0 = s0 < 0.0f ? -s0 : s0;
+    s1 = hq_phi(f1 + fa, R) - hq_phi(f1 - fa, R); s1 = s1 < 0.0f ? -s1 : s1;
+    r = s1 * HQ_HD_RCAP > s0 ? s0 / s1 : HQ_HD_RCAP;
+    g = (int64_t)((float)v->hd_g0 * r);
+    v->gain = v->hd_gc = g > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)g;
+    hq_consts(h, o, k->fam);
+    hq_dphi2(h, h->xl, 0.0f, &h->pprev, &pe);
+    return Hp;
+}
+#endif
+
 #if !defined(__clang__) && defined(__GNUC__)
 #pragma GCC pop_options
 #endif
