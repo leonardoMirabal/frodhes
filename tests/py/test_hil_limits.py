@@ -276,3 +276,76 @@ def test_effects_reverb_127_is_the_hall_alone():
     row = [q for q in rep["effects"]["rows"] if q["name"] == "reverb 127"][0]
     assert ok, msg
     assert abs(row["delta_lu"] + 8.1) <= 0.5 and row["lr_corr"] < 0.3, row
+
+
+class _GapRig(h.HostRig):
+    """the host rig with a recording gap (Rig.both's xruns) in the takes listed: the call count, 1-based"""
+
+    def __init__(self, gapped):
+        super().__init__(1)
+        self.gapped, self.calls, self.xruns = set(gapped), 0, []
+
+    def _rec(self, dur, events):
+        self.calls += 1
+        self.xruns = [("usb", "gap +11 ms at 0.52 s"), ("usb", "gap -11 ms at 0.54 s")] if self.calls in self.gapped else []
+        return super()._rec(dur, events)
+
+
+@pytest.mark.parametrize("gapped, flagged", [((2, 5, 6), False), ((2, 3, 4), True)])
+def test_presets_take_a_gapped_recording_again(monkeypatch, gapped, flagged):
+    """0.9.12's T2 failed presets on one F15 take with a step-and-back gap pair (its three levels within 0.0005 LU):
+    a take with a recording gap is taken again (PR_GAP_RETAKES 2), flagged only if every retake has one too"""
+    monkeypatch.setitem(h.REPEATS, "presets", 1)
+    monkeypatch.setattr(h, "PR_STARTERS", 0)
+    r, rep = _GapRig(gapped), {}
+    ok, msg = h.presets(r, rep)
+    rows = rep["presets"]
+    assert h.PR_GAP_RETAKES == 2 and len(rows) == h.PR_COUNT
+    if flagged:                                       # F02's take, then both retakes: gapped
+        assert not ok and "a recording gap at ['F02']" in msg, msg
+        assert rows[1]["gap_retakes"] == 2 and rows[1]["gaps"] == 2
+    else:                                             # F02 once, F04 twice: each retake clean
+        assert ok, msg
+        assert [q["gap_retakes"] for q in rows[:5]] == [0, 1, 0, 2, 0] and not any(q["gaps"] for q in rows)
+
+
+@pytest.mark.parametrize("fault", [False, True])
+def test_lfo_shape_square_steeper_than_sine(monkeypatch, fault):
+    """vibes_fx LFO SHAPE: SQR's steepest slope >= 2x SINE's (lfo_sweep + lfo_steep). 0.9.12's T2 read SINE 13.7 on
+    USB and 7.2 on the jack of one take (the 99th percentile over the trace took the decayed chord's dips into the
+    16-bit LSBs); with the floor and the half cycles' median the host reads SINE ~7, SQR ~22-23. The fault (SINE
+    played for SQR) must fail: ~1x"""
+    hs = h
+    monkeypatch.setattr(hs, "ENGINE", "vibes")
+    P = hs.vp()
+    e = hs.lfo_hz(P["LFO_RATE"]["de"])
+    V = hs.VRig("usb", host=1)
+    fb = [("FL_TYPE", 1), ("FL_FREQ", 64), ("FL_RESO", 0), ("FL_LFO", 0), ("LFO_SHAPE", 0),
+          ("LFO_RATE", P["LFO_RATE"]["de"]), ("LFO_SYNC", 0), ("LFO_RETRIG", 0)]
+
+    def run(label, st):
+        V.reset(st, label=label)
+        return V.take(label, *hs.ST_LONG)
+    ref = run("ref", fb)
+    lb = hs.with_(fb, ("FL_LFO", 127))
+    s0 = run("sine", hs.with_(lb, ("LFO_SHAPE", 0)))
+    s4 = run("sqr", hs.with_(lb, ("LFO_SHAPE", 0 if fault else 4)))
+    a, b = (hs.lfo_steep(*hs.lfo_sweep(t, ref, "usb", 0.2, 5.3, 250, 2000), e) for t in (s0, s4))
+    assert 5 <= a <= 9, a
+    if fault:
+        assert b < 1.3 * a, (a, b)
+    else:
+        assert b >= 2.8 * a, (a, b)
+    # the same SINE take requantised to 8-LSB steps (a 13-bit capture): the floor holds it (61 without it, seed 3)
+    x = np.round(s0.m("usb") * 4096) / 4096
+
+    class Q:
+        def m(self, s):
+            return x
+
+        def on(self, s):
+            return s0.on(s)
+
+        def pre(self, s):
+            return s0.pre(s)
+    assert abs(hs.lfo_steep(*hs.lfo_sweep(Q(), ref, "usb", 0.2, 5.3, 250, 2000), e) - a) < 0.5
