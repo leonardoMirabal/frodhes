@@ -116,8 +116,9 @@ def main():
     if not cells:
         raise SystemExit("level_proof: no cells")
     ltree = rd.last_tree()
-    cb = rd.tree_bins(ROOT, os.path.join(rd.OUT, "levelproof-cand-bin"))
-    lb = rd.tree_bins(ltree, os.path.join(rd.OUT, "last-bin"))
+    c1 = any(c[0].startswith("c1/") for c in cells)     # (the two-core FM-1's cells: its build in both trees)
+    cb = rd.tree_bins(ROOT, os.path.join(rd.OUT, "levelproof-cand-bin"), c1=c1)
+    lb = rd.tree_bins(ltree, os.path.join(rd.OUT, "last-bin"), c1=c1)
     cc, lc = _cases(ROOT), _cases(ltree)
     cids = sorted({c[0] for c in cells})
     n = int(os.environ.get("PYTEST_N", os.environ.get("PRISTINE_N", "2")) or 2)

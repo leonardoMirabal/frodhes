@@ -92,13 +92,13 @@ def main():
     ap.add_argument("--out", default=os.path.join("tests", "mix_law_proof.json"))
     ap.add_argument("--entries")
     a = ap.parse_args()
-    bins = rd.tree_bins(ROOT, os.path.join(rd.OUT, "mixproof-bin"))
+    bins = rd.tree_bins(ROOT, os.path.join(rd.OUT, "mixproof-bin"), c1=True)   # (the full grid: the c1 cases too)
     base = rd.last_cells("full")
     cs = [c for c in rd.cases("full", ROOT) if c[4] == "preset" and c[0].split("/")[1] in a.presets]
     eqs = {c[0]: equivalent(preset_params(c[0].split("/")[1])) for c in cs}
     tmp = os.path.join(rd.OUT, "mixproof")
     off = [(950, 0xB0, CC_DLY, 0), (950, 0xB0, CC_RV, 0)]
-    lbins = rd.tree_bins(rd.last_tree(), os.path.join(rd.OUT, "last-bin"))
+    lbins = rd.tree_bins(rd.last_tree(), os.path.join(rd.OUT, "last-bin"), c1=True)
     jobs = [(bins[c[1]], c, tmp + "-own") for c in cs] + \
            [(bins[c[1]], (c[0], c[1], c[2] + eqs[c[0]], c[3], c[4]), tmp + "-eq") for c in cs]
     with Pool(int(os.environ.get("PYTEST_N", "2") or 2)) as pool:
