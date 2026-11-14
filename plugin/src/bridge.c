@@ -60,10 +60,13 @@ static atomic_int slot_used[FRP_SLOTS];
 
 #define CHUNK 256u                       /* frames read from the FIFO at a time */
 #define UAC_KNEE 24576                   /* usb.c UAC_KNEE: above it the excess is halved, before the clamp */
-#define RS_HALF 24                       /* the other rates: zero crossings each side of the sinc */
+#define RS_HALF 96                       /* the other rates: zero crossings each side of the sinc. 96: flat within
+                                          * 0.0001 dB to 0.95 x the cutoff (Gate D's band) and -95 dB at the lower
+                                          * Nyquist. (24 until 0.9.12: at 8 kHz -0.11 dB at 3.52 kHz, -0.94 dB at
+                                          * 3.65 kHz and only -17 dB at 4 kHz, a loud top-octave bar 67 LSB off) */
 #define RS_OS 512                        /* table points a zero crossing (linear between them) */
 #define RS_BETA 9.0                      /* the Kaiser window (about -90 dB side lobes) */
-#define RS_N 4096u                       /* the input ring (power of 2): 2 x the reach at 1 kHz + a chunk fit */
+#define RS_N 16384u                      /* the input ring (power of 2): 2 x the reach at 1 kHz (4410) + a chunk fit */
 #define RS_MIN 1000.0
 #define RS_MAX 1536000.0                 /* (the VST3 SDK validator asks for 1234567.8 Hz) */
 enum { M441, M48, MANY };                /* the fm1 test mode's outputs (and the sinc for other rates) */
