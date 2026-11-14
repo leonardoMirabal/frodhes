@@ -21,4 +21,12 @@
 #   `tools/release_diff.py --draft FILE` writes the unlisted moves in this form, each with reason TODO (which fails).
 
 against: v0.9.11
-changes: []
+changes:
+# ---- 1. Upper register cleaner (SND2, 42846aed): above key 72 the H2 ceiling at every velocity, BELL's lift fades over C4..C5
+  - {match: "*/DYNO/*/*/k81v*", metric: H2, min: -15.4, max: -11.3, reason: "upper register (SND2, 42846aed): the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S); level within 0.3 dB; user-approved by ear 2026-11-14"}
+  - {match: "*/DYNO/*/*/k81v*", metric: H3, min: -24.3, max: -23.0, reason: "upper register (SND2, 42846aed): the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S); user-approved by ear 2026-11-14"}
+  - {match: "*/FELT/*/*/k81v*", metric: H2, min: -15.7, max: -8.3, reason: "upper register (SND2, 42846aed): the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S); level within 0.3 dB; user-approved by ear 2026-11-14"}
+  - {match: "*/ST77/*/*/k81v*", metric: H2, min: -15.0, max: -3.5, reason: "upper register (SND2, 42846aed): the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S); level within 0.3 dB; user-approved by ear 2026-11-14"}
+  - {match: "*/ST77/*/*/k81v*", metric: H3, min: -30.0, max: -28.3, reason: "upper register (SND2, 42846aed): the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S); user-approved by ear 2026-11-14"}
+  - {match: "*/SUIT/*/*/k81v*", metric: H2, min: -13.8, max: -4.5, reason: "upper register (SND2, 42846aed): the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S); level within 0.3 dB; user-approved by ear 2026-11-14"}
+  - {match: "*/SUIT/*/*/k81v*", metric: H3, min: -27.1, max: -20.0, reason: "upper register (SND2, 42846aed): the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S); user-approved by ear 2026-11-14"}
