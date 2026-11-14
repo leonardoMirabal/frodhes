@@ -27,6 +27,9 @@ zip's `INSTALL.txt` and [below](#what-to-report-back)).
 
 ## What you need
 
+- A standalone MPC: the 32-bit models (MPC X, X SE, Live, Live II, One, One+, Key 61, Key 37, and the Force) load
+  `frodhes-arm32.so` (checked by a tester on an MPC Live); the 64-bit models (MPC Live III, MPC XL) load
+  `frodhes-arm64.so`. The MPC Studio and the desktop MPC software are not targets.
 - MPC OS 3.10.1 or later.
 - **Preferences > Enhancements (Beta)**: switch on **Enable Enhancements** and **External Plugin Support**.
 - A USB drive, an SD card or the MPC's internal drive.
