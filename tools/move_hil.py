@@ -2624,8 +2624,10 @@ def usb_main(a):
 # p_hq) leaves it as it found it. The plugin saves its settings and the panel, so a test's leftovers came back at the
 # next load: the arpeggiator on (2026-10-28 01:42), every effect on with the feedbacks at 127 (usb-stress's HEAVY,
 # the user's report of 2026-10-28)
-STATE_SKIP = ("preset_count", "preset_name", "s_susbtn", "r_cmp_gr", "r_cmp_pk")   # (meta; momentary: a write is a
-#   press; the GR meter's read-only cells move with the sound)
+STATE_SKIP = ("preset_count", "preset_name", "s_susbtn", "r_cmp_gr", "r_cmp_pk", "r_version")   # (meta; momentary: a
+#   write is a press; the GR meter's read-only cells move with the sound; r_version, read only, is the build's: a slot
+#   whose instance was loaded before an install reports the old one until it reloads, move_multi_cpu 2026-11-14
+#   "slot 2: 1 param(s) differ (r_version)")
 
 
 def slot_tune(state):

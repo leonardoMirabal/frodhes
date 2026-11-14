@@ -38,6 +38,9 @@ import move_ws  # noqa: E402
 HOST = os.environ.get("MOVE_HOST", "ableton@move.local")
 URL = move_ws.URL
 INST = mi.INST
+# a subscribe to a slot holding Frodhes waits for the manager's re-read of every param: 2.9-5.5 s on 2026-11-14 (5 s,
+# move_ws's default, timed the restore out: "not restored: TimeoutError")
+WS_TIMEOUT_S = 15.0
 # /schwung-perf offsets (schwung-manager perf_shm.go, version 1)
 P_PERIOD, P_TOT_AVG, P_TOT_MAX, P_PRE_AVG, P_PRE_MAX = 24, 32, 40, 48, 56
 P_SYN_AVG, P_SYN_MAX, P_RND_MAX, P_OVR = 544, 576, 512, 844
@@ -168,7 +171,7 @@ class Slots:
 
     def __init__(self, url, slots, remote=None, state_read=None, state_restore=None, sleep=time.sleep):
         self.url, self.slots, self.report, self.before, self.state = url, list(slots), None, None, {}
-        self.remote = remote or (lambda: move_ws.Remote(url))
+        self.remote = remote or (lambda: move_ws.Remote(url, timeout=WS_TIMEOUT_S))
         self.state_read = state_read or mh.state_read
         self.state_restore = state_restore or mh.state_restore
         self.sleep = sleep
@@ -289,16 +292,28 @@ def fetch_any(local):
     return fetch
 
 
+def load_fresh(w, free, on, log=None, sleep=time.sleep):
+    """every slot of free emptied, then Frodhes loaded into the slots of on (new instances: a module write of the
+    name a slot already holds reloads nothing, and the instance keeps the engine.so copy made at its create;
+    2026-11-14: slot 1 still ran 0.9.11, loaded at the boot, after 0.9.12's install, and n=1 measured it). The slots
+    Schwung never confirmed (1-based)"""
+    bad = []
+    for s in free:
+        if not set_module(w, s, "", 6.0, sleep=sleep, log=log):
+            bad.append(s + 1)
+    for s in on:
+        if not set_module(w, s, "frodhes", 12.0, sleep=sleep, log=log):
+            bad.append(s + 1)
+    return sorted(set(bad))
+
+
 def run_n(n, secs, outdir, seed=1):
     res = {"n": n}
-    with move_ws.Remote(URL) as w:
+    with move_ws.Remote(URL, timeout=WS_TIMEOUT_S) as w:
         t0 = time.time()
         rss0 = rss_kb()
-        paced_log, unconfirmed = [], []
-        for s in FREE:
-            on = s in SLOTS[:n]
-            if not set_module(w, s, "frodhes" if on else "", 12.0 if on else 4.0, log=paced_log):
-                unconfirmed.append(s + 1)
+        paced_log = []
+        unconfirmed = load_fresh(w, FREE, SLOTS[:n], log=paced_log)
         if unconfirmed:
             raise RuntimeError("Schwung never confirmed the module of slot(s) %s" % unconfirmed)
         res["load_s"] = round(time.time() - t0, 1)
@@ -306,6 +321,12 @@ def run_n(n, secs, outdir, seed=1):
         res["rss_kb"] = rss_kb()
         res["rss0_kb"] = rss0
         res["inst"] = ssh("ls -d %s/*/ 2>/dev/null; cat %s/*/load.txt 2>/dev/null" % (INST, INST)).decode()
+        for s in SLOTS[:n]:                          # (the build each instance runs: the re-read brings it late)
+            try:
+                w.until(lambda r: "synth:r_version" in r.params.get(s, {}), WS_TIMEOUT_S)
+            except TimeoutError:
+                pass
+        res["versions"] = {s + 1: (w.params.get(s) or {}).get("synth:r_version") for s in SLOTS[:n]}
     ssh("rm -f %s/*/cpu-ring.log" % INST)
     rigs = [mh.TapRig(URL, fetch_any(os.path.join(outdir, "n%d" % n)), slot=SLOTS[s]) for s in range(n)]
     for s, r in enumerate(rigs):
@@ -447,6 +468,9 @@ def verdict(r, n):
         bad.append("worst %d us > %d us" % (worst, BAR_US[n]))
     if any(s.get("missing") for s in rings.values()):
         bad.append("ring gaps")
+    vers = {v for v in (r.get("versions") or {}).values() if v}     # (a version not read in time: no verdict)
+    if len(vers) > 1:
+        bad.append("the instances run different builds (%s)" % ", ".join(sorted(map(str, vers))))
     # Schwung's overrun counter also runs with no load (73-173 /s idle on 2026-11-03, -08 and -13, Frodhes idle or
     # not playing): only overruns the loads add count, the rate during them over the idle rate by more than
     # OVR_TOL_PER_S (or OVR_TOL_FRAC of the idle rate); with no idle rate read, any overrun counts as before
@@ -487,7 +511,7 @@ def main():
     os.makedirs(out, exist_ok=True)
     allr = []
     with mi.move_lock("move_multi_cpu"):
-        with move_ws.Remote(URL) as w:
+        with move_ws.Remote(URL, timeout=WS_TIMEOUT_S) as w:
             other = {s + 1: m for s, m in slot_modules(w).items() if m not in ("", "frodhes")}
         global FREE, SLOTS
         if other and a.keep_others:
