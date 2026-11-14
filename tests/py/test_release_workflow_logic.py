@@ -190,12 +190,11 @@ def test_release_workflow_wiring():
     assert names.index("build") < names.index("build the SMK-37 packages") < names.index("draft release")
     for m in ("", " --model elite", " --model mke"):
         assert f'./build.sh --board smk37{m} --release "$V"' in smk
-    assert sum(b.count("./build.sh") for b in builds) == 5        # the FM-1 twice (one core, two cores), each SMK-37 model once
+    assert sum(b.count("./build.sh") for b in builds) == 4        # the FM-1 once (two cores), each SMK-37 model once
     b0 = " ".join(j["release"]["steps"][names.index("build")]["run"].split())
-    assert b0.index('./build.sh --c1 --release "$V"') < b0.index('./build.sh --release "$V"')   # the two-core image first
-    assert 'cp "build/frodhes-$V-c1.fwsc" build/publish/frodhes-c1.fwsc' in pub
-    assert '"build/frodhes-$V-c1.fwsc" build/publish/frodhes-c1.fwsc \\ ' in pub
-    assert './build.sh --release "$V"' in " ".join(j["release"]["steps"][names.index("build")]["run"].split())
+    assert './build.sh --c1 --release "$V"' in b0 and './build.sh --release "$V"' not in b0   # the FM-1: two cores only
+    assert 'cp "build/frodhes-$V-c1.fwsc" "build/frodhes-$V.fwsc"' in b0      # frodhes.fwsc / frodhes-X.Y.Z.fwsc = it
+    assert "frodhes-c1.fwsc" not in pub                                        # no second FM-1 package since 0.9.12
     ci = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))["jobs"]
     assert set(ci) >= {"host", "generators-macos"}                                     # ci_gate.sh's jobs
     # the host tests on arm64 in 5 jobs (the scripts, 4 pytest shards); `host` green only when all are
@@ -263,18 +262,17 @@ def test_release_publish_step_uploads_both_names(tmp_path):
     assert p.returncode == 0, p.stderr
     args = (tmp_path / "gh.log").read_text().splitlines()
     assert args[:5] == ["release", "create", "v0.9.9", "build/frodhes-0.9.9.fwsc", "build/publish/frodhes.fwsc"]
-    assert args[5:7] == ["build/frodhes-0.9.9-c1.fwsc", "build/publish/frodhes-c1.fwsc"]   # the two-core image
-    assert args[7:10] == [f"build/publish/{rel.smk_versioned(n, '0.9.9')}" for n in rel.SMK_ASSETS]
-    assert args[10:13] == [f"build/publish/{n}" for n in rel.SMK_ASSETS]
-    assert args[13].split("#")[0] == "LICENSES/Apache-2.0.txt"  # the SDK files' licence text (Apache-2.0 s. 4)
-    assert args[14] == "--title"                  # nothing else attached
+    assert args[5:8] == [f"build/publish/{rel.smk_versioned(n, '0.9.9')}" for n in rel.SMK_ASSETS]
+    assert args[8:11] == [f"build/publish/{n}" for n in rel.SMK_ASSETS]
+    assert args[11].split("#")[0] == "LICENSES/Apache-2.0.txt"  # the SDK files' licence text (Apache-2.0 s. 4)
+    assert args[12] == "--title"                  # nothing else attached (no -c1 package since 0.9.12)
     for n in rel.SMK_ASSETS:                       # each the build of its own model, under both names
         assert (tmp_path / "build" / "publish" / n).read_bytes() == n.encode()
         assert (tmp_path / "build" / "publish" / rel.smk_versioned(n, "0.9.9")).read_bytes() == n.encode()
     assert args[-1] == "--draft" and "--latest" not in args      # published (and made latest) after the emulator
     assert args[args.index("--notes-file") + 1] == "docs/releases/v0.9.9.md"
     assert (tmp_path / "build" / "publish" / "frodhes.fwsc").read_bytes() == b"package"
-    assert (tmp_path / "build" / "publish" / "frodhes-c1.fwsc").read_bytes() == b"two cores"
+    assert not (tmp_path / "build" / "publish" / "frodhes-c1.fwsc").exists()
 
 
 def test_release_publish_step_rerun_replaces_the_assets(tmp_path):

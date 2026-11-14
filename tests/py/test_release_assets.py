@@ -8,7 +8,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 V = "9.9.9"
-FULL = ["frodhes-%s.fwsc" % V, "frodhes.fwsc", "frodhes-%s-c1.fwsc" % V, "frodhes-c1.fwsc",
+FULL = ["frodhes-%s.fwsc" % V, "frodhes.fwsc",
         "frodhes-%s-smk37-pro.fwsc" % V, "frodhes-smk37-pro.fwsc", "frodhes-%s-smk37-elite.fwsc" % V,
         "frodhes-smk37-elite.fwsc", "frodhes-%s-mke-p37.fwsc" % V, "frodhes-mke-p37.fwsc",
         "frodhes-%s-move.tar.gz" % V, "frodhes-module.tar.gz", "frodhes-plugin-macos.pkg",

@@ -55,12 +55,10 @@ What is new in each version: [the release notes](https://github.com/leonardoMira
 3. If something goes wrong, switch the FM-1 off, hold **OCT−** and switch it on. This starts the USB rescue, and
    you can install again from there.
 
-**One core or two.** `frodhes.fwsc` plays 10 voices on one of the FM-1's two processor cores. The release also has
-[`frodhes-c1.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-c1.fwsc), which runs
-the voices on one core and the effects on the other: 14 voices on every instrument, the reverb at the full sample
-rate, and a quicker answer to a note (about 6.5 ms from MIDI to the headphone jack, against about 10 ms).
-Install it from a terminal (`python3 tools/fm1_install.py frodhes-c1.fwsc`; the emulator page installs `frodhes.fwsc`). You can switch between the two at any time; your
-settings, presets and pattern stay.
+**Both cores.** Frodhes runs the voices on one of the FM-1's two processor cores and the effects on the other:
+14 voices on every instrument, the reverb at the full sample rate, and a quick answer to a note (about 6.5 ms from
+MIDI to the headphone jack). `frodhes.fwsc` is the FM-1's only package; installing it over the one-core package of
+0.9.10 or 0.9.11 keeps your settings, presets and pattern.
 
 Your settings and presets stay when you update. 0.9.10 changes the factory presets and some of their program numbers
 (four new, four gone, SUIT TREM now F08): [the list](docs/MANUAL.md#6-presets). You can always go back to M-VAVE's own
@@ -178,7 +176,7 @@ Support on. Download [`frodhes-mpc.zip`](https://github.com/leonardoMirabal/frod
 
 ## Other keyboards
 
-Frodhes also runs on the SMK-37 Pro, SMK-37 Elite and MKE-P37, with 10 voices as the FM-1's one-core package. Read
+Frodhes also runs on the SMK-37 Pro, SMK-37 Elite and MKE-P37, with 10 voices on one processor core. Read
 [docs/SMK37.md](docs/SMK37.md) before you install one.
 
 The files on the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest):
@@ -186,7 +184,6 @@ The files on the [release page](https://github.com/leonardoMirabal/frodhes/relea
 | Device | File |
 | --- | --- |
 | M-VAVE FM-1 | `frodhes.fwsc` |
-| M-VAVE FM-1, two cores | `frodhes-c1.fwsc` |
 | Ableton Move | `frodhes-module.tar.gz` |
 | SMK-37 Pro | `frodhes-smk37-pro.fwsc` |
 | SMK-37 Elite | `frodhes-smk37-elite.fwsc` |
