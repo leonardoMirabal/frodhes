@@ -12,7 +12,7 @@ if [ -z "$NAMES" ]; then
     NAMES=$(mktemp)
     gh release view "v$V" --json assets -q '.assets[].name' > "$NAMES"
 fi
-REQ="frodhes-$V.fwsc frodhes.fwsc frodhes-$V-c1.fwsc frodhes-c1.fwsc
+REQ="frodhes-$V.fwsc frodhes.fwsc
 frodhes-$V-smk37-pro.fwsc frodhes-smk37-pro.fwsc frodhes-$V-smk37-elite.fwsc frodhes-smk37-elite.fwsc
 frodhes-$V-mke-p37.fwsc frodhes-mke-p37.fwsc frodhes-$V-move.tar.gz frodhes-module.tar.gz
 frodhes-plugin-macos.pkg frodhes-plugin-macos.zip frodhes-plugin-windows.zip

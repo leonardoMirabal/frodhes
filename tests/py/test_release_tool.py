@@ -64,9 +64,9 @@ def fake_shell(root, calls, notes_draft=False, changed=("docs/MANUAL.md", "firmw
             "git log --oneline origin/main..HEAD": "abcdef1 something\n",
             "git diff --name-only v0.9.2..HEAD": "".join(f + "\n" for f in changed),
         }
-        if s.startswith("./build.sh --release"):
+        if s.startswith("./build.sh --c1 --release"):
             os.makedirs(os.path.join(root, "build"), exist_ok=True)
-            open(os.path.join(root, "build", f"frodhes-{cmd[-1]}.fwsc"), "wb").write(b"fw")
+            open(os.path.join(root, "build", f"frodhes-{cmd[-1]}-c1.fwsc"), "wb").write(b"fw")
         return 0, replies.get(s, "1 passed\n")
     return sh
 
@@ -114,7 +114,7 @@ def test_dry_run_stops_before_push(tree, monkeypatch, capsys):
     o = capsys.readouterr().out
     assert not [c for c in calls if " push" in c or "tag -a" in c or "git commit" in c or "gh release" in c
                 or "git rm" in c or "git add" in c]
-    assert "make test" in calls and "./build.sh --release 0.9.3" in calls
+    assert "make test" in calls and "./build.sh --c1 --release 0.9.3" in calls
     assert not (tree / "docs" / "releases" / "v0.9.3.md").exists()       # nothing is written in a dry run
     assert sorted(os.listdir(tree / "docs" / "changes")) == ["a-other.md", "b-thing.md"]
     assert "--no-device: the FM-1 is NOT tested" in o and "stopped before any push" in o
@@ -216,7 +216,7 @@ def verify_shell(assets, readme, draft=False):
 
 def test_verify(monkeypatch, capsys):
     good = f"[`frodhes.fwsc`]({rel.LATEST_DL}) settings saved by 0.9.2 are read as they are"
-    both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *(c.format(v="0.9.3") for c in rel.C1_ASSETS), *rel.SMK_ASSETS, rel.LICENCE_ASSET,
+    both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *rel.SMK_ASSETS, rel.LICENCE_ASSET,
             *[rel.smk_versioned(n, "0.9.3") for n in rel.SMK_ASSETS]]
     tagged = "https://github.com/leonardoMirabal/frodhes/releases/download/v0.9.3/frodhes.fwsc"
     hits = []
@@ -230,7 +230,8 @@ def test_verify(monkeypatch, capsys):
     monkeypatch.setattr(rel, "sh", verify_shell(both, good))
     assert "README at v0.9.3 names no version" in r.s_verify() and hits == [rel.LATEST_DL]
     for assets, readme, sha, msg in ((both[:1] + both[2:], good, "a" * 64, r"missing \['frodhes.fwsc'\]"),
-                                     (both[:6] + both[7:], good, "a" * 64, r"missing \['frodhes-mke-p37.fwsc'\]"),
+                                     (both[:4] + both[5:], good, "a" * 64, r"missing \['frodhes-mke-p37.fwsc'\]"),
+                                     (both + ["frodhes-c1.fwsc"], good, "a" * 64, "retired assets"),
                                      (both[:-1], good, "a" * 64, r"missing \['frodhes-0.9.3-mke-p37.fwsc'\]"),
                                      (both, good, "b" * 64, "the build's bbbb"),
                                      (both, good.replace(rel.LATEST_DL, "frodhes-0.9.3.fwsc"), "a" * 64,
@@ -275,7 +276,7 @@ def test_dry_run_lists_the_device_plan(tree, monkeypatch, capsys, changed, extra
     for line in plan:
         assert line in o
     py = rel.PY
-    t1 = [f"echo y | {py} tools/fm1_install.py build/frodhes-0.9.3.fwsc", f"{py} tools/hil_scan.py --tier must"]
+    t1 = [f"echo y | {py} tools/fm1_install.py build/frodhes-0.9.3-c1.fwsc", f"{py} tools/hil_scan.py --tier must"]
     t2 = [f"{py} tools/hil_cpu.py --worst",
           f"{py} tools/hil_cpu.py --worst --engine vibes",
           f"{py} tools/hil_cpu.py --worst --engine marimba",
@@ -285,7 +286,8 @@ def test_dry_run_lists_the_device_plan(tree, monkeypatch, capsys, changed, extra
           f"{py} tools/hil_jack.py --engine rhodes",
           f"{py} tools/hil_jack.py --engine vibes",
           f"{py} tools/hil_jack.py --engine marimba",
-          f"{py} tools/vib_sampleback.py --engine marimba"]
+          f"{py} tools/vib_sampleback.py --engine marimba",
+          f"{py} tools/hil_c1_soak.py --row 277 --minutes 6 --stop-on-fail"]
     assert [p.split("   (")[0] for p in plan] == t1 + (t2 if full else [])
     if not full:
         assert "hil_cpu.py --worst" not in o
@@ -688,7 +690,7 @@ def test_after_merge_tags_main_without_pushing_it(tree, monkeypatch, capsys):
     assert "git tag -a v0.9.3 -m Frodhes 0.9.3" in calls and "git push origin v0.9.3" in calls
     assert not [c for c in calls if "HEAD:main" in c or "push origin main" in c]
     assert not [c for c in calls if c in ("make test",) or c.startswith("make pytest")]   # tested before the PR
-    assert "./build.sh --release 0.9.3" in calls
+    assert "./build.sh --c1 --release 0.9.3" in calls
     assert " 7  publish        done" in o and " 4  FM-1           skipped  --after-merge" in o
     assert "release asset sha256" in o
 

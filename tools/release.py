@@ -17,7 +17,7 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
  2 preconditions on main, no tracked changes, not behind origin/main (after a fetch), the fragments in docs/changes/
                  well formed (at least one) and no docs/releases/vX.Y.Z.md written by hand (one already committed with
                  no fragments left: a re-run after step 5, accepted)
- 3 host          make test, make pytest, tools/gate_r.py, ./build.sh --release X.Y.Z (its sha256); with move/ in the
+ 3 host          make test, make pytest, tools/gate_r.py, ./build.sh --c1 --release X.Y.Z (its sha256); with move/ in the
                  tree also the Move's MT0 (tools/ci_move.sh) and its package, make move MOVE_VER=X.Y.Z (reproducible:
                  build/frodhes-X.Y.Z-move.tar.gz, its sha256)
  4 FM-1          (--no-device skips it and lists its commands) the tiers this release needs, from
@@ -81,7 +81,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = "leonardoMirabal/frodhes"
 PAGES_URL = "https://leonardomirabal.github.io/frodhes/"
 STABLE = "frodhes.fwsc"                       # release.yml uploads the package under this name too
-C1_ASSETS = ("frodhes-c1.fwsc", "frodhes-{v}-c1.fwsc")   # the FM-1's two-core image (release.yml: ./build.sh --c1)
+RETIRED = ("frodhes-c1.fwsc", "frodhes-{v}-c1.fwsc")   # 0.9.10-0.9.11's second FM-1 package: frodhes.fwsc is two-core now
 # release.yml also builds and attaches the SMK-37 packages (./build.sh --board smk37 [--model elite|mke]), each under
 # the fixed name and the build's own versioned one: the fixed name -> the build's file (tools/build.py package())
 SMK_ASSETS = {"frodhes-smk37-pro.fwsc": "frodhes-{v}-smk37.fwsc",
@@ -345,13 +345,13 @@ class Release:
     def s_host(self):
         ev = []
         if self.a.after_merge:              # (the tests ran before the PR, on this tree: the build alone)
-            sh(["./build.sh", "--release", self.ver], timeout=3600)
-            fw = os.path.join(ROOT, "build", f"frodhes-{self.ver}.fwsc")
+            sh(["./build.sh", "--c1", "--release", self.ver], timeout=3600)   # the FM-1's one package: two cores
+            fw = os.path.join(ROOT, "build", f"frodhes-{self.ver}-c1.fwsc")
             self.sha = sha256(fw)
             if self.sha != self.recorded_sha:
                 raise Stop(f"the release build's sha256 {self.sha} is not the one the release commit records "
                            f"({self.recorded_sha}): not the build that was tested")
-            ev.append(f"--after-merge: ./build.sh --release {self.ver}: sha256 {self.sha} = the release commit's (the "
+            ev.append(f"--after-merge: ./build.sh --c1 --release {self.ver}: sha256 {self.sha} = the release commit's (the "
                       f"host tests and the FM-1 tiers ran on this build before the PR)")
             if self.has_move() and self.move_recorded:
                 self.move_build()
@@ -361,16 +361,16 @@ class Release:
                 ev.append(f"make move: sha256 {self.move_sha} = the release commit's (tested on the Move)")
             return "\n".join(ev)
         for cmd in (["make", "test"], ["make", "pytest", "PY=" + PY], [PY, "tools/gate_r.py"],
-                    ["./build.sh", "--release", self.ver]):
+                    ["./build.sh", "--c1", "--release", self.ver]):
             t0 = time.time()
             _, o = sh(cmd, timeout=3600)
             last = [l for l in o.strip().splitlines() if l.strip()][-1:] or [""]
             ev.append(f"{' '.join(cmd)}: exit 0 in {time.time() - t0:.0f} s ({last[0][:100]})")
-        fw = os.path.join(ROOT, "build", f"frodhes-{self.ver}.fwsc")
+        fw = os.path.join(ROOT, "build", f"frodhes-{self.ver}-c1.fwsc")   # release.yml publishes it as frodhes.fwsc
         if not os.path.exists(fw):
             raise Stop(f"{fw} was not built")
         self.sha = sha256(fw)
-        ev.append(f"build/frodhes-{self.ver}.fwsc {os.path.getsize(fw)} B sha256 {self.sha}")
+        ev.append(f"build/frodhes-{self.ver}-c1.fwsc {os.path.getsize(fw)} B sha256 {self.sha}")
         if self.has_move():
             t0 = time.time()
             _, o = sh(["env", "PY=" + PY, "sh", "tools/ci_move.sh"], timeout=3600)
@@ -410,7 +410,7 @@ class Release:
                 self.move_ok = False
                 ev.append("the Move: not run by this step (its record goes in with --no-device --device-done, "
                           "\"move\" section): this release ships no Move package")
-            fw = f"build/frodhes-{self.ver}.fwsc"
+            fw = f"build/frodhes-{self.ver}-c1.fwsc"   # the FM-1 package (two cores)
             _, o = sh(f"echo y | {PY} tools/fm1_install.py {fw}", timeout=600)
             ev.append(f"installed {fw}: {tail(o, 1)}")
             _, o = sh(T1_CMD, timeout=3600)
@@ -437,6 +437,8 @@ class Release:
                 ev.append(check_jack_marimba(rep) if eng == "marimba" else check_jack(eng, rep))
             _, o = sh([PY, "tools/vib_sampleback.py", "--engine", "marimba"], timeout=1800)
             ev.append(check_sampleback(o))
+            _, o = sh(C1_SOAK, timeout=1800)
+            ev.append(f"hil_c1_soak row 277, 6 min: exit 0 ({tail(o, 1)})")
         finally:
             lk.release()
         return "\n".join(ev)
@@ -597,7 +599,7 @@ class Release:
         if out(["git", "-C", pages, "rev-parse", "--abbrev-ref", "HEAD"]) != "gh-pages":
             raise Stop(f"{pages} is not the gh-pages worktree")
         sh(["git", "-C", pages, "pull", "-q", "--ff-only", "origin", "gh-pages"])
-        sh(["sh", os.path.join(ROOT, "tools", "web_firmware.sh"), os.path.join(ROOT, "build", f"frodhes-{self.ver}.fwsc"),
+        sh(["sh", os.path.join(ROOT, "tools", "web_firmware.sh"), os.path.join(ROOT, "build", f"frodhes-{self.ver}-c1.fwsc"),
             dist, self.ver] + [os.path.join(ROOT, "build", f.format(v=self.ver)) for f in SMK_ASSETS.values()])
         sh(["sh", os.path.join(ROOT, "tools", "deploy_pages.sh"), dist, pages, self.ver])
         local = {f: sha256(os.path.join(dist, f)) for f in sorted(os.listdir(dist))}
@@ -615,12 +617,15 @@ class Release:
         # the Move package: expected when the release commit records it (or this run tested it); with --verify-only,
         # when either name is there both must be
         want_move = bool(self.move_recorded or self.move_ok or (self.a.verify_only and set(move_names) & set(names)))
-        missing = [n for n in (versioned, STABLE, *(c.format(v=self.ver) for c in C1_ASSETS),
+        missing = [n for n in (versioned, STABLE,
                                *SMK_ASSETS, *(smk_versioned(n, self.ver) for n in SMK_ASSETS),
                                LICENCE_ASSET, *(move_names if want_move else ()))
                    if n not in names]
         if missing or r.get("isDraft"):
             raise Stop(f"{r['url']}: assets {names} (missing {missing}), draft {r.get('isDraft')}")
+        retired = [n for n in (c.format(v=self.ver) for c in RETIRED) if n in names]
+        if retired:
+            raise Stop(f"{r['url']}: retired assets {retired} attached (the FM-1 has one package, frodhes.fwsc)")
         ev = [f"{r['url']} lists {', '.join(names)}"]
         if not want_move:
             ev.append("the Move package: not in this release (not tested)" if not set(move_names) & set(names) else
@@ -830,13 +835,14 @@ def cpu_cmd(eng):
 
 
 T1_CMD = [PY, "tools/hil_scan.py", "--tier", "must"]
+C1_SOAK = [PY, "tools/hil_c1_soak.py", "--row", "277", "--minutes", "6", "--stop-on-fail"]   # two cores under storm
 
 
 def device_plan(ver, tiers=("T0", "T1", "T2")):
     """step 4's commands in order (what s_device runs for these tiers) with what each must show, for --no-device
     to list"""
     q = " ".join
-    t1 = [f"echo y | {PY} tools/fm1_install.py build/frodhes-{ver}.fwsc",
+    t1 = [f"echo y | {PY} tools/fm1_install.py build/frodhes-{ver}-c1.fwsc",
           q(T1_CMD) + "   (T1 must-pass: exit 0, every scenario's counters 0)"]
     if "T2" not in tiers:
         return t1
@@ -849,7 +855,8 @@ def device_plan(ver, tiers=("T0", "T1", "T2")):
                "takes / clicks / drift / bypass / level re ST77 rows; KNOWN rows pass)"]
             + [q([PY, "tools/hil_jack.py", "--engine", e]) + f"   ({JACK_JSON[e]}: the jack connected"
                + ("; the A5 tails, the idle floor)" if e == "marimba" else ")") for e in ENGINES]
-            + [q([PY, "tools/vib_sampleback.py", "--engine", "marimba"]) + "   (Gate VD-M: 0 keys outside)"])
+            + [q([PY, "tools/vib_sampleback.py", "--engine", "marimba"]) + "   (Gate VD-M: 0 keys outside)"]
+            + [q(C1_SOAK) + "   (the two-core storm row: whole ISR <= 4800 us, 0 shed, core 1 clean; exit 0)"])
 
 
 def check_marimba_scan(rep):
