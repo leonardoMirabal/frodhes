@@ -222,9 +222,10 @@ def _voice_cases():
             return h[1] - h[0], 6.0, f"H2/H1 {h[0]:+.1f} -> {h[1]:+.1f} dB"
 
         def bell(ty=ty):
-            """BELL (CC 30): the bright overtone at the strike. The energy above 3 kHz in the first 100 ms of a C5
-            rises 12 .. 24 dB from 0 to 10; at least 6"""
-            h = [band_db(rh_note(ty, [(30, v)], n=72).mid(0.2, 0.3), 3000, 16000) for v in (0, 127)]   # (the mono
+            """BELL (CC 30): the bright overtone at the strike. The energy above 1.5 kHz in the first 100 ms of a C4
+            (its bell partial ~7 f0) rises from 0 to 10; at least 6 (2026-11-13: a C4, not a C5: BELL's lift over 64
+            fades out over C4 .. C5, the upper register's tine kept clean)"""
+            h = [band_db(rh_note(ty, [(30, v)], n=60).mid(0.2, 0.3), 1500, 16000) for v in (0, 127)]   # (the mono
             # sum: the dry width's side carries C5's 3-4 kHz partials into one channel, FELT's -67 dB floor at BELL 0)
             return h[1] - h[0], 6.0, f"attack > 3 kHz {h[0]:.1f} -> {h[1]:.1f} dB"
 

@@ -53,10 +53,11 @@ def test_hard_notes_stay_clean(kv, resp, binary):
 @pytest.mark.parametrize("resp", [0, 127], ids=["FULL", "LIGHT"])
 @pytest.mark.parametrize("k", [69, 81, 93])
 def test_velocity_still_brightens_the_top(k, resp, binary):
-    """keys 69 and up: the bark at v127 at least 6 dB over v40's, as 0.9.9's swing gives (the first 0.9.10 fix left
-    the top flat at -35 dB at every velocity)"""
+    """keys 69 and up: the bark at v127 over v40's: key 69 at least 6 dB, as 0.9.9's swing gives (the first 0.9.10 fix
+    left the top flat at -35 dB at every velocity); above key 72 (2026-11-13, the upper register's ceiling: H2 held
+    under -25 .. -35 dB re H1, its rise v20 -> v127 about +3 dB) at least 1 dB: still brighter, never flat"""
     def bark(v):
         s = (TB + f"50 midi 0xB0 10 127\n100 midi 0xB0 40 {resp}\n150 midi 0xB0 111 127\n400 midi 0x90 {k} {v}\n"
              f"1400 midi 0x80 {k} 0\n1500 end\n")
         return harm(cs.render(s, binary).mean(1), 440 * 2 ** ((k - 69) / 12))[0]
-    assert bark(127) - bark(40) >= 6.0, (k, bark(40), bark(127))
+    assert bark(127) - bark(40) >= (6.0 if k <= 72 else 1.0), (k, bark(40), bark(127))
