@@ -145,7 +145,7 @@ class FakeSchwung:
                 if m["key"] == "synth:p_hq":
                     self.hist.append(("hq", int(m["value"]) != 0))
                 k = m["key"][6:] if m["key"].startswith("synth:") else None
-                if self.full and k in self.settings:
+                if self.full and k in self.settings and not k.startswith("r_"):   # (r_*: read only, as the plugin)
                     if (k == "p_dl_sw" and self.settings["p_dl_depth"] == "0"
                             and str(m["value"]) != self.settings[k]):
                         self.settings["p_dl_depth"] = "50"   # (as the panel: a switch gives MIX at 0 a start)
@@ -598,6 +598,21 @@ def test_state_check_fails_when_a_write_does_not_take():
             f.settings["p_rv_decay"] = "127"
             f.full = False                                  # (writes no longer change the fake's params)
         assert ks.report["verdict"].startswith("FAIL") and "p_rv_decay" in ks.report["verdict"], ks.report
+    finally:
+        f.close()
+
+
+def test_state_ignores_the_read_only_version():
+    """the Move, 2026-11-14: a slot loaded before an install reported the old r_version, the reloaded one the new;
+    the restore failed on a read-only key it cannot write. r_version is neither kept nor written nor compared"""
+    import move_hil as mh
+    f = FakeSchwung(full=True, settings={"r_version": "0.9.11"})
+    try:
+        with mh.KeptState(f.url, 0, out=lambda s: None) as ks:
+            f.settings["r_version"] = "0.9.12"
+        assert ks.report["verdict"] == "PASS", ks.report
+        assert "r_version" not in ks.report["written"]
+        assert f.settings["r_version"] == "0.9.12"
     finally:
         f.close()
 

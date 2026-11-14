@@ -170,6 +170,21 @@ def test_set_module_waits_for_slot_info_and_paces_ring_full():
     assert mc.set_module(w, 2, "frodhes", sleep=lambda s: None) and len(w.writes) == n   # (already there: no write)
 
 
+def test_load_fresh_reloads_a_slot_that_already_holds_frodhes():
+    """2026-11-14: after 0.9.12's install slot 1 still held the 0.9.11 instance loaded at the boot; a module write of
+    the same name reloads nothing, so n=1 measured 0.9.11. Every slot is emptied first, then 1..N loaded"""
+    w = FakeSchwung({0: "frodhes", 1: "frodhes", 2: "", 3: ""})
+    assert mc.load_fresh(w, [0, 1, 2, 3], [0], sleep=lambda s: None) == []
+    assert [x for x in w.writes if x[0] == 0] == [(0, "synth:module", ""), (0, "synth:module", "frodhes")], w.writes
+    assert w.mods == {0: "frodhes", 1: "", 2: "", 3: ""}
+
+
+def test_verdict_fails_on_mixed_builds():
+    """the instances' r_version must agree: a stale instance beside a new one is not a measurement of either"""
+    assert _run([600, 610], 2, versions={1: "0.9.11", 2: "DEV 4f5a"})[0] == "FAIL"
+    assert _run([600, 610], 2, versions={1: "DEV 4f5a", 2: "DEV 4f5a"})[0] == "PASS"
+
+
 def test_slots_restored_after_a_crash():
     """a run that loads Frodhes into slots 3-4 and then crashes: the modules come back as they were (slot 2's other
     module untouched), and slot 1's Frodhes gets its parameters back"""

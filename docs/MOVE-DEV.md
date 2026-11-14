@@ -158,7 +158,10 @@ names the Move (default `ableton@move.local`).
      itself as a third case to see the spread, and trust the means and the quiet columns over one p99.9.
   2. One instance on the Move: `tools/move_hil.py d2 --path tap --engines rhodes,vibes,marimba --tests usb-stress`
      (16 voices, every effect heavy, the pedal; its `cpu` row is the plugin's own callback ring against U12).
-  3. Several: `tools/move_multi_cpu.py --n 1 2 3 --secs 30` (the worst take in N slots at once). It prints a
+  3. Several: `tools/move_multi_cpu.py --n 1 2 3 --secs 30` (the worst take in N slots at once). Each N starts
+     from new instances: every slot is emptied, then 1..N loaded (a slot that already holds Frodhes keeps the
+     engine it was created with, so after an install it would still play the old build). The report lists each
+     instance's `r_version`, and mixed builds fail the run. It prints a
      verdict per N (`verdict()`: the bars above) and exits 1 on a FAIL; N = 4 is reported only.
 - `tools/gen_move_module.py` writes `move/module/` (module.json, the pages, help.json, `move_ui.h`,
   `screen.js`: the pages from the FM-1's tables + the screen's code, `move/ui/screen_core.js`, and `canvas.js`: the
