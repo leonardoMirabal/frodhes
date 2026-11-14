@@ -94,6 +94,33 @@ def parse(text, name="fragment"):
     return body
 
 
+# The notes are for players: what they hear, see and do. No internal details: no source or test paths, no commit
+# hashes, no code constants, no test gates or limits, no private research, no development tooling.
+INTERNAL = [
+    (re.compile(r"\b(?:tools|tests|firmware|plugin/src|plugin/ui|mpc/src|move/|build|private)/"), "a source / test path"),
+    (re.compile(r"\b[\w-]+\.(?:py|sh|c|h|cpp|m|S|yaml|json)\b"), "a source / test file name"),
+    (re.compile(r"(?<![\w/.-])[0-9a-f]{7,40}(?![\w/-])"), "a commit hash"),
+    (re.compile(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b"), "a code constant"),
+    (re.compile(r"\bGate [A-Z]\b|\bTHRESHOLD\b|\bexpected[_ ]changes\b|\bbaseline", re.I), "test machinery"),
+    (re.compile(r"\b(?:reface|yamaha|study|studies|findings|textura|claude|agent|tracker)\b", re.I),
+     "private research or development detail"),
+]
+
+
+def internal(frags):
+    """every internal detail a fragment would publish: ['file: section: what (text)']"""
+    out = []
+    for f, secs in frags:
+        for sec, body in secs.items():
+            if sec == "Tested":
+                out.append(f"{DIR}/{f}: '## Tested': how a change was tested stays in the commit, not the notes")
+                continue
+            for rx, what in INTERNAL:
+                for m in rx.finditer(re.sub(r"\]\(https?://[^)]*\)", "]()", body)):     # link targets are fine
+                    out.append(f"{DIR}/{f}: '## {sec}': {what} ({m.group(0)})")
+    return out
+
+
 def load(root=ROOT):
     """[(file name, {section: body})] of every fragment in file-name order; Bad with every problem"""
     d = os.path.join(root, DIR)
@@ -110,6 +137,7 @@ def load(root=ROOT):
     summ = [f for f, secs in frags if "Summary" in secs]
     if len(summ) > 1:
         errs.append(f"{DIR}/: '## Summary' in {len(summ)} fragments ({', '.join(summ)}): the notes have one summary line")
+    errs += internal(frags)
     if errs:
         raise Bad("\n".join(errs))
     return frags
