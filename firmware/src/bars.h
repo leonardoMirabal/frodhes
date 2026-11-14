@@ -24,6 +24,19 @@
  * shared by both engines (DECAY, RELEASE, TUNE, the damper knock and felt noise levels). engine.c calls it.
  * Tables: firmware/gen/bars_tables.h (tools/gen_bars.py; the format of the plan's section 4.4). */
 
+/* the bars' level into the mix (0.9.13, SND3): RESPONSE FULL's convex curve plays the electric piano 2.6-3.0 dB
+ * quieter at middle velocities, so VIBES and MARIMBA come down with it to 0.9.9's balance (MARIMBA re ST77 at v100,
+ * the presets re F01). A level rebalance only: the effects that read the absolute level (the compressor's detector,
+ * DRIVE's input, every TYPE, the touch wah's envelope, the tape delay's soft clip) read the bars 3 dB up again
+ * (BAR_FX_K, BAR_FX_DT: engine.c FX_ENG_K / FX_ENG_DT, fx.c) and give their output back 3 dB down, so they respond as
+ * on 0.9.11 at the new level (T2 0.9.12: on the bars alone the wah opened less, the drive drove less, the compressor
+ * held less) */
+#ifndef BAR_MIX_G
+#define BAR_MIX_G 23197                             /* Q15: -3.0 dB */
+#endif
+#define BAR_FX_K ((int32_t)((1073741824 + BAR_MIX_G / 2) / BAR_MIX_G))   /* 32768 / BAR_MIX_G in Q15: 46288 */
+#define BAR_FX_DT 2041                              /* log2(32768 / BAR_MIX_G) in Q12 (4096 x 0.49833) */
+
 typedef struct {
     rh_mode_t m[8];             /* V1 TUBE V2 V3 V4 T1 T2 X; m[1] (TUBE): b = 0, drel = d */
     int32_t k_bt, k_tb;         /* Q30 coupling at BELL 64, discs open (same sign: a symmetric stiffness coupling) */

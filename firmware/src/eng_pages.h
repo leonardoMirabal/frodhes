@@ -84,8 +84,8 @@ static const char *const ENG_MRMB_HINT[] = {"HOW THE MALLET STRIKES", "HOW BARS 
 #define ENG_UI_ROW(c, mk, h) {c, sizeof c / sizeof c[0], mk, h}
 static const engui_t ENG_UI[] = {           /* by TYPE_UI */
     ENG_UI_ROW(ENG_RHODES_C, 10, ENG_RHODES_HINT),   /* (0.9.13 SND3: 15 -> 10, +2.8 -> +1.9 dB: FULL's curve plays quieter) */
-    ENG_UI_ROW(ENG_BARS_C, 19, ENG_BARS_HINT),       /* (0.9.13 SND3: 28 -> 19 with the bars 3 dB down, BAR_MIX_G) */
-    ENG_UI_ROW(ENG_MRMB_C, 19, ENG_MRMB_HINT),   /* make-up: VIBES's until the marimba is measured on the FM-1 (0.9.13: 28 -> 19) */
+    ENG_UI_ROW(ENG_BARS_C, 28, ENG_BARS_HINT),       /* (0.9.13: 28 again: the bars' -3 dB sits after the compressor) */
+    ENG_UI_ROW(ENG_MRMB_C, 28, ENG_MRMB_HINT),   /* make-up: VIBES's until the marimba is measured on the FM-1 */
 };
 static const uint8_t TYPE_UI[N_TYPE_N] = {0, 0, 0, 0, 1, 2};   /* TYPE -> its ENG_UI row (params.c N_TYPE) */
 _Static_assert(sizeof ENG_RHODES_HINT / sizeof ENG_RHODES_HINT[0] == (sizeof ENG_RHODES_C / sizeof ENG_RHODES_C[0] + 3u) / 4u &&

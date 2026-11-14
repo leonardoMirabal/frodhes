@@ -525,6 +525,14 @@ static void drv_run(uint32_t t, const int32_t *in, int32_t *out, uint32_t n, con
 #endif
 }
 
+/* the TYPEs on the bars (0.9.13): their SND3 -3 dB is a level, so a TYPE reads them 3 dB up and its output comes back
+ * 3 dB down (bars.h BAR_FX_K, BAR_MIX_G: driven as on 0.9.11); out[o..e) = in x g (Q15, rounded). The Rhodes: none */
+static __attribute__((noinline)) void drv_lvl(const int32_t *in, int32_t *out, uint32_t o, uint32_t e, int32_t g)
+{
+    uint32_t j;
+    for (j = o; j < e; j++) out[j] = (int32_t)(((int64_t)in[j] * g + 16384) >> 15);
+}
+
 /* ---- the dispatch ---------------------------------------------------------------------------------------------- */
 static DRV_DATA uint8_t drv_on = 1; /* ISR: the TYPE that runs (1..DRV_N-1); it changes only while the drive is silent */
 /* CC 10 (frodhes.c, with fx_reset_req): every TYPE's state to rest, done here at the next TYPE block, not in
@@ -541,7 +549,7 @@ static DRV_BSS volatile uint8_t drv_rst_req;
 /* fx_drive_types, drv_switch's use and fx_drive for a chunk: the switch, the TYPE's settings and the blend's ramp at the
  * first chunk (dr_sal set there: dr_w's value at the block's end, which fx_spread's first chunk reads); the TYPE's run
  * gets the chunk (drv_<name>_run with fxc_o / fxc_e) */
-static struct { int32_t sw, w0, w1, d4, g0, g1, g4; uint8_t rest, all; drv_ctl_t c; } drv_c;
+static struct { int32_t sw, w0, w1, d4, g0, g1, g4, ek, eg; uint8_t rest, all; drv_ctl_t c; } drv_c;
 static __attribute__((noinline)) void fx_drive_types(int32_t *m, uint32_t n, int32_t sw)
 {
     uint32_t o = fxc_o, k = fxc_e - o;
@@ -553,6 +561,7 @@ static __attribute__((noinline)) void fx_drive_types(int32_t *m, uint32_t n, int
         drv_c.rest = !wt && !dr_w && dr_d == 32768;
         if (drv_c.rest) return;
         drv_c.c.amount = d; drv_c.c.tone = fx_p[FXP_DRV_TONE]; drv_c.c.row = fx_p[FXP_DRIVE_ROW] & 3;
+        drv_c.ek = FX_ENG_K; drv_c.eg = FX_ENG_G;       /* (the engine's level: drv_lvl) */
         drv_c.all = dr_w == 32768 && wt == 32768 && !dr_d && !dt;
         drv_c.w0 = dr_w; drv_c.w1 = drv_glide(dr_w, wt, (int32_t)(16u * n));
         drv_c.d4 = (drv_c.w1 - drv_c.w0) >> 6;          /* (n: DRV_BLK) */
@@ -560,8 +569,15 @@ static __attribute__((noinline)) void fx_drive_types(int32_t *m, uint32_t n, int
         drv_c.g4 = (drv_c.g1 - drv_c.g0) >> 6;
     }
     if (drv_c.rest) return;
-    if (drv_c.all) { drv_run(drv_on, m, m, n, &drv_c.c); return; }
-    drv_run(drv_on, m, drv_wet, n, &drv_c.c);
+    if (drv_c.ek != 32768) {                            /* the bars: read 3 dB up, given back 3 dB down (drv_lvl) */
+        int32_t *y = drv_c.all ? m : drv_wet;
+        drv_lvl(m, y, o, o + k, drv_c.ek);
+        drv_run(drv_on, y, y, n, &drv_c.c);
+        drv_lvl(y, y, o, o + k, drv_c.eg);
+        if (drv_c.all) return;
+    }
+    else if (drv_c.all) { drv_run(drv_on, m, m, n, &drv_c.c); return; }
+    else drv_run(drv_on, m, drv_wet, n, &drv_c.c);
     drv_blend(m + o, drv_wet + o, k, drv_c.w0 + drv_c.d4 * (int32_t)(o >> 2), drv_c.d4,
               drv_c.g0 + drv_c.g4 * (int32_t)(o >> 2), drv_c.g4);
     if (FXC_Z) { dr_w = drv_c.w1; dr_d = drv_c.g1; }
@@ -590,7 +606,7 @@ static inline void fx_drive(int32_t *m, uint32_t n)
 static __attribute__((noinline)) void fx_drive_types(int32_t *m, uint32_t n, int32_t sw)
 {
     int32_t d = fx_p[FXP_DRIVE], mv = fx_p[FXP_DRV_MIX], wt = !sw ? 0 : DR_WET(mv), dt = !sw ? 32768 : DR_DRY(mv);
-    int32_t w0, w1, g0, g1;
+    int32_t w0, w1, g0, g1, ek;
     drv_ctl_t c;
     if (drv_rst_req) { uint32_t t; drv_rst_req = 0; for (t = 2u; t < DRV_N; t++) drv_reset(t); }   /* (CC 10) */
     if (!d) { wt = 0; dt = 32768; d = 1; }               /* AMOUNT 0: dry, faded out (as the classic drive) */
@@ -598,10 +614,17 @@ static __attribute__((noinline)) void fx_drive_types(int32_t *m, uint32_t n, int
     if (!wt && !dr_w && dr_d == 32768) return;           /* off, or MIX 0: the dry signal, untouched */
     if (n > DRV_BLK) n = DRV_BLK;
     c.amount = d; c.tone = fx_p[FXP_DRV_TONE]; c.row = fx_p[FXP_DRIVE_ROW] & 3;
-    if (dr_w == 32768 && wt == 32768 && !dr_d && !dt) { drv_run(drv_on, m, m, n, &c); return; }   /* all wet */
+    ek = FX_ENG_K;
+    if (dr_w == 32768 && wt == 32768 && !dr_d && !dt) {   /* all wet */
+        if (ek == 32768) drv_run(drv_on, m, m, n, &c);
+        else { drv_lvl(m, m, 0, n, ek); drv_run(drv_on, m, m, n, &c); drv_lvl(m, m, 0, n, FX_ENG_G); }   /* (the bars:
+                                                         * read 3 dB up, given back 3 dB down: drv_lvl) */
+        return;
+    }
     w0 = dr_w; w1 = drv_glide(w0, wt, (int32_t)(16u * n));
     g0 = dr_d; g1 = drv_glide(g0, dt, (int32_t)(16u * n));
-    drv_run(drv_on, m, drv_wet, n, &c);
+    if (ek == 32768) drv_run(drv_on, m, drv_wet, n, &c);
+    else { drv_lvl(m, drv_wet, 0, n, ek); drv_run(drv_on, drv_wet, drv_wet, n, &c); drv_lvl(drv_wet, drv_wet, 0, n, FX_ENG_G); }
     drv_blend(m, drv_wet, n, w0, n == DRV_BLK ? (w1 - w0) >> 6 : n >= 4u ? (w1 - w0) / (int32_t)(n >> 2) : 0,
               g0, n == DRV_BLK ? (g1 - g0) >> 6 : n >= 4u ? (g1 - g0) / (int32_t)(n >> 2) : 0);
     dr_w = w1; dr_d = g1;

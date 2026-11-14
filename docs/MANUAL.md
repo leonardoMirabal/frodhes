@@ -351,7 +351,7 @@ emulator has no velocity: its keys play at KEY VEL.
 | K4 | **MAKEUP** | A trim on top of the compressor's own make-up: 0 to +24 dB |
 
 **THRESH** is its on / off: turn it up from OFF and the compressor comes on at −16 dB (where the presets set it) with
-MAKEUP at +1.9 dB (+3.6 dB on VIBES and MARIMBA), which keeps the volume of what you play about the same (a quiet, dying tail comes up, as under
+MAKEUP at +1.9 dB (+5.3 dB on VIBES and MARIMBA), which keeps the volume of what you play about the same (a quiet, dying tail comes up, as under
 any compressor; back to OFF switches it off). Switching it on or off fades
 over about 46 ms, so it never clicks. The bottom of the page is a gain-reduction meter, as on a hardware compressor: its segments light from 1 dB
 to 30 dB of reduction (scale 3, 6, 10, 20, 30), a bright segment holds the peak for a second, and the number on the

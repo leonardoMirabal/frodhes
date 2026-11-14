@@ -22,6 +22,12 @@
 #ifndef FX_RAM                                  /* (frodhes.c: FR_RAM, or flash in FR_C1 builds: core 1 runs the effects from XIP) */
 #define FX_RAM FR_RAM
 #endif
+#ifndef FX_ENG_K                                /* the engine's level as the level-reading effects see it (engine.c:
+                                                 * the bars'); 1 without it */
+#define FX_ENG_K 32768
+#define FX_ENG_G 32768
+#define FX_ENG_DT 0
+#endif
 #ifndef FX_SIDE                                 /* the Rhodes' side signal the effects read (SPREAD): rhodes.c's own */
 #define FX_SIDE rh_side
 #define FX_SIDE_ON rh_side_on
@@ -260,6 +266,17 @@ static inline __attribute__((always_inline)) int32_t softclip(int32_t x)        
     i = (uint32_t)(x + 131072) >> 10;
     f = (x + 131072) & 1023;
     return FX_TANH[i] + (((FX_TANH[i + 1] - FX_TANH[i]) * f) >> 10);
+}
+/* softclip for the running engine's level (k = FX_ENG_K, g = FX_ENG_G, a block's): the bars read 3 dB up, the result 3
+ * dB down (bars.h BAR_FX_K: their SND3 -3 dB a level); the Rhodes (k 32768): softclip itself */
+__attribute__((noinline)) static int32_t fx_sck_k(int32_t x, int32_t k, int32_t g)   /* (the bars' path: flash, the
+                                                 * RAM loops keep their size) */
+{
+    return (int32_t)(((int64_t)softclip((int32_t)(((int64_t)x * k + 16384) >> 15)) * g + 16384) >> 15);
+}
+static inline __attribute__((always_inline)) int32_t FX_SCK(int32_t x, int32_t k, int32_t g)
+{
+    return k == 32768 ? softclip(x) : fx_sck_k(x, k, g);
 }
 static inline __attribute__((always_inline)) int32_t osc_sine(uint32_t ph)   /* Q32 phase -> +-32767 */
 {
@@ -620,6 +637,13 @@ static inline __attribute__((always_inline)) int32_t dr_after(int32_t g, int32_t
     int32_t st = 16 * n;
     return g < t ? (t - g > st ? g + st : t) : (g - t > st ? g - st : t);
 }
+/* FDRV on the bars (0.9.13): their SND3 -3 dB is a level, so the shaper's gain reads them 3 dB up (bars.h BAR_FX_K) and
+ * the make-up gives the output back 3 dB down (BAR_MIX_G): driven as on 0.9.11. In flash (the RAM loops keep their size) */
+__attribute__((noinline)) static void dr_eng_lvl(int32_t *g, int32_t *mk)
+{
+    *g = (int32_t)(((int64_t)*g * FX_ENG_K + 16384) >> 15);
+    *mk = (int32_t)(((int64_t)*mk * FX_ENG_G + 16384) >> 15);
+}
 #if FR_CHUNK
 /* dr_classic and fx_drive_classic for a chunk: the settings, the ramp and the loop's choice at the first chunk; dr_w's
  * value at the block's end (dr_sal: fx_spread's first chunk reads it) worked out there too */
@@ -645,6 +669,7 @@ FR_RAM2 __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n,
         mk = ((30000 - d * 120) * DR_MU[row]) >> 12;
         mk = (mk * (int32_t)FX_DRV_LVL[d]) >> 15;
         mk = (mk * 39000) >> 15;
+        if (FX_ENG_K != 32768) FR_FAR(dr_eng_lvl)(&g, &mk);   /* the bars driven as on 0.9.11, given back 3 dB down */
         dr_c.bias = DR_BIAS[row];
         dr_c.b0 = softclip(dr_c.bias);
         if (tt > 8192) tt = 8192;
@@ -727,6 +752,7 @@ FR_RAM2 __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n,
     mk = ((30000 - d * 120) * DR_MU[row]) >> 12;
     mk = (mk * (int32_t)FX_DRV_LVL[d]) >> 15;          /* level-neutral: the drive adds tone, not volume (0.6) */
     mk = (mk * 39000) >> 15;                           /* +1.5 dB: measured on the FM-1, LUFS (0.8) */
+    if (FX_ENG_K != 32768) FR_FAR(dr_eng_lvl)(&g, &mk);   /* the bars driven as on 0.9.11, given back 3 dB down */
     bias = DR_BIAS[row];
     b0 = softclip(bias);
     /* the shaper's input x g >> 12 + bias needs a 64-bit product (|x| <= 230000, g <= 100870 at AMOUNT 127), but its
@@ -833,8 +859,10 @@ static int32_t wah_bp, wah_lp, wah_cr = -1;     /* the stage's state (x 64), the
 FX_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t k, int32_t *out, int32_t wgq,
                                                      int32_t wgs, int32_t depth, int32_t q)
 {
-    int32_t env = wah_env, ei = wah_ein, eo = wah_eout, es = wah_eslow, xi = wah_pi, xo = wah_po, dk = depth + 16;
-    int32_t et = (4194304 + dk - 1) / dk;       /* (env x dk) >> 16 reaches row 63 from env >= et: below it the
+    int32_t env = wah_env, ei = wah_ein, eo = wah_eout, es = wah_eslow, xi = wah_pi, xo = wah_po;
+    int32_t dk = (int32_t)(((depth + 16) * FX_ENG_K) >> 13);   /* (x 4: the bars' envelope read 3 dB up, bars.h
+                                                 * BAR_FX_K, their SND3 -3 dB a level; the Rhodes 4 (depth + 16)) */
+    int32_t et = (16777216 + dk - 1) / dk;      /* (env x dk) >> 18 reaches row 63 from env >= et: below it the
                                                  * product fits 32 bits */
     int32_t bp = wah_bp, lp = wah_lp, cr = wah_cr, f = cr < 0 ? 0 : (int32_t)FX_WAH_F[cr], mi = 0, mo = 0;
     int32_t wx[32];                             /* (the output on the bus' grain, x: pass 1 -> pass 2) */
@@ -849,7 +877,7 @@ FX_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t
         if (a > env) env += (a - env) >> 3; else env -= (env >> 11) + 1;
         if (env < 0) env = 0;
         {                                       /* the cutoff's row, 0 .. 63: up at once, down a row late */
-            int32_t row = env >= et ? 63 : (env * dk) >> 16;   /* env >= 0, dk > 0 */
+            int32_t row = env >= et ? 63 : (env * dk) >> 18;   /* env >= 0, dk > 0 */
             if (row > cr || row < cr - 1) { cr = row > cr ? row : row + 1; f = (int32_t)FX_WAH_F[cr]; }
         }
         {
@@ -1750,7 +1778,9 @@ static void fx_comp(int32_t *m, uint32_t n)
     int32_t ka = (int32_t)FX_CMP_ATK[fx_p[FXP_CMP_ATK]], kr16 = (int32_t)FX_CMP_REL[fx_p[FXP_CMP_REL]] * CMP_KRM;
     int32_t kb = kr16 << 8, kr = kb;                                  /* RELEASE in Q24; kr: the detector's (adapted) */
     int32_t kas = kr16 >= CMP_SAK ? ka >> CMP_SAS : ka, beta = fx_cmp_beta;   /* kas: a small rise's attack */
-    int32_t thr = -((fx_p[FXP_CMP_AMT] * 27434) >> 7);              /* log2 Q12 re full scale: 0 .. -6.64 (-40 dB) */
+    int32_t thr = -((fx_p[FXP_CMP_AMT] * 27434) >> 7) - FX_ENG_DT;   /* log2 Q12 re full scale: 0 .. -6.64 (-40 dB);
+                                                        * the bars' detector reads them 3 dB up (bars.h BAR_FX_DT: their
+                                                        * SND3 -3 dB is a level, THRESH acts as on 0.9.11) */
     int32_t slope = CMP_SLOPE[fx_p[FXP_CMP_RATIO] & 7];
     int32_t amk = fx_cmp_amk;
     int32_t mk = (fx_p[FXP_CMP_GAIN] * 16461) >> 7;                 /* MAKEUP, log2 Q12 (the auto make-up: cmp_give) */
@@ -1964,10 +1994,11 @@ FX_RAM __attribute__((noinline)) static void dly_ramp(int32_t *m, uint32_t n, in
  * for bit); dgt: the dry's gain it eases to. */
 static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *R, uint32_t n, const int tape,
                                                            const int32_t msk, int32_t sg16, int32_t target, int32_t col,
-                                                           int32_t fb, int32_t wet, int32_t dgt, const int rst)
+                                                           int32_t fb, int32_t wet, int32_t dgt, const int rst,
+                                                           const int kb)
 {
     uint32_t w = dly_w, wow = dly_wow, flt = dly_flt, j, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;   /* c: the clean span behind w */
-    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg;
+    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg, ek = kb ? FX_ENG_K : 32768, eg = kb ? FX_ENG_G : 32768;
     int32_t wq = dly_wk << 8, ws = DLY_WSTEP(dly_wk, wet, n);   /* the echo's gain: a ramp from the last block's */
     int32_t fq = (dly_fbk < 0 ? fb : dly_fbk) << 8, fs = DLY_WSTEP(fq >> 8, fb, n);   /* the feedback's, the same */
     FX_K32 kcol = col;
@@ -2011,7 +2042,7 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
         else
             r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
         lp += (int32_t)(((int64_t)(r - lp) * kcol) >> 15);   /* (r - lp reaches 2^17 on a full-scale swing) */
-        f = tape ? softclip(lp) : lp;
+        f = !tape ? lp : kb ? fx_sck_k(lp, ek, eg) : softclip(lp);   /* (kb: the bars, dly_loop_kb) */
         hp += (f - hp + 64) >> 7;
         f -= hp;
         fq += fs; kfb = fq >> 8;
@@ -2037,6 +2068,13 @@ static uint32_t dly_sil RH_SP_SEC(".data.fx_dlysil") = DLY_LEN;
 static uint8_t dly_ana;                         /* the old loops last ran ANA: its tail (OFF) runs ANA's loop (0.9.5: the
                                                  * DIG loop took over at OFF, its tone and the softclip changed at once:
                                                  * a kink in the echo one delay time later, 24x a steady one's) */
+/* ANA on the bars (0.9.13): dly_loop with its soft clip at the engine's level (fx_sck_k: the bars' SND3 -3 dB a level,
+ * the tape's clip as on 0.9.11); in flash, the RAM copies keep their size */
+__attribute__((noinline)) static void dly_loop_kb(int32_t *L, int32_t *R, uint32_t n, int32_t sg16, int32_t target,
+                                                  int32_t col, int32_t fb, int32_t wet, int32_t dgt, int rst)
+{
+    dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, dgt, rst, 1);
+}
 __attribute__((noinline)) static void dly_clear_step(void)   /* one block's share of the reset's clearing */
 {
     uint32_t c = dly_w - dly_rb, k, p;
@@ -2269,8 +2307,9 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
     } else dly_last = (uint8_t)sw;                          /* (what a switch to TAPE fades out) */
     if (sw) FR_FAR(dly_ramp)(dly_m, n, sg16);                       /* (dly_loop sets dly_sgk to sg16) */
     /* the dry: whole to MIX 64, then falling to nothing at 127 (DLY_DRY) */
-    if (sw == 2) dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, DLY_DRY(depth), rst);
-    else if (sw) dly_loop(L, R, n, 0, -1, sg16, target, col, fb, wet, DLY_DRY(depth), rst);   /* (the send's
+    if (sw == 2 && FX_ENG_K != 32768) FR_FAR(dly_loop_kb)(L, R, n, sg16, target, col, fb, wet, DLY_DRY(depth), rst);
+    else if (sw == 2) dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, DLY_DRY(depth), rst, 0);
+    else if (sw) dly_loop(L, R, n, 0, -1, sg16, target, col, fb, wet, DLY_DRY(depth), rst, 0);   /* (the send's
                                                              * mask a constant: one register fewer in either loop) */
     else dly_fade(L, R, n, dly_ana, 0, sg16, target, col, fb, wet, 32768, 0);   /* the tail (OFF): DIG's or ANA's,
                                                              * dly_fade's loop at g 1 (the same integers as dly_loop's) */
