@@ -2,7 +2,7 @@
  "tool": "tools/level_proof.py",
  "against": "v0.9.11",
  "verdict": "PASS",
- "cells": 51,
+ "cells": 53,
  "unproven": 0,
  "rows": [
   {
@@ -65,6 +65,28 @@
    "level_metric_last": -46.15
   },
   {
+   "cell": "c1/FUNK_WAH/PRESET/A/k33v96",
+   "metric": "H4",
+   "last": -59.46,
+   "cand": -55.48,
+   "limit": -56.46,
+   "over_ceiling": true,
+   "proven": "floor",
+   "abs_cand": -92.82,
+   "abs_last": -93.45,
+   "level_v": 81,
+   "level_h1_last": -37.39,
+   "level_h1_cand": -37.34,
+   "level_metric_last": -57.88,
+   "driveoff_abs_cand": -99.35,
+   "driveoff_abs_last": -88.08,
+   "thd_cand": -12.76,
+   "thd_last": -12.88,
+   "twin_cand": -52.48,
+   "twin_last": -53.02,
+   "twin_limit": -50.02
+  },
+  {
    "cell": "c1/FUNK_WAH/PRESET/A/k81v127",
    "metric": "H5",
    "last": -54.57,
@@ -120,6 +142,17 @@
    "driveoff_abs_last": -117.84,
    "thd_cand": -32.95,
    "thd_last": -26.39
+  },
+  {
+   "cell": "c1/MARIMBA/DECAY0/A/k53v110",
+   "metric": "clk",
+   "last": 9.54,
+   "cand": 15.56,
+   "limit": 15.54,
+   "over_ceiling": true,
+   "proven": "twin",
+   "twin_cand": 15.56,
+   "twin_last": 15.56
   },
   {
    "cell": "c1/RESO_SWEEP/PRESET/A/k45v40",

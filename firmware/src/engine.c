@@ -31,14 +31,19 @@
  * the bars into the effects at BAR_MIX_G (bars.h), lifted back by BAR_FX_K (a gain, Q15) / BAR_FX_DT (log2 Q12) where
  * an effect reads the absolute level, and its output given back by BAR_MIX_G; the Rhodes 1 / 0 (the same integers) */
 static const int32_t FX_ENG_LV[2][3] = {{32768, 32768, 0}, {BAR_FX_K, BAR_MIX_G, BAR_FX_DT}};   /* by engine: K, G, DT */
-#define FX_ENG_K FX_ENG_LV[eng_cur & 1u][0]
-#define FX_ENG_G FX_ENG_LV[eng_cur & 1u][1]
-#define FX_ENG_DT FX_ENG_LV[eng_cur & 1u][2]
+#define FX_ENG_K FX_ENG_LV[FX_ENG_I][0]          /* FX_ENG_I (fx.c): the engine of the block the effects process */
+#define FX_ENG_G FX_ENG_LV[FX_ENG_I][1]
+#define FX_ENG_DT FX_ENG_LV[FX_ENG_I][2]
 
 static volatile uint8_t eng_want;              /* main loop: the engine of the TYPE last set */
 static volatile uint8_t eng_want_sub;          /* main loop: its bar type (bar_sub follows it in eng_switch) */
 static volatile uint8_t eng_cur;               /* ISR: the engine running */
 static uint8_t eng_swapping;                   /* ISR: this block fades the old engine out */
+#if FR_CHUNK
+static volatile uint8_t engc_fx;               /* ISR: the engine the block's effects follow (fx.c fxc_eng): the one
+                                                * eng_render leaves in eng_cur, the new one on a fade block; set at
+                                                * the block's start (eng_render or eng_begin) */
+#endif
 static uint8_t eng_shed_req;                   /* ISR (frodhes.c app_audio): shed a voice of the running engine */
 static uint8_t eng_pedal_cc;                   /* ISR: the last pedal level (handed to the new engine at a change) */
 
@@ -201,6 +206,9 @@ static void eng_render(int32_t *mono, uint32_t n)
         if (busy) eng_swapping = 1;                                 /* fade the old engine out this block */
         else eng_switch(want);                                      /* nothing sounding: change now */
     }
+#if FR_CHUNK
+    engc_fx = (uint8_t)((eng_swapping ? want : eng_cur) & 1u);     /* (whole blocks on a chunked build: as eng_begin) */
+#endif
     if (!eng_swapping)                                              /* events wait while the old engine fades */
         while (eq_r != eq_w) {
             uint32_t e = eq[eq_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu;
@@ -293,6 +301,7 @@ static void eng_begin(uint32_t n)
         else eng_switch(want);
     }
     engc_want = want;
+    engc_fx = (uint8_t)((eng_swapping ? want : eng_cur) & 1u);   /* (one-core reads eng_cur after eng_render) */
     if (!eng_swapping)
         while (eq_r != eq_w) {
             uint32_t e = eq[eq_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu;
