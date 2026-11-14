@@ -337,6 +337,7 @@ int main(int argc, char **argv)
     srandom(seed);
     main_tid = pthread_self();
     snprintf(exe, sizeof exe, "%s/Contents/MacOS/Frodhes", argv[1]);
+    setenv("FRODHES_UPDATE_CHECK", "0", 0);          /* (no update check from the tests) */
     if (!(lib = dlopen(exe, RTLD_LOCAL | RTLD_NOW))) { fprintf(stderr, "%s\n", dlerror()); return 1; }
     entry = dlsym(lib, "clap_entry");
     if (!entry || !entry->init(argv[1])) return 1;

@@ -18,6 +18,8 @@ typedef struct {
     int np, pcur, loads, saves;
     char pname[64][24];
     int ptype[64], puser[64];
+    char upd[16];                        /* CHECK FOR UPDATES: the newer release the stand-in knows ("": none) */
+    int upd_opens;                       /* the UPDATE key's clicks */
 } fake_host;
 
 static int fh_get(void *ctx, uint32_t id, double *v) { *v = ((fake_host *)ctx)->v[id]; return 0; }
@@ -86,15 +88,17 @@ static int fh_setting_get(void *ctx, int key, int *v)
     fake_host *h = ctx;
     if (key == FRP_UI_TUNE) { *v = h->v[FRP_TUNE] - 50; return 0; }
     if (key == FRP_UI_HOST_BPM10) { *v = 1200; return 0; }
-    if (key >= FRS_CHANNEL && key <= FRS_SYNCDIV) { *v = h->v[key]; return 0; }
+    if (key >= FRS_CHANNEL && key <= FRS_UPDCHK) { *v = h->v[key]; return 0; }
     return -1;
 }
 static void fh_setting_set(void *ctx, int key, int v)
 {
     fake_host *h = ctx;
     if (key == FRP_UI_TUNE) h->v[FRP_TUNE] = v + 50;
-    else if (key >= FRS_CHANNEL && key <= FRS_SYNCDIV) h->v[key] = v;
+    else if (key >= FRS_CHANNEL && key <= FRS_UPDCHK) h->v[key] = v;
 }
+static int fh_update(void *ctx, char ver[16]) { fake_host *h = ctx; snprintf(ver, 16, "%s", h->upd); return h->upd[0] != 0; }
+static void fh_update_open(void *ctx) { ((fake_host *)ctx)->upd_opens++; }
 static void fh_learn_get(void *ctx, uint8_t cc1[], int n, int *learning)
 {
     memset(cc1, 0, (size_t)n);
@@ -113,7 +117,7 @@ static void fh_init(fake_host *h, frp_ui_host_t *uh)
     for (i = 0; i < FRP_COUNT; i++) h->v[i] = (int)fh_def(h, (uint32_t)i);
     h->v[FRP_TYPE] = 0;
     h->v[FRP_TUNE] = 50;
-    h->v[FRS_FIXVEL] = 100; h->v[FRS_PGM] = 1; h->v[FRS_BPM] = 1200; h->v[FRS_SYNCDIV] = 6;
+    h->v[FRS_FIXVEL] = 100; h->v[FRS_PGM] = 1; h->v[FRS_BPM] = 1200; h->v[FRS_SYNCDIV] = 6; h->v[FRS_UPDCHK] = 1;
     h->learning = -1;
     {   /* twelve factory presets over the six instruments, two user presets */
         static const char *const nm[14] = {"STAGE", "SUITCASE", "FELT", "BELL", "VIBES", "MARIMBA", "STAGE TWO",
@@ -130,6 +134,7 @@ static void fh_init(fake_host *h, frp_ui_host_t *uh)
     uh->learn_get = fh_learn_get; uh->learn_cmd = fh_learn_cmd;
     uh->preset_entry = fh_preset_entry; uh->preset_index = fh_preset_index;
     uh->preset_load = fh_preset_load; uh->preset_save_as = fh_preset_save_as;
+    uh->update = fh_update; uh->update_open = fh_update_open;
     uh->version = "DEV 1a2b";                 /* (a dev build's VERSION, as frp_ui_version_text gives it) */
 }
 /* the centre of the first widget of a kind (and id, -1: any) of the last draw; its index, -1 none */

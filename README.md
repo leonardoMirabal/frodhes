@@ -110,6 +110,9 @@ Audio Unit on macOS.
 - Its own window: the FM-1's pages as cards with knobs, resizable. Presets, MIDI learn, the effects' bypass and the
   sustain latch are in it, and everything is saved with your project.
 - The host's tempo drives the synced effects. Any sample rate. Up to 16 instances in one project.
+- It tells you when a newer Frodhes is out: a lamp on the window's gear and an UPDATE key in SETTINGS that opens the
+  release page. It asks GitHub at most once a day while its window is open, sends nothing else and installs
+  nothing; SETTINGS > UPDATES OFF turns it off ([details](docs/PLUGIN.md#check-for-updates)).
 - macOS 11 or newer (Apple silicon or Intel), Windows x64, Linux x86_64 or aarch64 (glibc 2.31 or newer). Nothing
   else to install.
 

@@ -47,7 +47,7 @@ struct frp_gui {
     double wheel_t;
     float wheel_acc;
     /* the window's own values when a host call is missing (gui_host.h: a test's stand-in) */
-    int loc_tune, loc_fx, loc_set[8], loc_learning;
+    int loc_tune, loc_fx, loc_set[FRS_UPDCHK - FRS_CHANNEL + 1], loc_learning;
     uint8_t loc_learn[FRP_COUNT];
     int sustain_latch;
     /* the meter */
@@ -72,7 +72,7 @@ static int setting_get(frp_gui_t *g, int key, int def_local)
 }
 static int *loc_setting(frp_gui_t *g, int key)
 {
-    if (key >= FRS_CHANNEL && key <= FRS_SYNCDIV) return &g->loc_set[key - FRS_CHANNEL];
+    if (key >= FRS_CHANNEL && key <= FRS_UPDCHK) return &g->loc_set[key - FRS_CHANNEL];
     if (key == FRP_UI_TUNE) return &g->loc_tune;
     if (key == FRP_UI_FX_BYPASS) return &g->loc_fx;
     return 0;
@@ -106,7 +106,7 @@ static void set_value(frp_gui_t *g, int id, int v)
         if (v == 1 || v == 2) param_set(g, FRP_TW_MODE, v == 2);
     } else if (id >= 0 && id < FRP_COUNT) param_set(g, id, v);
     else if (id == FRP_TUNE) { setting_set(g, FRP_UI_TUNE, v - 50); g->m.tune = v - 50; }
-    else if (id >= FRS_CHANNEL && id <= FRS_SYNCDIV) {
+    else if (id >= FRS_CHANNEL && id <= FRS_UPDCHK) {
         setting_set(g, id, id == FRS_BPM ? v : v);
         frp_gui_tick(g, g->now);
     }
@@ -210,7 +210,7 @@ static void diff(frp_gui_t *g)
     }
     /* everything else changes the layout or many places at once */
     if (strcmp(a->preset_tag, b->preset_tag) || strcmp(a->preset_name, b->preset_name) || a->edited != b->edited ||
-        strcmp(a->version, b->version) ||
+        strcmp(a->version, b->version) || a->upd_check != b->upd_check || strcmp(a->upd_ver, b->upd_ver) ||
         a->tab_l != b->tab_l || a->tab_r != b->tab_r || a->page_rv != b->page_rv || a->menu != b->menu ||
         a->ctx_knob != b->ctx_knob || a->learning != b->learning || memcmp(a->learn_cc, b->learn_cc, sizeof a->learn_cc) ||
         a->settings != b->settings || a->midi_ch != b->midi_ch || a->vel_curve != b->vel_curve ||
@@ -259,6 +259,8 @@ int frp_gui_tick(frp_gui_t *g, double now)
     m->sync_all = setting_get(g, FRS_SYNCALL, g->loc_set[FRS_SYNCALL - FRS_CHANNEL]);
     m->sync_div = setting_get(g, FRS_SYNCDIV, g->loc_set[FRS_SYNCDIV - FRS_CHANNEL]);
     snprintf(m->version, sizeof m->version, "%s", g->h.version ? g->h.version : "");
+    m->upd_check = setting_get(g, FRS_UPDCHK, g->loc_set[FRS_UPDCHK - FRS_CHANNEL]) != 0;
+    if (!m->upd_check || !g->h.update || !g->h.update(g->h.ctx, m->upd_ver)) m->upd_ver[0] = 0;   /* (a newer release) */
     if (g->h.preset) {
         char tag[8] = "", name[24] = "";
         int ed = 0;
@@ -512,6 +514,7 @@ static void button(frp_gui_t *g, int id)
         if (m->tempo_src == 1) setting_set(g, FRS_BPM, clampi(m->bpm10 + (id == FRB_BPM_UP ? 10 : -10), 400, 2400));
         break;
     case FRB_LEARN_RESET: learn(g, FRP_UI_LEARN_FORGET_ALL, -1); break;
+    case FRB_UPDATE: if (g->h.update_open) g->h.update_open(g->h.ctx); break;   /* (the release page in the browser) */
     }
 }
 static int focusable(const frui_widget *w)
@@ -897,6 +900,7 @@ frp_gui_t *frp_gui_new(const frp_ui_host_t *h)
     g->loc_set[FRS_PGM - FRS_CHANNEL] = 1;
     g->loc_set[FRS_BPM - FRS_CHANNEL] = 1200;
     g->loc_set[FRS_SYNCDIV - FRS_CHANNEL] = 6;
+    g->loc_set[FRS_UPDCHK - FRS_CHANNEL] = 1;
     g->lvl[0] = g->lvl[1] = g->pk[0] = g->pk[1] = -60.f;
     for (int i = 0; i < FRP_COUNT; i++) g->m.p[i] = frui_param_def[i];
     frp_gui_tick(g, 0.0);

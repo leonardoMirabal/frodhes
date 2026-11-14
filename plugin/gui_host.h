@@ -23,7 +23,7 @@ typedef struct {
     int sustain;                     /* the sustain is down (CC 64 >= 64 from any source) */
 } frp_ui_monitor_t;
 
-/* settings keys beyond frui.h's FRS_* (CHANNEL VEL FIXVEL PGM TEMPO BPM SYNCALL SYNCDIV) */
+/* settings keys beyond frui.h's FRS_* (CHANNEL VEL FIXVEL PGM TEMPO BPM SYNCALL SYNCDIV UPDCHK) */
 enum {
     FRP_UI_TUNE = 300,               /* cents -50 .. +50 */
     FRP_UI_FX_BYPASS,                /* every effect bypassed at once (the FX switch; their own switches kept) */
@@ -65,6 +65,10 @@ typedef struct frp_ui_host {
     int (*preset_load)(void *ctx, int idx);
     int (*preset_save_as)(void *ctx, const char *name);
     const char *version;             /* the SETTINGS sheet's VERSION, read only (frp_ui_version_text; NULL: none) */
+    /* CHECK FOR UPDATES (plugin/src/frp_update.h; NULL: no notice): a newer release is known, ver its "X.Y.Z" (1),
+     * else 0; open its page in the browser (the UPDATE key). The check's switch is the setting FRS_UPDCHK */
+    int (*update)(void *ctx, char ver[16]);
+    void (*update_open)(void *ctx);
 } frp_ui_host_t;
 
 #endif

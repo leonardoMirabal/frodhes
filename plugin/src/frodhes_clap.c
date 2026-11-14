@@ -35,6 +35,7 @@
 #include <time.h>
 #include <clap/clap.h>
 #include "bridge.h"
+#include "frp_update.h"
 #include "../frp_ui_iface.h"
 #include "../gui_clap.h"
 #include "../gui_shot.h"
@@ -616,9 +617,10 @@ bool frp_entry_init(const char *path)
     const char *t = getenv("FRP_TEST_EXT");   /* the GUI tests' private extension (gui-shot): only when asked at load */
     (void)path;
     test_ext = t && !strcmp(t, "1");
+    frp_update_init(FRP_VERSION);            /* CHECK FOR UPDATES: only when a window opens (plugin/gui_clap.c) */
     return true;
 }
-void frp_entry_deinit(void) {}
+void frp_entry_deinit(void) { frp_update_shutdown(); }
 const void *frp_entry_get_factory(const char *id) { return id && !strcmp(id, CLAP_PLUGIN_FACTORY_ID) ? &FACTORY : 0; }
 
 /* ---- the plugin UI's core (plugin/frp_ui_iface.h): the main thread */

@@ -183,6 +183,7 @@ static int pval(const frui_model *m, int id)
     case FRS_TEMPO: return m->tempo_src;
     case FRS_SYNCALL: return m->sync_all;
     case FRS_SYNCDIV: return m->sync_div;
+    case FRS_UPDCHK: return m->upd_check;
     }
     if (id == FRP_TUNE) return m->tune + 50;
     if (id == FRP_TW_KIND) return m->p[FRP_TW_SW] == 0 ? 0 : m->p[FRP_TW_SW] == 2 ? 3 : m->p[FRP_TW_MODE] ? 2 : 1;
@@ -196,7 +197,7 @@ static int phi(int id)
     case FRS_FIXVEL: return 127;
     case FRS_TEMPO: return 2;
     case FRS_SYNCDIV: return 14;
-    case FRS_PGM: case FRS_SYNCALL: return 1;
+    case FRS_PGM: case FRS_SYNCALL: case FRS_UPDCHK: return 1;
     }
     return id == FRP_TUNE ? 100 : id == FRP_TW_KIND ? 3 : id >= 0 && id < FRP_COUNT ? FRP_HI[id] : 1;
 }
@@ -671,6 +672,8 @@ static void rail(frui *u)
     key_btn(u, FRB_GEAR, 0, colc(0, 2) - G_COL * 0.5f - 40.f, y, 32.f, h);
     if (m->settings) frui_rrect_stroke(u->c, X(colc(0, 2) - G_COL * 0.5f - 40.f) + 0.5f, X(y) + 0.5f, X(32.f) - 1.f, X(h) - 1.f,
                                        X(R_CTRL), 1.f, C_ACC);
+    else if (m->upd_ver[0])                          /* a newer release: a lit lamp in the gear's corner (SETTINGS has it) */
+        lamp(u, colc(0, 2) - G_COL * 0.5f - 40.f + 32.f - 6.f, y + 6.f, 2.5f, 1);
     /* the preset: < [tag name (edited) v] > SAVE UNDO, from column 3 of the left half */
     x = colc(0, 2) - G_COL * 0.5f;
     key_btn(u, FRB_PREV, 0, x, y, 32.f, h);
@@ -1226,10 +1229,23 @@ static void settings_sheet(frui *u)
     sheet_bg(u, x, y, w, h);
     section_title(u, G_H0, y + 22.f, "SETTINGS");
     key_btn(u, FRB_CLOSE, 0, G_H1 + 4.f * G_COL - 32.f, y + 8.f, 32.f, 28.f);
-    if (m->version[0]) {   /* VERSION, read only, in the title band before the close switch (as the FM-1's card) */
-        float xr = G_H1 + 4.f * G_COL - 32.f - G_M, wv = tw(u, T_CAPTION, FRUI_TNUM, m->version);
-        txr(u, xr, mid(u, y + 22.f, 8.5f), T_CAPTION, FRUI_TNUM, m->version, C_TEXT);
-        txr(u, xr - wv - 8.f, mid(u, y + 22.f, 8.5f), T_CAPTION, 0, "VERSION", C_TEXT3);
+    {
+        float xr = G_H1 + 4.f * G_COL - 32.f - G_M;
+        if (m->version[0]) {   /* VERSION, read only, in the title band before the close switch (as the FM-1's card) */
+            float wv = tw(u, T_CAPTION, FRUI_TNUM, m->version);
+            txr(u, xr, mid(u, y + 22.f, 8.5f), T_CAPTION, FRUI_TNUM, m->version, C_TEXT);
+            xr -= wv + 8.f;
+            txr(u, xr, mid(u, y + 22.f, 8.5f), T_CAPTION, 0, "VERSION", C_TEXT3);
+            xr -= tw(u, T_CAPTION, 0, "VERSION") + G_M;
+        }
+        if (m->upd_ver[0]) {   /* a newer release: its key before VERSION, a lit lamp and UPDATE X.Y.Z (its page) */
+            float wk;
+            snprintf(buf, sizeof buf, "UPDATE %s", m->upd_ver);
+            wk = ceilf(tw(u, T_BTN, FRUI_TNUM, buf)) + 34.f;
+            key_btn(u, FRB_UPDATE, "", xr - wk, y + 8.f, wk, 28.f);
+            lamp(u, xr - wk + 12.f, y + 22.f, 2.5f, 1);
+            tx(u, xr - wk + 22.f, mid(u, y + 22.f, 9.5f), T_BTN, FRUI_TNUM, buf, C_TEXT);
+        }
     }
     hair_h(u, x + 1.f, x + w - 1.f, y + 44.f, FRUI_RGB(34, 34, 36));
     hair_v(u, (float)FRUI_W * 0.5f, y + 60.f, y + h - 16.f, FRUI_RGB(34, 34, 36));
@@ -1249,7 +1265,10 @@ static void settings_sheet(frui *u)
     info(u, c1, SH_ROW(4) + 14.f, "\xC2\xB1" "2 SEMITONES, ELECTRIC PIANOS");
     row_label(u, G_H0, SH_ROW(5) + 14.f, "SUSTAIN", 0);
     info(u, c1, SH_ROW(5) + 14.f, "CC 64, HALF-PEDAL; SUSTAIN SWITCH LATCHES");
-    tx(u, G_H0, mid(u, SH_ROW(6) + 14.f, 8.5f), T_CAPTION, 0, "RIGHT-CLICK A KNOB: MIDI LEARN, FORGET", C_TEXT3);
+    row_label(u, G_H0, SH_ROW(6) + 14.f, "UPDATES", 0);
+    segmented(u, FRS_UPDCHK, c1, SH_ROW(6), 28.f, 2.f * G_COL - 8.f);
+    info(u, c1 + 2.f * G_COL, SH_ROW(6) + 14.f, m->upd_check ? "CHECK DAILY" : "NEVER CHECK");
+    tx(u, G_H0, mid(u, 312.f + 144.f - 4.f, 8.5f), T_CAPTION, 0, "RIGHT-CLICK A KNOB: MIDI LEARN, FORGET", C_TEXT3);
     /* TEMPO */
     group_caption(u, G_H1, 132.f, "TEMPO");
     row_label(u, G_H1, SH_ROW(0) + 14.f, "SOURCE", 0);

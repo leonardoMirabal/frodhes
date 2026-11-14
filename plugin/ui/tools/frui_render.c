@@ -86,7 +86,7 @@ static void load(frui_model *m, const uint8_t *rec, const char *tag, const char 
     snprintf(m->preset_tag, sizeof m->preset_tag, "%s", tag);
     snprintf(m->preset_name, sizeof m->preset_name, "%s", name);
     m->focus = m->hover = m->menu = m->ctx_knob = m->learning = -1;
-    m->fixed_vel = 100; m->bpm10 = 1200; m->host_bpm10 = 1200; m->sync_div = 6;
+    m->fixed_vel = 100; m->bpm10 = 1200; m->host_bpm10 = 1200; m->sync_div = 6; m->upd_check = 1;
     m->out_db[0] = -15.5f; m->out_db[1] = -16.8f; m->out_peak_db[0] = -7.2f; m->out_peak_db[1] = -8.1f;
     m->gr_db = m->p[FRP_CMP_SW] ? 2.4f : 0.f;
 }
@@ -485,6 +485,19 @@ int main(int argc, char **argv)
     m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY; m.gr_db = 0.f; m.fx_bypass = 1;
     render(&m, "fx-bypass", 960, 600);
     render(&m, "fx-bypass@2x", 1920, 1200);
+    /* CHECK FOR UPDATES: a newer release found (the gear's lamp; SETTINGS: the UPDATE key before VERSION, UPDATES ON),
+     * and the check off */
+    load(&m, PR_F09, "F09", "70S PHASER");
+    m.tab_l = FRT_DRIVE; m.tab_r = FRT_PHASER;
+    snprintf(m.version, sizeof m.version, "%s", "0.9.12");
+    snprintf(m.upd_ver, sizeof m.upd_ver, "%s", "0.9.13");
+    render(&m, "update-main", 960, 600);
+    render(&m, "update-main@2x", 1920, 1200);
+    m.settings = 1; m.learn_cc[FRP_DRIVE] = 2;
+    render(&m, "update-settings", 960, 600);
+    render(&m, "update-settings@2x", 1920, 1200);
+    m.upd_check = 0; m.upd_ver[0] = 0;
+    render(&m, "update-off", 960, 600);
     frui_font_free(font);
     free(d);
     return 0;
