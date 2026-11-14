@@ -364,5 +364,5 @@ def test_c1_known_only_on_the_two_core_image(monkeypatch):
     monkeypatch.setenv("FRODHES_IMAGE", "c1")
     assert h.c1_image()
     assert h.BYPASS_FX_LU == 3.6 and h.preset_target(h.PR_COUNT + 4, host=True) == (0.5, 1.0)
-    assert h.C1_KNOWN["bypass"][0] == 4.1 and h.C1_KNOWN["presets U04"][0] == -0.9
+    assert h.C1_KNOWN["bypass"][0] == 4.1 and h.C1_KNOWN["presets U04"][0] == -0.9 and h.C1_KNOWN["types"][0] == 0.85
     assert all("USER DECISION 2026-11-14" in w for _, w in h.C1_KNOWN.values())
