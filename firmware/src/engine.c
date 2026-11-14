@@ -44,6 +44,11 @@ static volatile uint8_t engc_fx;               /* ISR: the engine the block's ef
                                                 * eng_render leaves in eng_cur, the new one on a fade block; set at
                                                 * the block's start (eng_render or eng_begin) */
 #endif
+#if FR_LAT_EV
+static volatile uint32_t eng_mid_at;            /* ISR: the frame a note started at inside this block (eng_mid: an
+                                                * interrupt's first frame), 0 = none; fx.c's silence gate opens from
+                                                * there, as one core's opens from the block's start for a note there */
+#endif
 static uint8_t eng_shed_req;                   /* ISR (frodhes.c app_audio): shed a voice of the running engine */
 static uint8_t eng_pedal_cc;                   /* ISR: the last pedal level (handed to the new engine at a change) */
 
@@ -209,6 +214,9 @@ static void eng_render(int32_t *mono, uint32_t n)
 #if FR_CHUNK
     engc_fx = (uint8_t)((eng_swapping ? want : eng_cur) & 1u);     /* (whole blocks on a chunked build: as eng_begin) */
 #endif
+#if FR_LAT_EV
+    eng_mid_at = 0;
+#endif
     if (!eng_swapping)                                              /* events wait while the old engine fades */
         while (eq_r != eq_w) {
             uint32_t e = eq[eq_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu;
@@ -302,6 +310,9 @@ static void eng_begin(uint32_t n)
     }
     engc_want = want;
     engc_fx = (uint8_t)((eng_swapping ? want : eng_cur) & 1u);   /* (one-core reads eng_cur after eng_render) */
+#if FR_LAT_EV
+    eng_mid_at = 0;
+#endif
     if (!eng_swapping)
         while (eq_r != eq_w) {
             uint32_t e = eq[eq_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu;
@@ -390,6 +401,7 @@ static void eng_mid(uint32_t o)
             uint32_t e = eq[eq_r & 31u];
             if (e >> 28 != EV_NOTE_ON || !bar_mid_one(e >> 16 & 127u, e & 0xFFFFu)) break;
             eq_r = eq_r + 1u;
+            eng_mid_at = o;
         }
         return;
     }
@@ -398,6 +410,7 @@ static void eng_mid(uint32_t o)
         uint32_t e = eq[eq_r & 31u];
         if (e >> 28 != EV_NOTE_ON || !rh_mid_strike(e >> 16 & 127u, e & 0xFFFFu)) break;
         eq_r = eq_r + 1u;
+        eng_mid_at = o;
     }
 }
 #endif

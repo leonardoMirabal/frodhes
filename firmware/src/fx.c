@@ -3017,6 +3017,7 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
         static int32_t gate_g0;                        /* the gain at the block's first frame */
         static uint32_t gate_done;                     /* the block's frames gated */
         int32_t t0 = gate_tgt, glo = eng_cur ? GATE_LO_BARS : GATE_LO;
+        uint32_t js;
         if (fxc_e != fxc_ce - FR_LAT_TAIL && !FXC_Z) return;
         if (!gate_done) gate_g0 = gate_g;
         if (pk >= glo) { gate_quiet = 0; gate_tgt = 32768; }
@@ -3029,9 +3030,30 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
             }
             gate_g = g;
         }
+        js = gate_done;
+#if FR_LAT_EV
+        if (gate_tgt > t0 && eng_mid_at > gate_done && eng_mid_at < fxc_e && eng_mid_at == fxc_ce - FR_LAT_HALF) {
+            /* a note started at this interrupt's first frame (engine.c eng_mid) opens the gate: it opens from that
+             * frame, as one core's opens from the block's start for the note there. The frames before it (the last
+             * interrupt's, under the threshold: they kept the gate as it was at their own run) keep its old course;
+             * opened from them instead, a note from silence had its first frames unramped, by chance of its start */
+            const uint32_t m = eng_mid_at;
+            const int32_t rnd0 = t0 ? 0 : GATE_RND;
+            if (gate_g != 32768 || t0 != 32768)
+                for (j = gate_done; j < m; j++) {
+                    if (gate_g < t0) gate_g = gate_g + 512 > t0 ? t0 : gate_g + 512;
+                    else if (gate_g > t0) gate_g = gate_g - GATE_FALL(gate_g) < t0 ? t0 : gate_g - GATE_FALL(gate_g);
+                    if (gate_g != 32768) {
+                        out[2u * j] = (out[2u * j] * gate_g + rnd0) >> 15;
+                        out[2u * j + 1u] = (out[2u * j + 1u] * gate_g + rnd0) >> 15;
+                    }
+                }
+            js = m;
+        }
+#endif
         if (gate_g != 32768 || gate_tgt != 32768) {
             const int32_t rnd = gate_tgt ? 0 : GATE_RND;
-            for (j = gate_done; j < fxc_e; j++) {
+            for (j = js; j < fxc_e; j++) {
                 if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
                 else if (gate_g > gate_tgt) gate_g = gate_g - GATE_FALL(gate_g) < gate_tgt ? gate_tgt : gate_g - GATE_FALL(gate_g);
                 if (gate_g != 32768) {
