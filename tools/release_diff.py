@@ -21,7 +21,7 @@ Measured per note (mono, 44.1 kHz; t = the strike): H2..H6 re H1 (dB, band peaks
 "peak" (the attack's peak, first 100 ms), "cent" (spectral centroid, Hz), "decay" (dB lost over the hold; "silent" when its last 150 ms are exact zeros), "keyup"
 (the level 80..280 ms after the key-up re the last 200 ms before it; "silent" when that window is exact zeros, a
 state compared as silent / sounding, never a dB of zeros; an effects-on cell: the median of the shifts that sound), "clk" (the largest 1 ms second-difference peak
-re the median: in the body re the body, after the key-up re the 200 ms before it: clicks), and in full mode "lu" (K-weighted loudness of the hold), "cb" (critical-band
+re the median, never under 1 LSB (CLK_REF_FLOOR): in the body re the body, after the key-up re the 200 ms before it: clicks), and in full mode "lu" (K-weighted loudness of the hold), "cb" (critical-band
 loudness, phon-like, tools/cb_loud.py) and "lim" (RAW minus effects-off level: on the FM-1 build the output limiter's
 gain reduction; on HQ, whose effects-off keeps the compressor, the compressor's and the limiter's together: hq DYNO
 FXOFF chord-low's +1.5 is the compressor, the limiter reads 0 there, build/t3/limgr.py, 2026-11-09). Per
@@ -228,14 +228,23 @@ def offharm(p, fr, funds):
     return db(p[use & ~on].sum() / (p[h1].sum() + 1e-30))
 
 
+CLK_REF_FLOOR = 1.0                 # LSB: clicks()' reference (ref's median 1 ms peak of the second difference) is never
+                                    # under one int16 step. A note that decays into exact zeros in more than half its
+                                    # window had a median of 0 and read its own smooth sine re 1e-9 as a +200 dB click
+                                    # (MARIMBA FX A k89v40 203.7 dB: largest second difference 15.5 LSB, lower than
+                                    # v0.9.11's 20.0). Cells whose median is 1 LSB or more read as before; an injected
+                                    # 1 ms step found before is found after (tests/py/test_release_diff.py; the
+                                    # coordinator 2026-11-14)
+
+
 def clicks(x, ref):
-    """dB: the largest 1 ms peak of the second difference in x re ref's median 1 ms peak; -100 at most below (a
-    numerical floor: a silent tail reads -300, a tail of float residue -150, neither is a click)"""
+    """dB: the largest 1 ms peak of the second difference in x re ref's median 1 ms peak (at least CLK_REF_FLOOR); -100
+    at most below (a numerical floor: a silent tail reads -300, a tail of float residue -150, neither is a click)"""
     def frames(y):
         d = np.abs(np.diff(y, 2))
         n = len(d) // 44
         return d[:n * 44].reshape(n, 44).max(1) if n else np.zeros(1)
-    return max(db((frames(x).max() / (np.median(frames(ref)) + 1e-9)) ** 2), -100.0)
+    return max(db((frames(x).max() / max(float(np.median(frames(ref))), CLK_REF_FLOOR)) ** 2), -100.0)
 
 
 def key_rise(tail, pre):

@@ -69,6 +69,7 @@
 "tests/py/test_keyvel_e2e.py": 0.9,
 "tests/py/test_led_sustain.py": 3.0,
 "tests/py/test_led_tables.py": 0.9,
+"tests/py/test_level_proof.py": 40.0,
 "tests/py/test_lock.py": 2.4,
 "tests/py/test_manual_claims.py": 1.3,
 "tests/py/test_manual_shots.py": 0.5,
