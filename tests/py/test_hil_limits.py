@@ -349,3 +349,20 @@ def test_lfo_shape_square_steeper_than_sine(monkeypatch, fault):
         def pre(self, s):
             return s0.pre(s)
     assert abs(hs.lfo_steep(*hs.lfo_sweep(Q(), ref, "usb", 0.2, 5.3, 250, 2000), e) - a) < 0.5
+
+
+def test_c1_known_only_on_the_two_core_image(monkeypatch):
+    """C1_KNOWN (user decision 2026-11-14: the two-core reverb's chord-dependent early reflections): only for the
+    two-core image (FRODHES_IMAGE=c1 / --c1, or the host's HOST_DEFS -DFR_C1=1), each within its band; the one-core
+    limits are unchanged (BYPASS_FX_LU 3.6, U04's target +0.5 +- 1.0)"""
+    monkeypatch.delenv("FRODHES_IMAGE", raising=False)
+    monkeypatch.delenv("HOST_DEFS", raising=False)
+    assert not h.c1_image()
+    monkeypatch.setenv("HOST_DEFS", "-DFR_C1=1")
+    assert h.c1_image()
+    monkeypatch.delenv("HOST_DEFS")
+    monkeypatch.setenv("FRODHES_IMAGE", "c1")
+    assert h.c1_image()
+    assert h.BYPASS_FX_LU == 3.6 and h.preset_target(h.PR_COUNT + 4, host=True) == (0.5, 1.0)
+    assert h.C1_KNOWN["bypass"][0] == 4.1 and h.C1_KNOWN["presets U04"][0] == -0.9
+    assert all("USER DECISION 2026-11-14" in w for _, w in h.C1_KNOWN.values())

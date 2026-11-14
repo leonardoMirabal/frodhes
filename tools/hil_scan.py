@@ -968,6 +968,27 @@ def effects(r, rep):
 BYPASS_FX_LU = 3.6                 # bypass: effects on vs bypassed, at most (LU; THRESHOLD in bypass())
 
 
+def c1_image():
+    """the two-core FM-1 image (FR_C1) under test: FRODHES_IMAGE=c1 (or --c1) for the FM-1; on the host the build's
+    HOST_DEFS -DFR_C1=1. The C1_KNOWN rows apply only there"""
+    return os.environ.get("FRODHES_IMAGE", "").lower() == "c1" or \
+        bool(re.search(r"-DFR_C1=1\b", os.environ.get("HOST_DEFS", "")))
+
+
+_C1_REV = ("USER DECISION 2026-11-14: two-core reverb's chord-dependent early reflections; structural fix planned for "
+           "the next release. Chord re dry, LUFS 0..1.1 s at REV 32 / 50 / 64, host: A3-C4-E4 one core +0.21 / +0.58 / "
+           "+1.06, two cores -0.10 / +0.10 / +0.50; six chords' mean one core +0.29 / +0.70 / +1.16, two cores +0.09 / "
+           "+0.35 / +0.69 (E2-B2-G3 -0.40 at 64, G4-B4-D5 +2.26); the wet's level matches (-13.8 vs -13.7 dB), its "
+           "cross term with the dry swings more (sd 1.34 vs 0.80 LU over 80-1600 Hz)")
+# the two-core image's KNOWN items (classic suites; c1_image() only, each only inside its band; the one-core limits
+# unchanged): (band, reason)
+C1_KNOWN = {
+    "bypass": (4.1, _C1_REV + "; effects on vs bypassed 3.8 LU (host; one core 3.1), limit 3.6: band <= 4.1 LU"),
+    "presets U04": (-0.9, _C1_REV + "; U04 DREAM PAD (INFINITE) -0.54 LU re F01 (host; one core +0.1), target +0.5 "
+                          "+-1.0: band >= -0.9 LU"),
+}
+
+
 @test
 def bypass(r, rep):
     """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs the compressor alone (the bypass
@@ -999,8 +1020,12 @@ def bypass(r, rep):
     # without both). 3.6: the 0.4 LU the limit had over its measured 2.6 when it was set (2026-10-17), over the
     # device's +-0.3 LU spread
     ok = abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) < BYPASS_FX_LU
-    return ok, (f"no effects {lv[0]:.1f}, compressor alone {lv[3]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} "
-                f"LUFS (bypassed re the compressor alone {lv[2] - lv[3]:+.2f} LU)")
+    msg = (f"no effects {lv[0]:.1f}, compressor alone {lv[3]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} "
+           f"LUFS (bypassed re the compressor alone {lv[2] - lv[3]:+.2f} LU)")
+    band, why = C1_KNOWN["bypass"]
+    if not ok and c1_image() and abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) <= band:
+        ok, msg = "KNOWN", msg + f"; effects on {abs(lv[1] - lv[2]):.2f} LU under the bypass: KNOWN (two cores): {why}"
+    return ok, msg
 
 
 FXALL = [  # (name, settings, expected: LU re clean within +-tol)
@@ -1451,6 +1476,9 @@ def presets(r, rep):
     off = [(q["preset"], v - lv[0]) for q, v in zip(rows, lv)
            if abs(v - lv[0] - preset_target(q["preset"], host)[0]) > preset_target(q["preset"], host)[1]]
     rep["presets_off_target"] = [dict(preset=p, lu=float(d)) for p, d in off]
+    band, why = C1_KNOWN["presets U04"]
+    kn = [(p, d) for p, d in off if c1_image() and preset_label(p) == "U04" and d >= band]
+    off = [o for o in off if o not in kn]
     ok = ok and not off
     msg += ("; re F01 " + ", ".join(f"{preset_label(q['preset'])} {v - lv[0]:+.1f}" for q, v in zip(rows, lv) if q["preset"] > 1) +
             " LU; off target: " + (", ".join(f"{preset_label(p)} {d:+.1f}" for p, d in off) or "none"))
@@ -1466,6 +1494,10 @@ def presets(r, rep):
         msg += (f"; jack (re its own scale) {', '.join(f'{v - jl[0]:+.1f}' for v in jl)} LU re F01 (span"
                 f" {max(jl) - min(jl):.2f}, without LEVEL_CUT {max(sj) - min(sj):.2f}, spread <={max(q['jack_spread_lu'] for q in rows):.2f}); USB-jack"
                 f" disagreement <= {max(abs(m) for m in rel):.2f} LU{' at F' + str(mis) if mis else ''}")
+    if kn and ok:
+        ok = "KNOWN"
+    if kn:
+        msg += f"; U04 {kn[0][1]:+.2f}: KNOWN (two cores): {why}"
     return ok, msg
 
 
@@ -4616,7 +4648,8 @@ def run_classic(names, r=None, report="report"):
         except Exception as e:  # keep scanning
             ok, msg = False, f"error: {e!r}"
         fails += not ok
-        line = f"{'ok  ' if ok else 'FAIL'}  {n:13s} {msg}  ({time.time() - t0:.0f} s)"
+        st = "KNOWN" if isinstance(ok, str) else "ok  " if ok else "FAIL"   # (KNOWN: a C1_KNOWN item, not a failure)
+        line = f"{st}  {n:13s} {msg}  ({time.time() - t0:.0f} s)"
         print(line, flush=True)
         lines.append(line)
     r.dry()
@@ -4662,8 +4695,11 @@ def main(argv=None):
     ap.add_argument("--offline", nargs="?", const=os.path.join(OUT, "vibes"), metavar="DIR",
                     help="VIBES suites: re-analyse the takes saved by --wav (default build/hil/vibes/), no MIDI / audio;"
                          " report build/hil/vibes-offline.md (+ .json)")
+    ap.add_argument("--c1", action="store_true", help="the FM-1 runs the two-core image: its C1_KNOWN items (as FRODHES_IMAGE=c1)")
     ap.add_argument("--rate", type=int, choices=(44100, 48000), help="stress_max: the USB rate (default 44100)")
     a = ap.parse_args(argv)
+    if a.c1:
+        os.environ["FRODHES_IMAGE"] = "c1"
     if a.only and "stress_max" in a.only.split(","):   # the cracks test: tools/hil_crackle.py (its own recorder, rates)
         import hil_crackle
         rest = [n for n in a.only.split(",") if n != "stress_max"]
