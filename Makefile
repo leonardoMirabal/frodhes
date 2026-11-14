@@ -16,7 +16,13 @@ setup:                     ## project-local venv, toolchain and the 3 SDK files
 	[ -x .local/jieli/toolchain/pi32v2/bin/clang ] || sh tools/get_toolchain.sh .local/jieli
 	sh tools/get_sdk.sh .local/fw-AC79_AIoT_SDK
 
-$(HOSTBIN): firmware/src/*.c firmware/src/*.h firmware/gen/*.h tests/host.c
+# the defs a host binary was built with: rewritten only when HOST_DEFS changes, so the binary is rebuilt then (a stale
+# one-core build never answers for HOST_DEFS=-DFR_C1=1, 2026-11-14)
+$(HOSTBIN).defs: FORCE
+	@mkdir -p $(dir $@); printf '%s\n' '$(HOST_DEFS)' | cmp -s - $@ || { printf '%s\n' '$(HOST_DEFS)' > $@; rm -f $(HOSTBIN); }   # (rm: make's 1 s timestamps)
+FORCE:
+
+$(HOSTBIN): firmware/src/*.c firmware/src/*.h firmware/gen/*.h tests/host.c $(HOSTBIN).defs
 	@mkdir -p build/host $(dir $@)
 	$(CC) $(CFLAGS_HOST) -o $@.$$$$ firmware/src/frodhes.c -lm && mv -f $@.$$$$ $@   # (a new file, renamed in: a test running it never sees it half-written)
 

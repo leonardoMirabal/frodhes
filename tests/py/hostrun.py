@@ -74,16 +74,9 @@ def build(binary=BIN, extra=()):
     """the host build (make's rule), or a variant with extra compiler flags (sanitizers) at binary"""
     def make(b):
         if not extra:
-            # make's rule does not see HOST_DEFS: a binary built with other defs is rebuilt (its .defs stamp), else
-            # HOST_DEFS=-DFR_C1=1 would silently run the one-core build (2026-11-14, the c1 decay triage)
-            target = os.path.join(ROOT, "build", "host", "frodhes")
-            stamp, defs = target + ".defs", os.environ.get("HOST_DEFS", "")
-            if not os.path.exists(stamp) or open(stamp).read() != defs:
-                for f in (target, stamp):
-                    if os.path.exists(f):
-                        os.remove(f)
+            # (HOST_DEFS reaches make through the environment; the Makefile's $(HOSTBIN).defs stamp rebuilds the
+            # binary when they change, so HOST_DEFS=-DFR_C1=1 never runs a stale one-core build)
             subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
-            open(stamp, "w").write(defs)
         else:
             subprocess.run(["cc", "-O1", "-g", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", "-DAPP_VER=\"dev\"",
                             *extra, *os.environ.get("HOST_DEFS", "").split(),   # the Makefile's experiment flags too
