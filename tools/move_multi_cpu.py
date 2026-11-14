@@ -92,6 +92,12 @@ def top_sections(rows, thr=150):
             if max(p["sec_max"][i] for p in rows) >= thr}
 
 
+def ovr_series(rows):
+    """Schwung's overruns per second between consecutive perf samples ((time, row) pairs)"""
+    return [round((b["overruns"] - a["overruns"]) / max(tb - ta, 1e-3), 1)
+            for (ta, a), (tb, b) in zip(rows, rows[1:])]
+
+
 class Perf(threading.Thread):
     """/dev/shm/schwung-perf once a second over one ssh"""
     def __init__(self):
@@ -351,6 +357,7 @@ def run_n(n, secs, outdir, seed=1):
     if idle:
         res["idle"] = {"pre_max": max(p["pre_max"] for p in idle), "tot_max": max(p["tot_max"] for p in idle),
                        "overruns_per_s": round((idle[-1]["overruns"] - idle[0]["overruns"]) / max(1, len(idle) - 1), 1),
+                       "series_ovr": ovr_series(base[2:]),
                        "syn_max": [max(p["syn_max"][i] for p in idle) for i in range(4)],
                        "sections": top_sections(idle),
                        "series_pre_max": [p["pre_max"] for p in idle]}
@@ -385,6 +392,8 @@ def run_n(n, secs, outdir, seed=1):
         t.start()
     for t in th:
         t.join()
+    tp1 = time.time()
+    time.sleep(IDLE_TAIL_S + IDLE_AFTER_S)          # (the idle window after the loads: A / B / A, see verdict)
     perf.end()
     if USB:
         ut.join()
@@ -415,7 +424,12 @@ def run_n(n, secs, outdir, seed=1):
         rows = mh.parse_ring(ssh("cat %s" % d).decode())
         rings[d.split("/")[-2]] = mh.cpu_summary(rows)
     res["rings"] = rings
-    during = [p for t, p in perf.rows if t >= tp0 + 3]
+    during = [p for t, p in perf.rows if tp0 + 3 <= t <= tp1]
+    after = [(t, p) for t, p in perf.rows if t >= tp1 + IDLE_TAIL_S]
+    if len(after) >= 3:
+        res["idle_after"] = {"overruns_per_s": round((after[-1][1]["overruns"] - after[0][1]["overruns"]) /
+                                                     max(1, len(after) - 1), 1),
+                             "series_ovr": ovr_series(after), "pre_max": max(p["pre_max"] for t, p in after)}
     if during:
         res["perf"] = {"tot_max": max(p["tot_max"] for p in during), "pre_max": max(p["pre_max"] for p in during),
                        "pre_avg": max(p["pre_avg"] for p in during), "period": during[-1]["period"],
@@ -423,6 +437,7 @@ def run_n(n, secs, outdir, seed=1):
                        "syn_avg": [max(p["syn_avg"][i] for p in during) for i in range(4)],
                        "overruns": during[-1]["overruns"] - (base[-1][1]["overruns"] if base else during[0]["overruns"]),
                        "overruns_per_s": round((during[-1]["overruns"] - during[0]["overruns"]) / max(1, len(during) - 1), 1),
+                       "series_ovr": ovr_series([(t, p) for t, p in perf.rows if tp0 + 3 <= t <= tp1]),
                        "sections": top_sections(during),
                        "series_pre_max": [p["pre_max"] for p in during],
                        "series_syn_sum_max": [sum(p["syn_max"]) for p in during],
@@ -454,6 +469,27 @@ def run_n(n, secs, outdir, seed=1):
 BAR_US = {1: mh.U12_LIMIT_US, 2: 967, 3: 967}
 REF_1_US, REF_TOL = 573, 0.15
 OVR_TOL_PER_S, OVR_TOL_FRAC = 2.0, 0.10
+# the idle window after the loads (A / B / A): IDLE_TAIL_S for the release tails, then IDLE_AFTER_S read
+IDLE_TAIL_S, IDLE_AFTER_S = 3.0, 12.0
+
+
+def ovr_added(r):
+    """(the overruns per second the loads add, the idle rate they are judged against, how), or None with no idle rate.
+    THRESHOLD (2026-11-14, T2 0.9.12): Schwung's idle rate swings 93-173 /s within minutes (2026-11-14: one idle
+    window 116-137 /s before n = 1, 173 before n = 2 and 4, 93 before n = 3; under every load 143-173), and one idle
+    window before the load failed 0.9.11 and 0.9.12 alike (168-169 /s loaded vs 123-138 idle, n = 1). Now A / B / A:
+    the median of the per-second rates during the load against the higher of the medians of the idle windows just
+    before and just after it (an idle drift up or down between them is not the load's); the same tolerance. Without
+    the window after (an older report) or the series: the rates over the windows, as before"""
+    perf, idle, aft = r.get("perf") or {}, r.get("idle") or {}, r.get("idle_after") or {}
+    ls, i0, i1 = perf.get("series_ovr"), idle.get("series_ovr"), aft.get("series_ovr")
+    if ls and i0 and i1:
+        base = max(float(np.median(i0)), float(np.median(i1)))
+        return float(np.median(ls)) - base, base, "A/B/A medians"
+    rate, base = perf.get("overruns_per_s"), idle.get("overruns_per_s")
+    if base is None or rate is None:
+        return None
+    return rate - base, base, "one idle window"
 
 
 def verdict(r, n):
@@ -474,11 +510,12 @@ def verdict(r, n):
     # Schwung's overrun counter also runs with no load (73-173 /s idle on 2026-11-03, -08 and -13, Frodhes idle or
     # not playing): only overruns the loads add count, the rate during them over the idle rate by more than
     # OVR_TOL_PER_S (or OVR_TOL_FRAC of the idle rate); with no idle rate read, any overrun counts as before
-    perf, idle = r.get("perf") or {}, r.get("idle") or {}
-    ovr, rate, base = perf.get("overruns"), perf.get("overruns_per_s"), idle.get("overruns_per_s")
-    if base is not None and rate is not None:
-        if rate - base > max(OVR_TOL_PER_S, OVR_TOL_FRAC * base):
-            bad.append("Schwung overruns %.1f /s under load vs %.1f /s idle" % (rate, base))
+    perf = r.get("perf") or {}
+    ovr, add = perf.get("overruns"), ovr_added(r)
+    if add is not None:
+        d, base, how = add
+        if d > max(OVR_TOL_PER_S, OVR_TOL_FRAC * base):
+            bad.append("Schwung overruns +%.1f /s under load over %.1f /s idle (%s)" % (d, base, how))
     elif ovr:
         bad.append("%d Schwung overruns" % ovr)
     clicks = sum(t.get("gated", 0) for t in r.get("takes", [])) + (r.get("usb") or {}).get("gated", 0)

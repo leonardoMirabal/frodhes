@@ -118,12 +118,8 @@ static int32_t bar_lsin(const bar_ms_t *s)
     return num > 0 ? (bar_log2_64((uint64_t)num) - bar_log2_32((uint32_t)s->k2) - 32 * 256) >> 1 : 0;
 }
 
-/* the bars' level into the mix (0.9.13, SND3): RESPONSE FULL's convex curve plays the electric piano 2.6-3.0 dB
- * quieter at middle velocities, so VIBES and MARIMBA come down with it to 0.9.9's balance (MARIMBA re ST77 at v100,
- * the presets re F01); one gain on the Q20 mix before the dithered cut (bar_render), so the tone and the floor stay */
-#ifndef BAR_MIX_G
-#define BAR_MIX_G 23197                             /* Q15: -3.0 dB */
-#endif
+/* the bars' level into the mix (0.9.13, SND3; BAR_MIX_G: bars.h): one gain on the Q20 mix before the dithered cut
+ * (bar_render), so the tone and the floor stay */
 #define BAR_MIX(x) ((int32_t)(((int64_t)(x) * BAR_MIX_G + 16384) >> 15))
 #define BAR_PZI(pb, f, l) (((pb) * BAR_NFAM + (f)) * BAR_NLAYER + (l))
 static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
