@@ -672,8 +672,6 @@ static void rail(frui *u)
     key_btn(u, FRB_GEAR, 0, colc(0, 2) - G_COL * 0.5f - 40.f, y, 32.f, h);
     if (m->settings) frui_rrect_stroke(u->c, X(colc(0, 2) - G_COL * 0.5f - 40.f) + 0.5f, X(y) + 0.5f, X(32.f) - 1.f, X(h) - 1.f,
                                        X(R_CTRL), 1.f, C_ACC);
-    else if (m->upd_ver[0])                          /* a newer release: a lit lamp in the gear's corner (SETTINGS has it) */
-        lamp(u, colc(0, 2) - G_COL * 0.5f - 40.f + 32.f - 6.f, y + 6.f, 2.5f, 1);
     /* the preset: < [tag name (edited) v] > SAVE UNDO, from column 3 of the left half */
     x = colc(0, 2) - G_COL * 0.5f;
     key_btn(u, FRB_PREV, 0, x, y, 32.f, h);
@@ -701,7 +699,15 @@ static void rail(frui *u)
     key_btn(u, FRB_SAVE, "SAVE", x, y, 52.f, h);
     if (m->saving) frui_rrect_stroke(u->c, X(x) + 0.5f, X(y) + 0.5f, X(52.f) - 1.f, X(h) - 1.f, X(R_CTRL), 1.f, C_ACC);
     key_btn(u, FRB_UNDO, "UNDO", x + 56.f, y, 52.f, h);
-    meter(u, colc(1, 2) - G_COL * 0.5f + 12.f, y, 100.f, h);
+    if (m->upd_state && m->upd_ver[0]) {             /* a newer release: its key in the meter's place, a lit lamp,
+                                                      * UPDATE (the browser) or INSTALL (the downloaded package) over
+                                                      * the version */
+        x = colc(1, 2) - G_COL * 0.5f + 12.f;
+        key_btn(u, FRB_UPDATE_RAIL, "", x, y, 100.f, h);
+        lamp(u, x + 13.f, cy, 2.5f, 1);
+        tx(u, x + 24.f, cy - 3.f, T_CAPTION, 0, m->upd_state == 2 ? "INSTALL" : "UPDATE", C_TEXT2);
+        tx(u, x + 24.f, cy + 10.f, 11.f, 640.f, 0.f, FRUI_TNUM, m->upd_ver, C_TEXT);
+    } else meter(u, colc(1, 2) - G_COL * 0.5f + 12.f, y, 100.f, h);
     /* LEVEL: the preset's volume trim (P_LEVEL), its knob's edge on the grid's right edge */
     {
         float r = KNOB_R2, kx = G_H1 + 4.f * G_COL - 16.f, v = (float)m->p[FRP_LEVEL] / 127.f;
@@ -1238,13 +1244,17 @@ static void settings_sheet(frui *u)
             txr(u, xr, mid(u, y + 22.f, 8.5f), T_CAPTION, 0, "VERSION", C_TEXT3);
             xr -= tw(u, T_CAPTION, 0, "VERSION") + G_M;
         }
-        if (m->upd_ver[0]) {   /* a newer release: its key before VERSION, a lit lamp and UPDATE X.Y.Z (its page) */
+        if (m->upd_state && m->upd_ver[0]) {   /* a newer release: its key before VERSION, a lit lamp and UPDATE X.Y.Z
+                                                * (the browser) or INSTALL X.Y.Z (the downloaded package; what to do
+                                                * first before it) */
             float wk;
-            snprintf(buf, sizeof buf, "UPDATE %s", m->upd_ver);
-            wk = ceilf(tw(u, T_BTN, FRUI_TNUM, buf)) + 34.f;
+            snprintf(buf, sizeof buf, "%s %s", m->upd_state == 2 ? "INSTALL" : "UPDATE", m->upd_ver);
+            wk = ceilf((tw(u, T_BTN, FRUI_TNUM, buf) + 34.f) / 4.f) * 4.f;   /* (on the 4 px grid) */
             key_btn(u, FRB_UPDATE, "", xr - wk, y + 8.f, wk, 28.f);
             lamp(u, xr - wk + 12.f, y + 22.f, 2.5f, 1);
             tx(u, xr - wk + 22.f, mid(u, y + 22.f, 9.5f), T_BTN, FRUI_TNUM, buf, C_TEXT);
+            if (m->upd_state == 2)
+                txr(u, xr - wk - G_M, mid(u, y + 22.f, 8.5f), T_CAPTION, 0, "CLOSE YOUR MUSIC SOFTWARE, THEN INSTALL", C_TEXT3);
         }
     }
     hair_h(u, x + 1.f, x + w - 1.f, y + 44.f, FRUI_RGB(34, 34, 36));

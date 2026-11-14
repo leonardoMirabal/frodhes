@@ -80,7 +80,7 @@ the window has).
 | Engine | HQ only: every engine (the Rhodes types, VIBES, MARIMBA) on its HQ float path and every effect on its HQ path (the full-rate reverb TYPEs, the compressor kept through EFFECTS BYPASS: the Move's and the two-core FM-1's build switches), with **24 voices on every engine**. 24 keys held all sound; a 25th steals a voice (faded out over one 5.8 ms block: no click). The FM-1's own 10-voice integer build (CLASSIC, an ENGINE parameter until 2026-11) is not in the plugin any more: a saved state or project that asks for it loads its sound on HQ |
 | Parameters | the app's 67 parameters with their FM-1 ids (stable: saved sessions and automation keep them), ranges and texts, grouped by module, plus TUNE, PRESET (F01-F57, for the host's own view), SUSTAIN (the latch), EFFECTS BYPASS and VELOCITY RESPONSE (the settings' RESPONSE, as CC 40: DEEP or EVEN) (72 in all; the id 0x10000, ENGINE's, stays reserved). A change the app makes itself (a program change, a CC, a preset) goes back to the host. Automation takes the device's own path: a sweep renders the same bytes as the same sweep sent as MIDI CCs, so the smoothing is the FM-1's |
 | Presets | F01-F19 (the FM-1's) and F20-F57 (the Move's variants), then the user's own, one file each (`*.frpreset`) in `~/Library/Application Support/Frodhes/Presets` (Linux `$XDG_DATA_HOME/frodhes/presets`, else `~/.local/share/frodhes/presets`; Windows `%APPDATA%\Frodhes\Presets`; `FRODHES_PRESET_DIR` overrides; the folders are made when the first preset is saved). In a sandboxed Audio Unit host the plugin uses the account's own folder when the sandbox lets it write there (the same presets as every other host), else the host's container (that host's presets only). The plugin-wide settings file has its place beside the presets (`settings.json`, `plugin/src/frp_paths.h`). Browse with wrap-around, UNDO as on the device. Program changes follow the FM-1's map, continued past F19 so that every factory preset can be reached: 0-15 F01-F16, 16-31 the first 16 user files (where there is none, the FM-1's own user bank: its starter sounds), 32-72 F17-F57 (32-34 are F17-F19 as on the FM-1, which has no preset after F19; 35-72 reach F20-F57 by the same rule). 73-127 load nothing |
-| Settings | MIDI CHANNEL (ALL or 1-16), the velocity curve (MEDIUM as played, LIGHT, HEAVY: the device's TOUCH curves; FIXED with its velocity), program changes on / off, the tempo source (HOST: the DAW's tempo, 120 without one, a MIDI clock sent to the plugin still leads; INTERNAL: the BPM setting; MIDI CLOCK: an incoming clock, else the BPM setting), SYNC ALL (every tempo effect's SYNC at one division, also on every preset load), UPDATES (ON / OFF: the check for a newer release, below; the plugin's own, the same in every project). The sheet's title band shows VERSION, read only: a release's X.Y.Z, a developer build DEV and 4 hex digits of its commit, as the FM-1's MIDI page; when a newer release is out, an UPDATE X.Y.Z key before it |
+| Settings | MIDI CHANNEL (ALL or 1-16), the velocity curve (MEDIUM as played, LIGHT, HEAVY: the device's TOUCH curves; FIXED with its velocity), program changes on / off, the tempo source (HOST: the DAW's tempo, 120 without one, a MIDI clock sent to the plugin still leads; INTERNAL: the BPM setting; MIDI CLOCK: an incoming clock, else the BPM setting), SYNC ALL (every tempo effect's SYNC at one division, also on every preset load), UPDATES (ON / OFF: the check for a newer release, below; the plugin's own, the same in every project). The sheet's title band shows VERSION, read only: a release's X.Y.Z, a developer build DEV and 4 hex digits of its commit, as the FM-1's MIDI page; when a newer release is out, an UPDATE / INSTALL X.Y.Z key before it |
 | MIDI learn | any knob (and TUNE, PRESET, SUSTAIN, BYPASS, VELOCITY RESPONSE) learns the next CC; a learned CC comes before the device's CC map; forget one or all; saved with the project |
 | State | the sound as the Move saves it (the 256-byte settings record and the sound it came from) plus the plugin's own keys (settings, learned CCs, SUSTAIN, EFFECTS BYPASS, the preset's name; version "pv" 3: "win", the window's size, once it was resized). A state without them (the first builds, a Move track) loads them as defaults (without "win": the window keeps its size); older builds ignore the keys they do not know; a broken or cut state is refused and changes nothing. The "engine" key is always written as HQ (an older build then loads the sound on its HQ engine) and never read: a state saved with ENGINE CLASSIC loads on HQ, 24 voices, and saves again as HQ |
 | Tempo | the tempo source above (the delay's and the LFOs' sync) |
@@ -94,24 +94,33 @@ the window has).
 
 ## Check for updates
 
-The plugin tells you when a newer Frodhes is out: a lit amber lamp in the corner of the window's gear, and in
-SETTINGS an **UPDATE X.Y.Z** key before VERSION. A click on it opens the release page,
-https://github.com/leonardoMirabal/frodhes/releases/latest, in your browser (macOS: the system's default browser;
-Windows: ShellExecute; Linux: `xdg-open`). Nothing is downloaded or installed: you install the new package yourself.
+When a newer Frodhes is out, the plugin downloads your system's package into your Downloads folder in the
+background and checks it; a key with a lit lamp then takes the output meter's place on the window's top rail, and
+SETTINGS shows the same key before VERSION:
 
-![SETTINGS with a newer release found: UPDATE 0.9.13 before VERSION 0.9.12, UPDATES ON](manual/img/plugin/plugin-update.png?v=6abe1550)
+- **UPDATE X.Y.Z** while the package is not there yet (or could not be checked): a click opens the package's direct
+  download in your browser (`https://github.com/leonardoMirabal/frodhes/releases/latest/download/` and the name
+  below).
+- **INSTALL X.Y.Z** once it is downloaded and checked: a click opens it. macOS: the `.pkg` opens in Installer.
+  Windows and Linux: the folder opens with the zip (Windows: selected in Explorer). Close your music software, then
+  install (SETTINGS says so beside the key).
+
+The plugin installs and replaces nothing: you run the installer.
+
+![A newer release downloaded: INSTALL 0.9.13 on the rail and in SETTINGS, before VERSION 0.9.12](manual/img/plugin/plugin-update.png?v=70aef450)
 
 | | |
 | --- | --- |
-| What it contacts | one HTTPS GET of `https://api.github.com/repos/leonardoMirabal/frodhes/releases/latest`, GitHub's API for the repository's latest release (published: never a draft or a pre-release); the plugin reads its `tag_name` (vX.Y.Z) and compares it, number by number, with its own version. The request carries nothing else: no identifier, no version, no settings (user agent "Frodhes", no cookie, no cache). The TLS certificate is verified |
-| When | at most once every 24 hours (for the user account: the time of the last check is kept in the settings file), only when a plugin window opens, on a thread of its own: never on the audio thread, the window and the host never wait for it. It gives up after 5 s; any failure (offline, a proxy, GitHub's rate limit) is silent and the next check comes a day later. A developer build (version 0.0.0-dev, VERSION DEV ...) never checks |
-| Turning it off | SETTINGS > UPDATES OFF: no request is made and no notice is shown (on again: it checks at once when a day has passed). The choice is the plugin's, kept for every project and host. `FRODHES_UPDATE_CHECK=0` in the environment turns it off for that process (the test hosts set it) |
-| What is kept | `settings.json` beside the presets (`~/Library/Application Support/Frodhes/` on macOS, `$XDG_DATA_HOME/frodhes/` or `~/.local/share/frodhes/` on Linux, `%APPDATA%\Frodhes\` on Windows): `update_check` (true / false), `update_checked` (the last check's time, Unix seconds) and `update_latest` (the latest version found). The file's other keys are kept as they are; a file the plugin cannot read as its own is never rewritten |
+| What it contacts | one HTTPS GET of `https://api.github.com/repos/leonardoMirabal/frodhes/releases/latest`, GitHub's API for the repository's latest release (published: never a draft or a pre-release); the plugin reads its `tag_name` (vX.Y.Z) and compares it, number by number, with its own version. When it is newer, the answer's asset for this system gives the package's URL (one of the repository's release assets), size and SHA-256 `digest`, and the package is downloaded once (GitHub's redirect to its storage followed, https only). The requests carry nothing else: no identifier, no version, no settings (user agent "Frodhes", no cookie, no cache). The TLS certificate is verified |
+| The package | macOS `frodhes-plugin-macos.pkg`, Windows `frodhes-plugin-windows.zip`, Linux `frodhes-plugin-linux-x86_64.zip` or `-aarch64.zip`, saved with the version in its name (`frodhes-plugin-macos-0.9.13.pkg`) in the Downloads folder (macOS `~/Downloads`; Windows the Downloads known folder; Linux `$XDG_DOWNLOAD_DIR`, else `~/Downloads`, else your home). Its SHA-256 must match the answer's digest and its size the answer's size: a release without a digest, a mismatch or a cut download keeps nothing (a `.part` file is written, then renamed) and the key stays UPDATE. The same release is downloaded only once; a package deleted since is downloaded again at the next check |
+| When | at most once every 24 hours (for the user account: the time of the last check is kept in the settings file), only when a plugin window opens, on a thread of its own: never on the audio thread, the window and the host never wait for it. It gives up after 5 s (the package: 5 minutes); any failure (offline, a proxy, GitHub's rate limit) is silent and the next check comes a day later. A developer build (version 0.0.0-dev, VERSION DEV ...) never checks |
+| Turning it off | SETTINGS > UPDATES OFF: no request is made, nothing is downloaded and no notice is shown (on again: it checks at once when a day has passed). The choice is the plugin's, kept for every project and host. `FRODHES_UPDATE_CHECK=0` in the environment turns it off for that process (the test hosts set it) |
+| What is kept | `settings.json` beside the presets (`~/Library/Application Support/Frodhes/` on macOS, `$XDG_DATA_HOME/frodhes/` or `~/.local/share/frodhes/` on Linux, `%APPDATA%\Frodhes\` on Windows): `update_check` (true / false), `update_checked` (the last check's time, Unix seconds), `update_latest` (the latest version found), `update_file` and `update_file_version` (the package downloaded and its version). The file's other keys are kept as they are; a file the plugin cannot read as its own is never rewritten |
 | Per system | no new dependency anywhere. macOS: NSURLSession (Foundation, a system framework). Windows: WinHTTP (`winhttp.dll`, part of Windows) through the system's proxy settings. Linux: the system's libcurl, loaded when the window first checks (`libcurl.so.4`, else Debian / Ubuntu's `libcurl-gnutls.so.4`), with its certificate store; the plugin does not link it, so a system without libcurl simply never checks (`sudo apt install libcurl4` or your distribution's libcurl package adds it). In a sandboxed Audio Unit host that gives its plug-ins no network, the request fails silently |
 
 The code: `plugin/src/frp_update.h` (what and when), `frp_update.c` (the versions, the response, the 24 h rule, the
-settings file: tested on any OS), `frp_update_rt.c` (the thread and the file), `frp_update_mac.m` and
-`frp_update_net.c` (the request per OS). The window shows what `frp_update_available` says; the check starts from
+settings file, the assets, SHA-256: tested on any OS), `frp_update_rt.c` (the thread, the download and the file),
+`frp_update_mac.m` and `frp_update_net.c` (the requests and opening the package, per OS). The window shows what `frp_update_available` says; the check starts from
 the CLAP gui extension's window creation (`plugin/gui_clap.c`), and the entry's deinit cancels and waits for a check
 still running (Windows: the check's thread holds the DLL until it ends).
 
@@ -281,8 +290,11 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
   (the other keys kept, a nested file never rewritten); then the runtime over a stand-in network in a scratch home:
   one check when the window opens, none again within the day, again a day later, UPDATES OFF (no check, no notice,
   saved), ON again, failures and a 403 (silent, the last result kept, no retry that day), FRODHES_UPDATE_CHECK=0, a
-  developer build, and a shutdown during a hanging check (cancelled at once, nothing saved). The window's lamp,
-  UPDATE key and UPDATES switch: `frp_test_gui_ctl`. The real request: `build/plugin/frp_update_probe` (needs the
+  developer build, and a shutdown during a hanging check (cancelled at once, nothing saved); the assets (a nested
+  name ignored, no digest, a foreign URL, an upper-case digest), SHA-256 vectors, the file name per system, and the
+  download: a digest mismatch, no digest or a cut file keep nothing (UPDATE opens the browser), a match gives INSTALL
+  (the file in `FRODHES_DOWNLOAD_DIR`, saved, opened by the key), downloaded once, a deleted file falls back. The
+  rail's and SETTINGS' UPDATE / INSTALL keys and the UPDATES switch: `frp_test_gui_ctl`. The real request: `build/plugin/frp_update_probe` (needs the
   network; `--cancel` checks that a cancel ends it at once), by hand on each system.
 - The firmware build never sees `plugin/`: the plugin only reads `firmware/src`.
 

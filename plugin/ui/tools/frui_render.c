@@ -485,18 +485,24 @@ int main(int argc, char **argv)
     m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY; m.gr_db = 0.f; m.fx_bypass = 1;
     render(&m, "fx-bypass", 960, 600);
     render(&m, "fx-bypass@2x", 1920, 1200);
-    /* CHECK FOR UPDATES: a newer release found (the gear's lamp; SETTINGS: the UPDATE key before VERSION, UPDATES ON),
-     * and the check off */
+    /* CHECK FOR UPDATES: a newer release found (the rail's UPDATE key in the meter's place; SETTINGS: the UPDATE key
+     * before VERSION, UPDATES ON), its package downloaded (INSTALL on both, SETTINGS' line), and the check off */
     load(&m, PR_F09, "F09", "70S PHASER");
     m.tab_l = FRT_DRIVE; m.tab_r = FRT_PHASER;
     snprintf(m.version, sizeof m.version, "%s", "0.9.12");
     snprintf(m.upd_ver, sizeof m.upd_ver, "%s", "0.9.13");
+    m.upd_state = 1;
     render(&m, "update-main", 960, 600);
     render(&m, "update-main@2x", 1920, 1200);
+    m.upd_state = 2;
+    render(&m, "update-install", 960, 600);
+    render(&m, "update-install@2x", 1920, 1200);
     m.settings = 1; m.learn_cc[FRP_DRIVE] = 2;
     render(&m, "update-settings", 960, 600);
     render(&m, "update-settings@2x", 1920, 1200);
-    m.upd_check = 0; m.upd_ver[0] = 0;
+    m.upd_state = 1;
+    render(&m, "update-settings-dl", 960, 600);
+    m.upd_check = 0; m.upd_ver[0] = 0; m.upd_state = 0;
     render(&m, "update-off", 960, 600);
     frui_font_free(font);
     free(d);

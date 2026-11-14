@@ -1330,8 +1330,9 @@ Audio Unit on macOS. It has the same instruments, effects and factory sounds as 
 in the higher-quality version, with 24 voices. Everything in this manual applies to the sound. Its own window shows the pages as cards
 with knobs, with the presets, MIDI learn, the effects' bypass and the sustain latch; your host saves everything with
 the project. The host's tempo drives the synced effects; the FM-1's sequencer, arpeggiator and chord mode are not in
-the plugin. When a newer Frodhes is out, a lamp lights on the window's gear and SETTINGS shows an UPDATE key that
-opens the release page (it asks GitHub at most once a day; SETTINGS > UPDATES OFF turns it off:
+the plugin. When a newer Frodhes is out, the plugin downloads its package into Downloads and shows an INSTALL key on
+the window that opens it; close your music software, then install (it asks GitHub at most once a day; SETTINGS >
+UPDATES OFF turns it off:
 [PLUGIN.md](PLUGIN.md#check-for-updates)). The downloads, the install and the first-open steps for a plugin that is
 not signed yet: [the README](../README.md#on-your-computer-the-desktop-plugin).
 
