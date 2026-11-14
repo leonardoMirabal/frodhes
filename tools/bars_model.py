@@ -50,6 +50,17 @@ LAYER_V = [8, 24, 40, 56, 72, 88, 104, 120]
 V_ANCH = [1, 8, 24, 40, 56, 72, 88, 104, 120, 127]
 
 
+def _mix_g():
+    """bars.c BAR_MIX_G (Q15): the bars' level into the mix after the voice and the body (0.9.13, SND3); render_batch
+    is the voice, so a C render compares with render_batch x BAR_MIX"""
+    import re
+    s = open(os.path.join(ROOT, "firmware", "src", "bars.c")).read()
+    return int(re.search(r"#define BAR_MIX_G (\d+)", s).group(1)) / 32768.0
+
+
+BAR_MIX = _mix_g()
+
+
 def load_spec(path=SPEC_PATH):
     return json.load(open(path))
 

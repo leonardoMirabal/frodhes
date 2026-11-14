@@ -189,7 +189,7 @@
 9400 expect state card0 OFF
 9400 turn 2 10
 9500 expect state card0 -16
-9500 expect state card3 +2.8
+9500 expect state card3 +1.9
 9500 expect state p.33 1
 9500 expect sound
 9600 btn 6

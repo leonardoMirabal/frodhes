@@ -999,7 +999,7 @@ def bypass(r, rep):
 
 FXALL = [  # (name, settings, expected: LU re clean within +-tol)
     ("drive 20", dict(DRIVE=20)), ("drive 64", dict(DRIVE=64)), ("drive 127", dict(DRIVE=127)),
-    ("comp on (-20 dB 4:1 +4.3)", dict(CMP_SW=127, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=23)),
+    ("comp on (-20 dB 4:1 +1.9)", dict(CMP_SW=127, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=10)),   # (0.9.13: +4.3, 23, was level-neutral at 0.9.11's levels; FULL's curve: +2.7 LU, the Rhodes' make-up 10)
     ("comp -40 dB 20:1 +4.3", dict(CMP_SW=127, CMP_AMT=127, CMP_RAT=127, CMP_GAIN=23)),
     ("trem pan 32", dict(TW_SW=64, TW_DEPTH=32)), ("trem pan 127", dict(TW_SW=64, TW_DEPTH=127)),
     ("trem am 64", dict(TW_SW=64, TW_DEPTH=64, TW_MODE=127)), ("trem am 127 square", dict(TW_SW=64, TW_DEPTH=127, TW_MODE=127, TW_SHAPE=64)),
@@ -1010,7 +1010,7 @@ FXALL = [  # (name, settings, expected: LU re clean within +-tol)
     ("chorus 32", dict(CP_SW=64, CP_DEPTH=32)), ("chorus 64", dict(CP_SW=64, CP_DEPTH=64)), ("chorus 127", dict(CP_SW=64, CP_DEPTH=127)),
     ("delay dig 50", dict(DL_SW=48, DL_DEPTH=50)), ("delay ana 127", dict(DL_SW=80, DL_DEPTH=127)),
     ("reverb 32", dict(REV=32)), ("reverb 127", dict(REV=127)),
-    ("all on", dict(DRIVE=30, CMP_SW=127, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=23, TW_SW=64, TW_DEPTH=50, PH_SW=127, PH_DEPTH=60,
+    ("all on", dict(DRIVE=30, CMP_SW=127, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=10, TW_SW=64, TW_DEPTH=50, PH_SW=127, PH_DEPTH=60,
                     CP_SW=64, CP_DEPTH=50, DL_SW=48, DL_DEPTH=40, REV=40)),
 ]
 # fx_all's judgement (LU re clean): 0 +- 2 LU; the chorus 2.5 LU under when wide (fx.c: its width compensation, 0.8);
@@ -1036,7 +1036,10 @@ FXALL = [  # (name, settings, expected: LU re clean within +-tol)
 # 2026-11-08 (fx-level: no effect adds peak, tools/fx_pristine.py): 'phaser 80' -2.5 LU (the peak trim, fx.c PH_T: the
 # comb's in-phase bands had lifted a chord's attack +3.3 dB) by design. ('trem pan 127' -2.0 LU, each side capped at
 # unity, until 2026-11-09: PAN is 0.9.9's equal-power law again, judged at 0 +- 2)
-FXALL_EXPECT = {"drive 127": (-2.3, 1.0), "phaser 80": (-2.5, 1.0)}
+FXALL_EXPECT = {"drive 127": (-1.3, 1.0), "phaser 80": (-2.5, 1.0)}
+# (THRESHOLD 2026-11-14, SND3: drive 127 -2.3 -> -1.3. RESPONSE FULL's convex curve plays fx_all's v108 chord ~2.6 dB
+# quieter into DRIVE, which then drives (and compresses) it less: the host reads -1.29 LU, 0.9.11 -2.3. The DRIVE code
+# is unchanged; the FM-1 must read it again)
 
 
 def lufs(x):

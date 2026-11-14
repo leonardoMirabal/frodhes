@@ -37,7 +37,8 @@
 300 midi 0xB0 103 110
 500 midi 0x90 67 100
 500 midi 0xB0 102 120
-700 expect rms > -40
+# 0.9.13 (SND3 balance): the bars 3 dB down into the mix (bars.c BAR_MIX_G): every 'rms >' floor -3 dB (the '<' ceilings stay)
+700 expect rms > -43
 # the TYPE moves after the note-on (VIBES -> MARIMBA): the strike waits for the fade, on MARIMBA's coefficients
 900 midi 0x90 72 100
 900 midi 0xB0 79 127
@@ -72,4 +73,4 @@
 1300 midi 0x90 105 90
 1300 midi 0x90 107 90
 1300 midi 0x90 108 90
-1600 expect rms > -40
+1600 expect rms > -43

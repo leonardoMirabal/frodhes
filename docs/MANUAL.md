@@ -319,7 +319,7 @@ velocity settings. They work in two separate layers:
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **RESPONSE** | How the instrument answers velocity, for every note (taken at each new note, so a change never jumps a ringing one). **FULL** (the default): the full dynamic range, soft notes very soft (about 34.5 dB from velocity 20 to 127). **LIGHT**: a light touch, soft notes come out louder (about 25.5 dB from 20 to 127, as 0.9.9), so even playing is easier. The tone is the same in both at every key and velocity, and both play at the same loudness from medium velocities up. On VIBES and MARIMBA, FULL is their own response and LIGHT lifts the soft notes by the same amount as on the electric piano (up to 9 dB, the same tone). Not part of a preset (CC 40) |
+| K1 | **RESPONSE** | How the instrument answers velocity, for every note (taken at each new note, so a change never jumps a ringing one). **FULL** (the default): the full dynamic range, soft notes very soft (about 32 dB from velocity 20 to 127), and the level rises slowly through the middle velocities and steeply toward the top, as a struck instrument does (velocity 64 about 19 dB under 127, 88 about 13 dB). **LIGHT**: a light touch, soft and medium notes come out louder (about 25.5 dB from 20 to 127, as 0.9.9), so even playing is easier. The tone is the same in both at every key and velocity: only the level differs, and the hardest notes play at the same loudness in both. On VIBES and MARIMBA, FULL is their own response and LIGHT lifts the soft notes by the same amount as on the electric piano (up to 9 dB, the same tone). Not part of a preset (CC 40) |
 | K2 | **TOUCH** | How the FM-1's keys turn a press into a velocity. **MEDIUM** (the default): a medium press plays KEY VEL, a harder one louder, a softer one quieter. **LIGHT**: the same press plays louder, for a light hand. **HEAVY**: you have to press harder for the same velocity. **FIXED**: every press plays KEY VEL, however hard (no key velocity) |
 | K3 | **KEY VEL** | How hard the FM-1's own keys strike: the velocity of a medium press (harder presses play louder, softer ones quieter), and with TOUCH at **FIXED** the velocity of every press. Around 60–80 soft and round, 96 medium (the default). With velocity on, a medium press plays at most 107, so a harder press always has room to play louder: KEY VEL from 108 to 127 lifts the soft presses instead (at 127 the lightest press plays 21). With TOUCH at FIXED, 108–127 is hard with bark. MIDI notes keep their own velocity. |
 
@@ -337,7 +337,7 @@ emulator has no velocity: its keys play at KEY VEL.
 
 ### COMPRESSOR
 
-![COMPRESSOR](manual/img/comp.png?v=672989af)
+![COMPRESSOR](manual/img/comp.png?v=bcdebf1d)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -347,7 +347,7 @@ emulator has no velocity: its keys play at KEY VEL.
 | K4 | **MAKEUP** | A trim on top of the compressor's own make-up: 0 to +24 dB |
 
 **THRESH** is its on / off: turn it up from OFF and the compressor comes on at −16 dB (where the presets set it) with
-MAKEUP at +2.8 dB, which keeps the volume of what you play about the same (a quiet, dying tail comes up, as under
+MAKEUP at +1.9 dB (+3.6 dB on VIBES and MARIMBA), which keeps the volume of what you play about the same (a quiet, dying tail comes up, as under
 any compressor; back to OFF switches it off). Switching it on or off fades
 over about 46 ms, so it never clicks. The bottom of the page is a gain-reduction meter, as on a hardware compressor: its segments light from 1 dB
 to 30 dB of reduction (scale 3, 6, 10, 20, 30), a bright segment holds the peak for a second, and the number on the

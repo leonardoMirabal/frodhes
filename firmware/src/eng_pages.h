@@ -26,8 +26,9 @@ typedef struct {
     const ectl_t *c;
     uint8_t n;                               /* controls: VOICE pages = (n + 3) / 4 */
     uint8_t cmp_mkup;                        /* the compressor's make-up when the panel switches it on with none set
-                                             * (-20 dB 4:1): level-neutral for this engine on the FM-1 (Rhodes 15 =
-                                             * +4.3 dB; VIBES is peakier, the same threshold takes more: 28 = +6.8 dB) */
+                                             * (-16 dB, cmp_wake): level-neutral for this engine (0.9.13, SND3: refit
+                                             * on the host to 0.9.11's step at v90 / v110 on FULL's curve: the Rhodes
+                                             * 10 = +1.9 dB (was 15, +2.8); the bars, 3 dB down, 19 = +3.6 (was 28)) */
     const char *const *hint;                 /* the footer's hint, one per VOICE page */
 } engui_t;
 
@@ -82,9 +83,9 @@ static const char *const ENG_MRMB_HINT[] = {"HOW THE MALLET STRIKES", "HOW BARS 
 
 #define ENG_UI_ROW(c, mk, h) {c, sizeof c / sizeof c[0], mk, h}
 static const engui_t ENG_UI[] = {           /* by TYPE_UI */
-    ENG_UI_ROW(ENG_RHODES_C, 15, ENG_RHODES_HINT),
-    ENG_UI_ROW(ENG_BARS_C, 28, ENG_BARS_HINT),
-    ENG_UI_ROW(ENG_MRMB_C, 28, ENG_MRMB_HINT),   /* make-up: VIBES's until the marimba is measured on the FM-1 */
+    ENG_UI_ROW(ENG_RHODES_C, 10, ENG_RHODES_HINT),   /* (0.9.13 SND3: 15 -> 10, +2.8 -> +1.9 dB: FULL's curve plays quieter) */
+    ENG_UI_ROW(ENG_BARS_C, 19, ENG_BARS_HINT),       /* (0.9.13 SND3: 28 -> 19 with the bars 3 dB down, BAR_MIX_G) */
+    ENG_UI_ROW(ENG_MRMB_C, 19, ENG_MRMB_HINT),   /* make-up: VIBES's until the marimba is measured on the FM-1 (0.9.13: 28 -> 19) */
 };
 static const uint8_t TYPE_UI[N_TYPE_N] = {0, 0, 0, 0, 1, 2};   /* TYPE -> its ENG_UI row (params.c N_TYPE) */
 _Static_assert(sizeof ENG_RHODES_HINT / sizeof ENG_RHODES_HINT[0] == (sizeof ENG_RHODES_C / sizeof ENG_RHODES_C[0] + 3u) / 4u &&

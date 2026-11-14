@@ -266,6 +266,9 @@ def test_drive_is_heard(eng, vel):
         f = np.fft.rfftfreq(len(x), 1 / FS)
         hi = 10 * np.log10(X[(f >= 1000) & (f < 3000)].sum() + 1e-9) - 10 * np.log10(X[f < 300].sum() + 1e-9)
         out[d] = (hi, 20 * np.log10(np.abs(x).max() / np.sqrt(np.mean(x * x))), rms_db(x))
-    assert out[127][0] - out[0][0] >= (15 if eng == "rhodes" else 5), out   # (VIBES starts brighter: +6 dB, the Rhodes +43)
-    assert out[127][1] < out[0][1] - (2 if vel >= 110 else 1), out   # (v95: 0.9.9 drops 1.8 dB, the clean 0.9.10 1.6)
+    # THRESHOLD (2026-11-14, SND3): the Rhodes at v95, the band 15 -> 14 dB and the crest step 1 -> 0.75 dB. RESPONSE
+    # FULL's convex curve plays v95 3.4 dB quieter into DRIVE, which drives it less: +14.4 dB and 0.81 dB (5.69 -> 4.88).
+    # v110 keeps 15 / 2
+    assert out[127][0] - out[0][0] >= (5 if eng != "rhodes" else 14 if vel < 110 else 15), out   # (VIBES starts brighter: +6 dB, the Rhodes +43)
+    assert out[127][1] < out[0][1] - (2 if vel >= 110 else 0.75), out   # (v95: 0.9.9 drops 1.8 dB, the clean 0.9.10 1.6)
     assert abs(out[64][2] - out[0][2]) <= 2.0, out

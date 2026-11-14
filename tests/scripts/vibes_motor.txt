@@ -35,24 +35,25 @@
 60 expect state card.7.0 OFF
 100 midi 0x90 69 100
 100 midi 0x90 57 100
-1500 expect rms > -45
-3000 expect rms > -50
+# 0.9.13 (SND3 balance): the bars 3 dB down into the mix (bars.c BAR_MIX_G): every 'rms >' floor -3 dB (the '<' ceilings stay)
+1500 expect rms > -48
+3000 expect rms > -53
 # synced rate (CC 51 64 = 4T): the motor follows the tempo
 3100 midi 0xB0 51 64
 3150 expect state vcard.2.2 4T
 3200 midi 0x90 64 100
-4000 expect rms > -50
+4000 expect rms > -53
 3990 midi 0xB0 51 0
 # depth 0: the discs stay open
 4100 midi 0xB0 48 0
 4200 midi 0x90 62 100
-4800 expect rms > -45
+4800 expect rms > -48
 # ST77 with the motor on: the Rhodes has no motor (and no tremolo comes on)
 4900 midi 0xB0 48 100
 5000 midi 0xB0 80 0
 5050 expect state card.7.0 OFF
 5100 midi 0x90 60 100
-5600 expect rms > -45
+5600 expect rms > -48
 5700 midi 0xB0 64 0
 5700 midi 0x80 69 0
 5700 midi 0x80 57 0

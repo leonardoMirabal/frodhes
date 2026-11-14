@@ -76,6 +76,7 @@ def c_render(strikes, dur_ms, off_ms=None, pedal=None, tag="vbm", nosleep=False,
 def residual_db(c, g):
     """aligned by cross-correlation (the C note starts at its block's start): the residual energy re the golden
     signal (dB) and its RMS in LSB"""
+    g = np.asarray(g) * gm.BAR_MIX                  # (bars.c's mix gain after the voice: 0.9.13, SND3)
     first = int(np.argmax(np.abs(c) > 0))
     start = max(first - 64, 0)
     L = min(len(g), len(c) - start - 128)

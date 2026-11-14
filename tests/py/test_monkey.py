@@ -144,6 +144,8 @@ def test_the_diff_finds_a_small_step_under_a_loud_sound(binary):
     highs a little quieter) and over 10x in the diff; the same render against itself is 0"""
     t = 9000
     ev = [e for e in mk.gen(14) if e[0] <= t and not (t - 60 <= e[0] and mk.starts_sound(e[1]))]
+    ev = [(1, "midi 0xB0 40 127")] + ev   # (RESPONSE LIGHT: the render at 0.9.11's level; SND3's FULL curve played it
+    # ~3 dB quieter and the 400 step read 2.4x in plain's reference: this checks the diff, not the curve)
     b = mk.run(mk.script_text(ev, [], t + 150), binary).x
     a = b.copy()
     a[mk.ms(t + 5):] += 400
