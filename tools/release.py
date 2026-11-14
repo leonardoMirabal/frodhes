@@ -847,7 +847,7 @@ def device_plan(ver, tiers=("T0", "T1", "T2")):
     if "T2" not in tiers:
         return t1
     return (t1
-            + [q(cpu_cmd(e)) + f"   (worst <= {CPU_LIMIT_US} us, nothing shed)" for e in ENGINES]
+            + [q(cpu_cmd(e)) + f"   (worst <= {cpu_limit_us()} us, nothing shed)" for e in ENGINES]
             + [q([PY, "tools/hil_scan.py", "--only", SCAN_SET]) + "   (exit 0)",
                q([PY, "tools/hil_scan.py", "--only", "vibes_vel", "--source", "both"]) + "   (exit 0)",
                q([PY, "tools/hil_scan.py", "--marimba", "--source", "both"])
@@ -914,15 +914,24 @@ def check_sampleback(text):
     return f"vib_sampleback marimba: {m.group(1)} keys, 0 outside Gate VD-M (device vs host)"
 
 
+def cpu_limit_us():
+    """hil_cpu's per-interrupt bar for the image under test (fm1_ports.lat_half: 128-frame interrupts on the two-core
+    FM-1 package, 4500 x 128 / 256)"""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import fm1_ports
+    return round(CPU_LIMIT_US * fm1_ports.lat_half() / 256)
+
+
 def check_cpu(eng, text):
+    lim = cpu_limit_us()
     m = re.search(r"worst (\d+) us", text)
     if not m:
         raise Stop(f"hil_cpu {eng}: no 'worst' line:\n" + tail(text))
     worst = int(m.group(1))
     shed = [int(x) for x in re.findall(r"voices shed (\d+)", text)]
-    if worst > CPU_LIMIT_US or any(shed):
-        raise Stop(f"hil_cpu {eng}: worst {worst} us (limit {CPU_LIMIT_US}), voices shed {shed}")
-    return f"hil_cpu --worst {eng}: worst {worst} us <= {CPU_LIMIT_US}, voices shed {sum(shed)} in {len(shed)} scenarios"
+    if worst > lim or any(shed):
+        raise Stop(f"hil_cpu {eng}: worst {worst} us (limit {lim}), voices shed {shed}")
+    return f"hil_cpu --worst {eng}: worst {worst} us <= {lim}, voices shed {sum(shed)} in {len(shed)} scenarios"
 
 
 def check_jack(eng, rep):

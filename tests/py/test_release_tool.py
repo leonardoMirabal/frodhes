@@ -34,7 +34,21 @@ def test_parse_args():
         rel.parse_args(["0.9"])
 
 
-def test_cpu_and_jack_checks():
+def test_cpu_bar_follows_the_image(monkeypatch):
+    """the FM-1 package (two cores, 128-frame interrupts): hil_cpu's worst is per interrupt, the bar 2250 us; a run
+    without FRODHES_LAT_HALF must not be judged on the 256-frame 4500 (0.9.12: the storms / CPU were)"""
+    monkeypatch.delenv("FRODHES_LAT_HALF", raising=False)
+    monkeypatch.delenv("FRODHES_IMAGE", raising=False)
+    ok = "a   voices shed 0\n\nworst 2240 us with 14 voices; design target 2250 us"
+    assert "<= 2250" in rel.check_cpu("rhodes", ok)
+    with pytest.raises(rel.Stop):
+        rel.check_cpu("rhodes", ok.replace("2240", "4321"))
+    monkeypatch.setenv("FRODHES_IMAGE", "one")
+    assert rel.cpu_limit_us() == 4500
+
+
+def test_cpu_and_jack_checks(monkeypatch):
+    monkeypatch.setenv("FRODHES_IMAGE", "one")
     ok = "a   voices shed 0\nb   voices shed 0\n\nworst 4321 us with 9 voices (74 %); design target 4500 us"
     assert "4321" in rel.check_cpu("rhodes", ok)
     with pytest.raises(rel.Stop):
@@ -307,7 +321,7 @@ def fake_fm1(hil, calls, changed):
             return 0, changed
         calls.append(s)
         if "hil_cpu" in s:
-            return 0, "a   voices shed 0\n\nworst 3400 us with 9 voices"
+            return 0, "a   voices shed 0\n\nworst 1700 us with 14 voices"
         if "--marimba" in s:
             (hil / "marimba-report.json").write_text(json.dumps(m_report()))
             return 1, "FAIL  marimba_jump"                        # (exits 1 on any FAIL row: judged by the report)
@@ -335,7 +349,7 @@ def test_device_step_runs_the_plan(tree, monkeypatch, changed, full):
     assert calls == [p.split("   (")[0] for p in rel.device_plan("0.9.3", need)]
     assert ev.startswith(f"tiers needed: {' + '.join(need)}") and "T1 hil_scan --tier must: exit 0" in ev
     if full:
-        assert "hil_cpu --worst marimba: worst 3400" in ev and "vib_sampleback marimba: 61 keys" in ev
+        assert "hil_cpu --worst marimba: worst 1700" in ev and "vib_sampleback marimba: 61 keys" in ev
         assert "hil_jack marimba: SNR 70.5" in ev and "every row ok" in ev
     else:
         assert "T2 not run (the map: no engine / DSP file changed; --full forces it)" in ev
