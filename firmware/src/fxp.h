@@ -11,7 +11,7 @@ static inline int32_t mul28(int32_t a, int32_t b) { return (int32_t)(((int64_t)a
 static inline int32_t mul25(int32_t a, int32_t b) { return (int32_t)(((int64_t)a * b) >> 25); }
 static inline int32_t mul16(int32_t a, int32_t b) { return (int32_t)(((int64_t)a * b) >> 16); }
 static inline int32_t mul15(int32_t a, int32_t b) { return (int32_t)(((int64_t)a * b) >> 15); }
-static inline int32_t mul15s(int32_t a, int32_t b) { return (a * b) >> 15; }   /* |a|, |b| <= 32768 */
+static inline __attribute__((always_inline)) int32_t mul15s(int32_t a, int32_t b) { return (a * b) >> 15; }   /* |a|, |b| <= 32768 */
 static inline int32_t sat15(int32_t v) { return v > 32767 ? 32767 : v < -32767 ? -32767 : v; }
 static inline int32_t sat28(int64_t v)
 {

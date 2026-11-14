@@ -222,6 +222,8 @@ def build_app():
         if not re.fullmatch(r"[A-Z0-9]{1,7}", DATA_FAMILY):
             raise SystemExit("DATA_FAMILY: 1..7 of A-Z 0-9")
         flags.append(f'-DDATA_FAMILY="{DATA_FAMILY}"')
+    if RAM2:
+        flags.append("-DFR_RAM2_ON")
     flags += os.environ.get("APP_DEFS", "").split()      # developer builds only, e.g. APP_DEFS=-DRH_PROF_STAGES
     flags += os.environ.get("DINGHY_DEFS", "").split()   # (a test build: DINGHY_DEFS=-DFELUCCA_UAC=0 ./build.sh)
     cmds = [("cc", "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),
@@ -259,6 +261,14 @@ def build_app():
             # past it)
             txt = txt.replace("KEEP(*(.text.app_audio)) " + k, "KEEP(*(.text.app_audio)) . = 0x12E0; " + k +
                               "".join(f" *(.text.{n})" for n in names if n))
+    if RAM2:
+        # the one-core FM-1 image: RAMTEXT up to 0x01C07F00 (the room --c1 gives .ramx; crt0's boot status words stay
+        # at 0x01C07F00) for more of the audio's hot loops (frodhes.c FR_RAM2): the code it read from flash had
+        # outgrown the 32 KB cache
+        a = "RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x6000"
+        if txt.count(a) != 1:
+            raise SystemExit("app.ld: the RAMTEXT line was not found (FR_RAM2)")
+        txt = txt.replace(a, "RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x7F00")   # (crt0's status words at 0x01C07F00)
     if txt != ld.read_text():
         ld = OUT / "app.ld"
         ld.write_text(txt)
@@ -349,6 +359,7 @@ BAR_LOOPS = [("bar_run_lo", 32, "upper slot Q32, 4 samples"), ("bar_run_hi", 32,
 
 
 C1 = False                          # --c1: two cores (frodhes.c FR_C1), the FM-1 only
+RAM2 = False                        # the one-core FM-1 image: more hot loops in RAM (frodhes.c FR_RAM2)
 
 
 def c1_check(rt_names):
@@ -389,14 +400,15 @@ def check(img, syms, dis, rt):
     # .ram_text (frodhes.c FR_RAM) runs with the flash on (an erase holds interrupts) and may call XIP through FR_FAR
     # (0.9.6: the effects' block functions moved there too)
     rt_fn, rt_calls, rt_names = None, [], []
+    fl_drv = lambda n: n.startswith("fl_") and n != "fl_pass"   # (fl_pass: the filter's loop, FR_RAM2, not the driver)
     for ln in rt.splitlines():
         mm = re.match(r"^([A-Za-z_][\w.]*):$", ln)
         if mm:
             rt_fn = mm.group(1)
             rt_names.append(rt_fn)
-        elif rt_fn and rt_fn.startswith("fl_") and re.search(r"\bcall\b", ln):
+        elif rt_fn and fl_drv(rt_fn) and re.search(r"\bcall\b", ln):
             rt_calls.append(f"{rt_fn}: {ln.strip()}")
-    if not any(n.startswith("fl_") for n in rt_names):
+    if not any(fl_drv(n) for n in rt_names):
         errors.append(".ram_text: the flash driver (fl_*) not found")
     if C1:
         e, n = c1_check(rt_names)
@@ -406,7 +418,7 @@ def check(img, syms, dis, rt):
         errors.append(f".ram_text: the flash driver contains calls: {rt_calls[:3]}")
     else:
         notes.append(f".ram_text: {len([ln for ln in rt.splitlines() if LINE.match(ln)])} insns, the flash driver "
-                     f"({sum(n.startswith('fl_') for n in rt_names)} functions) without calls")
+                     f"({sum(fl_drv(n) for n in rt_names)} functions) without calls")
     for ln in dis.splitlines():     # nothing may call or load an address in the chip ROM
         mm = LINE.match(ln)
         if not mm:
@@ -591,7 +603,7 @@ def package(board="fm1", model="pro", release=None):
 
 
 def main():
-    global PRODUCT, VERSION, BOARD, APP_SLOT, APP_OPT, C1
+    global PRODUCT, VERSION, BOARD, APP_SLOT, APP_OPT, C1, RAM2
     ap = argparse.ArgumentParser()
     ap.add_argument("--release", metavar="X.Y.Z", help="release build: version string X.Y.Z, file frodhes-X.Y.Z.fwsc")
     ap.add_argument("--board", choices=sorted(BOARD_DEFS), default=None,
@@ -646,6 +658,7 @@ def main():
         C1 = True
         BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], "-DFR_C1=1"] + ([] if a.c1_256 else ["-DFR_C1_LAT=1"])
         name = name[:-len(".fwsc")] + ("-c1-256.fwsc" if a.c1_256 else "-c1.fwsc")
+    RAM2 = BOARD == "fm1" and not C1 and os.environ.get("FR_RAM2", "1") == "1"   # (FR_RAM2=0: the old layout, A/B)
     if a.usb_name is not None:
         if BOARD != "fm1":
             raise SystemExit("--usb-name: the FM-1 only")

@@ -178,7 +178,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
         rest = !sendn && !rv_running && !rv_fade;
         if (!rest) rv_running = 1;
     }
-    if (rest) { rv_dry(L + fxc_o, R + fxc_o, fxc_e - fxc_o, 32768); return; }   /* (the dry back to whole) */
+    if (rest) { FR_FAR2(rv_dry)(L + fxc_o, R + fxc_o, fxc_e - fxc_o, 32768); return; }   /* (the dry back to whole) */
     for (sb = fxc_o; sb < fxc_e; sb += CTL) {
 #else
 static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
@@ -199,7 +199,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
     if (sendo) sendo = v == vl ? v * 258 : (RV_SEND(v) << 14) / rq;
     rko = (rq << 15) + 1;
     skn = rv_sk; rv_sk = sendn; sko = rv_sko; rv_sko = sendo;
-    if (!sendn && !rv_running && !rv_fade) { rv_dry(L, R, n, 32768); return; }   /* (the dry back to whole) */
+    if (!sendn && !rv_running && !rv_fade) { FR_FAR2(rv_dry)(L, R, n, 32768); return; }   /* (the dry back to whole) */
     rv_running = 1;
     for (sb = 0; sb < n; sb += CTL) {
 #endif
@@ -217,7 +217,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
         else
         for (j = 0; j < CTL; j++)
             rv_in[j] = clampi(FX_HC(1, (int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15), -131071, 131071), -131071, 131071);
-        rv_dry(L + sb, R + sb, CTL, dryt);              /* (MIX past 64: the dry falls; the send took it whole) */
+        FR_FAR2(rv_dry)(L + sb, R + sb, CTL, dryt);              /* (MIX past 64: the dry falls; the send took it whole) */
         if (lcv || rv_lc) rev_locut(rv_in, lcv);
         if (pd || pd_on) fx_predelay(rv_in, pd);
         if (rv_xin < 32768)                            /* (a TYPE just started: its input fades in) */

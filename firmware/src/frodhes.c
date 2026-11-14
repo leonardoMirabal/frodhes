@@ -34,6 +34,20 @@
  * called through its address in a register the compiler cannot fold back (one instruction more a call) */
 #define FR_FAR(fn) (__extension__({ __typeof__(&fn) p_ = &fn; HAL_KEEP_REG(p_); p_; }))
 #endif
+/* FR_RAM2 (0.9.12): more audio hot loops in RAM on the one-core FM-1 image (tools/build.py sets FR_RAM2_ON and gives
+ * .ram_text RAMTEXT up to 0x01C07F00, the room the two-core image uses for .ramx; crt0's boot status words stay at
+ * 0x01C07F00). The audio's code read from flash had outgrown the 32 KB flash cache (8 ways of 4 KB, ~0.7 us a line
+ * missed): code added anywhere moved the rest and cost the worst block 40-90 us. The same C at another address: the
+ * same integers (a helper a RAM function calls is always_inline where flash inlined it anyway, or called through
+ * FR_FAR2). FR_FAR2: a call between flash and an FR_RAM2 function. Everywhere else (the two-core image, the SMK-37,
+ * the host) both are as before: flash, a direct call */
+#if defined(FR_RAM2_ON) && !defined(DINGHY_HOST) && !defined(DINGHY_WEB) && !(defined(FR_C1) && FR_C1)
+#define FR_RAM2 __attribute__((section(".ram_text.fr2")))
+#define FR_FAR2(fn) FR_FAR(fn)
+#else
+#define FR_RAM2
+#define FR_FAR2(fn) fn
+#endif
 /* FR_C1 (a build switch, off by default: ./build.sh with APP_DEFS=-DFR_C1=1, tools/build.py --c1): two cores. Core 0
  * renders the voices (14 by default, FR_VOICES), core 1 the whole effects chain and the master stage (fx_process, the
  * full-rate REVERB TYPEs, FR_REV_HQ), the block in C1_SUB chunks (app_audio below): core 1 runs chunk j - 1's effects

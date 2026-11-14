@@ -86,7 +86,7 @@ int main(int argc, char **argv)
             for (i = 0; i < 9u; i++) { init_live(&rv[i], n, 100); chk += (uint32_t)rv[i].m[0].e0; n = n == 108u ? 21u : n + 1u; }
         t2 = now_ns();
         for (r = 0; r < reps; r++)              /* the pulse alone (decoded at the strike, both paths: pulse_pz.h) */
-            for (i = 0; i < 9u; i++) { rh_load_pulse(&rv[i], 100); chk += (uint32_t)rv[i].pbuf[3]; }
+            for (i = 0; i < 9u; i++) { rh_load_pulse(&rv[i], 100, 0); chk += (uint32_t)rv[i].pbuf[3]; }
         t3 = now_ns();
         printf("ns_cached %.1f ns_live %.1f chk %lu ns_pulse %.1f\n", (t1 - t0) / (reps * 9.0), (t2 - t1) / (reps * 9.0),
                chk & 1u, (t3 - t2) / (reps * 9.0));
