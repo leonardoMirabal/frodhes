@@ -3,6 +3,10 @@
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */
 #define FR_FAR(fn) fn
 #endif
+#ifndef FR_RAM2
+#define FR_RAM2                                 /* (frodhes.c: more of them, the one-core FM-1 image) */
+#define FR_FAR2(fn) fn
+#endif
 /* Frodhes bar engine: the code (its types, tables and state are in bars.h, included by engine.c). frodhes.c
  * includes this file last, after every other part of the app, so adding or growing an engine never moves or
  * re-inlines the Rhodes and effects code (measured: +150 us on the Rhodes worst case when bars.c sat before it). */
@@ -132,13 +136,13 @@ static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
     if (f > BAR_NFAM - 1u) { f = BAR_NFAM - 1u; a = 0; }
     f2 = f + 1u < BAR_NFAM ? f + 1u : f;
     l = RH_VLAY_I[vel]; l2 = l + 1u < BAR_NLAYER ? l + 1u : l; w = RH_VLAY_W[vel];
-    rh_pz(v->pbuf, &BAR_PZB, BAR_PZI(pb, f, l));             /* hardness x velocity: one shape, once (the packed bank, rhodes.c
+    FR_FAR2(rh_pz)(v->pbuf, &BAR_PZB, BAR_PZI(pb, f, l));             /* hardness x velocity: one shape, once (the packed bank, rhodes.c
                                                      * rh_pz: the table's integers, so the same shape as before) */
-    if (w) rh_pz_mix(v->pbuf, &BAR_PZB, BAR_PZI(pb, f, l2), w);   /* A = p11 + ((p12 - p11) w >> 15): an int16 */
+    if (w) FR_FAR2(rh_pz_mix)(v->pbuf, &BAR_PZB, BAR_PZI(pb, f, l2), w);   /* A = p11 + ((p12 - p11) w >> 15): an int16 */
     if (a) {                                        /* B likewise, then A + ((B - A) a >> 8) (a 0: A) */
         int16_t b[BAR_PLEN + 2];
-        rh_pz(b, &BAR_PZB, BAR_PZI(pb, f2, l));
-        if (w) rh_pz_mix(b, &BAR_PZB, BAR_PZI(pb, f2, l2), w);
+        FR_FAR2(rh_pz)(b, &BAR_PZB, BAR_PZI(pb, f2, l));
+        if (w) FR_FAR2(rh_pz_mix)(b, &BAR_PZB, BAR_PZI(pb, f2, l2), w);
         for (i = 0; i < BAR_PLEN + 2u; i++) v->pbuf[i] = (int16_t)(v->pbuf[i] + (((b[i] - v->pbuf[i]) * a) >> 8));
     }
     {

@@ -180,8 +180,8 @@ static void hq_ir_init(void)
             int32_t lw = RH_VLAY_W[vel];
             uint32_t rc = (uint32_t)((int32_t)RH_PRATE_B[key] + pr[i] + ((((int32_t)pr[i + 1] - (int32_t)pr[i]) * (int32_t)f) >> 8)) << 4;
             float a, b;
-            rh_pz(pb, &RH_PZB, RH_PZI(key, l));
-            if (lw) rh_pz_mix(pb, &RH_PZB, RH_PZI(key, l + 1u < RH_NLAYER ? l + 1u : RH_NLAYER - 1u), lw);
+            FR_FAR2(rh_pz)(pb, &RH_PZB, RH_PZI(key, l));
+            if (lw) FR_FAR2(rh_pz_mix)(pb, &RH_PZB, RH_PZI(key, l + 1u < RH_NLAYER ? l + 1u : RH_NLAYER - 1u), lw);
             a = hq_pulse_f1(pb, rc, w);
             b = hq_pulse_f1(hq_pulse_ram[key][vel - 1u], hq_prate_ram[key][vel - 1u] << 4, w);
             hq_ir_tab[key][vel - 1u] = b > 0.0f && a / b > 0.5f && a / b < 2.0f ? a / b : 1.0f;   /* (a guard: seen

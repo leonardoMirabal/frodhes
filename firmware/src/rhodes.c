@@ -19,6 +19,10 @@
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */
 #define FR_FAR(fn) fn
 #endif
+#ifndef FR_RAM2
+#define FR_RAM2                                 /* (frodhes.c: more of them, the one-core FM-1 image) */
+#define FR_FAR2(fn) fn
+#endif
 #include "fxp.h"
 #ifndef RING_PUBLISH
 #define RING_PUBLISH() do { } while (0)     /* host mode: one thread, no barrier needed */
@@ -544,7 +548,7 @@ static void rh_pu_boot(void)
  * byte-identical. PZ: per point the 3rd difference, the head int16, the tail int8; ~7 instructions a point */
 #include "pulse_pz.h"
 #define RH_PZI(key, l) ((key) * RH_NLAYER + (l))
-static const int16_t *rh_pz(int16_t *o, const pz_bank_t *b, uint32_t p)
+FR_RAM2 static const int16_t *rh_pz(int16_t *o, const pz_bank_t *b, uint32_t p)
 {
     const int16_t *h = b->d + b->off[p];
     uint32_t n = b->nh[p], i;
@@ -555,7 +559,7 @@ static const int16_t *rh_pz(int16_t *o, const pz_bank_t *b, uint32_t p)
     o[64] = o[65] = 0;
     return o;
 }
-static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /* o + ((pulse - o) w >> 15): the layer crossfade */
+FR_RAM2 static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /* o + ((pulse - o) w >> 15): the layer crossfade */
 {
     const int16_t *h = b->d + b->off[p];
     uint32_t n = b->nh[p], i;
@@ -771,16 +775,17 @@ static void rh_drv_restrike(rh_voice_t *v, uint32_t ki, uint32_t vel)
 #endif
 }
 #endif
-static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
+static void rh_load_pulse(rh_voice_t *v, uint32_t vel, int fresh)   /* fresh: rh_init's (the drive's level just set) */
 {
     uint32_t key = (uint32_t)(v->k - RH_KEYS), i = RH_VPOS_I[vel], f = RH_VPOS_F[vel], l = RH_VLAY_I[vel];
     const uint16_t *pa = RH_PAMP[key];
     const uint16_t *pr = RH_PRATE[key];               /* (+ RH_PRATE_B[key]: the key's base) */
     int32_t w = RH_VLAY_W[vel];
-    rh_pz(v->pbuf, &RH_PZB, RH_PZI(key, l));
+    (void)fresh;
+    FR_FAR2(rh_pz)(v->pbuf, &RH_PZB, RH_PZI(key, l));
     if (w)          /* the layer crossfade, once per point (O2): the same integers the force loop computed per sample
                      * (a + ((a2 - a) w >> 15), between a and a2: an int16), so the force is byte-identical */
-        rh_pz_mix(v->pbuf, &RH_PZB, RH_PZI(key, l + 1u < RH_NLAYER ? l + 1u : RH_NLAYER - 1u), w);
+        FR_FAR2(rh_pz_mix)(v->pbuf, &RH_PZB, RH_PZI(key, l + 1u < RH_NLAYER ? l + 1u : RH_NLAYER - 1u), w);
     v->ptab = v->pbuf;
     v->atk = (uint16_t)(vel <= RH_ATK_V ? RH_ATK_A : (RH_ATK_A * (127u - vel)) / (127u - RH_ATK_V));   /* (each strike,
                                                        * a re-strike too: the attack's lift, none at v127) */
@@ -800,7 +805,11 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
     hq_pulse(v, vel);
 #endif
 #ifdef RH_DRIVE
-    if (!RH_IS_MAP(v))
+    if (!RH_IS_MAP(v) && fresh)                       /* the note-on: rh_drv_level has just set gq and mk from this
+                                                       * key, velocity and RESPONSE, so num == den below (the ratio
+                                                       * 1, exactly): only the range (the same integers, 0.9.12) */
+        v->pamp = v->pamp > 65535 ? 65535 : v->pamp < 1 ? 1 : v->pamp;
+    else if (!RH_IS_MAP(v))
     {   /* the drive. A harder re-strike takes its own level (rh_drv_restrike) and its full force. A softer one keeps the
          * note-on's output gain (the tine still rings through it: a step would click), so the force takes the ratio of
          * the gain law x the make-up, this velocity's over the note-on's, capped at 1 as a product (either alone may
@@ -1460,7 +1469,7 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
     }
 #endif
     rh_hd_init(v, n, vel);
-    rh_load_pulse(v, vel);
+    rh_load_pulse(v, vel, 1);
 }
 
 /* the damper crossfade over len sub-blocks (3..16): step i of len is i * RH_RSTEP[len] (Q15; len 7 = 4681, as before) */
@@ -1549,7 +1558,7 @@ static void __attribute__((noinline)) rh_knock_strike(uint32_t note, uint32_t ve
         if (n >= rh_kn_note) return;                    /* the lowest key's pulse (the longest, the heaviest hammer) */
     }
     rh_kn_amp = a;
-    rh_kn_tab = rh_pz(rh_kn_buf, &RH_PZB, RH_PZI(key, l)); rh_kn_rate = prate; rh_kn_pos = 0; rh_kn_note = (uint8_t)n;
+    rh_kn_tab = FR_FAR2(rh_pz)(rh_kn_buf, &RH_PZB, RH_PZI(key, l)); rh_kn_rate = prate; rh_kn_pos = 0; rh_kn_note = (uint8_t)n;
 #ifdef DINGHY_PLUGIN
     rh_kn_dly = (uint16_t)(rh_ofs >> 8);
 #endif
@@ -1600,7 +1609,7 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
             v->lt = (uint8_t)(rh_touch_mode != 0);      /* RESPONSE at this strike (a change: the re-strike's rescale
                                                          * of the ringing modes takes the level step, rh_drv_restrike) */
 #endif
-            rh_load_pulse(v, vel);                      /* (with the pickup drive: the level of its own, rh_drv_restrike) */
+            rh_load_pulse(v, vel, 0);                   /* (with the pickup drive: the level of its own, rh_drv_restrike) */
 #ifdef RH_VMAP
             if (v->vm) rh_vm_restrike(v, vel, vo);      /* (after the pulse: the HQ live contact reads the tine as
                                                          * it rang, hq/rhodes_hq.c hq_live) */
@@ -1654,7 +1663,7 @@ static void rh_events(void)                     /* the block's start (rh_render,
                         int32_t th = rh_thump > 32767 ? 32767 : rh_thump;
                         int32_t cap = (int32_t)(((uint32_t)rh_left(v) * RH_THUMP_CAP) >> 15);
                         th = mul15(th > cap ? cap : th, v->rgain);   /* the cap, then the release velocity's x0.6..1.4 */
-                        v->ptab = rh_pz(v->pbuf, &RH_PZB, RH_PZI(key, 0));
+                        v->ptab = FR_FAR2(rh_pz)(v->pbuf, &RH_PZB, RH_PZI(key, 0));
 #ifdef RH_DRIVE
                         {   /* th is a physical force: the modes get it at the strike's drive ratio (pamp / pphys) */
                             int32_t pp = v->pphys < 1 ? 1 : v->pphys, a;
@@ -1812,7 +1821,7 @@ static inline __attribute__((always_inline)) int32_t rh_mode_p_t(rh_ms_t *s, int
 /* S4: this sub-block's E for V1, (1 + kap a^2) E, a^2 = x^2 + y^2 in Q30 gap^2 (held at 1 gap^2: the products fit
  * int64); s->e itself stays (the damper ramp, the retune and rh_set_damper own it). Out of line: the mode loops'
  * registers stay as they were */
-static inline int32_t rh_s4_e(const rh_ms_t *s)
+static inline __attribute__((always_inline)) int32_t rh_s4_e(const rh_ms_t *s)
 {
     int64_t a2 = ((int64_t)s->x * s->x + (int64_t)s->y * s->y) >> 20, f;
 #ifdef RH_DRIVE
@@ -1830,14 +1839,14 @@ static FR_RAM int32_t __attribute__((noinline)) rh_mode_f(rh_ms_t *s) { return r
 static FR_RAM int32_t __attribute__((noinline)) rh_mode_p1_l(rh_ms_t *s) { return rh_mode_p_t(s, 1); }
 /* the first live mode (V1, the only one with kap): its loop runs on the S4 E of this sub-block, s->e put back after
  * it; the loops stay their own functions, reading s->e as without S4 (their registers unchanged) */
-static int32_t __attribute__((noinline)) rh_mode_f1(rh_ms_t *s)
+FR_RAM2 static int32_t __attribute__((noinline)) rh_mode_f1(rh_ms_t *s)
 {
     int32_t e = s->e, pk;
     if (!s->kap) return FR_FAR(rh_mode_f1_l)(s);
     s->e = rh_s4_e(s); pk = FR_FAR(rh_mode_f1_l)(s); s->e = e;
     return pk;
 }
-static int32_t __attribute__((noinline)) rh_mode_p1(rh_ms_t *s)
+FR_RAM2 static int32_t __attribute__((noinline)) rh_mode_p1(rh_ms_t *s)
 {
     int32_t e = s->e, pk;
     if (!s->kap) return FR_FAR(rh_mode_p1_l)(s);
@@ -1867,7 +1876,7 @@ static FR_RAM __attribute__((noinline)) int32_t rh_pickup_fx(rh_voice_t *v, cons
 }
 
 /* one voice, one 32-frame sub-block, added into mix[0..SUB) */
-static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, int32_t *side)
+FR_RAM2 static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, int32_t *side)
 {
     const rh_key_t *k = v->k;
     uint32_t j, m;
@@ -1989,7 +1998,7 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
     v->Hprev = Hp;
     if (v->fade == 0) {                                   /* a steal finished fading: start the waiting note */
         v->alive = 0;
-        if (v->pend) rh_start_pend(v);
+        if (v->pend) FR_FAR2(rh_start_pend)(v);
         return;
     }
     v->lvl = sum; if (sum > v->lvl0) v->lvl0 = sum;
@@ -1997,7 +2006,7 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
                                                            * starts the note waiting for it (it ended, and the note was
                                                            * lost: BUGHUNT #21) */
         v->alive = 0;
-        if (v->pend) rh_start_pend(v);
+        if (v->pend) FR_FAR2(rh_start_pend)(v);
         return;
     }
     for (m = 1; m < RH_NM; m++)                           /* sleep overtone modes that have died away */
@@ -2141,7 +2150,7 @@ static inline __attribute__((always_inline)) void rh_df1_t(const int32_t *in, in
     if (q15) rh_dith_s = r;
     st[0] = m1; st[1] = m2; st[2] = o1; st[3] = o2; st[4] = e;
 }
-static __attribute__((noinline)) void rh_df1(const int32_t *in, int32_t *out, uint32_t n, const int32_t *c, int32_t *st)
+FR_RAM2 static __attribute__((noinline)) void rh_df1(const int32_t *in, int32_t *out, uint32_t n, const int32_t *c, int32_t *st)
 {
     rh_df1_t(in, out, n, c, st, 0);
 }
@@ -2202,10 +2211,10 @@ static uint32_t rh_txf_type(void)                         /* the TYPE the filter
 static __attribute__((noinline)) void rh_chain(int32_t *x, const int32_t *in, uint32_t n, int32_t (*st)[5], int side, uint32_t t)
 {
     uint32_t nb = RH_TYPE[t].nbody, sb;
-    if (!side) rh_df1(in, x, n, RH_RLC[t], st[0]);
+    if (!side) FR_FAR2(rh_df1)(in, x, n, RH_RLC[t], st[0]);
     else if (nb) FR_FAR(rh_df1_s)(x, n, RH_RLC[t], st[0]); else FR_FAR(rh_df1_sq)(x, n, RH_RLC[t], st[0]);
     for (sb = 0; sb < nb; sb++)
-        if (!side) rh_df1(x, x, n, RH_BODY[t][sb], st[1u + sb]);
+        if (!side) FR_FAR2(rh_df1)(x, x, n, RH_BODY[t][sb], st[1u + sb]);
         else if (sb + 1u < nb) FR_FAR(rh_df1_s)(x, n, RH_BODY[t][sb], st[1u + sb]);
         else FR_FAR(rh_df1_sq)(x, n, RH_BODY[t][sb], st[1u + sb]);
 }
@@ -2247,7 +2256,7 @@ static __attribute__((noinline)) void rh_render(int32_t *mono_out, uint32_t n)  
     for (i = 0; i < RH_NV; i++) {
         rh_voice_t *v = &rv[i];
         for (sb = 0; sb < n && v->alive; sb += SUB)
-            rh_voice_sub(v, rh_mono + sb, rh_side + sb);
+            FR_FAR2(rh_voice_sub)(v, rh_mono + sb, rh_side + sb);
         if (v->alive && v->life && --v->life == 0 && v->fade == 32768) v->fade = 32767;   /* its end: the 1.5 ms fade */
     }
     if (rh_kn_tab || rh_pn_n) FR_FAR(rh_noise)(rh_mono, n);
@@ -2387,7 +2396,7 @@ static void rh_chunk(int32_t *mono_out, uint32_t o, uint32_t e)   /* frames [o, 
         if (!v->alive) continue;
         if (rhc_felt >> i & 1u) rh_lfsr = rhc_lf[i];
         for (sb = o; sb < e && v->alive; sb += SUB)
-            rh_voice_sub(v, rh_mono + sb, rh_side + sb);
+            FR_FAR2(rh_voice_sub)(v, rh_mono + sb, rh_side + sb);
         if (rhc_felt >> i & 1u) rhc_lf[i] = rh_lfsr;
     }
     if (rh_kn_tab || rh_pn_n) FR_FAR(rh_noise)(rh_mono + o, cnt);   /* (from a sub-block's start: the same steps) */

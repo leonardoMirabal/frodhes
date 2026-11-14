@@ -22,7 +22,7 @@ def test_decoder_bit_exact(tmp_path):
     b = src.index("\n}\n", src.index("static void rh_pz_mix(")) + 3
     rp, bp = gz.bank(gz.RH, "RH_PULSE"), gz.bank(gz.BA, "BAR_PULSE")
     ws = (1, 7, 4096, 16384, 20000, 32767)
-    c = ["#include <stdint.h>", "#include <stdio.h>",
+    c = ["#include <stdint.h>", "#include <stdio.h>", "#define FR_RAM2",   # (frodhes.c: RAM on the one-core FM-1)
          '#include "%s"' % os.path.abspath(str(gz.OUT)), src[a:b],
          "static const int16_t RP[%d][66] = {%s};" % (len(rp), ",".join("{" + ",".join(map(str, p)) + "}" for p in rp)),
          "static const int16_t BP[%d][66] = {%s};" % (len(bp), ",".join("{" + ",".join(map(str, p)) + "}" for p in bp)),

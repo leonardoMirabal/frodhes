@@ -235,7 +235,7 @@ static DRV_BSS union {
     } while (0)
 #endif
 /* n samples in -> 2n out (out may not be in) */
-static __attribute__((noinline)) void drv_up2(drv_os_t *s, const int32_t *in, int32_t *out, uint32_t n)
+FR_RAM2 static __attribute__((noinline)) void drv_up2(drv_os_t *s, const int32_t *in, int32_t *out, uint32_t n)
 {
     int32_t xp = s->u0.x, a0 = s->u0.y0, a1 = s->u0.y1, a2 = s->u0.y2, b0 = s->u1.y0, b1 = s->u1.y1, b2 = s->u1.y2;
     const int32_t *e = in + n;
@@ -249,7 +249,7 @@ static __attribute__((noinline)) void drv_up2(drv_os_t *s, const int32_t *in, in
     s->u0.x = s->u1.x = xp; s->u0.y0 = a0; s->u0.y1 = a1; s->u0.y2 = a2; s->u1.y0 = b0; s->u1.y1 = b1; s->u1.y2 = b2;
 }
 /* 2n samples in -> n out, (A0 + A1) >> (sh + 1), rounded (sh: the extra bits the 2x signal carries) */
-static __attribute__((noinline)) void drv_dn2(drv_os_t *s, const int32_t *in, int32_t *out, uint32_t n, uint32_t sh)
+FR_RAM2 static __attribute__((noinline)) void drv_dn2(drv_os_t *s, const int32_t *in, int32_t *out, uint32_t n, uint32_t sh)
 {
     int32_t ep = s->d0.x, a0 = s->d0.y0, a1 = s->d0.y1, a2 = s->d0.y2;
     int32_t op = s->d1.x, b0 = s->d1.y0, b1 = s->d1.y1, b2 = s->d1.y2, od = s->od, rnd = 1 << sh;
@@ -354,7 +354,7 @@ static inline __attribute__((always_inline)) int32_t dr_curve_f(int32_t v)
     u = (uint32_t)(v + (131072 << DR_OS_IN)); i = u >> (10u + DR_OS_IN); f = (int32_t)(u & ((1u << (10u + DR_OS_IN)) - 1u));
     return FX_TANH[i] * (1 << DR_OS_OUT) + (((FX_TANH[i + 1] - FX_TANH[i]) * f) >> (10u + DR_OS_IN - DR_OS_OUT));
 }
-__attribute__((noinline)) static void dr_os_curve(int32_t *x, uint32_t n2, int32_t bias, int32_t b0)   /* in place */
+FR_RAM2 __attribute__((noinline)) static void dr_os_curve(int32_t *x, uint32_t n2, int32_t bias, int32_t b0)   /* in place */
 {
     int32_t *e = x + n2;
 #if DR_OS_ADAA
@@ -370,7 +370,7 @@ __attribute__((noinline)) static void dr_os_curve(int32_t *x, uint32_t n2, int32
     for (; x < e; x++) *x = dr_curve_f(*x + bias * (1 << DR_OS_IN)) - z0;
 #endif
 }
-static const int32_t *dr_os2(const int32_t *m, uint32_t n, int32_t gq, int32_t dgq, int32_t bias, int32_t b0)
+static inline __attribute__((always_inline)) const int32_t *dr_os2(const int32_t *m, uint32_t n, int32_t gq, int32_t dgq, int32_t bias, int32_t b0)
 {
     int32_t *y = drv_wet, *x2 = drv_scr.x2, hp = dr_hp;
     uint32_t i;
@@ -389,9 +389,9 @@ static const int32_t *dr_os2(const int32_t *m, uint32_t n, int32_t gq, int32_t d
         y[i] = x < (1 << (20 + DR_OS_IN)) ? x : 1 << (20 + DR_OS_IN);
     }
     dr_hp = hp;
-    drv_up2(&dr_os, y, x2, n);
-    dr_os_curve(x2, 2u * n, bias, b0);
-    drv_dn2(&dr_os, x2, y, n, DR_OS_OUT - DR_YS_X);   /* (ys keeps DR_YS_X of them: dr_classic's low-passes) */
+    FR_FAR2(drv_up2)(&dr_os, y, x2, n);
+    FR_FAR2(dr_os_curve)(x2, 2u * n, bias, b0);
+    FR_FAR2(drv_dn2)(&dr_os, x2, y, n, DR_OS_OUT - DR_YS_X);   /* (ys keeps DR_YS_X of them: dr_classic's low-passes) */
     return y;
 }
 
@@ -414,9 +414,9 @@ static const int32_t *dr_os2_c(const int32_t *m, int32_t gq, int32_t dgq, int32_
         y[i] = x < (1 << (20 + DR_OS_IN)) ? x : 1 << (20 + DR_OS_IN);
     }
     dr_hp = hp;
-    drv_up2(&dr_os, y + o, x2, n);
-    dr_os_curve(x2, 2u * n, bias, b0);
-    drv_dn2(&dr_os, x2, y + o, n, DR_OS_OUT - DR_YS_X);
+    FR_FAR2(drv_up2)(&dr_os, y + o, x2, n);
+    FR_FAR2(dr_os_curve)(x2, 2u * n, bias, b0);
+    FR_FAR2(drv_dn2)(&dr_os, x2, y + o, n, DR_OS_OUT - DR_YS_X);
     return y;
 }
 #endif
