@@ -3,6 +3,7 @@
 a lock without a heartbeat raises the stale alarm (and stays)"""
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -212,3 +213,89 @@ def test_heartbeat_only_lock_is_reaped(root):
     r = child(5, env)
     assert r.returncode == 0 and "TOOK" in r.stdout and "LOCK-REAPED" in r.stdout, r.stdout + r.stderr
     assert not os.path.exists(d)
+
+
+USB_HOLD = ("import sys, time; sys.path.insert(0, {tools!r}); import lock; lock.usb_audio(who=sys.argv[1]); "
+            "print('got', flush=True); time.sleep(float(sys.argv[2]))")
+
+
+def _got(p):
+    for line in p.stdout:
+        if line.strip() == "got":
+            return True
+    return False
+
+
+def _usb_env(root):
+    env = dict(os.environ, FRODHES_LOCK_ROOT=str(root), FRODHES_USB_AUDIO_LOCK="1")
+    env.pop(lock.env_var("USBAUDIO"), None)
+    return env
+
+
+def test_usb_audio_one_tool_at_a_time(root):
+    """a second audio tool queues with 'waiting for the USB-audio lock held by <tool> pid <pid>' and goes on when the
+    first exits (atexit releases)"""
+    env, code = _usb_env(root), USB_HOLD.format(tools=TOOLS)
+    a = subprocess.Popen([sys.executable, "-c", code, "hil_monkey", "3"], env=env, stdout=subprocess.PIPE, text=True)
+    assert _got(a)
+    t0 = time.time()
+    b = subprocess.run([sys.executable, "-c", code, "hil_scan", "0"], env=env, capture_output=True, text=True,
+                       timeout=60)
+    assert b.returncode == 0 and "got" in b.stdout, b.stderr
+    assert f"waiting for the USB-audio lock held by hil_monkey pid {a.pid} (alive)" in b.stdout, b.stdout
+    assert time.time() - t0 >= 1.5                        # (it waited for the holder)
+    a.wait(10)
+    assert not os.path.isdir(lock.lock_dir("USBAUDIO"))
+
+
+def test_usb_audio_dead_holder_reaped_at_once(root):
+    """a holder killed with its lock left behind (no atexit) holds nothing: the next tool reaps it at once, without
+    the other locks' 10 min grace"""
+    env, code = _usb_env(root), USB_HOLD.format(tools=TOOLS)
+    a = subprocess.Popen([sys.executable, "-c", code, "hil_cpu", "60"], env=env, stdout=subprocess.PIPE, text=True)
+    assert _got(a)
+    a.kill()
+    a.wait(10)
+    assert os.path.isdir(lock.lock_dir("USBAUDIO"))
+    t0 = time.time()
+    b = subprocess.run([sys.executable, "-c", code, "hil_scan", "0"], env=env, capture_output=True, text=True,
+                       timeout=60)
+    assert b.returncode == 0 and "got" in b.stdout and "LOCK-REAPED" in b.stdout, (b.stdout, b.stderr)
+    assert time.time() - t0 < 20
+
+
+def test_usb_audio_children_inherit_and_off_switch(root):
+    """a holder's children (hil_scan's suites, a wrapper's tools) go on at once with its token; FRODHES_USB_AUDIO_LOCK=0
+    takes nothing"""
+    env, code = _usb_env(root), USB_HOLD.format(tools=TOOLS)
+    parent = ("import sys, subprocess; sys.path.insert(0, {tools!r}); import lock; lock.usb_audio(who='full_scan'); "
+              "r = subprocess.run([sys.executable, '-c', {code!r}, 'child', '0'], capture_output=True, text=True); "
+              "print(r.stdout)").format(tools=TOOLS, code=code)
+    r = subprocess.run([sys.executable, "-c", parent], env=env, capture_output=True, text=True, timeout=60)
+    assert "got" in r.stdout and "held by this session" in r.stdout, (r.stdout, r.stderr)
+    off = dict(env, FRODHES_USB_AUDIO_LOCK="0")
+    r = subprocess.run([sys.executable, "-c", code, "x", "0"], env=off, capture_output=True, text=True, timeout=60)
+    assert "got" in r.stdout and not os.path.isdir(lock.lock_dir("USBAUDIO"))
+
+
+def test_every_audio_tool_takes_the_usb_audio_lock():
+    """every tool that opens an audio stream (sounddevice InputStream / rec) takes USBAUDIO right after importing
+    sounddevice; the exceptions get theirs from hil_scan.Rig (which takes it) or only list devices"""
+    via_rig = {"rh_devcmp.py", "hil_usb_onset.py"}        # (hil_scan.Rig / hil_jack: their __init__ takes the lock)
+    missing = []
+    for f in sorted(os.listdir(TOOLS)):
+        if not f.endswith(".py") or f in via_rig:
+            continue
+        src = open(os.path.join(TOOLS, f)).read()
+        opens = "InputStream(" in src or "sd.rec(" in src or ".sd.rec(" in src
+        if opens and "lock.usb_audio()" not in src:
+            missing.append(f)
+        if "import sounddevice" in src and opens:
+            for i, line in enumerate(src.splitlines()):
+                if (re.match(r"\s*import (sounddevice|[\w, ]*, sounddevice)\b", line)
+                        and "lock.usb_audio()" not in "\n".join(src.splitlines()[i:i + 4])):
+                    missing.append(f"{f}:{i + 1}")
+    assert not missing, missing
+    for f in via_rig:
+        src = open(os.path.join(TOOLS, f)).read()
+        assert "import sounddevice" not in src and ("import hil_scan" in src or "import hil_jack" in src), f

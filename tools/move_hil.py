@@ -254,6 +254,8 @@ class UsbRig(hs.RigBase):
     def __init__(self, midi=None, audio=None, ch=USB_CH):
         import mido
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         self.mido, self.sd, self.ch = mido, sd, int(ch)
         outs = mido.get_output_names()
         name = _pick(outs, MIDI_KEYS, "MIDI", midi)

@@ -14,6 +14,9 @@ import pytest
 # self-test paths take its 256-frame limits and 10 voices (fm1_ports.image; on the FM-1 the default is the two-core
 # package). Tests of the two-core defaults clear it (test_fm1_image.py, test_release_tool.py)
 os.environ.setdefault("FRODHES_IMAGE", "one")
+# the host tests run the HIL tools' audio paths on fake sounddevice modules: they never queue behind a device run's
+# USB-audio lock (tools/lock.py usb_audio; tests/py/test_lock.py turns it back on for its own tests)
+os.environ.setdefault("FRODHES_USB_AUDIO_LOCK", "0")
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 GROUPS = {                         # node id prefix -> group
     "test_bars_compat.py": "bars_compat",                           # build/bars_compat/ (the old tree, its binaries)

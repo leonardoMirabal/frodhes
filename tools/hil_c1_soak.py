@@ -407,6 +407,8 @@ def run(a):  # noqa: C901 (the device run)
     mido, out, inp = ports(a)
     if not a.no_audio:
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         import fm1_ports
 
     def cc(c, v):

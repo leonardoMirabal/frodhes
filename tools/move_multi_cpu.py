@@ -380,6 +380,8 @@ def run_n(n, secs, outdir, seed=1):
 
     def usb_rec(secs):
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         dev = [i for i, d in enumerate(sd.query_devices()) if "Move" in d["name"] and d["max_input_channels"] > 0]
         if dev:
             usb["x"] = sd.rec(int(secs * 44100), samplerate=44100, channels=2, dtype="int16", device=dev[0], blocking=True)

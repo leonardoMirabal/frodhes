@@ -108,6 +108,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
     import lock
     import sounddevice as sd
+    import lock
+    lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
     with lock.Lock("DEVICE", who="hil_rate_check", why="USB stream timing check", wait_s=a.wait_lock):
         devs = fm1_ports.devices(sd.query_devices(), 2, hs.PORT_KEYS[:2])
         if not devs:

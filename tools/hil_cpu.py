@@ -523,6 +523,8 @@ def run_cpu(argv):  # noqa: C901
     usb_bad = []                                      # this run's scenarios with a USB fault (also USB_BAD_RUNS)
     if "--no-usb-stream" not in sys.argv:             # a DAW-like USB audio stream for the whole run (the default)
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         rate = int(sys.argv[sys.argv.index("--usb") + 1]) if "--usb" in sys.argv else 48000
         devs = fm1_ports.devices(sd.query_devices(), 2)
         if not devs:
