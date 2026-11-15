@@ -255,11 +255,18 @@ static __attribute__((noinline)) void rev_hqh_run(rev_hqh_t *s, const int32_t *i
         }
         r = s->w + RQH_R - D - 1u;                     /* (the row of sample 0's older sample) */
         r = r >= RQH_R ? r - RQH_R : r;
-        if (r + RQ_NC + 1u <= RQH_R && s->e >= RQH_WARM) q = s->ring + (r + 1u) * RQH_NL + k;
+        if (r + RQ_NC + 1u <= RQH_R && s->e >= D + 1u) q = s->ring + (r + 1u) * RQH_NL + k;   /* (every row read
+                                                         * written since the start: this line's warm-up is over) */
         else {                                          /* (the ring's end inside, or the warm-up: a contiguous */
-            uint32_t j;                                 /*  copy, the rows older than the start read as 0) */
-            for (i = 0, j = r; i < RQ_NC + 1u; i++, j = j + 1u == RQH_R ? 0u : j + 1u)
-                s->t[i * RQH_NL + k] = s->e + i >= D + 1u ? s->ring[j * RQH_NL + k] : 0;
+            uint32_t j, z = s->e >= D + 1u ? 0u : D + 1u - s->e;   /*  copy, the rows older than the start read
+                                                         * as 0: z of them, then the ring from row r + z on) */
+            int16_t *t = s->t + k;
+            if (z > RQ_NC + 1u) z = RQ_NC + 1u;
+            for (i = 0; i < z; i++) t[i * RQH_NL] = 0;
+            for (j = r + z >= RQH_R ? r + z - RQH_R : r + z; i < RQ_NC + 1u; i++) {
+                t[i * RQH_NL] = s->ring[j * RQH_NL + k];
+                j = j + 1u == RQH_R ? 0u : j + 1u;
+            }
             q = s->t + RQH_NL + k;
         }
         am |= FR_FAR(rqh_end)(q, (int32_t)f, &s->y[0][k], &s->lp[k], s->p, s->g[k], lo, &act);
