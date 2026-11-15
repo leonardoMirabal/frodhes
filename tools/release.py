@@ -150,13 +150,14 @@ STEP3_LIGHT = r"(tools/(?!build\.py$)[A-Za-z0-9_]+\.py|tests/py/test_[A-Za-z0-9_
 
 
 def step3_tests(changed):
-    """the test files to run for changed tools / tests: each changed test, and every tests/py/test_*.py that names a
-    changed tool's module"""
+    """the test files to run for changed tools / tests: each changed test, and every tests/py/test_*.py that imports a
+    changed tool's module or names its file (tools/x.py, "x")"""
     tdir = os.path.join(ROOT, "tests", "py")
     out_ = {f for f in changed if f.startswith("tests/py/") and os.path.exists(os.path.join(ROOT, f))}
     mods = [os.path.basename(f)[:-3] for f in changed if f.startswith("tools/")]
     if mods:
-        pat = re.compile(r"\b(" + "|".join(map(re.escape, mods)) + r")\b")
+        m = "(?:" + "|".join(map(re.escape, mods)) + ")"
+        pat = re.compile(rf"import\s+{m}\b|from\s+{m}\s+import|tools/{m}\.py|[\"']{m}[\"']")
         for n in sorted(os.listdir(tdir)):
             if n.startswith("test_") and n.endswith(".py"):
                 try:
