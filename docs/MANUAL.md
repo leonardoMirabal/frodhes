@@ -276,7 +276,7 @@ The page after PERFORM (press **HOME** twice) carries the instrument's name as i
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **TYPE** | The instrument: **STAGE 77** (the classic stage piano), **SUITCASE** (with its own amp and four 12-inch speakers in a closed cabinet: warm lows, a gently rolled-off treble), **EARLY FELT** (early felt hammers: rounder, darker), **BELL DYNO** (a modified, bell-like voicing: glassy), **VIBES**, the vibraphone (see [VIBES](#vibes-the-vibraphone)), or **MARIMBA** (see [MARIMBA](#marimba)). Applies to the next notes. |
+| K1 | **TYPE** | The instrument: **STAGE 77** (the classic stage piano), **SUITCASE** (clean and round, with no bark, through its own amp and four 12-inch speakers in a closed cabinet: warm lows, a rolled-off treble), **EARLY FELT** (early felt hammers: rounder, darker), **BELL DYNO** (a modified, bell-like voicing: glassy), **VIBES**, the vibraphone (see [VIBES](#vibes-the-vibraphone)), or **MARIMBA** (see [MARIMBA](#marimba)). Applies to the next notes. |
 | K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE 1/3's TONE). On VIBES and MARIMBA: **MALLET** |
 | K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE 1/3's BELL). On VIBES: **MOTOR** on / off; on MARIMBA: **TUBE** |
 
@@ -977,7 +977,7 @@ the tail.
 | Preset | What it is |
 | --- | --- |
 | F01 STAGE 77 | The stage piano: a bright tone, the bell full, the bark lower, a trace of hall (the sound Frodhes starts with) |
-| F02 SUITCASE | The suitcase piano: its cabinet, no vibrato, a gentle compressor, a bright tone, a soft hammer, a trace of hall |
+| F02 SUITCASE | The suitcase piano: its cabinet, no vibrato, a gentle compressor, the TONE up for brightness over its round voice, a soft hammer, a trace of hall |
 | F03 EARLY FELT | The early felt-hammer piano: its soft onset, a bright tone, a gentle compressor, a trace of hall |
 | F04 BELL DYNO | The bell voicing as it is, a short plate |
 | F05 WARM 77 | A warm stage piano: a gentle compressor, the tone and the bark a little up, a little hall |

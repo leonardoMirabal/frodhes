@@ -66851,7 +66851,7 @@
     ]
    },
    "SUITCASE": {
-    "bark": 1.35,
+    "bark": 0.8,
     "bell": 0.9,
     "body": [
      [
@@ -66869,14 +66869,14 @@
     ],
     "drive_row": 1,
     "ham": 1.0,
-    "level_db": -3.5,
+    "level_db": -3.2,
     "off": -0.05,
     "rlc": [
      4500.0,
      1.3
     ]
    },
-   "_doc": "Physical voicing per TYPE, relative to the STAGE 77 priors. off: pickup offset change in gap units (+ = toward the pole axis: H2 up, fundamental down, 'bell'; - = off-axis: round, mellow; W6). bark: tip displacement / gap scale (pickup distance: closer = more bark and output, W3); the gain is compensated by 1/bark. ham: hammer contact-rate scale (felt tips 1970-71 are softer: longer contact, fewer high partials; W2/W9). bell: tine overtone (O1/O2) force scale. rlc: pickup inductance x cable/input capacitance resonance [f_hz, q]. body: up to 2 biquads after the load: [kind, f_hz, q, gain_db], kinds hp2 / peak / lshelf / hshelf; the amp and speaker of the instrument (Suitcase: Peterson preamp into four 12-inch speakers, W5/W6: the closed cabinet's 250 Hz box bump and the cones' roll-off, a high shelf -5 dB at 5.5 kHz (0.9.5; before, a 50 Hz high-pass, which the load and the master DC blocker already do); Dyno-My-Piano: active treble-boost preamp). level_db: output trim so the types play at matched loudness (measured A3 v100 + A4 v70, host)."
+   "_doc": "Physical voicing per TYPE, relative to the STAGE 77 priors. off: pickup offset change in gap units (+ = toward the pole axis: H2 up, fundamental down, 'bell'; - = off-axis: round, mellow; W6). bark: tip displacement / gap scale (pickup distance: closer = more bark and output, W3); the gain is compensated by 1/bark. ham: hammer contact-rate scale (felt tips 1970-71 are softer: longer contact, fewer high partials; W2/W9). bell: tine overtone (O1/O2) force scale. rlc: pickup inductance x cable/input capacitance resonance [f_hz, q]. body: up to 2 biquads after the load: [kind, f_hz, q, gain_db], kinds hp2 / peak / lshelf / hshelf; the amp and speaker of the instrument (Suitcase: Peterson preamp into four 12-inch speakers, W5/W6: the closed cabinet's 250 Hz box bump and the cones' roll-off, a high shelf -5 dB at 5.5 kHz (0.9.5; before, a 50 Hz high-pass, which the load and the master DC blocker already do); 0.9.12: the Suitcase's pickups set further from the tines (bark 0.8, was 1.35: a clean, round tone, no bark) and its clean top cut 4 dB deeper (tools/rh_top.py TYPE_D), so it no longer sounds like a STAGE 77 through a speaker (hil_scan types: STAGE 77 - SUITCASE 0.90 -> 1.9 dB; LUFS within 0.3 LU at every velocity); Dyno-My-Piano: active treble-boost preamp). level_db: output trim so the types play at matched loudness (measured A3 v100 + A4 v70, host)."
   },
   "v2_drop": {
    "_doc": "O1: keys whose V2 slot (the tone-bar mode, 0.4-0.8 f0, its tip weight 60 dB or more under V1) is left out: a mode loop fewer per voice. Chosen by tools/rh_nulltest.py (the C engine, each key alone, v100 and v127, re the tables with the mode): every listed key's residual <= -60 dB of the note. Keys 100-108 keep it (-60.8 .. -47 dB at v127: the short top notes leave the slower bar mode audible in the tail). On keys 29-39 rhodes.c's gate (RH_V2_GATE_LO/HI) already stopped it. Keys 40-84 hold the beat partner instead (whirl).",
