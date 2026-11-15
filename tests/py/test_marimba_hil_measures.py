@@ -59,15 +59,19 @@ def test_jack_onsets_from_usb():
     assert np.ptp(d) <= 0.1, np.ptp(d)
 
 
-def test_take_uses_usb_for_the_jack_on_marimba(monkeypatch):
+def test_take_uses_usb_for_the_jack(monkeypatch):
     u, j, sched, keys, want = keys_take(keys=tuple(range(36, 97, 4)))
     ev = [e for s, k in zip(sched, keys) for e in ((s, "on", k, 100), (s + 0.9, "off", k, 0))]
     monkeypatch.setattr(h, "ENGINE", "marimba")
     T = h.Take("t", len(u) / FS, ev, np.stack([u, u], 1), j)
     assert max(abs((b - a) - w) for a, b, w in zip(T.on("usb"), T.on("jack"), want)) <= FS // 1000
-    monkeypatch.setattr(h, "ENGINE", "vibes")                                 # VIBES: align() as before
+    # VIBES too since 2026-11-15: align() alone put a NOISE take's jack onset a few ms off its NOISE 0 take, and the
+    # 0..60 ms contact difference read +4.54 on the jack against USB's +23.25 (T2 0.9.12, key 53); the saved FM-1
+    # takes of 2026-10-18 re-read offline: key 53 / 89 jack +16.69 / +30.22 -> +23.60 / +23.20 (USB +23.05 / +23.47)
+    monkeypatch.setattr(h, "ENGINE", "vibes")
     T2 = h.Take("t", len(u) / FS, ev, np.stack([u, u], 1), j)
-    assert T2.on("jack") == h.align(j, T2.sched)[0]
+    assert max(abs((b - a) - w) for a, b, w in zip(T2.on("usb"), T2.on("jack"), want)) <= FS // 1000
+    assert T2.on("jack") != h.align(j, T2.sched)[0]                          # (align() alone: off, the bug)
 
 
 def test_tuning_window_ends_at_the_hiss():

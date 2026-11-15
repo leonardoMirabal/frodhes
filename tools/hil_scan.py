@@ -1656,7 +1656,7 @@ class Take:
         """the onsets (samples) of the note-ons, in event order"""
         if src not in self._on:
             self._on[src] = align(self.m(src), self.sched)
-            if src == "jack" and self.usb is not None and ENGINE == "marimba":
+            if src == "jack" and self.usb is not None:
                 o = jack_by_usb(self.m("usb"), self.on("usb"), self.jack, self._on["jack"][0])
                 self._on["jack"] = (o, (o[0] / FS - self.sched[0]) if o else 0.0,
                                     [i / FS - s for i, s in zip(o, self.sched)])
@@ -1692,7 +1692,8 @@ class Take:
 
 
 def jack_by_usb(u, ou, j, oj, pre=0.005, post=0.05, search=0.02, min_r=0.5):
-    """the jack's onsets from USB's, recorded at once (the MARIMBA suites): each USB strike (pre .. post s around its
+    """the jack's onsets from USB's, recorded at once (the MARIMBA suites; VIBES too since 2026-11-15: vibes_decay's
+    NOISE contact read the jack +4.54 dB against USB's +23.25 on a jack onset a few ms off): each USB strike (pre .. post s around its
     onset; USB is exact zero before an isolated strike, so its onset is exact) found in the jack by cross-correlation
     within +-search s of align()'s jack onset (normalised |r| >= min_r, else align's stays). align() alone put the
     jack's onsets 2-15 ms late (the hiss under the 6 dB / 1 ms rise; the low notes' slow attack): the FM-1's keys
