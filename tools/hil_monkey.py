@@ -508,6 +508,8 @@ def main(argv=None):
     if a.dry_run:
         return dry_run(a)
     import sounddevice as sd
+    import lock
+    lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
     import hil_must as hm
     dev = hm.Dev()
     usb = hm.find_usb(sd)

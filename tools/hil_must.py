@@ -569,6 +569,8 @@ class Rec:
     def __init__(self, dev, sr, channels, keep, secs, blocksize=128, switch_rate=False, sd=None):
         if sd is None:
             import sounddevice as sd
+            import lock
+            lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         self.sr, self.keep = int(sr), list(keep)
         self.buf = np.zeros((int(secs * sr), len(self.keep)), np.float32)
         self.w, self.adc0, self.flags, self.closed = 0, None, 0, False
@@ -678,6 +680,8 @@ class Must:
         pass fakes; the defaults are sounddevice, the MIDI ports, fm1_install.py"""
         if sd is None:
             import sounddevice as sd
+            import lock
+            lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         self.a, self.sd, self.rep = a, sd, Report()
         self.dev_factory, self.installer, self.info = dev_factory, installer or run_install, info or fm1_info
         self.live, self.not_new, self.stranded = [], False, None

@@ -132,6 +132,8 @@ class MoveJack(hj.Jack):
 
     def __init__(self, rig, devname="M6", ch=5, usb_ch="left"):
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         devs = [d for d in sd.query_devices() if d["name"] == devname]
         if not devs or devs[0]["max_input_channels"] < ch:
             raise SystemExit("no audio input %s with an input %d (have: %s)" % (devname, ch, ", ".join(

@@ -1484,6 +1484,8 @@ class Device:
 
     def __init__(self, rate, jack, jack_dev, jack_ch, blocksize=0, poll=True, mdev=None):
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         import hil_must
         self.hm, self.sd, self.poll = hil_must, sd, poll
         self.mdev = mdev or hil_must.Dev()                   # (the MIDI ports before any stream; T1 passes its own)

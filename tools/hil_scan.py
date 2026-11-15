@@ -490,6 +490,8 @@ class Rig(RigBase):
     def __init__(self):
         import mido
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         self.sd = sd
         names = fm1_ports.pick(mido.get_output_names())
         if not names:

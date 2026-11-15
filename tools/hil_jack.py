@@ -41,6 +41,8 @@ class Jack:
     def __init__(self, devname, ch, rig=None):
         """rig: the device's own rig (tools/move_jack.py: the Move's move_hil.UsbRig), else the FM-1's (hil_scan.Rig)"""
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         self.sd = sd
         self.r = hs.Rig() if rig is None else rig
         self.jdev = [i for i, d in enumerate(sd.query_devices()) if d["name"] == devname][0]
