@@ -732,7 +732,8 @@ def det_step(x, fs, ons, offs, lag=0.0, widen=0.0, step_db=12.0, win_ms=1000 * S
     there, with ref (a function (t_before, t_after, win) -> the jack's two levels in dB at those USB times, or None),
     a step the jack has too (same sign, within STEP_AGREE dB, over STEP_JACK_FLOOR) is the music's own and goes to
     own [(frame, detail)]; a USB-path step (a lost or repeated block, the ring) is on USB alone and stays an event.
-    agree (the jack's steps: a function like ref, the jack's times -> USB's two levels): a jack step USB has at the
+    agree (the jack's steps: a function like ref, the jack's times -> USB's left channel's two levels, the one the
+    jack carries): a jack step USB has at the
     same moment (same sign, within STEP_AGREE dB, its louder window over STEP_JACK_FLOOR) is the music's own and goes
     to own, anywhere in the take (rc3 rhodes-worst1, 2026-11-09: the jack +15 dB at 2.780 s, USB +13 dB there, a delay
     echo under the tremolo; USB's own detector judges that step on USB); a jack-path step (the codec, the DAC, the
@@ -1066,13 +1067,17 @@ def analyse(usb, jack, fs_usb, events, lag_usb=0.0, lag_jack=None, widen=0.0, cc
                 k = int(tu * fs_usb)
                 res["jack"].append((i / FS_JACK, "click-lim" if 0 <= k < len(lim) and lim[k] else "click", d))
         def uref(tb, ti, ws):                                # (the jack's times -> USB's clock -> its 20 ms levels)
+            # (USB's LEFT channel, the one the jack carries: a stereo modulation can step the left more than the
+            # pair's mean; the 0.9.12 a11d crackle, marimba-worst1 0.680 s: the jack +18 dB, USB's left +15, the
+            # pair's mean under the 4 dB agreement; the mirror of det_step's first-period rule, 2026-11-15)
             out = []
             for tjk in (tb, ti):
                 a = int(round(float(map_clock((tjk - cj[0]) / (1.0 + cj[1]), cu)) * fs_usb))
                 n = int(round(ws * fs_usb))
                 if a < 0 or a + n > len(q):
                     return None
-                out.append(10 * np.log10((q[a:a + n].astype(float) ** 2).mean() + 1e-3) - 20 * np.log10(32767))
+                ql = q[a:a + n, 0] if q.ndim == 2 else q[a:a + n]
+                out.append(10 * np.log10((ql.astype(float) ** 2).mean() + 1e-3) - 20 * np.log10(32767))
             return out
         usb_steps = res["info"]["step_usb_too"] = []
         add("jack", FS_JACK, "step", lambda: det_step(jack, FS_JACK, gjt, offj, 0.0, widen, periods=per,

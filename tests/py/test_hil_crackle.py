@@ -197,6 +197,31 @@ def test_step_in_a_first_period_the_right_channel_more():
     r2 = C.analyse(q, j2, fs, ev, ccs=ccs, only=("step",), clock_jack=cj)
     assert any(k == "step" and abs(p - 0.47) < 0.03 for p, k, _ in r2["usb"]), (r2["usb"], r2["info"])
 
+
+def test_jack_step_held_against_usbs_left_channel():
+    """the mirror (the 0.9.12 a11d crackle, marimba-worst1 0.680 s): the jack (USB's left channel) +18 dB, USB's left
+    +15, its right far less, the pair's mean outside the 4 dB agreement: the jack's step, the music's own, was an
+    event. Modelled: the left dips 16 dB 0.43 .. 0.47 s, the right (louder) 3 dB; the jack = the left. Now it is
+    USB's too (step_usb_too); the jack with the dip and USB without it (a jack-path step) stays an event"""
+    fs = 44100
+    ccs = C.engine_ccs("marimba", C.HEAVY)
+    t = np.arange(int(2 * fs)) / fs
+    dip = (t >= 0.43) & (t < 0.47)
+    s_ = np.where(t >= 0.4, 2000 * np.sin(2 * np.pi * 220 * t), 0.0)
+    L = s_ * np.where(dip, 10 ** (-16 / 20), 1.0)
+    R = 2.0 * s_ * np.where(dip, 10 ** (-3 / 20), 1.0)
+    g = np.random.default_rng(6)
+    q = np.round(np.stack([L + g.normal(0, 2, len(t)), R + g.normal(0, 2, len(t))], 1))
+    ev = [(0.4, "on", 45, 100)]
+    cj = (C.JACK_DELAY, -C.JACK_DRIFT)
+    j = C.sim_jack(np.stack([q[:, 0], q[:, 0]], 1))
+    r = C.analyse(q, j, fs, ev, ccs=ccs, only=("step",), clock_jack=cj)
+    assert not [e for e in r["jack"] if e[1] == "step"], r["jack"]        # (the old code: a jack step at 0.47 s)
+    assert len(r["info"]["step_usb_too"]) == 1, r["info"]
+    q2 = np.round(np.stack([s_ + g.normal(0, 2, len(t)), 2.0 * s_ + g.normal(0, 2, len(t))], 1))
+    r2 = C.analyse(q2, j, fs, ev, ccs=ccs, only=("step",), clock_jack=cj)
+    assert any(k == "step" and abs(p - 0.47) < 0.03 for p, k, _ in r2["jack"]), (r2["jack"], r2["info"])
+
 def test_stale_ignores_a_steady_tone():
     """a lone low note whose period is a whole number of frames matches its period before exactly for a few dozen
     frames: no stale; a 32-frame chunk played twice in it is one"""
