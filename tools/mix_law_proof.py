@@ -14,7 +14,15 @@ laws: the effects off), in the candidate and in the last release: where both rea
 masked at the int16 grain; the new law passes the dry whole, untouched. Any other cell is a defect.
 
   tools/mix_law_proof.py [PRESET ...] [--out tests/mix_law_proof.json] [--entries FILE]
-  (default presets: DREAM RESO_SWEEP; --entries writes the exact-cell expected-changes entries for the proven cells)"""
+  (default presets: DREAM RESO_SWEEP; --entries writes the exact-cell expected-changes entries for the proven cells)
+
+A cell neither rule explains may still be proven outside the MIX law, by the proof its own exact expected-changes entry
+names (level_proven below; 2026-11-15, the RESO_SWEEP soft-note `inh` cells, which moved with RESPONSE FULL's curve D
+before the MIX law's record was taken): the level proof (tests/level_proof.json lists the cell proven, its verdict
+PASS), or the two-core reverb-level proof chained to it (tests/rev_level_proof.json's `chained` record: the entry's
+`chain` is the level proof, its `chain_value` a number, the old-level build read that value within CHAIN_TOL, both
+records PASS). The records are the ones tests/py/test_level_proof.py and test_rev_level_proof.py re-measure on every
+make pytest; this tool reads them, it proves nothing new. A broken chain or a missing anchor leaves the cell unproven."""
 import argparse
 import json
 import math
@@ -28,6 +36,44 @@ import release_diff as rd  # noqa: E402
 
 ROOT = rd.ROOT
 CC_DLY, CC_RV = 89, 91
+LEVEL_PROOF, REV_PROOF = "tests/level_proof.json", "tests/rev_level_proof.json"
+CHAIN_TOL = 0.1                    # tools/rev_level_proof.py's (the old-level build reads the chain's value again)
+
+
+def record(rel):
+    """a proof's committed record, or None"""
+    try:
+        return json.load(open(os.path.join(ROOT, rel)))
+    except (OSError, ValueError):
+        return None
+
+
+def level_proven(cell, metric, move, expected, lp, rp):
+    """the proof outside the MIX law of one ceiling cell ("<case id>/<label>"), or None: an exact entry for the cell and
+    metric, the move inside its min / max, naming the level proof (lp lists the cell proven) or the reverb-level proof
+    chained to the level proof (rp's chained record, its anchor and value intact); lp / rp: the records (record())"""
+    ok_lp = isinstance(lp, dict) and lp.get("verdict") == "PASS"
+    ok_rp = isinstance(rp, dict) and rp.get("verdict") == "PASS"
+    var = cell.split("/")[3] if cell.count("/") >= 4 else ""
+    for e in expected:
+        if str(e.get("match", "")).replace("[AB]", var) != cell or str(e.get("metric", "")) != metric:
+            continue
+        lo, hi = e.get("min"), e.get("max")
+        if (lo is not None and move < lo) or (hi is not None and move > hi):
+            continue
+        if e.get("ceiling_proof") == LEVEL_PROOF and ok_lp:
+            for r in lp.get("rows", []):
+                if r.get("cell") == cell and r.get("metric") == metric and r.get("proven"):
+                    return f"level proof ({r['proven']})"
+        cv = e.get("chain_value")
+        if e.get("ceiling_proof") == REV_PROOF and e.get("chain") == LEVEL_PROOF and ok_rp and ok_lp \
+                and isinstance(cv, (int, float)) and not isinstance(cv, bool):
+            for r in rp.get("chained", []):
+                if r.get("cell") == cell and r.get("metric") == metric and r.get("chain") == LEVEL_PROOF \
+                        and r.get("chain_value") == cv and r.get("proven") and isinstance(r.get("old_level"), float) \
+                        and abs(r["old_level"] - cv) <= CHAIN_TOL:
+                    return f"reverb-level proof chained to the level proof at {cv}"
+    return None
 
 
 def preset_params(name):
@@ -110,6 +156,7 @@ def main():
         r2 = pool.map(_job, [(b[byc[cid][1]], (cid, byc[cid][1], byc[cid][2] + off, byc[cid][3], byc[cid][4]), tmp + t)
                              for cid in left for b, t in ((bins, "-off"), (lbins, "-lastoff"))], chunksize=1)
     offc = {cid: (r2[2 * i][1], r2[2 * i + 1][1]) for i, cid in enumerate(left)}
+    expected, lp, rp = rd.load_expected(rd.EXPECTED), record(LEVEL_PROOF), record(REV_PROOF)
     cells, bad = [], 0
     for cid in sorted(own):
         for lab, ms in own[cid].items():
@@ -130,13 +177,19 @@ def main():
                     row.update({"effects_off_cand": co, "effects_off_last": lo})
                     if isinstance(co, float) and isinstance(lo, float) and abs(co - v) <= 0.3 and abs(lo - v) <= 0.3:
                         ok, row["proven"] = True, "engine's own harmonic (delay / reverb MIX 0, both releases)"
+                if not ok:
+                    lv = level_proven(f"{cid}/{lab}", m, round(v - b, 2), expected, lp, rp)
+                    if lv:
+                        ok, row["proven"] = True, lv
                 row.setdefault("proven", False)
                 bad += not ok
                 cells.append(row)
     doc = {"tool": "tools/mix_law_proof.py", "law": "0.9.13 E2 MIX law (fx.c DLY_DRY / RV_SEND / RV_DRY)",
            "verdict": "PASS" if not bad else "FAIL", "broken": len(cells), "unproven": bad, "cells": cells}
+    doc["outside_the_law"] = sum(1 for c in cells if str(c["proven"]).startswith(("level proof", "reverb-level proof")))
     json.dump(doc, open(os.path.join(ROOT, a.out), "w"), indent=1)
-    print(f"mix law proof: {len(cells)} ceiling cells, {bad} not explained by the balance -> {a.out}: {doc['verdict']}")
+    print(f"mix law proof: {len(cells)} ceiling cells, {doc['outside_the_law']} proven outside the MIX law (level proof), "
+          f"{bad} unproven -> {a.out}: {doc['verdict']}")
     if a.entries:
         import yaml
         ent = [{"match": c["cell"], "metric": c["metric"], "min": math.floor((c["cand"] - c["last"] - 0.3) * 10) / 10,
@@ -144,7 +197,8 @@ def main():
                 "reason": ("E2 MIX law: the preset's wet / dry balance (under the ceiling at the last release's ratio, MIX "
                            f"{c['equivalent_mix']}), not distortion" if c["proven"] == "balance" else
                            "E2 MIX law: the engine's own harmonic, as with the delay / reverb off in both releases (the "
-                           "last release's truncated delay dry gain masked it at the int16 grain)")} for c in cells if c["proven"]]
+                           "last release's truncated delay dry gain masked it at the int16 grain)")} for c in cells
+               if c["proven"] and not str(c["proven"]).startswith(("level proof", "reverb-level proof"))]
         yaml.safe_dump(ent, open(a.entries, "w"), sort_keys=False, width=200)
     return 0 if not bad else 1
 
