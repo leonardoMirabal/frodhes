@@ -21,11 +21,12 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
  3 host          make test, make pytest, tools/gate_r.py, ./build.sh --c1 --release X.Y.Z (its sha256); with move/ in the
                  tree also the Move's MT0 (tools/ci_move.sh) and its package, make move MOVE_VER=X.Y.Z (reproducible:
                  build/frodhes-X.Y.Z-move.tar.gz, its sha256)
-                 A passed step 3 is recorded (clean tree only) in build/release-step3/<X.Y.Z>-<HEAD>.json of the main
-                 checkout; a later run of the same version on the same HEAD with a clean tree (the real run after
-                 the dry run) reuses its tests and only rebuilds, and the builds' sha256 must equal the record's
-                 (--no-step3-cache: run everything). On a descendant whose diff is only tools/*.py and
-                 tests/py/test_*.py (not tools/build.py), it runs just the tests of those files, then rebuilds
+                 Each test command that passes is recorded (clean tree only) in build/release-step3/<X.Y.Z>-<HEAD>.json
+                 of the main checkout, with the builds' sha256 once step 3 is complete; a later run of the version on
+                 that HEAD with a clean tree (the real run after the dry run) runs only what did not pass yet, then
+                 the builds, whose sha256 must equal the record's (--no-step3-cache: run everything). On a descendant
+                 whose diff is only tools/*.py, tests/py/test_*.py (not tools/build.py, not conftest) and the Gate R
+                 baseline, it also runs the tests of those files, and Gate R + ci_move when the baseline changed
  4 FM-1          (--no-device skips it and lists its commands) the tiers this release needs, from
                  `git diff <previous tag>..HEAD` through tools/test_map.py (printed with the reason): T1 on every
                  release, T2 when an engine / the DSP changed (or --full). The device lock, install, then
@@ -146,7 +147,15 @@ class Handoff(Exception):
     """step 7 without --after-merge: the release commit is ready, the PR is the user's (nothing pushed)"""
 
 
-STEP3_LIGHT = r"(tools/(?!build\.py$)[A-Za-z0-9_]+\.py|tests/py/test_[A-Za-z0-9_]+\.py)"   # (not conftest, not the build)
+GATE_R_BASE = "tests/baselines/renders.sha256"   # Gate R's baseline (also Gate M's reference, in ci_move.sh)
+STEP3_LIGHT = (r"(tools/(?!build\.py$)[A-Za-z0-9_]+\.py|tests/py/test_[A-Za-z0-9_]+\.py|"
+               + re.escape(GATE_R_BASE) + ")")         # (not conftest, not the build, no other baseline)
+
+
+def step3_cmds():
+    """step 3's tests, by the name its record keeps (the build runs every time)"""
+    return [("make test", ["make", "test"]), ("make pytest", ["make", "pytest", "PY=" + PY]),
+            ("gate_r", [PY, "tools/gate_r.py"]), ("ci_move", ["env", "PY=" + PY, "sh", "tools/ci_move.sh"])]
 
 
 def step3_tests(changed):
@@ -295,6 +304,7 @@ class Release:
         self.move_recorded = None   # --after-merge: the Move package sha256 the release commit records
         self.move_line = ""
         self.clean = False          # step 2: no tracked changes (step 3's record is kept and reused only then)
+        self.s3_passed, self.s3_tests = [], []   # step 3: the commands passed on this HEAD (its record)
 
     def log(self, msg):
         print("   " + msg.replace("\n", "\n   "), flush=True)
@@ -422,55 +432,59 @@ class Release:
                                f"({self.move_recorded}): not the tarball that was tested")
                 ev.append(f"make move: sha256 {self.move_sha} = the release commit's (tested on the Move)")
             return "\n".join(ev)
-        cache = self.step3_load()
-        tests = [] if cache else [["make", "test"], ["make", "pytest", "PY=" + PY], [PY, "tools/gate_r.py"]]
+        cache = self.step3_load()           # what already passed: on this HEAD, or on a light ancestor (step3_load)
+        passed = list(cache["passed"]) if cache else []
+        self.s3_passed, self.s3_tests = list(passed), list(cache["tests"]) if cache else []
         if cache:
-            on = (f"this HEAD {self.head[:10]}" if not cache.get("rerun") else
-                  f"{cache['head'][:10]}, an ancestor of this HEAD {self.head[:10]} that differs only in tools / tests "
-                  f"({', '.join(cache['changed'])})")
-            ev.append(f"the host tests: reused, not run again: they passed on {on} with a clean tree at "
-                      f"{cache['when']} ({cache['file']}; --no-step3-cache runs them):\n  " + "\n  ".join(cache["tests"]))
-            if cache.get("rerun"):          # the tests of what changed since, run here
-                tests = [[PY, "-m", "pytest", "-q", "-p", "no:cacheprovider", *cache["rerun"]]]
-        for cmd in tests + [["./build.sh", "--c1", "--release", self.ver]]:
+            on = (f"this HEAD {self.head[:10]}" if not cache.get("changed") else
+                  f"{cache['head'][:10]}, an ancestor of this HEAD {self.head[:10]} that differs only in "
+                  f"{', '.join(cache['changed'])}")
+            ev.append(f"step 3's record {cache['file']} (--no-step3-cache runs everything): passed on {on} with a clean "
+                      f"tree: {', '.join(passed) or 'nothing'}" + ("".join("\n  " + t for t in cache["tests"])))
+        tests = [(n, c) for n, c in step3_cmds() if n not in passed and n != "ci_move"]
+        if cache and cache.get("rerun"):    # the tests of what changed since the ancestor's run
+            tests = [("pytest-changed", [PY, "-m", "pytest", "-q", "-p", "no:cacheprovider", *cache["rerun"]])] + tests
+        for name, cmd in tests + [("build", ["./build.sh", "--c1", "--release", self.ver])]:
             t0 = time.time()
             _, o = sh(cmd, timeout=3600)
             last = [l for l in o.strip().splitlines() if l.strip()][-1:] or [""]
-            ev.append(f"{' '.join(cmd)}: exit 0 in {time.time() - t0:.0f} s ({last[0][:100]})")
+            line = f"{' '.join(cmd)}: exit 0 in {time.time() - t0:.0f} s ({last[0][:100]})"
+            ev.append(line)
+            if name != "build":
+                self.step3_pass(name, f"on {self.head[:10]}: {line}")
         fw = os.path.join(ROOT, "build", f"frodhes-{self.ver}-c1.fwsc")   # release.yml publishes it as frodhes.fwsc
         if not os.path.exists(fw):
             raise Stop(f"{fw} was not built")
         self.sha = sha256(fw)
         ev.append(f"build/frodhes-{self.ver}-c1.fwsc {os.path.getsize(fw)} B sha256 {self.sha}")
         if self.has_move():
-            if not cache:
+            if "ci_move" not in passed:
                 t0 = time.time()
                 _, o = sh(["env", "PY=" + PY, "sh", "tools/ci_move.sh"], timeout=3600)
-                ev.append(f"tools/ci_move.sh (the Move's MT0): exit 0 in {time.time() - t0:.0f} s ({tail(o, 1)[:100]})")
+                line = f"tools/ci_move.sh (the Move's MT0): exit 0 in {time.time() - t0:.0f} s ({tail(o, 1)[:100]})"
+                ev.append(line)
+                self.step3_pass("ci_move", f"on {self.head[:10]}: {line}")
             ev.append(self.move_build())
         else:
             ev.append("the Move: no move/ in this tree (no Move package)")
-        if cache:                           # the builds always run (minutes): they must be the recorded ones
+        if cache and cache.get("sha256"):   # the builds always run (minutes): they must be the recorded ones
             if (cache.get("sha256"), cache.get("move_sha256")) != (self.sha, self.move_sha):
                 raise Stop(f"step 3's record {cache['file']} has the builds {cache.get('sha256')} / "
                            f"{cache.get('move_sha256')}, this run built {self.sha} / {self.move_sha}: not reproducible, "
                            f"re-run with --no-step3-cache")
             ev.append("the builds' sha256 = the recorded run's")
-            if cache.get("rerun"):          # this HEAD's own record, for a later run on it
-                self.step3_save(cache["tests"] + [f"on {self.head[:10]}: pytest {' '.join(cache['rerun'])} (the "
-                                                  f"tools / tests changed since {cache['head'][:10]})"])
-        else:
-            self.step3_save([e for e in ev if not e.startswith("./build.sh") and not e.startswith("build/")
-                             and not e.startswith("make move")])
+        self.step3_save(complete=True)
         return "\n".join(ev)
 
     def step3_file(self):
         return os.path.join(step3_cache_dir(), f"{self.ver}-{self.head}.json")
 
     def step3_load(self):
-        """a passed step 3 of this version with a clean tree, or None (then every test runs): on this HEAD, or on an
-        ancestor of it from which only tools/*.py and tests/py/*.py changed (STEP3_LIGHT); then rec["rerun"] lists
-        the test files of those changes (the changed tests, and every test that names a changed tool)"""
+        """step 3's record for this version with a clean tree, or None (then every command runs): this HEAD's, or an
+        ancestor's from which only light files changed (STEP3_LIGHT: tools/*.py, tests/py/test_*.py, the Gate R
+        baseline); then rec["rerun"] lists the test files of those changes (step3_tests) and a changed Gate R baseline
+        takes gate_r and ci_move (Gate M reads it too) out of rec["passed"]. A record lists the commands that passed (make test, make pytest, gate_r,
+        ci_move: a run that stopped half way keeps what passed) and, once complete, the builds' sha256"""
         if self.a.no_step3_cache or not self.clean or not self.head:
             return None
         recs = []
@@ -488,10 +502,12 @@ class Release:
                 continue
             if rec.get("version") == self.ver and rec.get("clean") and rec.get("head"):
                 rec["file"] = os.path.join(d, n)
+                rec.setdefault("passed", [c for c, _ in step3_cmds()] if rec.get("sha256") else [])
                 recs.append(rec)
         for rec in recs:
             if rec["head"] == self.head:
                 return rec
+        best = None
         for rec in recs:
             if sh(["git", "merge-base", "--is-ancestor", rec["head"], self.head], check=False, quiet=True)[0]:
                 continue
@@ -500,19 +516,29 @@ class Release:
             if code or not changed or not all(re.fullmatch(STEP3_LIGHT, f) for f in changed):
                 continue
             rec["changed"], rec["rerun"] = changed, step3_tests(changed)
-            if not rec["rerun"]:
-                continue
-            return rec
-        return None
+            if GATE_R_BASE in changed:          # Gate R and Gate M (ci_move.sh) read it
+                rec["passed"] = [c for c in rec["passed"] if c not in ("gate_r", "ci_move")]
+            if best is None or len(rec["passed"]) > len(best["passed"]):
+                best = rec
+        return best
 
-    def step3_save(self, tests):
-        """record a passed step 3 (clean tree only), for the next run on the same HEAD (the real run after the dry run)"""
+    def step3_pass(self, name, line):
+        """one more command passed on this HEAD: kept at once (a later failure keeps what passed)"""
+        if name != "pytest-changed" and name not in self.s3_passed:
+            self.s3_passed.append(name)
+        self.s3_tests.append(line)
+        self.step3_save(complete=False)
+
+    def step3_save(self, complete):
+        """this HEAD's record (clean tree only): what passed, and the builds' sha256 once step 3 is complete"""
         if not self.clean or not self.head:
             return
         d = step3_cache_dir()
         os.makedirs(d, exist_ok=True)
         rec = {"version": self.ver, "head": self.head, "clean": True, "when": time.strftime("%Y-%m-%d %H:%M"),
-               "sha256": self.sha, "move_sha256": self.move_sha, "tests": tests}
+               "passed": self.s3_passed, "tests": self.s3_tests}
+        if complete:
+            rec.update(sha256=self.sha, move_sha256=self.move_sha)
         with open(self.step3_file(), "w") as fh:
             json.dump(rec, fh, indent=1)
 

@@ -787,7 +787,7 @@ def test_step3_is_reused_on_the_same_head(tree, monkeypatch, capsys):
     assert "make test" in calls and (tree / "build" / "release-step3" / "0.9.3-abcdef1234567890.json").exists()
     calls, o = run()
     assert "make test" not in calls and "./build.sh --c1 --release 0.9.3" in calls, calls
-    assert "the host tests: reused" in o and "the builds' sha256 = the recorded run's" in o
+    assert "step 3's record" in o and "the builds' sha256 = the recorded run's" in o
     for extra, head, dirty in ((["--no-step3-cache"], "abcdef1234567890", ""), ((), "1234567890abcdef", ""),
                                ((), "abcdef1234567890", " M tools/x.py\n")):
         calls, o = run(extra, head, dirty)
@@ -858,3 +858,41 @@ def test_step3_is_reused_on_a_tools_only_descendant(tree, monkeypatch, capsys):
                             ("eeee000000000000", "tools/move_hil.py\n", False)):
         calls, o = run(head, diff, anc)
         assert "make test" in calls, (head, diff)
+
+
+def test_step3_keeps_what_passed_and_a_gate_r_baseline_reruns_gate_r(tree, monkeypatch, capsys):
+    """a step 3 that stops at Gate R keeps make test and make pytest; a descendant that only re-saves the Gate R
+    baseline runs Gate R (and nothing it already passed), then the builds"""
+    cdir = tree / "build" / "release-step3"
+    monkeypatch.setattr(rel, "step3_cache_dir", lambda: str(cdir))
+
+    def run(head, diff="", gate_r_fails=False):
+        calls = []
+        base = fake_shell(str(tree), calls)
+
+        def sh(cmd, check=True, input=None, timeout=None, quiet=False):
+            s = cmd if isinstance(cmd, str) else " ".join(cmd)
+            calls.append(s)
+            if s == "git rev-parse HEAD":
+                return 0, head + "\n"
+            if s.startswith("git merge-base --is-ancestor"):
+                return 0, ""
+            if s.startswith("git diff --name-only aaaa"):
+                return 0, diff
+            if s.endswith("tools/gate_r.py") and gate_r_fails:
+                raise rel.Stop("Gate R: 7 of 130 renders differ")
+            return base(cmd, check=check, input=input, timeout=timeout, quiet=quiet)
+        monkeypatch.setattr(rel, "sh", sh)
+        rel.main(["patch", "--dry-run", "--no-device", "--no-emulator"])
+        return calls, capsys.readouterr().out
+
+    calls, o = run("aaaa000000000000", gate_r_fails=True)
+    rec = json.loads((cdir / "0.9.3-aaaa000000000000.json").read_text())
+    assert rec["passed"] == ["make test", "make pytest"] and "sha256" not in rec, rec
+    calls, o = run("bbbb000000000000", rel.GATE_R_BASE + "\n")
+    assert "make test" not in calls and "make pytest PY=" + rel.PY not in calls, calls
+    assert any(c.endswith("tools/gate_r.py") for c in calls) and "./build.sh --c1 --release 0.9.3" in calls, calls
+    rec = json.loads((cdir / "0.9.3-bbbb000000000000.json").read_text())
+    assert rec["passed"] == ["make test", "make pytest", "gate_r"] and rec["sha256"], rec
+    calls, o = run("aaaa000000000000")                  # the same HEAD again: Gate R still to run there
+    assert "make test" not in calls and any(c.endswith("tools/gate_r.py") for c in calls), calls
