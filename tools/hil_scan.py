@@ -4215,6 +4215,41 @@ def m_drop_rate(x, t_off, db=30.0, win=0.005, hop=0.001, fit=False):
     return float(db / max(t[above[-1]] - t_off, hop))
 
 
+def m_stop_slope(x, t_off, fl=None, db=20.0, start=3.0, over=10.0, smooth=0.001):
+    """the slope (dB/s) of a stop's first db dB, onset-aligned: the note's envelope (the analytic signal's power,
+    smoothed over 1 ms: no window that a low note's period or a 5 ms RMS smears) falls start dB under its level over
+    the 20 ms before the key-up t_off (s), then the least-squares slope over the next db dB. The key-up's place on the
+    damper's 32-frame grid and the damper's own delay move when the stop starts, not its slope, and the depth stays
+    over the source's floor (fl: its pre-roll; the jack's hiss): db is cut to the level before the key-up minus
+    start minus the floor minus over, at least 6 dB. m_drop_rate, the time from the key-up to a 30 dB drop, read every
+    fast stop on the jack at ~700 dB/s (its 5 ms window and the hiss at the drop's end: the 0.9.12 two-core T2, pedal up
+    and half both 702, USB 845 / 759)"""
+    from scipy.signal import hilbert
+    x = np.asarray(x, float)
+    i0 = int(t_off * FS)
+    a = max(0, i0 - FS // 50)
+    seg = x[a:]
+    w = max(1, int(smooth * FS))
+    p = np.convolve(np.abs(hilbert(seg)) ** 2, np.ones(w) / w, "same")
+    e = 10 * np.log10(p + 1e-30)
+    k0 = i0 - a
+    ref = 10 * np.log10(np.mean(p[max(0, k0 - FS // 50):k0]) + 1e-30)
+    if fl is not None and len(fl) >= FS // 10 and np.any(fl):
+        db = max(6.0, min(db, ref - start - rdb(fl) - over))
+    b = np.flatnonzero(e[k0:] < ref - start)
+    if not len(b):
+        return float("nan")
+    b0 = k0 + int(b[0])
+    c = np.flatnonzero(e[b0:] < ref - start - db)
+    if not len(c):
+        return float("nan")
+    b1 = b0 + int(c[0])
+    if b1 - b0 < 4:
+        return float(db / max((b1 - b0) / FS, 1 / FS))
+    t = np.arange(b0, b1 + 1) / FS
+    return float(-np.polyfit(t, e[b0:b1 + 1], 1)[0])
+
+
 def m_audible_s(m, i, fl, t0=0.05, t1=0.6, over=20.0, lo=0.15):
     """the end (s after onset i) of a pitch window t0..t1 that stays over the source's floor (fl: its pre-roll): the
     first 10 ms frame from t0 under the floor + over dB, at least lo. USB has no floor (exact zero): t1. On the jack
@@ -4315,19 +4350,11 @@ def marimba_voice(V, S):
                 fmt=lambda v: f"{v[0]:.2f} -> {v[1]:.2f} s")
 
 
-PEDAL_JACK_CEIL = 30.0             # dB/s: the jack's decay ceiling margin (THRESHOLD in pedal_order_ok)
-
-
 def pedal_order_ok(v):
-    """marimba_decay's pedal row: v = [up, half, down, ceiling] dB/s; ceiling: the jack's own MUTE 127 reading of the
-    same key (USB: 1e9, none). down < half < up and up / down >= 3x, except that on the jack half vs up is not judged when
-    up reads within PEDAL_JACK_CEIL of that ceiling: the jack's hiss caps the fastest decay it can read (~700-720
-    dB/s; the same setting reads 779-923 on USB by where the key-up falls on the damper's 32-frame grid), so up and
-    half both read the cap (the 0.9.12 two-core T2: jack 702 / 702 / 46, USB 845 / 759 / 46). USB is judged in full.
-    THRESHOLD (coordinator 2026-11-14): the jack's order judged only when its up < its MUTE 127 - 30 dB/s"""
-    up, half, down, ceil = v
-    order = half < up or up >= ceil - PEDAL_JACK_CEIL
-    return down < half and order and up / down >= 3.0
+    """marimba_decay's pedal row: v = [up, half, down] dB/s (m_stop_slope), on USB and the jack alike: down < half < up
+    and up / down >= 3x"""
+    up, half, down = v
+    return down < half < up and up / down >= 3.0
 
 
 @vtest
@@ -4376,9 +4403,10 @@ def marimba_decay(V, S):
                 fmt=lambda v: f"{v[0]:.0f} / {v[1]:.0f} / {v[2]:.0f} dB/s")
         S.check("pedal down holds at MUTE 127", f"key {n}", S.per(lambda q: r(("ped", 127), q, True) / r("held", q, True)),
                 lambda v: abs(v - 1) <= 0.01, "within 1 % of the held decay (the envelope's slope)", fmt=lambda v: f"x{v:.3f}")
-        S.check("pedal up / half / down (MUTE 127)", f"key {n}",
-                S.per(lambda q: [r(("ped", p_), q) for p_ in (0, 50, 127)] + [r(127, q) if q == "jack" else 1e9]),
-                pedal_order_ok, "down < half < up, up / down >= 3x (the jack's half vs up: under its ceiling only)",
+        S.check("pedal up / half / down (MUTE 127)", f"key {n}, the stop's first 20 dB (m_stop_slope)",
+                S.per(lambda q: [m_stop_slope(cut(T[("ped", p_)].m(q), T[("ped", p_)].on(q)[k], 0, 2.3), holds[k],
+                                              T[("ped", p_)].pre(q)) for p_ in (0, 50, 127)]),
+                pedal_order_ok, "down < half < up, up / down >= 3x",
                 fmt=lambda v: f"{v[0]:.0f} / {v[1]:.0f} / {v[2]:.0f} dB/s")
     # NOISE: the contact (0..60 ms) and, with no damper, nothing at the key-up
     ev, dur = strikes((48, 60, 84), (100,), gap=3.0, hold=1.5)

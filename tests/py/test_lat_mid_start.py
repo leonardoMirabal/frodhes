@@ -16,10 +16,18 @@ or open after a CC 10 as a suite's reset leaves it), DRY, NOISE 0 on the bar eng
 whose sequence moves with every start's frame: the engine is deterministic apart from it). Each note's largest sample
 difference, the two takes aligned on their onsets (+-4 frames), from 64 frames before the onset to 60 ms after.
 THRESHOLD (measured residue, fixed code, seeds 1-6): Rhodes <= 2 LSB (0-1: the dither); MARIMBA <= 16 LSB (0-11: the
-bar engine's per-block work seen from a start 128 frames into the block). The pre-fix code fails both: Rhodes up to
-1029 LSB, MARIMBA up to 798. VIBES is not judged: its motor (on by itself at the TYPE change, params.c) runs on the
-interrupt grid under FR_LAT and the discs' phase at the note differs (the coordinator's decision 2026-11-14: timing,
-not a defect)."""
+bar engine's per-block work seen from a start 128 frames into the block); VIBES with its motor off <= 16 LSB (0-8, the
+same). The pre-fix code fails both: Rhodes up to 1029 LSB, MARIMBA up to 798.
+
+VIBES with its motor on is not judged, and not for the motor's controls: the main loop's writes (CCs 47-51, the TYPE
+change's motor on, CC 10's motor phase reset) already land between blocks under FR_LAT (frodhes.c lat_mid,
+midi_get_h), so the motor runs on the 256-frame block grid in both builds (measured 2026-11-15, seeds 1-6, no CC 10
+between the notes: every note that starts at a block's start 0-1 LSB). What differs is the note: started at the
+block's second interrupt it is struck 128 frames later on the motor's turn than one core strikes it (13-111 LSB on
+those notes), and a CC 10 that reaches the main loop in a block's first interrupt resets the motor's phase one block
+later than one core does (the 256-frame build's main loop runs half a block later on the host's clock; up to 173
+LSB). Both are when the note and the reset happen, not how they sound (the coordinator's decision 2026-11-14:
+timing, not a defect); one core cannot start a note at frame 128 to compare."""
 import os
 import sys
 
@@ -31,7 +39,7 @@ from hostrun import ROOT, build, cc, run
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import hil_scan as h  # noqa: E402
 
-LIMIT = {"rhodes": 2, "marimba": 16}            # LSB (THRESHOLD, above)
+LIMIT = {"rhodes": 2, "marimba": 16, "vibes": 16}   # LSB (THRESHOLD, above; VIBES: its motor off)
 SEEDS = range(1, 7)
 N = 14
 
@@ -46,10 +54,10 @@ def script(eng, seed):
     rng = np.random.default_rng(seed)
     ls = [cc(4, c, v) for c, v in h.param_defaults() if c not in (79, 80)]   # (a suite's reset: every default,
     ls += [cc(5 + i // 16, h.CC[k], v) for i, (k, v) in enumerate(h.DRY.items())]   # then DRY)
-    if eng == "marimba":
-        was, h.ENGINE = h.ENGINE, "marimba"         # (hil_scan's spec of the MARIMBA panel)
+    if eng in ("marimba", "vibes"):
+        was, h.ENGINE = h.ENGINE, eng               # (hil_scan's spec of the bar panel)
         try:
-            ls += [cc(8, 79, h.MARIMBA_CC79), cc(9, h.vp()["MOT_ON"]["cc"], 0)]
+            ls += [cc(8, 79, h.MARIMBA_CC79 if eng == "marimba" else h.VIBES_CC79), cc(9, h.vp()["MOT_ON"]["cc"], 0)]
             ls += [cc(10, c, v) for c, v in h.ccs([("NOISE", 0)])]
         finally:
             h.ENGINE = was
