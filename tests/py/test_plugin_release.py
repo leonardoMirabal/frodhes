@@ -110,8 +110,8 @@ def test_plugin_attach_and_runner_retry():
     on = rr.get("on", rr.get(True))
     assert on["workflow_run"]["workflows"] == ["ci", "plugin", "release"]
     assert "run_attempt < 3" in rr["jobs"]["retry"]["if"] and rr["permissions"]["actions"] == "write"
-    body = rr["jobs"]["retry"]["steps"][0]["run"]
-    assert "steps | length" in body and "gh run rerun" in body and "--failed" in body
+    body = rr["jobs"]["retry"]["steps"][-1]["run"]       # (the decision: tools/runner_retry.py, its own tests)
+    assert "tools/runner_retry.py jobs.json" in body and "gh run rerun" in body and "--failed" in body
 
 
 def test_deps_lock_form():

@@ -607,3 +607,78 @@ def test_ci_docs_only_detection(tmp_path, files, event, code):
     subprocess.run(["bash", "-c", run], cwd=tmp_path, env=dict(os.environ, GITHUB_OUTPUT=str(out)), check=True,
                    capture_output=True)
     assert out.read_text().split() == [f"code={code}"]
+
+
+# ---- a failure stops the ci run (the user, 2026-11-15): every job cancels the run on its failure; `host` still reads
+# the failure; runner-retry reruns only jobs GitHub never started (tools/runner_retry.py)
+
+def test_ci_a_failure_cancels_the_whole_run():
+    wf = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))
+    assert wf["permissions"] == {"actions": "write", "contents": "read"}
+    jobs = wf["jobs"]
+    assert jobs["host-pytest"]["strategy"]["fail-fast"] is True
+    for name, j in jobs.items():
+        if name == "host":                   # the roll-up: last, nothing left to cancel
+            continue
+        st = j["steps"][-1]
+        assert st["if"] == "failure()" and st["env"] == {"GH_TOKEN": "${{ github.token }}"}, name
+        if "container" in j:                 # (no gh in a job's own container: the REST call itself)
+            assert "/actions/runs/" in st["run"] and "/cancel" in st["run"] and "method='POST'" in st["run"], name
+            compile(st["run"].split('python3 -c "', 1)[1].rsplit('"', 1)[0], name, "exec")
+        else:
+            assert st["run"] == 'gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY"', name
+
+
+def test_ci_host_rollup_fails_on_a_cancelled_job():
+    """a cancelled job (the run stopped by another job's failure) never counts as passed: `host` runs always() and
+    requires success from each job it rolls up"""
+    host = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))["jobs"]["host"]
+    assert host["if"] == "always()"
+    agg = " ".join(s.get("run", "") for s in host["steps"])
+    for j in ("changes", "host-scripts", "host-pytest"):
+        assert f'test "${{{{ needs.{j}.result }}}}" = success' in agg, j
+    assert "cancelled" not in agg
+
+
+def _job(name, conclusion, steps):
+    return {"name": name, "conclusion": conclusion, "steps": [{"name": f"s{i}"} for i in range(steps)]}
+
+
+@pytest.mark.parametrize("jobs, rerun", [
+    # GitHub never started a job: rerun
+    ([_job("macos", "failure", 0), _job("host", "success", 5)], True),
+    ([_job("macos", "failure", 0), _job("windows", "failure", 0)], True),
+    # never started, siblings cancelled before they started (no step): still rerun
+    ([_job("macos", "failure", 0), _job("host-pytest 2/4", "cancelled", 0)], True),
+    # a real failure (steps ran): never rerun
+    ([_job("host-pytest 1/4", "failure", 6)], False),
+    # a real failure that cancelled the run: the siblings cancelled mid-way ran steps, no rerun
+    ([_job("host-pytest 1/4", "failure", 6), _job("host-pytest 2/4", "cancelled", 4), _job("web", "cancelled", 0)], False),
+    # a never-started job next to a real failure: the real failure wins, no rerun
+    ([_job("macos", "failure", 0), _job("host-pytest 3/4", "failure", 6)], False),
+    # a sibling cancelled mid-way next to a never-started failure: it ran, so no rerun
+    ([_job("macos", "failure", 0), _job("move", "cancelled", 3)], False),
+    # cancelled by hand or by a newer push (no failed job): never rerun, even with no step run
+    ([_job("host-pytest 1/4", "cancelled", 0), _job("web", "cancelled", 0)], False),
+    ([_job("host", "success", 5)], False),
+])
+def test_runner_retry_reruns_only_jobs_never_started(jobs, rerun, tmp_path):
+    import sys
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import runner_retry
+    assert runner_retry.decide(jobs)[0] is rerun
+    f = tmp_path / "jobs.json"
+    f.write_text(json.dumps({"total_count": len(jobs), "jobs": jobs}))
+    p = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "runner_retry.py"), str(f)], capture_output=True, text=True)
+    assert p.returncode == 0 and p.stdout.startswith("rerun:" if rerun else "no rerun:"), p.stdout + p.stderr
+
+
+def test_runner_retry_wiring():
+    rr = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "runner-retry.yml")))
+    cond = " ".join(rr["jobs"]["retry"]["if"].split())
+    assert "conclusion == 'failure'" in cond and "conclusion == 'cancelled'" in cond and "run_attempt < 3" in cond
+    steps = rr["jobs"]["retry"]["steps"]
+    assert steps[0]["uses"].startswith("actions/checkout")
+    body = steps[-1]["run"]
+    assert "/attempts/$ATTEMPT/jobs" in body and "tools/runner_retry.py jobs.json" in body
+    assert body.index("grep -q '^rerun:'") < body.index("gh run rerun")

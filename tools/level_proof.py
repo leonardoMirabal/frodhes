@@ -115,7 +115,9 @@ def _sweep(a):
 def _chord_imd(a):
     binary, case, lab, tag = a
     case = (case[0], case[1], case[2] + [RAW_CC], case[3], case[4])
-    return rd.measure_once(binary, case, "full", os.path.join(rd.OUT, "levelproof-" + tag), 0)[lab]["imd"]
+    # (a folder per worker: two chord cells of one case render the same script name; in one shared folder one worker
+    # removed the other's files, CI 43726047832's FileNotFoundError)
+    return rd.measure_once(binary, case, "full", os.path.join(rd.OUT, "levelproof-" + tag, str(os.getpid())), 0)[lab]["imd"]
 
 
 def thd(c):

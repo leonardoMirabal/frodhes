@@ -2072,7 +2072,7 @@ FR_COLD static void host_dump(void)
                                     "arpn", "arpv", "arpends", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "fxdrv", "label0", "card0", "label1", "card1", "label2", "card2",
                                     "label3", "card3", "bpm10", "setbpm", "vresp", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
-    char key[24], v[64];
+    char key[24], v[128];                 /* (v: rowbox writes up to 72 + NUL: gcc -Wformat-truncation) */
     uint32_t i, k;
     for (i = 0; i < sizeof K / sizeof K[0]; i++) { host_state(K[i], v, sizeof v); printf("@ %u %s %s\n", fm1_ms, K[i], v); }
     for (i = 0; i < PG_N; i++)
