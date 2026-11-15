@@ -188,3 +188,34 @@ def test_audio_stream_follows_location(fake, monkeypatch):
         assert opened_audio == [1]
     finally:
         fm1_ports.pin_audio(None)
+
+
+def test_maxima_reset_before_the_soak(fake, monkeypatch, tmp_path):
+    """2026-11-15 (unit 1, after an hour of T2): the 0 s read carried the app's worst block and the whole ISR from
+    before the soak (whole 2468 at 0 s, <= ~2050 after): CC 116 = 127 resets them on the FM-1 and the run sent it
+    first at the 0 s read. Now a discarded CC 116 = 127 goes before the soak's first note, after CC 116 = 30 (which
+    resets core 1's maxima)"""
+    soak, opened, reply = fake
+    import fm1_install as I
+    pend = reply["pending"]
+
+    def answer(b):                                        # (core 1 live, 1 job: enough for the run to go on)
+        opened.append(("sent", tuple(b)))
+        if bytes(b) == I.HS_QUERY:
+            pend.append(ident_reply("FM-1_958"))
+        elif len(b) == 3 and b[0] & 0xF0 == 0xB0 and b[1] == 116 and b[2] == 30:
+            pend.append([0xB0, 100, 30, 0xB0, 101, 0, 0xB0, 102, 1, 0xB0, 100, 31, 0xB0, 101, 0, 0xB0, 102, 1])
+
+    import rtmidi
+    monkeypatch.setattr(rtmidi.MidiOut, "send_message", lambda self, b: answer(b))
+    monkeypatch.setattr(sys, "argv", ["hil_c1_soak.py", "--row", "277", "--minutes", "0.05", "--no-audio",
+                                      "--location", "0x20130000", "--out", str(tmp_path)])
+    monkeypatch.setattr(soak.time, "sleep", lambda s: None)
+    t = [0.0]
+    monkeypatch.setattr(soak.time, "monotonic", lambda: t.__setitem__(0, t[0] + 0.05) or t[0])
+    soak.main()
+    sent = [o[1] for o in opened if o[0] == "sent" and o[1][0] != 0xF0]
+    q30 = sent.index(next(m for m in sent if m[0] & 0xF0 == 0xB0 and m[1:] == (116, 30)))
+    q127 = sent.index(next(m for m in sent if m[0] & 0xF0 == 0xB0 and m[1:] == (116, 127)))
+    note = sent.index(next(m for m in sent if m[0] & 0xF0 == 0x90))
+    assert q30 < q127 < note, sent[:12]
