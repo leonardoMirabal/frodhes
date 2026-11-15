@@ -257,10 +257,9 @@ def build_app():
             k = "*(.text.rh_hermite)"
             if txt.count(k) != 1:
                 raise SystemExit("app.ld: the rh_hermite line was not found (--c1 hot code)")
-            # (pinned: the hot code starts at a fixed address, 0x02001420 (. inside .text counts from its start 0x02000120), however app_audio's size moves; ld fails if it grows
-            # past it. 0.9.12: one 32-byte cache line later, 0x02001400 -> 0x02001420, for the LAT gate's onset fix in
-            # app_audio; the hot code's own layout is unchanged, its cost measured again by hil_cpu and the storm soaks)
-            txt = txt.replace("KEEP(*(.text.app_audio)) " + k, "KEEP(*(.text.app_audio)) . = 0x1300; " + k +
+            # (pinned: the hot code starts at a fixed address, 0x02001400 (. inside .text counts from its start 0x02000120), however app_audio's size moves; ld fails if it grows
+            # past it)
+            txt = txt.replace("KEEP(*(.text.app_audio)) " + k, "KEEP(*(.text.app_audio)) . = 0x12E0; " + k +
                               "".join(f" *(.text.{n})" for n in names if n))
     if RAM2:
         # the one-core FM-1 image: RAMTEXT up to 0x01C07F00 (the room --c1 gives .ramx; crt0's boot status words stay

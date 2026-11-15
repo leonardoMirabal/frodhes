@@ -599,8 +599,10 @@ static void c1_stream_job(uint32_t a)
 #endif
 }
 #endif
-/* core 1 held for good: from now on strikes take FR_C1_NV1 voices, the ones above fade out as a steal */
-static void c1_one_core(void)
+/* core 1 held for good: from now on strikes take FR_C1_NV1 voices, the ones above fade out as a steal. noinline
+ * (0.9.12): it runs once if ever, so its loops stay out of app_audio, which must end before the hot code's fixed
+ * address (tools/build.py --c1: 0x02001400; the LAT gate's onset fix had grown app_audio 6 B past it) */
+static __attribute__((noinline)) void c1_one_core(void)
 {
     uint32_t i;
     if (c1_nv <= FR_C1_NV1) return;
