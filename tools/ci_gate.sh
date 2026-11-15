@@ -34,8 +34,11 @@ except Exception:
     print("unreadable-jobs")
     sys.exit()
 names = {j.get("name") for j in jobs}
-bad = ["%s=%s" % (j.get("name"), j.get("conclusion")) for j in jobs if j.get("conclusion") != "success"]
-bad += ["%s=missing" % n for n in os.environ["REQ"].split() if n not in names]
+req = os.environ["REQ"].split()
+bad = ["%s=%s" % (j.get("name"), j.get("conclusion")) for j in jobs   # a skipped job counts (ci.yml skips docs on a
+       if j.get("conclusion") not in ("success", "skipped")          # code change), but never a required one
+       or (j.get("name") in req and j.get("conclusion") != "success")]
+bad += ["%s=missing" % n for n in req if n not in names]
 print(" ".join(bad) if bad or jobs else "no-jobs")
 '
 }

@@ -719,7 +719,8 @@ class Release:
         ev.append(f"main {self.head[:10]} = origin/main (the release PR merged; nothing pushed to main)")
         # a green ci.yml run on a commit with the identical git tree (the PR's head, when main is GitHub's merge
         # commit of it) is the same code: reuse it instead of waiting ~38 min for a second run on main's new sha
-        ev.append(same_tree_run("ci.yml", self.head) or wait_run("ci.yml", self.head))
+        ev.append(same_tree_run("ci.yml", self.head)
+                  or wait_run("ci.yml", self.head, ok=("success", "skipped"), need=CI_NEED))
         sh(["git", "tag", "-a", tag, "-m", f"Frodhes {self.ver}"])
         sh(["git", "push", "origin", tag])
         ev.append(f"tag {tag} pushed")
@@ -1174,7 +1175,7 @@ def same_tree_run(workflow, sha, limit=50, max_commits=20):
         except ValueError:
             v = None
         jobs = [(j.get("name"), j.get("conclusion")) for j in (v or {}).get("jobs", [])]
-        if not v or v.get("conclusion") != "success" or not jobs or any(c != "success" for _, c in jobs):
+        if not v or v.get("conclusion") != "success" or not jobs or not jobs_green(jobs, CI_NEED if workflow == "ci.yml" else ()):
             print(f"   {workflow} run {rid} on {h[:10]} has tree {tree[:10]} but is not all green ({jobs}): "
                   "not reused", flush=True)
             continue
@@ -1188,7 +1189,17 @@ def same_tree_run(workflow, sha, limit=50, max_commits=20):
     return None
 
 
-def wait_run(workflow, sha, appear_s=300, ok=("success",)):
+CI_NEED = ("host", "generators-macos")   # ci.yml's jobs that must succeed (tools/ci_gate.sh's CI_GATE_JOBS)
+
+
+def jobs_green(jobs, need=(), ok=("success", "skipped")):
+    """every job's conclusion in ok (ci.yml skips its docs job on a code change), and every job in need present and
+    a success"""
+    names = {n: c for n, c in jobs}
+    return all(c in ok for _, c in jobs) and all(names.get(n) == "success" for n in need)
+
+
+def wait_run(workflow, sha, appear_s=300, ok=("success",), need=()):
     """wait for workflow's run on commit sha; Stop with the failing jobs' log lines unless it succeeds and every job's
     conclusion is in ok"""
     t0, run = time.time(), None
@@ -1207,7 +1218,7 @@ def wait_run(workflow, sha, appear_s=300, ok=("success",)):
                  timeout=7200)
     v = json.loads(out(["gh", "run", "view", rid, "-R", REPO, "--json", "conclusion,jobs,url"]))
     jobs = [(j["name"], j["conclusion"]) for j in v["jobs"]]
-    if code or v["conclusion"] != "success" or any(c not in ok for _, c in jobs):
+    if code or v["conclusion"] != "success" or any(c not in ok for _, c in jobs) or not jobs_green(jobs, need, ok):
         _, logs = sh(["gh", "run", "view", rid, "-R", REPO, "--log-failed"], check=False, quiet=True)
         errs = [l for l in logs.splitlines() if re.search(r"error|fail|assert", l, re.I)][-30:]
         raise Stop(f"{workflow} {v['url']}: {v['conclusion']}, jobs {jobs}\n" + "\n".join(errs or [tail(logs)]))
