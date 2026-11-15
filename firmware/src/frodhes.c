@@ -1700,6 +1700,7 @@ FR_COLD static void app_main(void)
     snd_base_take();                            /* the record's sound: what plays if its preset is gone */
     if (fresh) {                                /* a first boot (or a lost record) plays F01, as the header says */
         preset_load(0);
+        fx_pend_flush();                        /* (its effect values at once: no block to spread them over) */
         set.undo_valid = 0;
     } else if (preset_boot()) {                 /* the preset last loaded or saved, as it is stored (params.c: the
                                                  * knobs turned after it are not kept, on purpose) */
@@ -1794,11 +1795,12 @@ FR_COLD static void app_main(void)
         if (!lat_mid()) tempo_lock_poll();
         src_poll();
         eng_pump();
-        if (!lat_mid()) { rev_poll(); rh_cc_poll(); }   /* (between blocks, as above) */
+        if (!lat_mid()) { fx_pend_poll(); rev_poll(); rh_cc_poll(); }   /* (between blocks, as above) */
 #else
         tempo_lock_poll();                      /* (tempo.c: the synced LFOs locked to the clock's beats) */
         src_poll();
         eng_pump();                             /* (notes.c: events that waited for room in the engine's ring) */
+        fx_pend_poll();                         /* (presets.c: a Program Change's effect values, a step a block) */
         rev_poll();                             /* (rev_types.c: HALL's lines cleared after a TYPE change) */
         rh_cc_poll();                           /* (rhodes.c: the note-on coefficients, when TUNE / DECAY / RELEASE moved) */
 #endif

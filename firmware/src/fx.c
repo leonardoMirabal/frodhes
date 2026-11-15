@@ -90,10 +90,59 @@ static volatile uint32_t fx_quiet_blocks;
 static volatile int32_t fx_cmp_amk, fx_cmp_beta;        /* main loop (fx_set): the compressor's auto make-up (log2 Q12)
                                                          * and body lift (Q8), from THRESH and RATIO (cmp_auto) */
 static void cmp_auto(void);
+/* a Program Change's effect values, spread over the blocks after it (presets.c preset_load, fx_pend_poll): the
+ * block that carries the change (a chord, the pedal, a reverb TYPE from a CC with it) takes none of them, the next
+ * the delay's, then the front's (COMP, EQ, DRIVE, FILTER), then the modulation's and the rest, then the reverb's. Each starts its own glide or fade as a CC
+ * does, one block apart, so their first blocks' work (the delay's time fade, the compressor's and the EQ's starts,
+ * the reverb TYPE's fade) never stacks with the burst's on core 1 (the two-core storm soak, 2026-11-15). A CC to a
+ * value still waiting takes it over (the CC is newer). Main loop only: the ISR never reads these */
+#define FX_PEND_N 4u
+static uint8_t fx_hold;                         /* main loop: fx_set keeps the values (preset_load) */
+static uint8_t fx_pv[FXP_N];                    /* the kept values */
+static uint32_t fx_pm[FX_PEND_N][(FXP_N + 31u) / 32u];   /* the kept ids, per step */
+static uint8_t fx_ps;                           /* the next step to apply + 1, 0 = none waits */
+static uint32_t fx_pb;                          /* the block count the last step saw (frodhes.c blk_n) */
+static uint32_t fx_pend_step(uint32_t id)
+{
+    switch (id) {
+    case FXP_DL_SW: case FXP_DL_DEPTH: case FXP_DL_TIME: case FXP_DL_FDBK: case FXP_DL_SYNC: case FXP_DL_TONE:
+        return 0;
+    case FXP_DRIVE: case FXP_DRIVE_ROW: case FXP_DRV_TONE: case FXP_DRV_MIX: case FXP_DRV_SW:
+    case FXP_CMP_SW: case FXP_CMP_AMT: case FXP_CMP_ATK: case FXP_CMP_REL: case FXP_CMP_RATIO: case FXP_CMP_GAIN:
+    case FXP_EQ_LO: case FXP_EQ_MID: case FXP_EQ_FREQ: case FXP_EQ_HI:
+    case FXP_FL_TYPE: case FXP_FL_FREQ: case FXP_FL_RESO: case FXP_FL_LFO:
+        return 1;
+    case FXP_RV_DEPTH: case FXP_RV_DECAY: case FXP_RV_TONE: case FXP_RV_PREDLY: case FXP_RV_TYPE: case FXP_RV_SIZE:
+    case FXP_RV_MOD: case FXP_RV_LOCUT:
+        return 3;
+    default:
+        return 2;
+    }
+}
 static void fx_set(uint32_t id, int32_t v)
 {
-    if (id < FXP_N) fx_p[id] = v < 0 ? 0 : v > 127 ? 127 : v;
+    uint32_t k;
+    if (id >= FXP_N) return;
+    v = v < 0 ? 0 : v > 127 ? 127 : v;
+    if (fx_hold) {
+        if (fx_p[id] == v && !(fx_pm[fx_pend_step(id)][id >> 5] >> (id & 31u) & 1u)) return;   /* (unchanged) */
+        fx_pv[id] = (uint8_t)v; fx_pm[fx_pend_step(id)][id >> 5] |= 1u << (id & 31u);
+        return;
+    }
+    for (k = 0; k < FX_PEND_N; k++) fx_pm[k][id >> 5] &= ~(1u << (id & 31u));   /* (a newer value than one kept) */
+    fx_p[id] = v;
     if (id == FXP_CMP_AMT || id == FXP_CMP_RATIO) cmp_auto();
+}
+static void fx_pend_apply(uint32_t k)           /* step k's kept values into fx_p, as fx_set would */
+{
+    uint32_t w, b, ca = 0;
+    for (w = 0; w < (FXP_N + 31u) / 32u; w++)
+        while (fx_pm[k][w]) {
+            b = (uint32_t)__builtin_ctz(fx_pm[k][w]); fx_pm[k][w] &= fx_pm[k][w] - 1u;
+            fx_p[32u * w + b] = fx_pv[32u * w + b];
+            ca |= 32u * w + b == FXP_CMP_AMT || 32u * w + b == FXP_CMP_RATIO;
+        }
+    if (ca) cmp_auto();
 }
 static volatile uint32_t fx_gz;                         /* blocks since the silence gate shut the output (0) */
 /* 500 ms under -66 dBFS, or 500 ms with the gate shut (BUGHUNT #27: an idle residue between -66 and -60 dBFS, KHLON's

@@ -1846,3 +1846,14 @@ changes:
   - {match: '[ch][1q]/WARM_77/PRESET/*', metric: keyup, min: 1.7, max: 2.5, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
   - {match: '[ch][1q]/WOOD_ECHO/PRESET/*', metric: H3, min: 2.7, max: 3.4, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
   - {match: '[ch][1q]/WOOD_ECHO/PRESET/*', metric: keyup, min: 1.7, max: 3.9, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
+# ---- 9. A14 (0.9.12) a Program Change's effect values over the 4 blocks after it (fx.c fx_set / presets.c fx_pend_poll):
+# the delay's, the front's, the modulation's, the reverb's, so their first blocks never stack with the change's own block on core 1
+# (the two-core storm soak). Only renders with a Program Change move, from the change on; steady state byte-identical.
+# Signed off by the coordinator 2026-11-15, with the user's approval.
+  - {match: 'script/*/bend', reason: 'A14 PC effect values spread over the 4 blocks after the change (delay, front, modulation, reverb): differs only from its Program Change on'}
+  - {match: 'script/*/boot', reason: 'A14 PC effect values spread over the 4 blocks after the change (delay, front, modulation, reverb): differs only from its Program Change on'}
+  - {match: 'script/*/drive_silence', reason: 'A14 PC effect values spread over the 4 blocks after the change (delay, front, modulation, reverb): differs only from its Program Change on'}
+  - {match: 'script/*/midi', reason: 'A14 PC effect values spread over the 4 blocks after the change (delay, front, modulation, reverb): differs only from its Program Change on'}
+  - {match: 'script/*/pc_stall_trs', reason: 'A14 PC effect values spread over the 4 blocks after the change (delay, front, modulation, reverb): differs only from its Program Change on'}
+  - {match: 'script/*/pc_stall', reason: 'A14 PC effect values spread over the 4 blocks after the change (delay, front, modulation, reverb): differs only from its Program Change on'}
+  - {match: 'script/*/state_vibes', reason: 'A14 PC effect values spread over the 4 blocks after the change (delay, front, modulation, reverb): differs only from its Program Change on'}
