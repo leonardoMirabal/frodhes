@@ -48,11 +48,15 @@ static const uint16_t REV_US[RV_N] = {0, REV_US_HQH, REV_US_PLATE, REV_US_INF};
 static REV_BSS int32_t rv_pz;
 static void rev_relatch(void) { *(volatile int32_t *)&rv_pz = -1; }
 #define RV_FADE 8u
-static REV_DATA uint8_t rv_cur = RV_HALL;
+/* the kernels' DC blocker and the TYPE that runs, one object: rq_in reads all three from one base (its HALL input
+ * level from the TYPE, 2026-11-15: rq_in's size and core 1's hot-code layout as before the level change) */
+static REV_DATA struct { int32_t hp, he; uint8_t cur; } rq_st = {0, 0, RV_HALL};
+#define rv_cur rq_st.cur
+#define rv_hp rq_st.hp
+#define rv_he rq_st.he
 static REV_BSS uint8_t rv_fade;
 static REV_BSS int32_t rv_m[RQ_NC], rv_s[RQ_NC];        /* the TYPE's mid / side, this control block */
 static REV_DATA int32_t rv_dk = 64;
-static REV_BSS int32_t rv_hp, rv_he;                    /* the kernels' DC blocker (rq_in) */
 static REV_BSS int32_t rv_lc, rv_lca, rv_lcv;
 static REV_BSS int32_t rv_x[RQ_NC];
 
@@ -84,8 +88,10 @@ static __attribute__((noinline)) void rev_locut(int32_t *x, int32_t v)
                                                          * nl at MIX 127 -75.2 dBFS; +1.5 dB on the taps read -73.3, over
                                                          * the -74 limit) */
 #endif
-static FX_RAM __attribute__((noinline)) void rq_in(const int32_t *in, int32_t *out, int32_t hl)
+static FX_RAM __attribute__((noinline)) void rq_in(const int32_t *in, int32_t *out)
 {
+    const int32_t hl = rv_cur == RV_HALL ? RQ_IN_HALL : HL_IN;   /* (here, not a third argument: fx_process
+                                                        * keeps 0.9.12's size and core 1's hot code its layout) */
     int32_t hp = rv_hp, he = rv_he;
     uint32_t i;
     for (i = 0; i < RQ_NC; i++) {
@@ -250,7 +256,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
                      : zv ? zv : cur == RV_INF ? RV_INF_AUTO : rv_pz;   /* (HALL: its size from MIX / SIZE and
                                                         * DECAY, as rev_hall's; the others: SIZE or AUTO) */
             c.freeze = cur != RV_INF || tgt != RV_INF || rv_dk < 120 ? 0 : rv_dk < 127 ? 1 : 2;
-            FR_FAR(rq_in)(rv_in, rv_x, cur == RV_HALL ? RQ_IN_HALL : HL_IN);
+            FR_FAR(rq_in)(rv_in, rv_x);
             if (cur == RV_HALL) FR_FAR(rev_hqh_run)(&rev_u.h, rv_x, rv_m, rv_s, &c);
             else if (cur == RV_PLATE) rev_plate_run(&rev_u.p, rv_x, rv_m, rv_s, &c);
             else FR_FAR(rev_inf_run)(&rev_u.i, rv_x, rv_m, rv_s, &c);

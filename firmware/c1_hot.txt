@@ -116,6 +116,7 @@ dly_wr_c
 dly_tail_over
 fx_pre_c
 rev_begin
++12  # (2026-11-15: rev_hq.c rq_st: 12 B smaller; the padding keeps the code after it where 0.9.12's storm passes measured it)
 dly_clear_step
 ilog2_q12
 cmp_gr_at
@@ -161,6 +162,7 @@ exp2_neg
 rev_locut
 rev_plate_run
 fx_process
++6  # (2026-11-15: rq_in's one argument less: 6 B smaller; the padding keeps the code after it where 0.9.12's storm passes measured it)
 c1_fx_job
 c1_lat_job
 fx_spread
@@ -181,6 +183,7 @@ ph_glide
 cho_side
 tp_mod_c
 rq_in
++10  # (2026-11-15: its HALL level from rq_st.cur: 10 B smaller; the padding keeps the code after it where 0.9.12's storm passes measured it)
 rev_hqh_run
 rq_sqrt15
 rev_inf_run
