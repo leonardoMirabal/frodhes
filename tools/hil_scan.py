@@ -875,14 +875,10 @@ def types(r, rep):
     spread = max(out[t]["repeat_db"] for t in out)
     rep["types_repeat_db"] = spread
     ok = min(dist) > 1.5 and max(lv) - min(lv) < 3
-    band, why = C1_KNOWN["types"]
-    known = not ok and c1_image() and max(lv) - min(lv) < 3 and min(dist) >= band and \
-        all(d > 1.5 for d in dist[1:])               # (only the STAGE 77 - SUITCASE pair, the first, inside its band)
-    return "KNOWN" if known else ok, ("levels " + ", ".join(f"{lv[t]:.1f}" for t in range(RHODES_TYPES)) +
-                                                     " dB; spectral distance between types min " + f"{min(dist):.2f} dB (" +
-                                                     ", ".join(f"{d:.2f}" for d in dist) + f"); median of {reps('types')}"
-                                                     f" takes, their own spread <= {spread:.2f} dB" +
-                                                     (f"; KNOWN (STAGE 77 - SUITCASE): {why}" if known else ""))
+    return ok, ("levels " + ", ".join(f"{lv[t]:.1f}" for t in range(RHODES_TYPES)) +
+                " dB; spectral distance between types min " + f"{min(dist):.2f} dB (" +
+                ", ".join(f"{d:.2f}" for d in dist) + f"); median of {reps('types')}"
+                f" takes, their own spread <= {spread:.2f} dB")
 
 
 # The classic chords hold no octave: two notes an octave apart sum their coinciding partials (A3's 2nd and A4's 1st,
@@ -989,10 +985,6 @@ _C1_REV = ("USER DECISION 2026-11-14: two-core reverb's chord-dependent early re
 # unchanged): (band, reason)
 C1_KNOWN = {
     "bypass": (4.1, _C1_REV + "; effects on vs bypassed 3.8 LU (host; one core 3.1), limit 3.6: band <= 4.1 LU"),
-    "types": (0.85, "USER DECISION 2026-11-14: STAGE 77 vs SUITCASE closer since 0.9.10's clean top (1fe0c0af6: v127 "
-                    "without the pickup's overdrive; host bisect v0.9.9..v0.9.10: 1.54 -> 1.01 dB, 0.9.9 1.63, 0.9.10 / "
-                    "0.9.11 0.97, 0.9.12 host 0.90, FM-1 0.96); their own character back (and a PRISTINE / DIRTY "
-                    "setting) planned for the next release: band >= 0.85 dB"),
     "presets U04": (-0.9, _C1_REV + "; U04 DREAM PAD (INFINITE) -0.54 LU re F01 (host; one core +0.1), target +0.5 "
                           "+-1.0: band >= -0.9 LU"),
 }
