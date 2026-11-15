@@ -11,6 +11,7 @@ rh_coef_tune
 rh_coef_e
 rh_coef
 fr_c1_wait_us
++30  # (2026-11-15 merge: 2 B more; the code after it on a line boundary, one line on: the bar engine, 4 KB short of the way)
 eng_rh_kill_all
 bar_kill_all
 fr_c1_live
@@ -50,6 +51,7 @@ bar_chunk
 bar_q32mul
 bar_start_pend
 bar_end
++4062  # (2026-11-15 merge: 2 B more; the code after it one more cache way (4096 B) on: the same set and line as on 0.9.12's storm passes)
 bar_render
 rh_dyn
 rh_knock_strike
@@ -82,6 +84,7 @@ rh_df1
 rh_chain
 rh_txf_blend
 rh_render
++4094  # (2026-11-15 merge: 2 B more; the code after it one more cache way (4096 B) on: the same set and line as on 0.9.12's storm passes)
 fr_c1_run
 rh_mid_one
 rh_txf_blend_c
@@ -140,8 +143,10 @@ fx_drive_classic
 log2_q12
 exp2_q16
 drv_run
++4088  # (2026-11-15 merge: 8 B more; the code after it one more cache way (4096 B) on: the same set and line as on 0.9.12's storm passes)
 drv_blend
 fx_drive_types
++4058  # (2026-11-15 merge: 38 B more; the code after it one more cache way (4096 B) on: the same set and line as on 0.9.12's storm passes)
 fx_filter
 fx_trem_amp
 fx_trem_k
@@ -162,11 +167,11 @@ exp2_neg
 rev_locut
 rev_plate_run
 fx_process
-+6  # (2026-11-15: rq_in's one argument less: 6 B smaller; the padding keeps the code after it where 0.9.12's storm passes measured it)
 c1_fx_job
 c1_lat_job
 fx_spread
 fx_phaser
++4088  # (2026-11-15 merge: 8 B more; the code after it one more cache way (4096 B) on: the same set and line as on 0.9.12's storm passes)
 fx_lv_ramp
 fx_spread_dry
 fx_xf_side
