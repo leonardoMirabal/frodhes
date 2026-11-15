@@ -357,7 +357,9 @@ static void runtime(const char *scratch)
 static void downloads(const char *scratch)
 {
     static char body[2048];
-    char ver[16], dir[1024], path[1100], want[65], d[1024], *t;
+    /* path: dir + the separator + name[96] + NUL, d: path + ".part" (sized so no snprintf can truncate: gcc's
+       -Wformat-truncation with fortify on Linux, the CI's -Werror) */
+    char ver[16], dir[1024], path[1024 + 1 + 96], want[65], d[1024 + 1 + 96 + 8], *t;
     long long now = (long long)time(0);
     FILE *f;
     snprintf(dir, sizeof dir, "%s%cdl", scratch, frp_path_sep(FRP_OS_HERE));
