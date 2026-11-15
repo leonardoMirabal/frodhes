@@ -11,7 +11,6 @@ rh_coef_tune
 rh_coef_e
 rh_coef
 fr_c1_wait_us
-+30  # (2026-11-15 merge: 2 B more; the code after it on a line boundary, one line on: the bar engine, 4 KB short of the way)
 eng_rh_kill_all
 bar_kill_all
 fr_c1_live
@@ -51,7 +50,6 @@ bar_chunk
 bar_q32mul
 bar_start_pend
 bar_end
-+4062  # (2026-11-15 merge: 2 B more; the code after it one more cache way (4096 B) on: the same set and line as on 0.9.12's storm passes)
 bar_render
 rh_dyn
 rh_knock_strike
@@ -84,7 +82,6 @@ rh_df1
 rh_chain
 rh_txf_blend
 rh_render
-+4094  # (2026-11-15 merge: 2 B more; the code after it one more cache way (4096 B) on: the same set and line as on 0.9.12's storm passes)
 fr_c1_run
 rh_mid_one
 rh_txf_blend_c
@@ -143,10 +140,8 @@ fx_drive_classic
 log2_q12
 exp2_q16
 drv_run
-+4088  # (2026-11-15 merge: 8 B more; the code after it one more cache way (4096 B) on: the same set and line as on 0.9.12's storm passes)
 drv_blend
 fx_drive_types
-+4058  # (2026-11-15 merge: 38 B more; the code after it one more cache way (4096 B) on: the same set and line as on 0.9.12's storm passes)
 fx_filter
 fx_trem_amp
 fx_trem_k
@@ -167,11 +162,11 @@ exp2_neg
 rev_locut
 rev_plate_run
 fx_process
++6  # (2026-11-15: rq_in's one argument less: 6 B smaller; the padding keeps the code after it where 0.9.12's storm passes measured it)
 c1_fx_job
 c1_lat_job
 fx_spread
 fx_phaser
-+24  # (2026-11-15 merge: 8 B more; the code after it on a line boundary, one line on: the 4 KB it would take moves the KHLON drive below to its set)
 fx_lv_ramp
 fx_spread_dry
 fx_xf_side
@@ -190,7 +185,7 @@ tp_mod_c
 rq_in
 +10  # (2026-11-15: its HALL level from rq_st.cur: 10 B smaller; the padding keeps the code after it where 0.9.12's storm passes measured it)
 rev_hqh_run
-+4012  # (2026-11-15: its warm-up reads, 52 B more: the code after it one cache way (4096 B) on, so every
++4044  # (2026-11-15: its warm-up reads, 52 B more: the code after it one cache way (4096 B) on, so every
        # line of it maps to the same set as on 0.9.12's storm passes; 4 KB of flash)
 rq_sqrt15
 rev_inf_run
@@ -207,6 +202,7 @@ ri_input
 ri_xrows
 ri_mix
 fx_width
-+4008  # (2026-11-15: after the hot code, the rest of .text: the KHLON drive's kernels (kh_*, not listed: core 1 runs
-       # them every block in KHLON) back to their set and line of 0.9.12's storm passes; off by 88 B they cost the storm
-       # ~+135 us of core-1 busy in its KHLON thirds (fin-u2-storm3..6: 5430 against 5305 on 37ed7a12a)
+.rodata +4016  # (2026-11-15: the a14 merge's main-loop code (fx_pend_*, fx_set, preset_load), 80 B in the rest of .text:
+               # the tables after it (the KHLON drive's KH_G / KH_GFS / KH_RCP, TSH8's, the voices', the effects' small
+               # ones at the end) one cache way on, the same sets as on 0.9.12's storm passes; off by 704..784 B (a11b,
+               # a11c) the storm's KHLON thirds ran ~+140 us of core-1 busy)
