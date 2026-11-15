@@ -6,7 +6,9 @@ A "Frodhes" name wins: when one exists, only the Frodhes ports are candidates. T
 are a fallback for when no Frodhes port exists (just after an install from the stock firmware or the rescue).
 NEVER names are other firmware on another unit and are never matched, not even as a fallback.
 
-  pick(names)        the candidate names, Frodhes ones only when any exist (keeps the order given)
+  pick(names)        the candidate names, Frodhes ones only when any exist (keeps the order given); with a location
+                     pinned (FM1_LOCATION=0x..., pin_audio) only the ports at that USB location (CoreMIDI), and a
+                     name another port shares is refused
   first(names)       pick(names)[0], or None
   devices(devs, ch)  the indices of sounddevice.query_devices() entries picked the same way, with >= ch inputs; with
                      a location pinned (pin_audio(loc), FM1_LOCATION=0x...) only the one at that USB location
@@ -306,12 +308,52 @@ def is_fm1(name, keys=PORT_KEYS):
     return not _never(name) and any(k in n for k in keys)
 
 
-def pick(names, keys=PORT_KEYS):
+def pick(names, keys=PORT_KEYS, at=None, lists=None, devs=None):
+    """the FM-1 candidates among the MIDI port names. With a location pinned (FM1_LOCATION=0x..., pin_audio, a tool's
+    --location) only the names of the ports at that USB location (CoreMIDI's USBLocationID: a stale CoreMIDI name
+    too), and a name another port shares is refused (SystemExit: opening by name would take either). 2026-11-15:
+    pick() ignored the location; with two units plugged in, FM1_LOCATION=0x21130000 took unit 1's port while
+    devices() took unit 2's audio, and hil_scan played one unit and recorded the other's silence. at / lists / devs:
+    midi_at(loc), rtmidi's (inputs, outputs), usb_devices() (the tests)"""
+    if AUDIO_LOC is not None:
+        return _pick_at(names, AUDIO_LOC, at, lists, devs)
+    return _by_name(names, keys)
+
+
+def _by_name(names, keys=PORT_KEYS):
+    """pick() by the names alone (devices() too: its location is CoreAudio's, judged there)"""
     if FORCED:
         return [n for n in names if FORCED.lower() in n.lower()]
     names = [n for n in names if not _never(n)]
     mine = [n for n in names if PREFER in n.lower()]
     return mine if mine else [n for n in names if any(k in n.lower() for k in keys)]
+
+
+def _pick_at(names, loc, at=None, lists=None, devs=None):
+    where = f"FM1_LOCATION=0x{loc:08x}"
+    m = midi_at(loc) if at is None else at
+    if m is None:
+        sys.exit(f"{where}: no CoreMIDI on this computer: the unit's MIDI ports cannot be told by location")
+    if lists is None:
+        import rtmidi
+        lists = (rtmidi.MidiIn().get_ports(), rtmidi.MidiOut().get_ports())
+    ins, outs = lists
+    here = midi_names_at(loc, ins, outs, m)
+    if here is None:
+        sys.exit(f"{where}: the MIDI port list changed while it was read: run again")
+    mine = set(here[0]) | set(here[1])
+    if not mine:
+        sys.exit(f"{where}: no MIDI port at that USB location")
+    devs = usb_devices() if devs is None else devs
+    if devs is not None:
+        usb = usb_name_at(loc, devs)
+        if usb is None or _never(usb) or any(_never(n) for n in mine):
+            sys.exit(f"{where}: the USB device there is {usb!r}, not an FM-1 this tool may open")
+    dup = sorted(n for n in mine if ins.count(n) > 1 or outs.count(n) > 1)
+    if dup:
+        sys.exit(f"{where}: its MIDI port name {dup[0]!r} is another port's too: opening it by name could take the other "
+                 "unit (give one unit its own USB name: tools/build.py --usb-name)")
+    return [n for n in names if n in mine]
 
 
 def first(names, keys=PORT_KEYS):
@@ -350,7 +392,7 @@ def devices(devs, ch=2, keys=PORT_KEYS, ca=None, sd=None):
 def _devices(devs, ch, keys, ca):
     devs = list(devs)
     ok = [i for i, d in enumerate(devs) if d["max_input_channels"] >= ch]
-    names = pick([devs[i]["name"] for i in ok], keys)
+    names = _by_name([devs[i]["name"] for i in ok], keys)
     if FORCED_AUDIO:                          # (force(): the unit by exclusion, its audio by its USB name)
         names = [devs[i]["name"] for i in ok if FORCED_AUDIO.lower() in devs[i]["name"].lower()]
     sel = [i for i in ok if devs[i]["name"] in names]

@@ -229,3 +229,44 @@ def test_audio_list_reread_after_a_device_change(monkeypatch):
         assert "after re-reading" in str(e.value)
     finally:
         fp.pin_audio(None)
+
+
+def test_pick_follows_the_pinned_location(monkeypatch):
+    """2026-11-15: pick() ignored FM1_LOCATION. Two units plugged in, FM1_LOCATION=0x21130000: pick() returned
+    ['Frodhes FM-1'] (unit 1's port) while devices() took unit 2's audio, and hil_scan played unit 1 and recorded unit
+    2's silence (-150.7 LUFS). Now only the ports at the pinned location (a stale CoreMIDI name too), and a name another
+    port shares is refused"""
+    import types
+    L = {"ins": ["M6", "Frodhes FM-1", "Dualcore Test"], "outs": ["M6", "Frodhes FM-1", "Dualcore Test"],
+         "devs": [("M6", 0x00200000), ("Frodhes FM-1", 0x00100000), ("Frodhes FM-1", 0x21130000)]}
+    at = {0x00100000: ([(1, "Frodhes FM-1")], [(1, "Frodhes FM-1")]),       # (CoreMIDI: the device's own name;
+          0x21130000: ([(2, "Frodhes FM-1")], [(2, "Frodhes FM-1")]),       # rtmidi's list keeps the stale one)
+          0x30000000: ([], [])}
+    rt = types.SimpleNamespace(MidiIn=lambda: types.SimpleNamespace(get_ports=lambda: list(L["ins"])),
+                               MidiOut=lambda: types.SimpleNamespace(get_ports=lambda: list(L["outs"])))
+    monkeypatch.setitem(sys.modules, "rtmidi", rt)
+    monkeypatch.setattr(fp, "midi_at", lambda loc: at[loc])
+    monkeypatch.setattr(fp, "usb_devices", lambda: list(L["devs"]))
+    monkeypatch.delenv("FM1_LOCATION", raising=False)
+    monkeypatch.setattr(fp, "FORCED", None)
+    names = list(L["outs"])
+    assert fp.pick(names) == ["Frodhes FM-1"]                               # (no location: as before)
+    try:
+        fp.pin_audio(0x21130000)
+        assert fp.pick(names) == ["Dualcore Test"]                          # unit 2's port (its stale name)
+        assert fp.first(names) == "Dualcore Test"
+        fp.pin_audio(0x00100000)
+        assert fp.pick(names) == ["Frodhes FM-1"]
+        fp.pin_audio(0x30000000)
+        with pytest.raises(SystemExit):                                     # nothing at the location: refused
+            fp.pick(names)
+        fp.pin_audio(0x00100000)
+        L["outs"] = L["outs"] + ["Frodhes FM-1"]
+        with pytest.raises(SystemExit):                                     # two ports of one name: refused
+            fp.pick(names)
+        L["outs"] = L["outs"][:3]
+        L["devs"] = [("Textura FM-1", 0x00100000)]
+        with pytest.raises(SystemExit):                                     # another firmware there: never opened
+            fp.pick(names)
+    finally:
+        fp.pin_audio(None)
