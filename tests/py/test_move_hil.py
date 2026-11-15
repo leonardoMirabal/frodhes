@@ -770,3 +770,25 @@ def test_usb_host_dig_stays_on_the_residual(tmp_path):
         mh.phrase_events = orig
     assert not rep["tape"] and ok, rep["verdict"]
     assert all(w["residual_net_db"] <= -40 for w in rep["rows"] if w["judged"])
+
+
+def test_usb_host_gives_the_host_the_moves_tempo():
+    """DELAY SYNC follows the Move's tempo on the device (move_bridge.h mb_inert): usb-host renders the host at it
+    (tests/host.c "T tempo"). F12 (DELAY TAPE, SYNC 8) at the set's 82 BPM is not F12 at the host's own 120, and 120
+    given is the host's own (2026-11-15: F12 DIFFERED on every note with the host at 120)"""
+    import numpy as np
+    ev, _, dur = mh.phrase_events()
+    own = mh.host_phrase(ev, dur, 11)
+    at120 = mh.host_phrase(ev, dur, 11, bpm10=1200)
+    at82 = mh.host_phrase(ev, dur, 11, bpm10=820)
+    assert np.array_equal(own, at120)
+    d = at82 - own
+    assert 20 * np.log10(np.sqrt(np.mean(d ** 2)) / np.sqrt(np.mean(own ** 2))) > -20
+
+
+def test_move_bpm10_bpm_first_then_the_saved_set():
+    assert mh.move_bpm10(96.5, {"track": {"tempo": 82.0}}) == 965
+    assert mh.move_bpm10(0.0, {"track": {"tempo": 82.0}}) == 820
+    assert mh.move_bpm10(0.0, {"track": {}}) is None and mh.move_bpm10(0.0, None) is None
+    song = '{"tempo": 82.0, "tracks": [{"midiInputMode": "auto", "devices": [], "mixer": {"volume": 0.0}}]}'
+    assert mh.parse_song(song)["tempo"] == 82.0
