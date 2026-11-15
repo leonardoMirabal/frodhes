@@ -171,7 +171,7 @@ c1_fx_job
 c1_lat_job
 fx_spread
 fx_phaser
-+4088  # (2026-11-15 merge: 8 B more; the code after it one more cache way (4096 B) on: the same set and line as on 0.9.12's storm passes)
++24  # (2026-11-15 merge: 8 B more; the code after it on a line boundary, one line on: the 4 KB it would take moves the KHLON drive below to its set)
 fx_lv_ramp
 fx_spread_dry
 fx_xf_side
@@ -190,7 +190,7 @@ tp_mod_c
 rq_in
 +10  # (2026-11-15: its HALL level from rq_st.cur: 10 B smaller; the padding keeps the code after it where 0.9.12's storm passes measured it)
 rev_hqh_run
-+4044  # (2026-11-15: its warm-up reads, 52 B more: the code after it one cache way (4096 B) on, so every
++4012  # (2026-11-15: its warm-up reads, 52 B more: the code after it one cache way (4096 B) on, so every
        # line of it maps to the same set as on 0.9.12's storm passes; 4 KB of flash)
 rq_sqrt15
 rev_inf_run
@@ -207,3 +207,6 @@ ri_input
 ri_xrows
 ri_mix
 fx_width
++4008  # (2026-11-15: after the hot code, the rest of .text: the KHLON drive's kernels (kh_*, not listed: core 1 runs
+       # them every block in KHLON) back to their set and line of 0.9.12's storm passes; off by 88 B they cost the storm
+       # ~+135 us of core-1 busy in its KHLON thirds (fin-u2-storm3..6: 5430 against 5305 on 37ed7a12a)
