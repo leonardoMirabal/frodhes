@@ -18,6 +18,9 @@ def test_every_level_proof_entry_is_proven_now():
     out = os.path.join("build", "release_diff", "level_proof-" + os.environ.get("PYTEST_XDIST_WORKER", "w") + ".json")
     p = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "level_proof.py"), "--out", out], cwd=ROOT,
                        capture_output=True, text=True, env=dict(os.environ, PYTEST_N="2"))
+    # the tool's own failure first, with its stderr (CI 43723126582: a checkout without the last release's tag made the
+    # tool exit before writing its record, and the test showed only the missing file)
+    assert p.returncode == 0, f"exit {p.returncode}\n{p.stdout[-3000:]}\n{p.stderr[-3000:]}"
     doc = json.load(open(os.path.join(ROOT, out)))
     assert p.returncode == 0 and doc["verdict"] == "PASS", p.stdout[-3000:] + p.stderr[-2000:]
     rows = {(r["cell"], r["metric"]): r for r in doc["rows"]}
