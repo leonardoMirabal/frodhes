@@ -2692,29 +2692,70 @@ def state_read(url, slot=0, secs=0.8):
             and not k.startswith("synth:dev_")}
 
 
-def state_restore(url, slot, before, hq_default=1):
+RING_BACKOFF_S = (0.3, 0.6, 1.2, 2.4, 4.8)     # the pauses after each "ring full" (Schwung's web set ring: 32 entries,
+#                                                one a frame); a refused write is lost, so what still differs is written again
+RESTORE_PACE_S = 0.006                          # the restore's pause between writes (two frames: the ring drains one a frame)
+
+
+def ring_full(e):
+    import move_ws
+    return isinstance(e, move_ws.SchwungError) and "ring full" in str(e)
+
+
+def state_restore(url, slot, before, hq_default=1, sleep=time.sleep, log=None):
     """writes back every key that differs from before (the preset first: it loads its own values), HQ to the boot
     value (HQ: p_hq, the dev key, is not saved and Schwung does not report it), the dev player stopped, the CPU and stats logs off; then reads
-    the state back. (keys written, {key: (before, after)} still different)"""
+    the state back. (keys written, {key: (before, after)} still different). A "web param set ring full" from the
+    manager (the Move, 2026-11-15, after move_jack: the restore FAILED on it) pauses RING_BACKOFF_S and the writes
+    still different go again, one more pass each time; the last pause's ring full is raised. log: the ring's pauses"""
     import move_ws
+    rings = [0]
+
+    def pump(secs):
+        """w.pump(secs); True when the manager answered ring full (one pause for the burst, its other refusals read
+        on: each refused write is lost)"""
+        hit, end = False, time.monotonic() + secs
+        while True:
+            left = end - time.monotonic()
+            if left <= 0:
+                return hit
+            try:
+                w.pump(left)
+                return hit
+            except move_ws.SchwungError as e:
+                if not ring_full(e):
+                    raise
+                if not hit:
+                    if rings[0] >= len(RING_BACKOFF_S):
+                        raise
+                    if log is not None:
+                        log.append("ring full: pause %.1f s" % RING_BACKOFF_S[rings[0]])
+                    sleep(RING_BACKOFF_S[rings[0]])
+                    rings[0] += 1
+                    hit, end = True, max(end, time.monotonic() + 0.5)   # (then the manager's re-read)
     with move_ws.Remote(url) as w:
         w.subscribe(slot)
         w.pump(0.8)
-        for k, v in (("dev_play", "stop"), ("dev_cpu_log", 0), ("dev_stats_log", 0), ("p_hq", hq_default)):
-            w.set_param(slot, "synth:" + k, v)
-        w.pump(1.5)              # (the manager's re-read after these writes goes out under this connection: closed in
-        #                          the middle of it, the next connection is cut, "no close frame", 2026-10-29)
+        for _ in range(len(RING_BACKOFF_S) + 1):
+            for k, v in (("dev_play", "stop"), ("dev_cpu_log", 0), ("dev_stats_log", 0), ("p_hq", hq_default)):
+                w.set_param(slot, "synth:" + k, v)
+            if not pump(1.5):    # (the manager's re-read after these writes goes out under this connection: closed in
+                break            # the middle of it, the next connection is cut, "no close frame", 2026-10-29)
         now = lambda: {k[6:]: v for k, v in w.params.get(slot, {}).items() if k.startswith("synth:")}  # noqa: E731
         written = []
-        if "preset" in before and not _same(now().get("preset"), before["preset"]):
+        for _ in range(len(RING_BACKOFF_S) + 1):
+            if "preset" not in before or _same(now().get("preset"), before["preset"]):
+                break
             w.set_param(slot, "synth:preset", before["preset"])
             written.append("preset")
-            w.pump(1.5)                                  # (the re-read of every param, the preset's values in it)
+            pump(1.5)                                    # (the re-read of every param, the preset's values in it)
         # (the switches and types first: switching an effect gives its MIX a starting amount, so a MIX written
         # before its switch came back changed, p_dl_depth 0 -> 50 on the Move, 2026-10-28; then every key that still
         # differs is written again, up to 3 passes, each after the manager's re-read)
         first = lambda k: (0 if k.endswith(("_sw", "_type", "_on")) or k == "p_type" else 1, k)   # noqa: E731
-        for _ in range(3):
+        passes = 3
+        while passes > 0:
+            passes -= 1
             cur = now()
             todo = sorted((k for k, v in before.items() if k != "preset" and not _same(cur.get(k), v)), key=first)
             if not todo:
@@ -2722,8 +2763,9 @@ def state_restore(url, slot, before, hq_default=1):
             for k in todo:
                 w.set_param(slot, "synth:" + k, before[k])
                 written.append(k)
-                time.sleep(0.003)
-            w.pump(1.5)                                  # (the manager's re-read goes out under this connection)
+                sleep(RESTORE_PACE_S)
+            if pump(1.5):                                # (the manager's re-read goes out under this connection)
+                passes += 1                              # (a ring full: the lost writes get a pass of their own)
     after = state_read(url, slot)
     bad = {k: (v, after.get(k)) for k, v in before.items() if not _same(after.get(k), v)}
     return written, bad
@@ -2760,14 +2802,14 @@ class KeptState:
         if self.report is not None or self.before is None:
             return self.report
         import move_ws
-        dropped = []
+        dropped, ring = [], []
         try:
             for attempt in (0, 1):
                 # (the manager once dropped the restore's own socket, "no close frame", 2026-10-28, after
                 # usb-restrike: the write-back is idempotent and the read after it decides, so a dropped socket gets
                 # one new connection, named in the report; any other error, or a second drop, fails)
                 try:
-                    written, bad = state_restore(self.url, self.slot, self.before)
+                    written, bad = state_restore(self.url, self.slot, self.before, log=ring)
                     break
                 except (move_ws.ConnectionClosed, ConnectionError) as e:
                     if attempt:
@@ -2776,7 +2818,8 @@ class KeptState:
                     time.sleep(RESTORE_RETRY_S)
             self.report = {"verdict": "PASS" if not bad else "FAIL: after the run %d param(s) differ from before: %s"
                            % (len(bad), ", ".join("%s %s -> %s" % (k, a, b) for k, (a, b) in sorted(bad.items())[:8])),
-                           "params": len(self.before), "written": written, "bad": bad, "dropped": dropped}
+                           "params": len(self.before), "written": written, "bad": bad, "dropped": dropped,
+                           "ring": ring}
         except Exception as e:                           # (the WebSocket gone: say so loudly, never pass)
             self.report = {"verdict": "FAIL: the state was not restored: %s: %s" % (type(e).__name__, e),
                            "params": len(self.before), "written": [], "bad": {"(restore)": (None, str(e))}}
