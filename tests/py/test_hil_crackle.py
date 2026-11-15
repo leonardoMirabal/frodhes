@@ -171,6 +171,32 @@ def test_step_in_a_modulations_first_period():
     assert any(k == "step" and abs(p - 0.47) < 0.03 for p, k, _ in r["usb"]), (r["usb"], r["info"])
 
 
+
+def test_step_in_a_first_period_the_right_channel_more():
+    """the 0.9.12 final crackle (rhodes-worst2, 0.680 s): a stereo modulation's first period moved USB's right channel
+    +13.5 dB and its left +8; the jack (the left channel) +7.9: the pair's mean +13 against the jack's +8 failed the
+    4 dB agreement and the music's own step was an event. Modelled: the left dips 8 dB, the right 14 dB, 0.43 .. 0.47 s
+    of a chord from 0.4 s; the jack = the left. Now the music's own; the same pair with a jack that has no dip (a USB
+    stream's step, both channels) stays an event"""
+    fs = 44100
+    ccs = C.engine_ccs("marimba", C.HEAVY)
+    t = np.arange(int(2 * fs)) / fs
+    dip = (t >= 0.43) & (t < 0.47)
+    s_ = np.where(t >= 0.4, 2000 * np.sin(2 * np.pi * 220 * t), 0.0)
+    L = s_ * np.where(dip, 10 ** (-8 / 20), 1.0)
+    R = 2.5 * s_ * np.where(dip, 10 ** (-14 / 20), 1.0)             # (the right 8 dB louder, as there)
+    g = np.random.default_rng(5)
+    q = np.round(np.stack([L + g.normal(0, 2, len(t)), R + g.normal(0, 2, len(t))], 1))
+    ev = [(0.4, "on", 45, 100)]
+    cj = (C.JACK_DELAY, -C.JACK_DRIFT)
+    j = C.sim_jack(np.stack([q[:, 0], q[:, 0]], 1))
+    r = C.analyse(q, j, fs, ev, ccs=ccs, only=("step",), clock_jack=cj)
+    assert not [e for e in r["usb"] if e[1] == "step"], r["usb"]          # (the old code: a step at 0.47 s)
+    assert len(r["info"]["step_jack_too"]) == 1, r["info"]
+    j2 = C.sim_jack(np.round(np.stack([s_, s_], 1)))
+    r2 = C.analyse(q, j2, fs, ev, ccs=ccs, only=("step",), clock_jack=cj)
+    assert any(k == "step" and abs(p - 0.47) < 0.03 for p, k, _ in r2["usb"]), (r2["usb"], r2["info"])
+
 def test_stale_ignores_a_steady_tone():
     """a lone low note whose period is a whole number of frames matches its period before exactly for a few dozen
     frames: no stale; a 32-frame chunk played twice in it is one"""
