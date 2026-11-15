@@ -536,3 +536,30 @@ def test_marimba_chorus_speed_by_the_band(monkeypatch):
     d, _, fps_ = h.rel_trace(t, r0, "usb", 0.2, 5.3, 300, 3000)
     assert abs(h.lfo_rate(d, fps_, f * 0.4, f * 2.6, pearson=True) / f - 0.5) <= 0.02     # (without it: the octave)
     assert abs(h.lfo_rate(d, fps_, f * 0.4, f * 2.6, pearson=True, octave=True) / f - 1) <= 0.02
+
+
+def test_marimba_drift_probe_is_one_strike(monkeypatch):
+    """marimba_jump's "reference drift" reads one chord strike before and after the scan, not the roll: the roll's
+    loudness follows where each re-strike lands in the ringing bar (two host takes with +-1 ms of MIDI jitter: up to
+    0.30 LU apart in 24 seeds; the FM-1's T2 of 2026-11-15 read -0.33, USB and jack alike), a strike 0.03 at most"""
+    monkeypatch.setattr(h, "ENGINE", "marimba")
+    probe = []
+    for seed in (1, 3, 7):                                  # (the roll's pair: +0.06 / +0.30 / +0.27 LU)
+        V = h.VRig("usb", host=seed)
+        S = h.VSuite("marimba_jump", V)
+        h.marimba_jump(V, S)
+        tags = [t["tag"] for t in V.takes]
+        assert tags[0] == "jump-probe-a" and tags[tags.index("jump-ref-b") + 1] == "jump-probe-b"
+        row = [r for r in S.rows if r["check"] == "reference drift"][0]
+        assert "one strike" in row["setting"]
+        probe.append(abs(float(row["usb"].split()[0])))
+    assert max(probe) <= 0.1, probe
+
+
+def test_vibes_jump_keeps_its_references(monkeypatch):
+    """vibes_jump holds a chord (no roll): its references answer the drift as before, no probe takes"""
+    monkeypatch.setattr(h, "VDEBUG", True, raising=False)
+    monkeypatch.setattr(h, "ENGINE", "vibes")
+    V = h.VRig("both", dry_run=True)
+    h.vibes_jump(V, h.VSuite("vibes_jump", V))
+    assert not any(t["tag"].startswith("jump-probe") for t in V.takes)

@@ -3778,9 +3778,20 @@ def _jump(V, S, jumps, ch=None, extra=()):
     """ch: the stimulus (default the FXCH chord v108 held 3.3 s), extra: settings added to every reset (marimba_jump:
     a sustained roll, MUTE 0)"""
     P = vp()
+    roll = ch is not None
     ch = ch or chord(FXCH, 108, 0.1, 3.4)
     st = (3.6, ch)
-    refs = []
+    refs, probes = [], []
+    # the drift probe (a roll only): one chord strike before and after the scan. A roll's loudness follows where each
+    # re-strike lands in the bar still ringing, so it moves with the MIDI timing (+-1 audio block on the FM-1): two
+    # takes of the same roll read 0.13 LU apart (sd) on the host with +-1 ms of jitter, 0.30 at most in 24 seeds,
+    # and -0.33 on the FM-1 (T2 0.9.12, USB and jack alike); one chord strike: sd 0.008, 0.03 at most
+    # (2026-11-15). The rolls stay the references of the steps; the probe answers "was the scan disturbed"
+    probe = (1.6, chord(FXCH, M_FX_VEL, 0.1, 1.2))
+    use_probe = roll and not (V.offline and not os.path.exists(os.path.join(V.offline, "jump-probe-a.json")))
+    if use_probe:
+        V.reset(list(extra), label="jump drift probe")
+        probes.append(V.take("jump-probe-a", *probe))
     V.reset(list(extra), label="jump ref")
     refs.append(V.take("jump-ref-a", *st))
 
@@ -3799,6 +3810,9 @@ def _jump(V, S, jumps, ch=None, extra=()):
         rows.append((name, held, tog))
     V.reset(list(extra), label="jump ref (end)")
     refs.append(V.take("jump-ref-b", *st))
+    if use_probe:
+        V.reset(list(extra), label="jump drift probe (end)")
+        probes.append(V.take("jump-probe-b", *probe))
     lfo = {"TW_SW": lfo_hz(P["TW_RATE"]["de"]), "PH_SW": lfo_hz(P["PH_SPEED"]["de"], True),
            "CP_SW": lfo_hz(P["CP_SPEED"]["de"], True), "MOT_ON": mot_hz(P["MOT_RATE"]["de"])}
     for name, held, tog in rows:
@@ -3896,7 +3910,9 @@ def _jump(V, S, jumps, ch=None, extra=()):
                 fmt=lambda d: f"{d[0]:+.2f} / {d[1]:+.2f} LU", info=bool(cyc))
         S.check(f"{name}: clicks at the switches", "", {s: x and x[2] for s, x in v.items()}, lambda c: c == 0, "0",
                 fmt=lambda c: str(c))
-    S.check("reference drift", "the dry chord, start vs end", S.per(lambda q: lq(refs[1], q, 0, 1.8) - lq(refs[0], q, 0, 1.8)),
+    dr = probes or refs
+    S.check("reference drift", "the dry chord, start vs end" + (" (one strike, 0..1.0 s)" if probes else ""),
+            S.per(lambda q: lq(dr[1], q, 0, 1.0 if probes else 1.8) - lq(dr[0], q, 0, 1.0 if probes else 1.8)),
             lambda d: abs(d) <= 0.3, "within 0.3 LU (else the scan was disturbed)", level=True)
     V.reset(ALL_ON + list(extra), label="all on")
     a = V.take("jump-all-on", *st)
