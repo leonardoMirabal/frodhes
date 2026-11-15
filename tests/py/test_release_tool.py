@@ -684,7 +684,7 @@ def test_real_run_hands_off_the_pr_and_pushes_nothing(tree, monkeypatch, capsys)
     assert " 7  publish        handoff" in o and " 8  emulator       not run" in o and " 9  verify         not run" in o
 
 
-def merged_shell(root, calls, tree_rc="T1", tree_head="T1", ahead="0", recorded=None):
+def merged_shell(root, calls, tree_rc="T1", tree_head="T1", ahead="0", recorded=None, later=""):
     base = fake_shell(root, calls)
     recorded = recorded or hashlib.sha256(b"fw").hexdigest()              # (fake_shell's build writes b"fw")
 
@@ -693,7 +693,8 @@ def merged_shell(root, calls, tree_rc="T1", tree_head="T1", ahead="0", recorded=
         replies = {"git log -1 --format=%H --diff-filter=A -- docs/releases/v0.9.3.md": "rc0123456789\n",
                    "git rev-parse rc0123456789^{tree}": tree_rc + "\n", "git rev-parse HEAD^{tree}": tree_head + "\n",
                    "git log -1 --format=%B rc0123456789": f"Release 0.9.3 ... the release build sha256 {recorded}); x\n",
-                   "git rev-list --count origin/main..HEAD": ahead + "\n", "git tag --list v0.9.3": ""}
+                   "git rev-list --count origin/main..HEAD": ahead + "\n", "git tag --list v0.9.3": "",
+                   "git diff --name-only rc0123456789 HEAD": later}
         if s in replies:
             calls.append(s)
             return 0, replies[s]
@@ -729,6 +730,8 @@ def test_after_merge_tags_main_without_pushing_it(tree, monkeypatch, capsys):
 
 
 @pytest.mark.parametrize("kw,why", [(dict(tree_head="T2"), "is not the release commit"),
+                                    (dict(tree_head="T2", later="firmware/src/fx.c\ntools/ci_gate.sh\n"),
+                                     "is not the release commit"),
                                     (dict(ahead="1"), "not on origin/main"),
                                     (dict(recorded="e" * 64), "not the one the release commit records")])
 def test_after_merge_refuses_another_tree_or_build(tree, monkeypatch, capsys, kw, why):
@@ -738,6 +741,20 @@ def test_after_merge_refuses_another_tree_or_build(tree, monkeypatch, capsys, kw
     assert rel.main(["0.9.3", "--after-merge", "--no-emulator", "--yes"]) == 1
     assert why in capsys.readouterr().out
     assert not [c for c in calls if "tag -a" in c or " push" in c]
+
+
+def test_after_merge_allows_only_release_machinery_after_the_release_commit(tree, monkeypatch, capsys):
+    # v0.9.12: tools/ci_gate.sh, release.yml and release.py were fixed after the release commit; nothing that ships
+    after_merge_tree(tree)
+    calls = []
+    later = ".github/workflows/release.yml\ntools/ci_gate.sh\ntools/release.py\ntests/py/test_release_tool.py\n"
+    monkeypatch.setattr(rel, "sh", merged_shell(str(tree), calls, tree_head="T2", later=later))
+    monkeypatch.setattr(rel, "same_tree_run", lambda wf, sha: "ci.yml: green on this tree")
+    monkeypatch.setattr(rel, "wait_run", lambda wf, sha, **kw: f"{wf} green")
+    rel.main(["0.9.3", "--after-merge", "--no-emulator", "--yes"])
+    o = capsys.readouterr().out
+    assert "only the release machinery changed" in o and "git tag -a v0.9.3 -m Frodhes 0.9.3" in calls
+    assert "./build.sh --c1 --release 0.9.3" in calls                      # the build's sha256 is still checked
 
 
 def test_after_merge_needs_a_version():
