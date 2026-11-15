@@ -5,6 +5,7 @@ import os
 import sys
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import hil_scan as h  # noqa: E402
@@ -108,3 +109,27 @@ def test_phaser_fdbk_row_judges_without_motion_and_says_why():
     vals = S.per(lambda q: 1 / 0 if q == "jack" else 1.0)
     S.check("raised", "", vals, lambda v: True, "")
     assert S.rows[-1]["jack"] == "no value (ZeroDivisionError: division by zero)"
+
+
+@pytest.mark.parametrize("engine", ["marimba", "vibes"])
+def test_lfo_trig_while_the_note_stands(monkeypatch, engine):
+    """LFO TRIG KEY on the host's 4 A4 strikes (LP12, LFO 127, SINE, RATE de): KEY 1.00 and FREE far under the 0.8 bar
+    (a key that does not restart the LFO fails), and MARIMBA's trace held to the frames where every strike stands (its
+    A4 is 60 dB down by 0.4 s: the old 0.7 s window read the centroid of silence, the rc-0.9.12 T2 KEY 0.76 / 0.77)"""
+    import hil_scan as hs
+    monkeypatch.setattr(hs, "ENGINE", engine)
+    P = hs.vp()
+    lb = [("FL_TYPE", 1), ("FL_FREQ", 64), ("FL_RESO", 0), ("FL_LFO", 127), ("LFO_SHAPE", 0),
+          ("LFO_RATE", P["LFO_RATE"]["de"]), ("LFO_SYNC", 0)]
+    extra = [("RELEASE", 0)] if engine == "marimba" else []
+    rt = [0.1, 1.47, 2.93, 4.31]
+    st = (5.7, sum((hs.chord((69,), 108, s, s + 1.2) for s in rt), []))
+    V = hs.VRig("usb", host=3)
+    T = {}
+    for x in (0, 1):
+        V.reset(lb + [("LFO_RETRIG", x)] + extra, label=f"retrig {x}")
+        T[x] = V.take(f"t-retrig-{x}", *st)
+    key, free = hs.retrig_phase(T[1], "usb"), hs.retrig_phase(T[0], "usb")
+    assert key >= 0.95 and free <= 0.5, (key, free)
+    if engine == "marimba":                              # (the trace stops where the note has gone)
+        assert np.isnan(hs.retrig_phase(T[1], "usb", least=0.5))

@@ -2405,6 +2405,37 @@ def stft(x, n=1024, hop=240):
     return F, np.fft.rfftfreq(n, 1 / FS), FS / hop
 
 
+def retrig_phase(t, q, a=0.05, b=0.75, below=40.0, over=15.0, least=0.2):
+    """LFO TRIG: the mean correlation, over every pair of strikes, of the centroid traces from each onset (a .. b s,
+    each detrended), over the frames where every strike stands within `below` dB of the loudest frame and `over` dB
+    over the source's floor (its pre-roll): NaN when that is under `least` s. The whole 0.7 s took MARIMBA's A4 past
+    its end (60 dB down by 0.4 s, exact zero on USB from 0.5 s, the jack's hiss): the centroid of silence or hiss
+    read KEY 0.76 / 0.77 (rc-0.9.12 T2, USB / jack) and 0.38 .. 0.82 before; gated, the FM-1's saved takes read KEY
+    1.00 / 0.99 (FREE -0.14 / 0.14) and the host 1.00 on every seed (FREE <= 0.33: a key that does not restart the
+    LFO stays far under the 0.8 bar; tests/py/test_hil_scan_measures.py)"""
+    m = t.m(q)
+    tr, lv, fps = [], [], 1.0
+    for i in t.on(q):
+        F, fr, fps = stft(cut(m, i, a, b))
+        s = (fr > 100) & (fr < 12000)
+        p = F[:, s].sum(1)
+        tr.append((F[:, s] * fr[s]).sum(1) / (p + 1e-30))
+        lv.append(10 * np.log10(p + 1e-30))
+    pre = np.asarray(t.pre(q), float)
+    fl = -1e9
+    if len(pre) > 2048 and np.any(pre):
+        Fp, frp, _ = stft(pre)
+        fl = 10 * np.log10(Fp[:, (frp > 100) & (frp < 12000)].sum(1).mean() + 1e-30)
+    n = min(len(x) for x in tr)
+    L = np.array([v[:n] for v in lv])
+    bad = np.flatnonzero(~((L >= L.max() - below) & (L >= fl + over)).all(0))
+    n = int(bad[0]) if len(bad) else n
+    if len(tr) < 2 or n < least * fps:
+        return float("nan")
+    tr = [x[:n] - np.polyval(np.polyfit(np.arange(n), x[:n], 1), np.arange(n)) for x in tr]
+    return float(np.mean([np.corrcoef(tr[i], tr[j])[0, 1] for i in range(len(tr)) for j in range(i + 1, len(tr))]))
+
+
 def cen_trace(x):
     F, fr, fps = stft(x)
     s = (fr > 100) & (fr < 12000)
@@ -3391,15 +3422,11 @@ def vibes_fx(V, S, stim=None, extra=()):
     st_rt = (5.7, sum((chord((69,), 108, s, s + 1.2) for s in rt), []))
     T = {x: run(f"filter-retrig-{x}", with_(lb, ("LFO_RETRIG", x)), st_rt) for x in (0, 1)}
 
-    def same_phase(t, q):
-        o = t.on(q)
-        tr = [cen_trace(cut(t.m(q), i, 0.05, 0.75))[0] for i in o]
-        n = min(len(x) for x in tr)
-        tr = [x[:n] - np.polyval(np.polyfit(np.arange(n), x[:n], 1), np.arange(n)) for x in tr]
-        return float(np.mean([np.corrcoef(tr[a], tr[b])[0, 1] for a in range(len(tr)) for b in range(a + 1, len(tr))]))
-    S.check(f"LFO TRIG {nm('LFO_RETRIG')} KEY", "4 strikes off the LFO's period: the sweep restarts",
-            S.per(lambda q: (same_phase(T[1], q), same_phase(T[0], q))), lambda v: v[0] >= 0.8,
-            "KEY: mean correlation of the sweeps >= 0.8 (FREE: information)", fmt=lambda v: f"KEY {v[0]:.2f} / FREE {v[1]:.2f}")
+    S.check(f"LFO TRIG {nm('LFO_RETRIG')} KEY",
+            "4 strikes off the LFO's period: the sweep restarts (while the note stands 40 dB)",
+            S.per(lambda q: (retrig_phase(T[1], q), retrig_phase(T[0], q))), lambda v: v[0] >= 0.8,
+            "KEY: mean correlation of the sweeps >= 0.8 (FREE: information)", fmt=lambda v: f"KEY {v[0]:.2f} / FREE {v[1]:.2f}",
+            valid=lambda v: finite(v[0]))
 
     # DRIVE
     db_ = [("DRV_SW", 1), ("DRIVE", 40), ("DRV_TONE", 64), ("DRV_MIX", 127)]
