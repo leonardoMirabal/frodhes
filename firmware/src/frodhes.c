@@ -547,13 +547,20 @@ static int c1_stream_step(void)                 /* the frames ready, not done: t
 #if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)
 /* FR_FAULT (a diag build: APP_DEFS=-DFR_FAULT): extra load on demand, live, to find where the two-core build breaks.
  * CC 117 = core 0, CC 118 = core 1: value & 15 = the extra time in 100 us steps (0-1500 us a block), value & 64 =
- * the kind: 0 a spin on the timer, 64 reads over a 32 KB table in flash (XIP: the shared cache and the flash bus, as
+ * the kind: 0 a spin on the timer, 64 reads over 32 KB of flash (XIP: the shared cache and the flash bus, as
  * the effects' and voices' own code) plus writes to RAM. Core 0 burns at app_audio's start, core 1 at its job's
- * start. Never in a release build (tools/build.py: no FR_FAULT without APP_DEFS). */
+ * start: once a block on the 256-frame build, once an interrupt on FR_C1_LAT's (two a block: core 1's busy, a block's,
+ * grows by twice the value). Until 2026-11-15 FR_C1_LAT's app_audio and c1_lat_job had no burn: CC 117 / 118 were
+ * stored and never read (K6c, the FM-1: whole and busy never moved). tools/build.py fails an FR_FAULT --c1 image
+ * without flt_burn. noinline: the burn's loop stays out of app_audio (the hot code's pin). Never in a release build
+ * (tools/build.py: no FR_FAULT without APP_DEFS). */
 static volatile uint8_t flt_c0, flt_c1;
-static uint32_t flt_sink[64];
-static const uint32_t flt_tab[8192] = {1u, 2u, 3u};
-static inline __attribute__((always_inline)) void flt_burn(uint32_t k)
+static volatile uint32_t flt_sink[64];         /* (volatile: the RAM writes stay) */
+extern char _etext[];                           /* (app.ld: the end of the app's code in flash) */
+/* the flash kind reads the app's own last 32 KB of code and constants (cold: the hot block sits at .text's start), not
+ * a table of its own: a 32 KB table no longer fits the two-core image's slot (2026-11-15: XIP over by 6512 B) */
+#define flt_tab ((const uint32_t *)(((uintptr_t)_etext - 32768u) & ~(uintptr_t)31u))
+static __attribute__((noinline)) void flt_burn(uint32_t k)
 {
     uint32_t us = (k & 15u) * 100u, t0, i = 0, a = 0;
     if (!us) return;
@@ -691,6 +698,7 @@ static void c1_lat_job(uint32_t a)              /* core 1, one an interrupt */
     uint32_t j0 = fm1_ticks(), i0 = 0, p0, ce = fxc_ce;
     if (!lat_o) { work = 0; idle = 0; }
 #endif
+    FLT_BURN(flt_c1);                           /* (FR_FAULT: core 1's extra load, CC 118; counted as its work) */
 #if defined(C1PF_ON)
     if (!lat_o) { uint32_t q0 = fm1_ticks(); fx_pre_c(); C1PF(55, fm1_ticks() - q0); }
 #else
@@ -729,6 +737,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #ifndef DINGHY_HOST
     uint32_t t0 = fm1_ticks(), us;
 #endif
+    FLT_BURN(flt_c0);                           /* (FR_FAULT: core 0's extra load, CC 117; inside the measured ISR) */
 #if FR_LAT_TAIL
     if (lat_pend) {                             /* the last interrupt's job: its tail done (core 1, or core 0 now) */
         lat_pend = 0;

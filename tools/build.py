@@ -389,6 +389,19 @@ def c1_check(rt_names):
     return errors, notes
 
 
+def fault_check(syms, app_defs=None, c1=None):
+    """an FR_FAULT two-core image (APP_DEFS=-DFR_FAULT ./build.sh --c1) has the burn: frodhes.c's flt_burn in its
+    symbols. K6c (2026-11-15): FR_C1_LAT's app_audio and core-1 job never called it, so CC 117 / 118 were stored and
+    nothing burned; the device sweep read every step as step 0. [] or the error"""
+    app_defs = os.environ.get("APP_DEFS", "") if app_defs is None else app_defs
+    c1 = C1 if c1 is None else c1
+    if not c1 or not any(re.fullmatch(r"-DFR_FAULT(=.*)?", d) for d in app_defs.split()):
+        return []
+    if re.search(r"^[0-9a-f]+ .*\sflt_burn$", syms, re.M):
+        return []
+    return ["FR_FAULT: no flt_burn in the two-core image (CC 117 / 118 would burn nothing: frodhes.c FLT_BURN)"]
+
+
 def check(img, syms, dis, rt):
     errors, notes = [], []
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
@@ -467,6 +480,7 @@ def check(img, syms, dis, rt):
     def sym(name):
         mm = re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M)
         return int(mm.group(1), 16) if mm else 0
+    errors += fault_check(syms)
     ram = sym("_bss_end") - 0x01C08000
     pool = sym("_pool_end") - 0x01C20000
     notes.append(f"image {len(img)} B of {APP_SLOT}; RAM .data+.bss {ram} B of 98304; pool {pool} B of 344064")

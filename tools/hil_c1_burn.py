@@ -19,7 +19,9 @@ steps above would not test two cores); a step with a crash (a reset, or no reply
 then --past more steps, then stops. The report (OUT/burn-report.md + .json, and the soak's own OUT/<row>-report.*):
 per step the burn, the worst app / whole / core-1 busy / wait (us), shed, late, holds, crashes, crashes per minute;
 the first step that failed and how. The burn runs inside the measured ISR (core 0) or core 1's job: whole / c1busy
-include it.
+include it. On the two-core package (FR_C1_LAT, 128-frame interrupts) it runs once an interrupt: whole (an
+interrupt's) grows by the step, c1busy (a block's, two interrupts) by twice the step. Images before 2026-11-15 (K6c)
+had no burn on that build: CC 117 / 118 were stored, nothing burned (tools/build.py now fails such an image).
 
 Needs an image built with APP_DEFS=-DFR_FAULT (a release build ignores CC 117 / 118: every step reads like step 0;
 the report says so when whole never moves). The device steps are the user's to run.
