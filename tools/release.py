@@ -21,6 +21,10 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
  3 host          make test, make pytest, tools/gate_r.py, ./build.sh --c1 --release X.Y.Z (its sha256); with move/ in the
                  tree also the Move's MT0 (tools/ci_move.sh) and its package, make move MOVE_VER=X.Y.Z (reproducible:
                  build/frodhes-X.Y.Z-move.tar.gz, its sha256)
+                 A passed step 3 is recorded (clean tree only) in build/release-step3/<X.Y.Z>-<HEAD>.json of the main
+                 checkout; a later run of the same version on the same HEAD with a clean tree (the real run after
+                 the dry run) reuses its tests and only rebuilds, and the builds' sha256 must equal the record's
+                 (--no-step3-cache: run everything)
  4 FM-1          (--no-device skips it and lists its commands) the tiers this release needs, from
                  `git diff <previous tag>..HEAD` through tools/test_map.py (printed with the reason): T1 on every
                  release, T2 when an engine / the DSP changed (or --full). The device lock, install, then
@@ -141,6 +145,18 @@ class Handoff(Exception):
     """step 7 without --after-merge: the release commit is ready, the PR is the user's (nothing pushed)"""
 
 
+def step3_cache_dir():
+    """build/release-step3/ in the main checkout (shared by every worktree of the repository), else ROOT's build/"""
+    try:
+        p = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=ROOT, text=True,
+                           capture_output=True, timeout=30)
+        common = p.stdout.strip() if p.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        common = ""
+    base = os.path.dirname(common) if common.endswith(".git") and os.path.isdir(common) else ROOT
+    return os.path.join(base, "build", "release-step3")
+
+
 def pr_steps(ver, head):
     """what the user does between the two runs (main is protected: the release goes in through a PR)"""
     return (f"the release commit {head[:10]} is local and nothing was pushed: main is protected (enforce_admins), so it "
@@ -222,6 +238,9 @@ def parse_args(argv):
                          "a draft, so step 5 refuses to commit")
     ap.add_argument("--no-emulator", action="store_true", help="skip publishing the web emulator")
     ap.add_argument("--yes", action="store_true", help="publish without the prompt")
+    ap.add_argument("--no-step3-cache", action="store_true",
+                    help="run step 3's tests even when a passed step 3 of this version on this very HEAD (a clean tree) "
+                         "is recorded (build/release-step3/ in the main checkout)")
     ap.add_argument("--after-merge", action="store_true",
                     help="the release PR is merged: on main = origin/main, the release build's sha256 against the one "
                          "the release commit records, then tag, release.yml, verify (steps 4 and 5 were done before "
@@ -252,6 +271,7 @@ class Release:
         self.move_ok = None         # the Move tiers passed on that tarball (--device-done "move"), step 4
         self.move_recorded = None   # --after-merge: the Move package sha256 the release commit records
         self.move_line = ""
+        self.clean = False          # step 2: no tracked changes (step 3's record is kept and reused only then)
 
     def log(self, msg):
         print("   " + msg.replace("\n", "\n   "), flush=True)
@@ -289,6 +309,7 @@ class Release:
             problems.append(f"on branch {branch!r}, not main" + ("" if self.a.after_merge else
                                                                  f" or rel-{self.ver} / release-{self.ver}"))
         dirty = out(["git", "status", "--porcelain", "--untracked-files=no"]).splitlines()
+        self.clean = not dirty
         if dirty:
             problems.append("tracked changes:\n" + "\n".join(dirty[:15]))
         sh(["git", "fetch", "origin", "main"])
@@ -378,8 +399,13 @@ class Release:
                                f"({self.move_recorded}): not the tarball that was tested")
                 ev.append(f"make move: sha256 {self.move_sha} = the release commit's (tested on the Move)")
             return "\n".join(ev)
-        for cmd in (["make", "test"], ["make", "pytest", "PY=" + PY], [PY, "tools/gate_r.py"],
-                    ["./build.sh", "--c1", "--release", self.ver]):
+        cache = self.step3_load()
+        tests = [] if cache else [["make", "test"], ["make", "pytest", "PY=" + PY], [PY, "tools/gate_r.py"]]
+        if cache:
+            ev.append(f"the host tests: reused, not run again: they passed on this HEAD {self.head[:10]} with a clean "
+                      f"tree at {cache['when']} ({os.path.relpath(cache['file'], ROOT) if cache['file'].startswith(ROOT) else cache['file']}; "
+                      f"--no-step3-cache runs them):\n  " + "\n  ".join(cache["tests"]))
+        for cmd in tests + [["./build.sh", "--c1", "--release", self.ver]]:
             t0 = time.time()
             _, o = sh(cmd, timeout=3600)
             last = [l for l in o.strip().splitlines() if l.strip()][-1:] or [""]
@@ -390,13 +416,51 @@ class Release:
         self.sha = sha256(fw)
         ev.append(f"build/frodhes-{self.ver}-c1.fwsc {os.path.getsize(fw)} B sha256 {self.sha}")
         if self.has_move():
-            t0 = time.time()
-            _, o = sh(["env", "PY=" + PY, "sh", "tools/ci_move.sh"], timeout=3600)
-            ev.append(f"tools/ci_move.sh (the Move's MT0): exit 0 in {time.time() - t0:.0f} s ({tail(o, 1)[:100]})")
+            if not cache:
+                t0 = time.time()
+                _, o = sh(["env", "PY=" + PY, "sh", "tools/ci_move.sh"], timeout=3600)
+                ev.append(f"tools/ci_move.sh (the Move's MT0): exit 0 in {time.time() - t0:.0f} s ({tail(o, 1)[:100]})")
             ev.append(self.move_build())
         else:
             ev.append("the Move: no move/ in this tree (no Move package)")
+        if cache:                           # the builds always run (minutes): they must be the recorded ones
+            if (cache.get("sha256"), cache.get("move_sha256")) != (self.sha, self.move_sha):
+                raise Stop(f"step 3's record {cache['file']} has the builds {cache.get('sha256')} / "
+                           f"{cache.get('move_sha256')}, this run built {self.sha} / {self.move_sha}: not reproducible, "
+                           f"re-run with --no-step3-cache")
+            ev.append("the builds' sha256 = the recorded run's")
+        else:
+            self.step3_save([e for e in ev if not e.startswith("./build.sh") and not e.startswith("build/")
+                             and not e.startswith("make move")])
         return "\n".join(ev)
+
+    def step3_file(self):
+        return os.path.join(step3_cache_dir(), f"{self.ver}-{self.head}.json")
+
+    def step3_load(self):
+        """a passed step 3 of this version on this HEAD with a clean tree, or None (then the tests run)"""
+        if self.a.no_step3_cache or not self.clean or not self.head:
+            return None
+        f = self.step3_file()
+        try:
+            rec = json.load(open(f))
+        except (OSError, ValueError):
+            return None
+        if rec.get("head") != self.head or rec.get("version") != self.ver or not rec.get("clean"):
+            return None
+        rec["file"] = f
+        return rec
+
+    def step3_save(self, tests):
+        """record a passed step 3 (clean tree only), for the next run on the same HEAD (the real run after the dry run)"""
+        if not self.clean or not self.head:
+            return
+        d = step3_cache_dir()
+        os.makedirs(d, exist_ok=True)
+        rec = {"version": self.ver, "head": self.head, "clean": True, "when": time.strftime("%Y-%m-%d %H:%M"),
+               "sha256": self.sha, "move_sha256": self.move_sha, "tests": tests}
+        with open(self.step3_file(), "w") as fh:
+            json.dump(rec, fh, indent=1)
 
     def has_move(self):
         return os.path.isfile(os.path.join(ROOT, "move", "move_plugin.c"))
@@ -731,6 +795,10 @@ class Release:
             return None
         rec = json.load(open(self.a.device_done))
         d = rec.get("fm1", rec)                        # (a section per target; the old flat form is the FM-1's)
+        pending = [f"{k}: verdict {sec.get('verdict')!r}" for k, sec in (("fm1", d), ("move", rec.get("move") or {}))
+                   if "verdict" in sec and sec.get("verdict") != "PASS"]
+        if pending and not self.a.dry_run:             # a draft record (written before the runs end) never releases
+            raise Stop(f"--device-done {self.a.device_done}: not passed ({'; '.join(pending)})")
         if self.has_move():
             self.move_device_done(rec.get("move"))
         if d.get("sha256") != self.sha:
@@ -741,7 +809,8 @@ class Release:
         if missing:
             raise Stop(f"--device-done {self.a.device_done}: tiers {done or '(none recorded)'} do not cover the needed "
                        f"{need} (missing {', '.join(missing)}); " + self.tiers()["lines"][0])
-        return (f"FM-1: tested before the release on this exact build (sha256 equal), tiers {'+'.join(done)} "
+        return ((f"DRY-RUN, a real run stops here: the record is not passed ({'; '.join(pending)}). " if pending else "")
+                + f"FM-1: tested before the release on this exact build (sha256 equal), tiers {'+'.join(done)} "
                 f"(needed {'+'.join(need)}): " + "; ".join(d.get("runs", [])))
 
     def move_tiers(self):

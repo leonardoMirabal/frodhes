@@ -759,3 +759,59 @@ def test_release_commit_records_the_plugin_platforms(tree, monkeypatch, capsys):
     o = capsys.readouterr().out
     assert "WARNING, a real run stops here: --plugin-tested lacks" in o and "docs/releases/v0.9.3.md -----" in o, o
     assert len(msgs) == 1 and "\nPlugin tested: macos windows linux-x86_64 linux-aarch64\n" in msgs[0], msgs
+
+
+def test_step3_is_reused_on_the_same_head(tree, monkeypatch, capsys):
+    """a passed step 3 (a clean tree) is recorded; the next run of the version on the same HEAD runs only the builds,
+    and they must give the recorded sha256; another HEAD, a dirty tree or --no-step3-cache runs the tests again"""
+    monkeypatch.setattr(rel, "step3_cache_dir", lambda: str(tree / "build" / "release-step3"))
+
+    def run(extra=(), head="abcdef1234567890", dirty=""):
+        calls = []
+        base = fake_shell(str(tree), calls)
+
+        def sh(cmd, check=True, input=None, timeout=None, quiet=False):
+            s = cmd if isinstance(cmd, str) else " ".join(cmd)
+            if s == "git rev-parse HEAD":
+                calls.append(s)
+                return 0, head + "\n"
+            if s == "git status --porcelain --untracked-files=no":
+                calls.append(s)
+                return 0, dirty
+            return base(cmd, check=check, input=input, timeout=timeout, quiet=quiet)
+        monkeypatch.setattr(rel, "sh", sh)
+        rel.main(["patch", "--dry-run", "--no-device", "--no-emulator", *extra])
+        return calls, capsys.readouterr().out
+
+    calls, o = run()
+    assert "make test" in calls and (tree / "build" / "release-step3" / "0.9.3-abcdef1234567890.json").exists()
+    calls, o = run()
+    assert "make test" not in calls and "./build.sh --c1 --release 0.9.3" in calls, calls
+    assert "the host tests: reused" in o and "the builds' sha256 = the recorded run's" in o
+    for extra, head, dirty in ((["--no-step3-cache"], "abcdef1234567890", ""), ((), "1234567890abcdef", ""),
+                               ((), "abcdef1234567890", " M tools/x.py\n")):
+        calls, o = run(extra, head, dirty)
+        assert "make test" in calls, (extra, head, dirty)
+    rec = tree / "build" / "release-step3" / "0.9.3-abcdef1234567890.json"
+    d = json.loads(rec.read_text())
+    d["sha256"] = "0" * 64                                      # a different build than the recorded one: stop
+    rec.write_text(json.dumps(d))
+    calls, o = run()
+    assert "make test" not in calls and "not reproducible" in o and "FAIL" in o
+
+
+def test_device_done_refuses_a_pending_record(tmp_path, monkeypatch):
+    """a draft --device-done (verdict PENDING, written while the device runs go on) passes a dry run with a warning
+    and stops a real run"""
+    monkeypatch.setattr(rel, "sh", lambda *a, **k: (0, "firmware/src/usb.c\n"))
+    f = tmp_path / "d.json"
+    f.write_text(json.dumps({"fm1": {"sha256": "ab" * 32, "tiers": ["T1", "T2"], "verdict": "PENDING", "runs": []}}))
+
+    def release(extra):
+        r = rel.Release(rel.parse_args(["0.9.9", "--no-device", "--device-done", str(f), "--full", *extra]))
+        r.ver, r.prev, r.sha = "0.9.9", "v0.9.8", "ab" * 32
+        monkeypatch.setattr(r, "has_move", lambda: False)
+        return r
+    assert "a real run stops here: the record is not passed (fm1: verdict 'PENDING')" in release(["--dry-run"]).device_done()
+    with pytest.raises(rel.Stop, match="not passed"):
+        release([]).device_done()
