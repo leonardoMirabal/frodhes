@@ -69,8 +69,16 @@ static int32_t rqh_pole(int32_t d)
     return RQH_KD[i] + (((int32_t)RQH_KD[i + 1] - (int32_t)RQH_KD[i]) * (d - 60 - i * 10)) / 10;
 }
 #define RQH_SGN 0x96u                                   /* the input's sign per line (bit k: - for line k) */
-#define RQH_OUT 13800                                   /* the taps (Q13 of the row / 16 x 16: the half-rate HALL's Bark
-                                                         * loudness; rev_hq.c's return takes the 16 out) */
+#ifndef RQH_OUT                                         /* (a build may set it: tests/py's fault injection, -3 dB) */
+#define RQH_OUT 16400                                   /* the taps (Q13 of the row / 16 x 16; rev_hq.c's return takes the
+                                                         * 16 out): the half-rate HALL's level in band (0.9.13: K-weighted,
+                                                         * 100 Hz .. 8 kHz, a burst's first 2 s; it was 13800, the Bark
+                                                         * loudness, which counts the band above 11 kHz the half rate does
+                                                         * not have: in band 1.1 dB under on noise at every MIX / DECAY,
+                                                         * 1.4 .. 2 dB on Rhodes chords, so a chord's first second carried
+                                                         * less of the reverb than one core's: the FM-1 two-core bypass
+                                                         * row 3.8 LU against one core's 3.1) */
+#endif
 #define RQH_LOUD 2048                                   /* a line end this quiet (16x the line's scale, all 8, the last block)
                                                          * truncates: it then dies to exact zero; louder, they round. (It was
                                                          * 1024 at 4x: a loud tail switched to truncating while a louder one

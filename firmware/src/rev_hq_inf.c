@@ -72,7 +72,11 @@
 #define RI_N 6368u   /* ring rows: a multiple of RI_NB, >= the longest line + 2 x
                                      * the widest swing + 2 */
 #define RI_MODQ8 (48u * 256u)  /* the swing at MOD 64, Q8 samples (+-24 at 22.05 kHz); MOD 127 about twice */
-#define RI_OG 3215                  /* (rev_hq_inf.c: the output, Q12: the half-rate tank's Bark loudness, Rhodes + VIBES phrases) */
+#ifndef RI_OG                       /* (a build may set it: tests/py's fault injection, -3 dB) */
+#define RI_OG 3445                  /* (rev_hq_inf.c: the output, Q12: the half-rate tank's level in band (0.9.13: K-weighted,
+                                     * 100 Hz .. 8 kHz; it was 3215, the Bark loudness, which counts the band above 11 kHz:
+                                     * 0.2 .. 0.8 dB under in band) */
+#endif
 #define RI_GK 56u                   /* (rev_hq_inf.c: 59 at 44.1 kHz less the loop's own losses there: the half-rate
                                      * T60 in the 500 Hz .. 1 kHz octaves) */
 #define RI_KD 9                     /* TONE's damping ratio R = damp x RI_KD / 256 (bright: damp 60 -> 2.1, 150

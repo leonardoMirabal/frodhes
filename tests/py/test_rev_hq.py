@@ -71,18 +71,38 @@ def test_hq_band_above_11k(exe, old, typ):
     assert tn >= to + 6, f"{typ}: >11 kHz re 1-4 kHz: HQ {tn:.1f} dB, half rate {to:.1f} dB"
 
 
+def _inband_db(w):
+    """the wet's level in band: K-weighted (BS.1770's two stages), 100 Hz .. 8 kHz, both channels, dB"""
+    from scipy.signal import butter, sosfilt, lfilter
+    b1, a1 = [1.53512485958697, -2.69169618940638, 1.19839281085285], [1, -1.69065929318241, 0.73248077421585]
+    b2, a2 = [1.0, -2.0, 1.0], [1, -1.99004745483398, 0.99007225036621]
+    y = sosfilt(butter(4, [100, 8000], "band", fs=rs.FS, output="sos"), w, axis=0)
+    y = lfilter(b2, a2, lfilter(b1, a1, y, axis=0), axis=0)
+    return 10 * np.log10((y ** 2).sum() + 1e-9)
+
+
 @needs_types
 @pytest.mark.parametrize("typ", ("HALL", "PLATE", "INFINITE"))
 def test_hq_level_matches_half_rate(exe, old, typ):
-    """the A/B is fair: the wet's critical-band loudness within 1.5 dB of the half-rate TYPE's (a noise burst, MIX
-    100); HALL and PLATE: the T60 per octave 500 Hz .. 4 kHz within 25 % of the half rate's"""
+    """the A/B is fair: the wet's level in band (K-weighted, 100 Hz .. 8 kHz) within 1.5 dB of the half-rate TYPE's
+    (a noise burst, MIX 100, the first 2 s); HALL and PLATE: the T60 per octave 500 Hz .. 4 kHz within 25 % of the
+    half rate's. The band above 11 kHz (the full rate's own, test_hq_band_above_11k) and the Bark loudness, which
+    counts it, are printed beside it.
+    THRESHOLD (0.9.13): the Bark loudness (critical bands up to 20 kHz) -> K-weighted in band, the same 1.5 dB. The
+    Bark match let the HQ HALL sit 1.1 dB under the half rate in band (noise, every MIX / DECAY; 1.4 .. 2 dB on Rhodes
+    chords) with +0.35 dB on the Bark measure: its band above 11 kHz, which the half rate does not have, filled the
+    difference, and the two-core bypass row read 3.8 LU against one core's 3.1. Now in band: HALL +0.3 .. +0.5,
+    INFINITE -0.2 .. +0.4 dB (the Bark measure HALL ~+1.9, INFINITE ~-0.5, printed)"""
     x = rs.burst(rs.FS)
     p = dict(RV_TYPE=T[typ], RV_DEPTH=100)
     secs = 25 if typ == "INFINITE" else 8
     wn = rs.render(exe, x, p, blocks=int(secs * rs.FS / BLK))["wet"].astype(float)
     wo = rs.render(old, x, p, blocks=int(secs * rs.FS / BLK))["wet"].astype(float)
-    g = 20 * np.log10(ab.match_gain(ab.bark_loud(wo[:2 * rs.FS])[0], ab.bark_loud(wn[:2 * rs.FS])[0]))
-    assert abs(g) <= 1.5, f"{typ}: the HQ's wet {-g:+.2f} dB against the half rate's"
+    g = _inband_db(wn[:2 * rs.FS]) - _inband_db(wo[:2 * rs.FS])
+    gb = -20 * np.log10(ab.match_gain(ab.bark_loud(wo[:2 * rs.FS])[0], ab.bark_loud(wn[:2 * rs.FS])[0]))
+    top = ab.top_band(wn, 0.1, 0.5) - ab.top_band(wo, 0.1, 0.5)
+    print(f"{typ}: HQ re the half rate: in band {g:+.2f} dB, Bark {gb:+.2f} dB, > 11 kHz re 1-4 kHz {top:+.1f} dB")
+    assert abs(g) <= 1.5, f"{typ}: the HQ's wet in band {g:+.2f} dB against the half rate's (Bark {gb:+.2f})"
     if typ != "INFINITE":
         for f in (500, 1000, 2000, 4000):
             a, b = ab.oct_t60(wn, f), ab.oct_t60(wo, f)
