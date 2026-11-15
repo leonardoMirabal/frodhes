@@ -266,6 +266,10 @@ names the Move (default `ableton@move.local`).
   EVERY_MS FRAMES` or `off`, over Schwung's WebSocket; no page has it, off at load). The detector must stay
   silent on the first and find every click on the second, or the run stops without a verdict. `--prove` runs the
   proof only, `--dry-run` runs everything against the host build with a simulated jack (no device, no lock).
+  `--usb-ch left|right` (default left) names the Move channel the jack's cable carries: a mono cable from the
+  stereo jack carries one channel, and with the effects' stereo the other channel differs, so USB's same channel
+  is the one compared (the 2026-11-15 rig: the right channel on input 6, `--ch 6 --usb-ch right`; compared with
+  the left channel the worst takes failed on correlation alone, ncc 0.24-0.94).
   The jack on the M6 has a floor of -65.7 dBFS (the first device run, 2026-11-04; the FM-1's jack: about -91), so
   the jack-vs-USB correlation is judged against the floor measured in each take's lead, and the jack is aligned
   along the two recordings' clocks, not on a held chord's period. A jack-only level step (20 ms windows, 3 dB

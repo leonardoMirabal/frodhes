@@ -162,3 +162,25 @@ def test_a_take_that_starts_on_a_tail_has_no_floor():
     assert mj.lead_dbfs(u, 44100, ev, (0.0, 0.0)) < mj.LEAD_QUIET_DBFS
     u[:13000] = 18000.0
     assert mj.lead_dbfs(u, 44100, ev, (0.0, 0.0)) > mj.LEAD_QUIET_DBFS
+
+
+def test_usb_side_puts_the_jacks_channel_first():
+    import numpy as np
+    u = np.array([[1, 2], [3, 4]])
+    assert (mj.usb_side(u, "left") == u).all()
+    assert (mj.usb_side(u, "right") == [[2, 1], [4, 3]]).all()
+    assert (mj.usb_side(np.array([5, 6]), "right") == [5, 6]).all()   # (mono: as it is)
+
+
+def test_usb_ch_right_dry_run_passes_and_is_reported(tmp_path):
+    """--usb-ch right (a mono cable on the Move's right channel, the 2026-11-15 rig): the jack is compared with USB's
+    right channel; the run passes and says which channel it judged"""
+    code, R, md = run(tmp_path, "--usb-ch", "right")
+    assert code == 0, R["verdict"]
+    assert R["rig"]["usb_ch"] == "right" and "the Move's right channel" in md
+
+
+def test_usb_ch_takes_left_or_right_only():
+    with pytest.raises(SystemExit):
+        mj.parse(["--usb-ch", "both"])
+    assert mj.parse([]).usb_ch == "left"
