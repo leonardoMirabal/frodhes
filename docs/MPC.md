@@ -101,7 +101,8 @@ matches the layout and the plugin's parameters. The pictures are painted with th
 `mpc/tools/skin_draw.c`) at twice the plugin's size, so the MPC shows the plugin's parts; the same inputs give the
 same files, byte for byte. To change the layout, edit `mpc/skin.json` and run
 `python3 mpc/tools/make_skin.py --preview build/mpc/skin-preview` (after `make mpc`, which writes the parameters it
-reads; Pillow for the previews).
+reads; Pillow for the previews). The previews are the pictures in `docs/manual/img/mpc/`, with `mpc-catalog.png`, the
+VOICE page's 1280 x 640 crop for the plugin catalogue.
 
 ## What it does
 

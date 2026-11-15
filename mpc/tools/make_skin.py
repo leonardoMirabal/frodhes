@@ -41,6 +41,7 @@ DFONT = os.path.join(ROOT, "assets", "fonts", "Michroma-Regular.ttf")
 # ---- the geometry, in screen pixels (the tab's area: 1280 x 628 under the MPC's header); S = pixels per plugin
 # logical pixel
 W, H, S = 1280, 628, 2
+CATALOG_BOX = (0, 102, 1280, 742)   # (preview: the VOICE page's 1280 x 640 crop, mpc-catalog.png)
 R_OUT, FRAME, RAIL = 44, 16, 44          # the plate's corners, its frame round the body, the rail (the body's top)
 GAP, R_PANEL = 16, 12                     # the panels' inset in the body; their corners (concentric: 44-16-16)
 PX, PW = FRAME + GAP, W - 2 * (FRAME + GAP)
@@ -648,6 +649,10 @@ def preview(pages, out_dir, skins=SKINS):
         path = os.path.join(out_dir, "mpc-%s.png" % slug(page["name"]))
         full.convert("RGB").save(path, optimize=True)
         made.append(path)
+        if slug(page["name"]) == "voice":           # the plugin catalogue's screenshot (user 2026-11-14): 2:1, the
+            path = os.path.join(out_dir, "mpc-catalog.png")   # Frodhes area alone, no MPC header or tabs
+            full.convert("RGB").crop(CATALOG_BOX).save(path, optimize=True)
+            made.append(path)
     return made
 
 
