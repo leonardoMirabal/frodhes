@@ -567,3 +567,35 @@ def test_vibes_jump_keeps_its_references(monkeypatch):
     V = h.VRig("both", dry_run=True)
     h.vibes_jump(V, h.VSuite("vibes_jump", V))
     assert not any(t["tag"].startswith("jump-probe") for t in V.takes)
+
+
+def test_wah_depth_over_the_whole_roll(monkeypatch):
+    """WAH DEPTH 0 / 64 / 127 on MARIMBA (the host build, marimba_fx's roll): in 20..300 ms from the first onset the
+    roll is still building up (one v80 note, then two, three: the touch wah's envelope rises with them), and DEPTH
+    127's 1-4 kHz rise over DEPTH 0 read 8.4..14.5 dB over 20 host seeds (rc-0.9.12's FM-1 T2: the jack 5.9 dB
+    against the 6 dB bar). WAH_W, the whole roll: 16.4..18.0 dB, the bar unchanged"""
+    monkeypatch.setattr(h, "ENGINE", "marimba")
+    got = {}
+    real = h.vibes_fx
+    try:
+        h.vibes_fx = lambda V, S, stim=None, extra=(): got.update(stim, extra=list(extra))
+        h.marimba_fx(None, None)
+    finally:
+        h.vibes_fx = real
+    ch, w = got["CH"], got["WAH_W"]
+    assert w[1] - w[0] >= 1.5 and w[0] >= 0.02 and max(e[0] for e in ch[1]) <= w[1] + 0.1
+    old, new = [], []
+    for seed in (3, 4, 10):                               # (the old window's low / high readings)
+        V = h.VRig("usb", host=seed)
+
+        def run(tag, s):
+            V.reset(list(s) + got["extra"], label=tag)
+            return V.take(tag, *ch)
+        T = {x: run(f"t-wah-{x}", [("TW_SW", 2), ("TW_DEPTH", x)]) for x in (0, 64, 127)}
+        dry = run("t-wah-dry", [])
+        for a, b, out in ((0.02, 0.3, old), (*w, new)):
+            v = [h.band_re(T[x], dry, "usb", 1000, 4000, a, b, sub=True)[0] for x in (0, 64, 127)]
+            assert v[0] < v[1] < v[2], (seed, a, v)
+            out.append(v[2] - v[0])
+    assert np.ptp(old) >= 4, old                          # (the 300 ms window: the roll's build-up, seed to seed)
+    assert min(new) >= 12 and np.ptp(new) <= 2.5, new     # (twice the 6 dB bar, steady)
