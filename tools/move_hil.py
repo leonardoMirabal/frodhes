@@ -622,17 +622,24 @@ class TapRig(UsbRig):
     def wait_silence(self, limit=10.0, floor_db=-80.0):
         return True
 
+    def lead(self):
+        """the messages sent before a take (self.pending) as the take's leading events: [(ms, status...)]"""
+        ev, i, base = [], 0, 1                   # (48 a ms: the app's MIDI ring holds 64; a program change at 5 ms)
+        for k, a, b in self.pending:             # (what is sent after a program change plays after it: VIBES'
+            if k == "pc":                        # motor off (CC 47 0) went in before F13's change, which turned the
+                pm = max(5, base + 1 + i // 48)  # motor back on: d2's usb-host DIFFERED by -11 dB, 2026-11-15)
+                ev.append((pm, *to_status(k, a, b, self.ch)))
+                base, i = pm + 1, 0
+            else:
+                ev.append((base + i // 48, *to_status(k, a, b, self.ch)))
+                i += 1
+        return ev
+
     def rec(self, dur, events):
         import wave
         self.n += 1
         take = "d%s-%03d" % (self.stamp, self.n)
-        ev, i = [], 0                            # (48 a ms: the app's MIDI ring holds 64; a program change at 5 ms)
-        for k, a, b in self.pending:
-            if k == "pc":
-                ev.append((max(5, 2 + i // 48), *to_status(k, a, b, self.ch)))
-            else:
-                ev.append((1 + i // 48, *to_status(k, a, b, self.ch)))
-                i += 1
+        ev = self.lead()
         ev += [(TAP_PRE_MS + int(round(1000 * t)), *to_status(k, a, b, self.ch)) for t, k, a, b in events]
         self.pending = []
         dur_ms = TAP_PRE_MS + int(round(1000 * dur)) + 1
@@ -3307,6 +3314,10 @@ def _main(a):
         else:
             r = UsbRig(a.midi, a.audio, chan["send"])
         rig_ws(a, r, srep)
+        if not a.fake:                         # (usb-host's host at the Move's tempo, as the usb-host command: the
+            r.bpm10 = move_bpm10(None, srep)   # synced delay of F13 differs at 120; --bpm here is usb-clock's)
+            if r.bpm10:
+                print("usb-host: the host at the saved set's tempo %.1f BPM" % (r.bpm10 / 10), flush=True)
         only = [x for x in (a.tests or "").split(",") if x] or None
         pre = None if a.no_preflight else (lambda: preflight_cmd(a, os.path.join(d, "preflight"), chan, srep,
                                                                  u=r if not isinstance(r, TapRig) else None))
