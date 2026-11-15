@@ -17,9 +17,14 @@ setup:                     ## project-local venv, toolchain and the 3 SDK files
 	sh tools/get_sdk.sh .local/fw-AC79_AIoT_SDK
 
 # the defs a host binary was built with: rewritten only when HOST_DEFS changes, so the binary is rebuilt then (a stale
-# one-core build never answers for HOST_DEFS=-DFR_C1=1, 2026-11-14)
+# one-core build never answers for HOST_DEFS=-DFR_C1=1, 2026-11-14). The comparison also runs when the Makefile is
+# read and forces the rebuild: make's 1 s timestamps miss a stamp written in the binary's second, and make reads the
+# binary's time before the stamp rule runs, so removing the binary there left none for the whole run (2026-11-15)
+ifneq ($(shell printf '%s\n' '$(HOST_DEFS)' | cmp -s - $(HOSTBIN).defs 2>/dev/null || echo x),)
+$(HOSTBIN): FORCE
+endif
 $(HOSTBIN).defs: FORCE
-	@mkdir -p $(dir $@); printf '%s\n' '$(HOST_DEFS)' | cmp -s - $@ || { printf '%s\n' '$(HOST_DEFS)' > $@; rm -f $(HOSTBIN); }   # (rm: make's 1 s timestamps)
+	@mkdir -p $(dir $@); printf '%s\n' '$(HOST_DEFS)' | cmp -s - $@ || printf '%s\n' '$(HOST_DEFS)' > $@
 FORCE:
 
 $(HOSTBIN): firmware/src/*.c firmware/src/*.h firmware/gen/*.h tests/host.c $(HOSTBIN).defs
