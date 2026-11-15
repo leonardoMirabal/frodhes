@@ -319,11 +319,35 @@ def first(names, keys=PORT_KEYS):
     return p[0] if p else None
 
 
-def devices(devs, ch=2, keys=PORT_KEYS, ca=None):
+class _Stale(Exception):
+    """PortAudio's device list is not CoreAudio's (devices())"""
+
+
+def devices(devs, ch=2, keys=PORT_KEYS, ca=None, sd=None):
     """the FM-1's audio inputs among sounddevice's devs. Two units share the name "Frodhes FM-1": with a location
     pinned (pin_audio, a tool's --location, FM1_LOCATION=0x... for every tool) only the device at that USB location
     (CoreAudio's device UID); without one, two FM-1 audio devices are refused (SystemExit), never one taken at
-    random. ca: coreaudio_devices() (the tests)"""
+    random. ca: coreaudio_devices() (the tests).
+    PortAudio reads its device list once, when sounddevice starts: after a device change (an FM-1 rebooted by an
+    install, a unit plugged in) it is not CoreAudio's any more, and the locations cannot be read. Then PortAudio's
+    list is re-read once (sd: the sounddevice module; default the imported one when ca is read here, not given) and
+    the pick retried on it; the indices returned are the re-read list's (the callers query sd by index afterwards).
+    2026-11-14: a tool exited "CoreAudio's list is not sounddevice's" after a device change"""
+    try:
+        return _devices(devs, ch, keys, ca)
+    except _Stale as e:
+        sd = sd or (sys.modules.get("sounddevice") if ca is None else None)
+        if sd is None:
+            sys.exit(str(e))
+        sd._terminate()                           # (sounddevice's own re-read of PortAudio's list)
+        sd._initialize()
+        try:
+            return _devices(sd.query_devices(), ch, keys, None if ca is None else ca)
+        except _Stale as e2:
+            sys.exit(str(e2) + " (after re-reading PortAudio's list)")
+
+
+def _devices(devs, ch, keys, ca):
     devs = list(devs)
     ok = [i for i, d in enumerate(devs) if d["max_input_channels"] >= ch]
     names = pick([devs[i]["name"] for i in ok], keys)
@@ -335,10 +359,14 @@ def devices(devs, ch=2, keys=PORT_KEYS, ca=None):
     ca = coreaudio_devices() if ca is None else ca
     if ca is None or [n for n, _ in ca] != [d["name"] for d in devs]:
         if AUDIO_LOC is not None:
-            sys.exit(f"--location 0x{AUDIO_LOC:08x}: the audio devices' USB locations cannot be read (CoreAudio's "
-                     "list is not sounddevice's): no audio device taken")
-        sys.exit(f"{len(sel)} FM-1 audio devices ({', '.join(devs[i]['name'] for i in sel)}) and their USB locations "
-                 "cannot be read: give the unit's --location (or FM1_LOCATION=0x...)")
+            msg = (f"--location 0x{AUDIO_LOC:08x}: the audio devices' USB locations cannot be read (CoreAudio's "
+                   "list is not sounddevice's): no audio device taken")
+        else:
+            msg = (f"{len(sel)} FM-1 audio devices ({', '.join(devs[i]['name'] for i in sel)}) and their USB locations "
+                   "cannot be read: give the unit's --location (or FM1_LOCATION=0x...)")
+        if ca is None:                            # (off macOS: nothing to re-read)
+            sys.exit(msg)
+        raise _Stale(msg)
     if AUDIO_LOC is None:
         where = ", ".join(f"{devs[i]['name']!r} at " + (f"0x{uid_loc(ca[i][1]):08x}" if uid_loc(ca[i][1]) is not None
                                                         else "?") for i in sel)

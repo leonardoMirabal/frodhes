@@ -191,3 +191,41 @@ def test_audio_by_location(monkeypatch):
     finally:
         fp.pin_audio(None)
     assert "FM1_LOCATION" not in os.environ
+
+
+def test_audio_list_reread_after_a_device_change(monkeypatch):
+    """2026-11-14: after a device change PortAudio's list (read once, at sounddevice's start) is not CoreAudio's and
+    devices() exited "CoreAudio's list is not sounddevice's". Now it re-reads PortAudio's list once and picks on it;
+    a list still stale after the re-read is refused as before"""
+    old = [dict(name="M6", max_input_channels=6), dict(name="Frodhes FM-1", max_input_channels=2)]
+    new = old + [dict(name="Frodhes FM-1", max_input_channels=2)]
+    ca = [("M6", "AppleUSBAudioEngine:MOTU:M6:M6AE045D2Y:1,2"),
+          ("Frodhes FM-1", "AppleUSBAudioEngine:Hügelton Instruments:Frodhes FM-1:100000:2"),
+          ("Frodhes FM-1", "AppleUSBAudioEngine:Hügelton Instruments:Frodhes FM-1:20130000:2")]
+
+    class SD:
+        def __init__(self, after):
+            self.after, self.calls = after, []
+
+        def _terminate(self):
+            self.calls.append("terminate")
+
+        def _initialize(self):
+            self.calls.append("initialize")
+
+        def query_devices(self):
+            return self.after
+    monkeypatch.setattr(fp, "coreaudio_devices", lambda: ca)
+    monkeypatch.delenv("FM1_LOCATION", raising=False)
+    fp.pin_audio(0x20130000)
+    try:
+        sd = SD(new)
+        assert fp.devices(old, 2, sd=sd) == [2]                                  # (the re-read list's index)
+        assert sd.calls == ["terminate", "initialize"]
+        sd = SD(new)
+        assert fp.devices(new, 2, sd=sd) == [2] and sd.calls == []               # (lists agree: no re-read)
+        with pytest.raises(SystemExit) as e:
+            fp.devices(old, 2, sd=SD(old))                                       # (still stale: refused)
+        assert "after re-reading" in str(e.value)
+    finally:
+        fp.pin_audio(None)
