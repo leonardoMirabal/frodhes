@@ -185,6 +185,8 @@ tp_mod_c
 rq_in
 +10  # (2026-11-15: its HALL level from rq_st.cur: 10 B smaller; the padding keeps the code after it where 0.9.12's storm passes measured it)
 rev_hqh_run
++4044  # (2026-11-15: its warm-up reads, 52 B more: the code after it one cache way (4096 B) on, so every
+       # line of it maps to the same set as on 0.9.12's storm passes; 4 KB of flash)
 rq_sqrt15
 rev_inf_run
 rq_ret
