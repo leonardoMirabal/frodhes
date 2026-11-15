@@ -399,8 +399,14 @@ class Release:
             return p
         t_rc, t_head = out(["git", "rev-parse", rc + "^{tree}"]), out(["git", "rev-parse", "HEAD^{tree}"])
         if t_rc != t_head:
-            p.append(f"main's tree {t_head[:10]} is not the release commit {rc[:10]}'s ({t_rc[:10]}): something else "
-                     f"was merged after it, so main is not what was tested")
+            later = [f for f in out(["git", "diff", "--name-only", rc, "HEAD"]).splitlines() if f]
+            other = [f for f in later if not release_infra(f)] or ([] if later else ["(diff unknown)"])
+            if other:
+                p.append(f"main's tree {t_head[:10]} is not the release commit {rc[:10]}'s ({t_rc[:10]}): something "
+                         f"else was merged after it, so main is not what was tested ({', '.join(other[:8])})")
+            else:   # only the release machinery moved (v0.9.12: ci_gate.sh after the release commit); the builds'
+                ev.append(f"after the release commit {rc[:10]}, only the release machinery changed "   # sha256 still
+                          f"({', '.join(later)}): the shipped code is the release commit's")         # checked (step 3)
         m = re.search(r"release build sha256 ([0-9a-f]{64})", out(["git", "log", "-1", "--format=%B", rc]))
         if not m:
             p.append(f"the release commit {rc[:10]} records no release build sha256")
@@ -1187,6 +1193,15 @@ def same_tree_run(workflow, sha, limit=50, max_commits=20):
     print(f"   no green {workflow} run on a commit with {sha[:10]}'s tree {tree[:10]}: waiting for one on {sha[:10]}",
           flush=True)
     return None
+
+
+RELEASE_INFRA = (".github/workflows/", "tools/ci_gate.sh", "tools/release.py", "tests/py/test_release")
+
+
+def release_infra(path):
+    """a file of the release machinery only (workflows, the ci gate, this tool and their tests): changing it after the
+    release commit changes nothing that ships, and --after-merge's step 3 still rebuilds and checks every sha256"""
+    return path.startswith(RELEASE_INFRA)
 
 
 CI_NEED = ("host", "generators-macos")   # ci.yml's jobs that must succeed (tools/ci_gate.sh's CI_GATE_JOBS)
