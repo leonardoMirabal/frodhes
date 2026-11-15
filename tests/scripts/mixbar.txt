@@ -1,0 +1,121 @@
+# The MIX cards (0.9.13, as Textura's variant B): DRIVE MIX (K4), DELAY MIX (K2), REVERB MIX (K2). A bar from the
+# left, to 64 in the accent, past it in the accent's complement, a 1 px line at 64; the card's text DRY / 50/50 / WET
+# at 0 / 64 / 127 and none between ("show": BAR); "card" keeps the number. mixg: the gains fx.c runs with (Q15:
+# the delay's dry / echo, the reverb's dry / send, the drive's dry / wet; fx.c DLY_DRY, RV_SEND, DR_WET ...).
+# Encoders: SELECT 0; DRIVE is 7 SELECT detents from PERFORM, DELAY 12, REVERB 13 (ui.c PG_ORDER)
+100 midi 0xB0 88 40
+100 midi 0xB0 84 127
+100 midi 0xB0 81 60
+100 midi 0xB0 95 40
+200 turn 0 1
+210 turn 0 1
+220 turn 0 1
+230 turn 0 1
+240 turn 0 1
+250 turn 0 1
+260 turn 0 1
+300 expect state page DRIVE
+300 expect state label3 MIX
+700 midi 0xB0 83 0
+700 midi 0xB0 89 0
+700 midi 0xB0 91 0
+1000 expect state show3 DRY
+1000 expect state mixg 32768/0/32768/0/32768/0
+1900 shot
+2300 midi 0xB0 83 32
+2300 midi 0xB0 89 32
+2300 midi 0xB0 91 32
+2600 expect state show3 BAR
+2600 expect state mixg 32768/16384/32768/16384/32768/16384
+3500 shot
+3900 midi 0xB0 83 64
+3900 midi 0xB0 89 64
+3900 midi 0xB0 91 64
+4200 expect state show3 50/50
+4200 expect state mixg 32768/32768/32768/32766/32768/32768
+5100 shot
+5500 midi 0xB0 83 96
+5500 midi 0xB0 89 96
+5500 midi 0xB0 91 96
+5800 expect state show3 BAR
+5800 expect state mixg 16124/32768/16124/32766/16128/32768
+6700 shot
+7100 midi 0xB0 83 127
+7100 midi 0xB0 89 127
+7100 midi 0xB0 91 127
+7400 expect state show3 WET
+7400 expect state mixg 0/32768/0/32766/0/32768
+8300 shot
+8400 turn 0 1
+8410 turn 0 1
+8420 turn 0 1
+8430 turn 0 1
+8440 turn 0 1
+8550 expect state page DELAY
+8550 expect state label1 MIX
+8950 midi 0xB0 83 0
+8950 midi 0xB0 89 0
+8950 midi 0xB0 91 0
+9250 expect state show1 DRY
+9250 expect state mixg 32768/0/32768/0/32768/0
+10150 shot
+10550 midi 0xB0 83 32
+10550 midi 0xB0 89 32
+10550 midi 0xB0 91 32
+10850 expect state show1 BAR
+10850 expect state mixg 32768/16384/32768/16384/32768/16384
+11750 shot
+12150 midi 0xB0 83 64
+12150 midi 0xB0 89 64
+12150 midi 0xB0 91 64
+12450 expect state show1 50/50
+12450 expect state mixg 32768/32768/32768/32766/32768/32768
+13350 shot
+13750 midi 0xB0 83 96
+13750 midi 0xB0 89 96
+13750 midi 0xB0 91 96
+14050 expect state show1 BAR
+14050 expect state mixg 16124/32768/16124/32766/16128/32768
+14950 shot
+15350 midi 0xB0 83 127
+15350 midi 0xB0 89 127
+15350 midi 0xB0 91 127
+15650 expect state show1 WET
+15650 expect state mixg 0/32768/0/32766/0/32768
+16550 shot
+16650 turn 0 1
+16750 expect state page REVERB
+16750 expect state label1 MIX
+17150 midi 0xB0 83 0
+17150 midi 0xB0 89 0
+17150 midi 0xB0 91 0
+17450 expect state show1 DRY
+17450 expect state mixg 32768/0/32768/0/32768/0
+18350 shot
+18750 midi 0xB0 83 32
+18750 midi 0xB0 89 32
+18750 midi 0xB0 91 32
+19050 expect state show1 BAR
+19050 expect state mixg 32768/16384/32768/16384/32768/16384
+19950 shot
+20350 midi 0xB0 83 64
+20350 midi 0xB0 89 64
+20350 midi 0xB0 91 64
+20650 expect state show1 50/50
+20650 expect state mixg 32768/32768/32768/32766/32768/32768
+21550 shot
+21950 midi 0xB0 83 96
+21950 midi 0xB0 89 96
+21950 midi 0xB0 91 96
+22250 expect state show1 BAR
+22250 expect state mixg 16124/32768/16124/32766/16128/32768
+23150 shot
+23550 midi 0xB0 83 127
+23550 midi 0xB0 89 127
+23550 midi 0xB0 91 127
+23850 expect state show1 WET
+23850 expect state mixg 0/32768/0/32766/0/32768
+24750 shot
+25150 midi 0xB0 95 0
+25450 expect state mixg 0/32768/32768/0/0/32768
+26150 end

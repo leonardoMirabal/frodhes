@@ -223,7 +223,8 @@ def _cases():
             # (PLATE AUTO: the sweep's tank keeps the size MIX 1 latched, SIZE 1, while the statics run sizes 32 ..
             # 127, whose plates differ in fine structure: against them 2.11 / wet 2.16; against statics held at SIZE 1,
             # the sweep's own tank, 1.04)
-        s = [(95, v), (91, 64)]
+        s = [(95, v), (91, 64 if t == "INF" else 48)]   # (0.9.13's MIX law, E2: HALL / PLATE at 48, 0.9.12's send at its
+        # MIX 64; INFINITE at 64, its lines at 0.9.12's level there (its return makes up the level))
         add(Case(f"rev {t} DECAY", 92, s, additive=True, page="REVERB"))
         add(Case(f"rev {t} TONE", 93, s, additive=True, page="REVERB"))
         add(Case(f"rev {t} PRE-DELAY", 94, s, kind="pitch", additive=True, page="REVERB 2"))
@@ -233,7 +234,7 @@ def _cases():
         add(Case(f"rev {t} MOD", 68, s, kind="pitch", additive=True, page="REVERB 2",
                  skip={"zipper", "zipper_wet"} if t == "PLATE" else ()))
         add(Case(f"rev {t} LOW CUT", 69, s, additive=True, page="REVERB 2"))
-    add(Case("rev TYPE", 95, [(91, 64)], kind="select", statics=[16, 48, 80, 112], additive=True, page="REVERB",
+    add(Case("rev TYPE", 95, [(91, 48)], kind="select", statics=[16, 48, 80, 112], additive=True, page="REVERB",
              skip={"trans"}))                    # (MANUAL: the old tail fades out, the new TYPE starts empty)
     # SPREAD, LEVEL, MASTER
     add(Case("SPREAD", 105, kind="mix", page="MIDI"))

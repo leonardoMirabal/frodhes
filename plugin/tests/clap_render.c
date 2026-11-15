@@ -514,7 +514,7 @@ static int selftest(void)
      * (plugin/src/frp_os.h), placed exactly; 22.05 kHz: the windowed sinc's reach instead */
     {
         static const struct { double r; uint32_t lat; } L[] = { {44100.0, 258u}, {48000.0, 325u}, {88200.0, 602u},
-            {96000.0, 698u}, {176400.0, 1222u}, {192000.0, 1416u}, {22050.0, 155u} };
+            {96000.0, 698u}, {176400.0, 1222u}, {192000.0, 1416u}, {22050.0, 230u} };
         for (unsigned q = 0; q < sizeof L / sizeof L[0]; q++) {
             uint32_t before = pl->get(a);
             int ch = lat_changes;
@@ -528,7 +528,7 @@ static int selftest(void)
         }
     }
     printf("ok    rates: 44100 (latency 258), 48000 (325), 88200 (602), 96000 (698), 176400 (1222), 192000 (1416), "
-           "22050 (155) taken, 500 refused; the latency answers before, during and after an activation (the host told "
+           "22050 (230) taken, 500 refused; the latency answers before, during and after an activation (the host told "
            "of each change in activate: %d)\n", lat_changes);
     /* a flood of automation (pluginval's parameter thread test: 2000+ changes a 32-frame block, each due ~10 ms
      * ahead, ~15 blocks in the queue at once): no change dropped, every parameter ends on the last value sent */

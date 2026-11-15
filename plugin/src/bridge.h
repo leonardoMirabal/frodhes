@@ -40,7 +40,9 @@
 #define FRP_STATE_MAX 2048               /* the state's JSON text (slot_bridge.h SB_STATE_N) */
 #define FRP_PNAME 32                     /* a preset name with its terminator */
 #define FRP_NFACTORY 57u                 /* F01..F19 (presets.c) + F20..F57 (move/move_presets.h) */
+#ifndef FRP_VOICES                       /* (the Akai MPC port builds its slots at 16: mpc/build.py) */
 #define FRP_VOICES 24u                   /* every slot's voice count, every engine (slots.cmake FR_VOICES) */
+#endif
 
 enum { FRP_EV_MIDI = 1, FRP_EV_PARAM, FRP_EV_RESERVED3, FRP_EV_RESET, FRP_EV_CFG, FRP_EV_PRESET, FRP_EV_UNDO,
        FRP_EV_LEARN, FRP_EV_RELEASE, FRP_EV_UINOTE };

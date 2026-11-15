@@ -66,6 +66,8 @@ class FakeSchwung:
                                                          # a build before)
         self.cut_sets = []                               # ([n, ...]: after n more set_params, the socket cut without a
         #                                                  close frame, once per entry: a drop in the middle of a restore)
+        self.ring = set()                                # (set_param numbers (from 1) refused "ring full" and lost,
+        self.nset = 0                                    #  as the manager's web set ring does when it is full)
         self.hist, self.conns = [], []                                   # (the order of preset switches and takes: host_fetch's state)
         self.server = serve(self.handle, "127.0.0.1", 0)
         self.url = "ws://127.0.0.1:%d/ws/remote-ui" % self.server.socket.getsockname()[1]
@@ -108,6 +110,10 @@ class FakeSchwung:
                 if self.refuse:
                     ws.send(json.dumps({"type": "error", "message": "set_param failed: busy"}))
                     continue
+                self.nset += 1
+                if self.nset in self.ring:
+                    ws.send(json.dumps({"type": "error", "message": "set_param failed: web param set ring full"}))
+                    continue
                 if m["key"] == "synth:dev_play":         # (the plugin's player, as move_bridge.h parses it)
                     v = m["value"].split()
                     if v[0] == "begin":
@@ -145,7 +151,7 @@ class FakeSchwung:
                 if m["key"] == "synth:p_hq":
                     self.hist.append(("hq", int(m["value"]) != 0))
                 k = m["key"][6:] if m["key"].startswith("synth:") else None
-                if self.full and k in self.settings:
+                if self.full and k in self.settings and not k.startswith("r_"):   # (r_*: read only, as the plugin)
                     if (k == "p_dl_sw" and self.settings["p_dl_depth"] == "0"
                             and str(m["value"]) != self.settings[k]):
                         self.settings["p_dl_depth"] = "50"   # (as the panel: a switch gives MIX at 0 a start)
@@ -273,13 +279,16 @@ def test_empty_slot_and_errors():
         f.close()
 
 
-def test_cli(fake):
+def test_cli(fake, tmp_path):
     tool = os.path.join(ROOT, "tools", "move_ws.py")
-    p = subprocess.run([sys.executable, tool, "preset", "14", "--url", fake.url], capture_output=True, text=True)
+    env = dict(os.environ, FRODHES_LOCK_ROOT=str(tmp_path))   # (its MOVE lock: not the real one a device run holds)
+    env.pop("FRODHES_LOCK_MOVE", None)
+    p = subprocess.run([sys.executable, tool, "preset", "14", "--url", fake.url], capture_output=True, text=True,
+                       env=env)
     assert p.returncode == 0, p.stdout + p.stderr
     assert json.loads(p.stdout)["preset_name"] == "F15"
     p = subprocess.run([sys.executable, tool, "info", "--url", "ws://127.0.0.1:9/ws/remote-ui", "--timeout", "1"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, env=env)
     assert p.returncode == 2 and "schwung" in p.stdout
 
 
@@ -602,6 +611,21 @@ def test_state_check_fails_when_a_write_does_not_take():
         f.close()
 
 
+def test_state_ignores_the_read_only_version():
+    """the Move, 2026-11-14: a slot loaded before an install reported the old r_version, the reloaded one the new;
+    the restore failed on a read-only key it cannot write. r_version is neither kept nor written nor compared"""
+    import move_hil as mh
+    f = FakeSchwung(full=True, settings={"r_version": "0.9.11"})
+    try:
+        with mh.KeptState(f.url, 0, out=lambda s: None) as ks:
+            f.settings["r_version"] = "0.9.12"
+        assert ks.report["verdict"] == "PASS", ks.report
+        assert "r_version" not in ks.report["written"]
+        assert f.settings["r_version"] == "0.9.12"
+    finally:
+        f.close()
+
+
 def test_state_restore_writes_the_switches_first():
     """the Move, 2026-10-28: MIX written 0 before its switch came back 50 (a switch gives MIX at 0 a starting
     amount). The switches and types go first, and what still differs is written again"""
@@ -636,5 +660,29 @@ def test_state_restore_after_a_dropped_socket(monkeypatch, drops):
             assert len(ks.report["dropped"]) == 1 and not f.cut_sets
         else:
             assert ks.report["verdict"].startswith("FAIL: the state was not restored"), ks.report
+    finally:
+        f.close()
+
+
+@pytest.mark.parametrize("refused", [1, 3, 99])
+def test_state_restore_paced_on_ring_full(monkeypatch, refused):
+    """the Move, 2026-11-15 (after move_jack): Schwung's web set ring refused a restore write, "web param set ring
+    full", and the restore FAILED. Each ring full now pauses (RING_BACKOFF_S) and what still differs is written
+    again: PASS, the pauses in the report. A ring that stays full past the last pause still fails, named"""
+    import move_hil as mh
+    monkeypatch.setattr(mh, "RING_BACKOFF_S", (0.0,) * 5)
+    f = FakeSchwung(full=True)
+    try:
+        before = dict(f.settings)
+        with mh.KeptState(f.url, 0, out=lambda s: None) as ks:
+            f.settings.update(p_dl_fdbk="127", p_ph_fdbk="127", p_rv_decay="127")
+            f.nset = 0
+            f.ring = set(range(6, 6 + refused))          # (after the 4 dev / HQ keys and 1 of the 3 params)
+        if refused < 99:
+            assert ks.report["verdict"] == "PASS" and f.settings == before, ks.report
+            assert ks.report["ring"] and len(ks.report["ring"]) <= len(mh.RING_BACKOFF_S), ks.report
+        else:
+            assert ks.report["verdict"].startswith("FAIL: the state was not restored") and \
+                "ring full" in ks.report["verdict"], ks.report
     finally:
         f.close()

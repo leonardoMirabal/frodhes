@@ -101,9 +101,9 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     P_RV_DEPTH, 16, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 47, P_TONE, 112, P_BARK, 80, P_BELL, 96, P_HAMMER, 32,
     P_DECAY, 72, 0xFF,
     /* F03 EARLY FELT: the felt hammers, their soft onset, NOISE lower (soft playing), a brighter TONE, a gentle
-     * compressor, a trace of hall */
+     * compressor, a trace of hall (0.9.13 SND3: LEVEL 46 -> 48, back to its level re F01 on FULL's new curve) */
     P_TYPE, 2, P_NOISE, 36, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 1, P_CMP_ATK, 40, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 46, P_TONE, 112, P_BARK, 80, P_BELL, 64, P_HAMMER, 64,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 48, P_TONE, 112, P_BARK, 80, P_BELL, 64, P_HAMMER, 64,
     P_DECAY, 72, 0xFF,
     /* F04 BELL DYNO: the bell voicing (its TYPE), the cards at the middle, a short plate */
     P_TYPE, 3, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
@@ -434,7 +434,11 @@ FR_COLD static void preset_load(uint32_t idx)
     for (i = 0; i < P_COUNT; i++) UV(i) = PV(i);
     set.undo_valid = 1;
     set.undo_preset = (uint8_t)(set.preset < PR_NF + PR_NU ? set.preset + 1u : 0u);   /* what the undo copy was */
+    fx_hold = 1;                                        /* (the effects' values: over the next blocks, fx_set) */
     for (i = 0; i < P_COUNT; i++) param_set(i, p[i]);
+    fx_hold = 0;
+    fx_ps = 1; fx_pb = blk_n;                           /* (from the first step again: one under way keeps its
+                                                         * values, newer ones over them, until its step comes) */
     rev_relatch();                                      /* (a sound's own PLATE AUTO size, as before) */
     set.preset = (uint8_t)idx;
     snd_base_take();                                    /* the sound a power cycle comes back to (params.c) */
@@ -449,6 +453,23 @@ FR_COLD static void preset_load(uint32_t idx)
         preset_name(idx, s);
         ui_say(s);
     }
+}
+
+/* main loop, between blocks: a Program Change's kept effect values, one step a block (fx.c fx_set) */
+static void fx_pend_poll(void)
+{
+    uint32_t b = blk_n;
+    if (!fx_ps || b == fx_pb) return;
+    fx_pb = b;
+    fx_pend_apply(fx_ps - 1u);
+    fx_ps = fx_ps < FX_PEND_N ? (uint8_t)(fx_ps + 1u) : 0u;
+}
+
+static void fx_pend_flush(void)                 /* all of them now (the boot's load: no audio yet) */
+{
+    uint32_t k;
+    for (k = 0; k < FX_PEND_N; k++) fx_pend_apply(k);
+    fx_ps = 0;
 }
 
 FR_COLD static void preset_undo(void)

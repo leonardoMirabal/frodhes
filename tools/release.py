@@ -3,6 +3,7 @@
 """One command for a whole Frodhes release (AGENTS.md section 9), stopping at the first failure.
 
     tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device [--device-done JSON]] [--full] [--no-emulator] [--yes]
+                     --plugin-tested "macos windows linux-x86_64 linux-aarch64"   (the release commit's plugin record)
     tools/release.py X.Y.Z --after-merge [--no-emulator] [--yes]   after the release PR's merge: tag and publish
     tools/release.py [X.Y.Z] --verify-only      step 9 alone, against a published release (read-only)
     tools/release.py --web-selftest [DIST [X.Y.Z]]   the emulator selftest alone (ci.yml / release.yml, job web)
@@ -17,9 +18,15 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
  2 preconditions on main, no tracked changes, not behind origin/main (after a fetch), the fragments in docs/changes/
                  well formed (at least one) and no docs/releases/vX.Y.Z.md written by hand (one already committed with
                  no fragments left: a re-run after step 5, accepted)
- 3 host          make test, make pytest, tools/gate_r.py, ./build.sh --release X.Y.Z (its sha256); with move/ in the
+ 3 host          make test, make pytest, tools/gate_r.py, ./build.sh --c1 --release X.Y.Z (its sha256); with move/ in the
                  tree also the Move's MT0 (tools/ci_move.sh) and its package, make move MOVE_VER=X.Y.Z (reproducible:
                  build/frodhes-X.Y.Z-move.tar.gz, its sha256)
+                 Each test command that passes is recorded (clean tree only) in build/release-step3/<X.Y.Z>-<HEAD>.json
+                 of the main checkout, with the builds' sha256 once step 3 is complete; a later run of the version on
+                 that HEAD with a clean tree (the real run after the dry run) runs only what did not pass yet, then
+                 the builds, whose sha256 must equal the record's (--no-step3-cache: run everything). On a descendant
+                 whose diff is only tools/*.py, tests/py/test_*.py (not tools/build.py, not conftest) and the Gate R
+                 baseline, it also runs the tests of those files, and Gate R + ci_move when the baseline changed
  4 FM-1          (--no-device skips it and lists its commands) the tiers this release needs, from
                  `git diff <previous tag>..HEAD` through tools/test_map.py (printed with the reason): T1 on every
                  release, T2 when an engine / the DSP changed (or --full). The device lock, install, then
@@ -38,7 +45,9 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
  5 docs          tools/doc_links.py's check (each picture's ?v= = its file's hash, no version named in README /
                  MANUAL / the device manuals), tests/py/test_docs_vs_code.py, test_doc_links.py, test_changes.py, test_manual_shots.py
                  (the screenshots = what the code draws); the fragments assembled into docs/releases/vX.Y.Z.md (shown in
-                 full), then the release commit: the notes added, the fragments removed
+                 full), then the release commit: the notes added, the fragments removed, and its line "Plugin tested:"
+                 from --plugin-tested (all four platforms, or no commit: release.yml attaches only the recorded
+                 plugin packages, and tools/release_assets.sh keeps a release without them a draft)
  6 confirm       what will be pushed, then "Publish X.Y.Z? [y/N]" (--yes skips the prompt). --dry-run stops here.
  7 publish       main is protected (enforce_admins: nobody pushes to it, an admin neither), so the release commit
                  goes in through a pull request: a normal run pushes nothing and stops here with the commands (push
@@ -81,7 +90,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = "leonardoMirabal/frodhes"
 PAGES_URL = "https://leonardomirabal.github.io/frodhes/"
 STABLE = "frodhes.fwsc"                       # release.yml uploads the package under this name too
-C1_ASSETS = ("frodhes-c1.fwsc", "frodhes-{v}-c1.fwsc")   # the FM-1's two-core image (release.yml: ./build.sh --c1)
+RETIRED = ("frodhes-c1.fwsc", "frodhes-{v}-c1.fwsc")   # 0.9.10-0.9.11's second FM-1 package: frodhes.fwsc is two-core now
 # release.yml also builds and attaches the SMK-37 packages (./build.sh --board smk37 [--model elite|mke]), each under
 # the fixed name and the build's own versioned one: the fixed name -> the build's file (tools/build.py package())
 SMK_ASSETS = {"frodhes-smk37-pro.fwsc": "frodhes-{v}-smk37.fwsc",
@@ -97,11 +106,18 @@ def smk_versioned(name, v):
 MOVE_BUILT = os.path.join("build", "move", "frodhes-module.tar.gz")
 MOVE_VERSIONED = "frodhes-{v}-move.tar.gz"
 MOVE_STABLE = "frodhes-module.tar.gz"
+PLUGIN_PLATFORMS = ("macos", "windows", "linux-x86_64", "linux-aarch64")   # tools/plugin_asset.sh's names
+PLUGIN_RECORD = "Plugin tested:"                # the release commit's line (tools/plugin_asset.sh reads it)
 MOVE_RECORD = "Move package sha256"            # the release commit's line (tools/move_asset.sh reads it)
 # the Move's device tiers (private plan 05 section 6.6): MIN on every release, MT1 when Move-only code changed
 MOVE_ONLY = ("move/", "firmware/src/hq/")
 # and the Apache-2.0 text that goes with the 3 JieLi SDK files inside every .fwsc (Apache-2.0 section 4)
 LICENCE_ASSET = "Apache-2.0.txt"
+# the desktop plugin's packages (release.yml, tools/plugin_asset.sh) and the Akai MPC plugin, versioned and fixed
+# (release.yml's job mpc): every release carries them (tools/release_assets.sh checks the draft, step 9 the release)
+PLUGIN_ASSETS = ("frodhes-plugin-macos.pkg", "frodhes-plugin-macos.zip", "frodhes-plugin-windows.zip",
+                 "frodhes-plugin-linux-x86_64.zip", "frodhes-plugin-linux-aarch64.zip")
+MPC_ASSETS = ("frodhes-mpc.zip", "frodhes-{v}-mpc.zip")
 LATEST_DL = f"https://github.com/{REPO}/releases/latest/download/{STABLE}"
 PY = os.path.join(".local", "venv", "bin", "python")
 CPU_LIMIT_US = 4500
@@ -129,6 +145,48 @@ class Stop(Exception):
 
 class Handoff(Exception):
     """step 7 without --after-merge: the release commit is ready, the PR is the user's (nothing pushed)"""
+
+
+GATE_R_BASE = "tests/baselines/renders.sha256"   # Gate R's baseline (also Gate M's reference, in ci_move.sh)
+STEP3_LIGHT = (r"(tools/(?!build\.py$)[A-Za-z0-9_]+\.py|tests/py/test_[A-Za-z0-9_]+\.py|"
+               + re.escape(GATE_R_BASE) + ")")         # (not conftest, not the build, no other baseline)
+
+
+def step3_cmds():
+    """step 3's tests, by the name its record keeps (the build runs every time)"""
+    return [("make test", ["make", "test"]), ("make pytest", ["make", "pytest", "PY=" + PY]),
+            ("gate_r", [PY, "tools/gate_r.py"]), ("ci_move", ["env", "PY=" + PY, "sh", "tools/ci_move.sh"])]
+
+
+def step3_tests(changed):
+    """the test files to run for changed tools / tests: each changed test, and every tests/py/test_*.py that imports a
+    changed tool's module or names its file (tools/x.py, "x")"""
+    tdir = os.path.join(ROOT, "tests", "py")
+    out_ = {f for f in changed if f.startswith("tests/py/") and os.path.exists(os.path.join(ROOT, f))}
+    mods = [os.path.basename(f)[:-3] for f in changed if f.startswith("tools/")]
+    if mods:
+        m = "(?:" + "|".join(map(re.escape, mods)) + ")"
+        pat = re.compile(rf"import\s+{m}\b|from\s+{m}\s+import|tools/{m}\.py|[\"']{m}[\"']")
+        for n in sorted(os.listdir(tdir)):
+            if n.startswith("test_") and n.endswith(".py"):
+                try:
+                    if pat.search(open(os.path.join(tdir, n), encoding="utf-8").read()):
+                        out_.add("tests/py/" + n)
+                except OSError:
+                    pass
+    return sorted(out_)
+
+
+def step3_cache_dir():
+    """build/release-step3/ in the main checkout (shared by every worktree of the repository), else ROOT's build/"""
+    try:
+        p = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=ROOT, text=True,
+                           capture_output=True, timeout=30)
+        common = p.stdout.strip() if p.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        common = ""
+    base = os.path.dirname(common) if common.endswith(".git") and os.path.isdir(common) else ROOT
+    return os.path.join(base, "build", "release-step3")
 
 
 def pr_steps(ver, head):
@@ -205,8 +263,16 @@ def parse_args(argv):
                     help="with --no-device: the FM-1 tests already ran on this exact build: {\"sha256\": the tested "
                          ".fwsc's, \"tiers\": [\"T1\", ...], \"runs\": [what ran]}; refused unless the sha256 "
                          "equals the release build's and the tiers cover the ones this release needs")
+    ap.add_argument("--plugin-tested", metavar="LIST", default="",
+                    help="the desktop plugin platforms tested for this release, all of " + " ".join(PLUGIN_PLATFORMS)
+                         + " (spaces or commas): the release commit's \"Plugin tested:\" line, which release.yml's "
+                         "tools/plugin_asset.sh reads; without all of them tools/release_assets.sh keeps the release "
+                         "a draft, so step 5 refuses to commit")
     ap.add_argument("--no-emulator", action="store_true", help="skip publishing the web emulator")
     ap.add_argument("--yes", action="store_true", help="publish without the prompt")
+    ap.add_argument("--no-step3-cache", action="store_true",
+                    help="run step 3's tests even when a passed step 3 of this version on this very HEAD (a clean tree) "
+                         "is recorded (build/release-step3/ in the main checkout)")
     ap.add_argument("--after-merge", action="store_true",
                     help="the release PR is merged: on main = origin/main, the release build's sha256 against the one "
                          "the release commit records, then tag, release.yml, verify (steps 4 and 5 were done before "
@@ -237,6 +303,8 @@ class Release:
         self.move_ok = None         # the Move tiers passed on that tarball (--device-done "move"), step 4
         self.move_recorded = None   # --after-merge: the Move package sha256 the release commit records
         self.move_line = ""
+        self.clean = False          # step 2: no tracked changes (step 3's record is kept and reused only then)
+        self.s3_passed, self.s3_tests = [], []   # step 3: the commands passed on this HEAD (its record)
 
     def log(self, msg):
         print("   " + msg.replace("\n", "\n   "), flush=True)
@@ -266,11 +334,15 @@ class Release:
         problems, ev = [], []
         branch = out(["git", "rev-parse", "--abbrev-ref", "HEAD"])
         # main, or the release's test branch (rel-X.Y.Z / release-X.Y.Z: the release commit goes in through its PR; the
-        # local main can hold another session's work); --after-merge runs on main only
-        if branch != "main" and (self.a.after_merge or branch not in (f"rel-{self.ver}", f"release-{self.ver}")):
+        # local main can hold another session's work; also without the dots, rel-0912 / release-095); --after-merge runs
+        # on main only
+        v, vd = self.ver, self.ver.replace(".", "")
+        if branch != "main" and (self.a.after_merge or branch not in (f"rel-{v}", f"release-{v}", f"rel-{vd}",
+                                                                      f"release-{vd}")):
             problems.append(f"on branch {branch!r}, not main" + ("" if self.a.after_merge else
                                                                  f" or rel-{self.ver} / release-{self.ver}"))
         dirty = out(["git", "status", "--porcelain", "--untracked-files=no"]).splitlines()
+        self.clean = not dirty
         if dirty:
             problems.append("tracked changes:\n" + "\n".join(dirty[:15]))
         sh(["git", "fetch", "origin", "main"])
@@ -345,13 +417,13 @@ class Release:
     def s_host(self):
         ev = []
         if self.a.after_merge:              # (the tests ran before the PR, on this tree: the build alone)
-            sh(["./build.sh", "--release", self.ver], timeout=3600)
-            fw = os.path.join(ROOT, "build", f"frodhes-{self.ver}.fwsc")
+            sh(["./build.sh", "--c1", "--release", self.ver], timeout=3600)   # the FM-1's one package: two cores
+            fw = os.path.join(ROOT, "build", f"frodhes-{self.ver}-c1.fwsc")
             self.sha = sha256(fw)
             if self.sha != self.recorded_sha:
                 raise Stop(f"the release build's sha256 {self.sha} is not the one the release commit records "
                            f"({self.recorded_sha}): not the build that was tested")
-            ev.append(f"--after-merge: ./build.sh --release {self.ver}: sha256 {self.sha} = the release commit's (the "
+            ev.append(f"--after-merge: ./build.sh --c1 --release {self.ver}: sha256 {self.sha} = the release commit's (the "
                       f"host tests and the FM-1 tiers ran on this build before the PR)")
             if self.has_move() and self.move_recorded:
                 self.move_build()
@@ -360,25 +432,115 @@ class Release:
                                f"({self.move_recorded}): not the tarball that was tested")
                 ev.append(f"make move: sha256 {self.move_sha} = the release commit's (tested on the Move)")
             return "\n".join(ev)
-        for cmd in (["make", "test"], ["make", "pytest", "PY=" + PY], [PY, "tools/gate_r.py"],
-                    ["./build.sh", "--release", self.ver]):
+        cache = self.step3_load()           # what already passed: on this HEAD, or on a light ancestor (step3_load)
+        passed = list(cache["passed"]) if cache else []
+        self.s3_passed, self.s3_tests = list(passed), list(cache["tests"]) if cache else []
+        if cache:
+            on = (f"this HEAD {self.head[:10]}" if not cache.get("changed") else
+                  f"{cache['head'][:10]}, an ancestor of this HEAD {self.head[:10]} that differs only in "
+                  f"{', '.join(cache['changed'])}")
+            ev.append(f"step 3's record {cache['file']} (--no-step3-cache runs everything): passed on {on} with a clean "
+                      f"tree: {', '.join(passed) or 'nothing'}" + ("".join("\n  " + t for t in cache["tests"])))
+        tests = [(n, c) for n, c in step3_cmds() if n not in passed and n != "ci_move"]
+        if cache and cache.get("rerun"):    # the tests of what changed since the ancestor's run
+            tests = [("pytest-changed", [PY, "-m", "pytest", "-q", "-p", "no:cacheprovider", *cache["rerun"]])] + tests
+        for name, cmd in tests + [("build", ["./build.sh", "--c1", "--release", self.ver])]:
             t0 = time.time()
             _, o = sh(cmd, timeout=3600)
             last = [l for l in o.strip().splitlines() if l.strip()][-1:] or [""]
-            ev.append(f"{' '.join(cmd)}: exit 0 in {time.time() - t0:.0f} s ({last[0][:100]})")
-        fw = os.path.join(ROOT, "build", f"frodhes-{self.ver}.fwsc")
+            line = f"{' '.join(cmd)}: exit 0 in {time.time() - t0:.0f} s ({last[0][:100]})"
+            ev.append(line)
+            if name != "build":
+                self.step3_pass(name, f"on {self.head[:10]}: {line}")
+        fw = os.path.join(ROOT, "build", f"frodhes-{self.ver}-c1.fwsc")   # release.yml publishes it as frodhes.fwsc
         if not os.path.exists(fw):
             raise Stop(f"{fw} was not built")
         self.sha = sha256(fw)
-        ev.append(f"build/frodhes-{self.ver}.fwsc {os.path.getsize(fw)} B sha256 {self.sha}")
+        ev.append(f"build/frodhes-{self.ver}-c1.fwsc {os.path.getsize(fw)} B sha256 {self.sha}")
         if self.has_move():
-            t0 = time.time()
-            _, o = sh(["env", "PY=" + PY, "sh", "tools/ci_move.sh"], timeout=3600)
-            ev.append(f"tools/ci_move.sh (the Move's MT0): exit 0 in {time.time() - t0:.0f} s ({tail(o, 1)[:100]})")
+            if "ci_move" not in passed:
+                t0 = time.time()
+                _, o = sh(["env", "PY=" + PY, "sh", "tools/ci_move.sh"], timeout=3600)
+                line = f"tools/ci_move.sh (the Move's MT0): exit 0 in {time.time() - t0:.0f} s ({tail(o, 1)[:100]})"
+                ev.append(line)
+                self.step3_pass("ci_move", f"on {self.head[:10]}: {line}")
             ev.append(self.move_build())
         else:
             ev.append("the Move: no move/ in this tree (no Move package)")
+        if cache and cache.get("sha256"):   # the builds always run (minutes): they must be the recorded ones
+            if (cache.get("sha256"), cache.get("move_sha256")) != (self.sha, self.move_sha):
+                raise Stop(f"step 3's record {cache['file']} has the builds {cache.get('sha256')} / "
+                           f"{cache.get('move_sha256')}, this run built {self.sha} / {self.move_sha}: not reproducible, "
+                           f"re-run with --no-step3-cache")
+            ev.append("the builds' sha256 = the recorded run's")
+        self.step3_save(complete=True)
         return "\n".join(ev)
+
+    def step3_file(self):
+        return os.path.join(step3_cache_dir(), f"{self.ver}-{self.head}.json")
+
+    def step3_load(self):
+        """step 3's record for this version with a clean tree, or None (then every command runs): this HEAD's, or an
+        ancestor's from which only light files changed (STEP3_LIGHT: tools/*.py, tests/py/test_*.py, the Gate R
+        baseline); then rec["rerun"] lists the test files of those changes (step3_tests) and a changed Gate R baseline
+        takes gate_r and ci_move (Gate M reads it too) out of rec["passed"]. A record lists the commands that passed (make test, make pytest, gate_r,
+        ci_move: a run that stopped half way keeps what passed) and, once complete, the builds' sha256"""
+        if self.a.no_step3_cache or not self.clean or not self.head:
+            return None
+        recs = []
+        d = step3_cache_dir()
+        try:
+            names = sorted(os.listdir(d))
+        except OSError:
+            return None
+        for n in names:
+            if not (n.startswith(self.ver + "-") and n.endswith(".json")):
+                continue
+            try:
+                rec = json.load(open(os.path.join(d, n)))
+            except (OSError, ValueError):
+                continue
+            if rec.get("version") == self.ver and rec.get("clean") and rec.get("head"):
+                rec["file"] = os.path.join(d, n)
+                rec.setdefault("passed", [c for c, _ in step3_cmds()] if rec.get("sha256") else [])
+                recs.append(rec)
+        for rec in recs:
+            if rec["head"] == self.head:
+                return rec
+        best = None
+        for rec in recs:
+            if sh(["git", "merge-base", "--is-ancestor", rec["head"], self.head], check=False, quiet=True)[0]:
+                continue
+            code, o = sh(["git", "diff", "--name-only", rec["head"], self.head], check=False, quiet=True)
+            changed = [l.strip() for l in o.splitlines() if l.strip()]
+            if code or not changed or not all(re.fullmatch(STEP3_LIGHT, f) for f in changed):
+                continue
+            rec["changed"], rec["rerun"] = changed, step3_tests(changed)
+            if GATE_R_BASE in changed:          # Gate R and Gate M (ci_move.sh) read it
+                rec["passed"] = [c for c in rec["passed"] if c not in ("gate_r", "ci_move")]
+            if best is None or len(rec["passed"]) > len(best["passed"]):
+                best = rec
+        return best
+
+    def step3_pass(self, name, line):
+        """one more command passed on this HEAD: kept at once (a later failure keeps what passed)"""
+        if name != "pytest-changed" and name not in self.s3_passed:
+            self.s3_passed.append(name)
+        self.s3_tests.append(line)
+        self.step3_save(complete=False)
+
+    def step3_save(self, complete):
+        """this HEAD's record (clean tree only): what passed, and the builds' sha256 once step 3 is complete"""
+        if not self.clean or not self.head:
+            return
+        d = step3_cache_dir()
+        os.makedirs(d, exist_ok=True)
+        rec = {"version": self.ver, "head": self.head, "clean": True, "when": time.strftime("%Y-%m-%d %H:%M"),
+               "passed": self.s3_passed, "tests": self.s3_tests}
+        if complete:
+            rec.update(sha256=self.sha, move_sha256=self.move_sha)
+        with open(self.step3_file(), "w") as fh:
+            json.dump(rec, fh, indent=1)
 
     def has_move(self):
         return os.path.isfile(os.path.join(ROOT, "move", "move_plugin.c"))
@@ -410,7 +572,7 @@ class Release:
                 self.move_ok = False
                 ev.append("the Move: not run by this step (its record goes in with --no-device --device-done, "
                           "\"move\" section): this release ships no Move package")
-            fw = f"build/frodhes-{self.ver}.fwsc"
+            fw = f"build/frodhes-{self.ver}-c1.fwsc"   # the FM-1 package (two cores)
             _, o = sh(f"echo y | {PY} tools/fm1_install.py {fw}", timeout=600)
             ev.append(f"installed {fw}: {tail(o, 1)}")
             _, o = sh(T1_CMD, timeout=3600)
@@ -437,6 +599,8 @@ class Release:
                 ev.append(check_jack_marimba(rep) if eng == "marimba" else check_jack(eng, rep))
             _, o = sh([PY, "tools/vib_sampleback.py", "--engine", "marimba"], timeout=1800)
             ev.append(check_sampleback(o))
+            _, o = sh(C1_SOAK, timeout=1800)
+            ev.append(f"hil_c1_soak row 277, 6 min: exit 0 ({tail(o, 1)})")
         finally:
             lk.release()
         return "\n".join(ev)
@@ -455,11 +619,18 @@ class Release:
         if frags:
             try:
                 # the Move's install route only when the release ships its package (step 4 decided; None: not yet)
-                text = changes.assemble(self.ver, frags, ROOT, move=self.has_move() and self.move_ok is not False)
+                # the plugin's routes always: release.yml fails without the plugin packages (tools/plugin_asset.sh)
+                text = changes.assemble(self.ver, frags, ROOT, move=self.has_move() and self.move_ok is not False,
+                                        plugin=True)
             except changes.Bad as e:
                 problems.append(str(e))
         elif not os.path.exists(os.path.join(ROOT, notes)):
             problems.append(f"no fragments in {changes.DIR}/ and no {notes}")
+        plug = self.plugin_problem() if frags else None
+        if plug and self.a.dry_run:                 # (the dry run still shows the notes)
+            ev.append("WARNING, a real run stops here: " + plug)
+        elif plug:
+            problems.append(plug)
         if problems:
             msg = "\n".join(ev + ["PROBLEM: " + p for p in problems])
             if self.a.dry_run:
@@ -492,11 +663,29 @@ class Release:
         msg = (f"Release {self.ver}: the notes {notes}, assembled from {changes.DIR}/ (the fragments removed)"
                f"\n\nTested by tools/release.py: host (make test, make pytest, gate_r, the release build sha256 "
                f"{self.sha}); {dev}.\n{body}\n")
+        msg += f"{PLUGIN_RECORD} {' '.join(self.plugin_list())}\n"
         if out(["git", "diff", "--cached", "--name-only"]):
             sh(["git", "commit", "-q", "-F", "-"], input=msg)
         self.head = out(["git", "rev-parse", "HEAD"])
         ev.append(f"commit {self.head[:10]} {out(['git', 'log', '-1', '--format=%s'])}")
         return "\n".join(ev)
+
+    def plugin_list(self):
+        return [p for p in re.split(r"[\s,]+", self.a.plugin_tested.strip()) if p]
+
+    def plugin_problem(self):
+        """the release commit must record every plugin platform (release.yml attaches only the recorded ones and
+        tools/release_assets.sh requires all five packages); None when it does"""
+        got = self.plugin_list()
+        bad = [p for p in got if p not in PLUGIN_PLATFORMS]
+        missing = [p for p in PLUGIN_PLATFORMS if p not in got]
+        if bad:
+            return f"--plugin-tested: unknown platform(s) {', '.join(bad)} (known: {' '.join(PLUGIN_PLATFORMS)})"
+        if missing:
+            return (f"--plugin-tested lacks {' '.join(missing)}: the release commit's \"{PLUGIN_RECORD}\" line would "
+                    f"miss them, release.yml would attach no package for them and tools/release_assets.sh would keep "
+                    f"the release a draft (pass --plugin-tested \"{' '.join(PLUGIN_PLATFORMS)}\" once they are tested)")
+        return None
 
     # 6
     def s_confirm(self):
@@ -597,7 +786,7 @@ class Release:
         if out(["git", "-C", pages, "rev-parse", "--abbrev-ref", "HEAD"]) != "gh-pages":
             raise Stop(f"{pages} is not the gh-pages worktree")
         sh(["git", "-C", pages, "pull", "-q", "--ff-only", "origin", "gh-pages"])
-        sh(["sh", os.path.join(ROOT, "tools", "web_firmware.sh"), os.path.join(ROOT, "build", f"frodhes-{self.ver}.fwsc"),
+        sh(["sh", os.path.join(ROOT, "tools", "web_firmware.sh"), os.path.join(ROOT, "build", f"frodhes-{self.ver}-c1.fwsc"),
             dist, self.ver] + [os.path.join(ROOT, "build", f.format(v=self.ver)) for f in SMK_ASSETS.values()])
         sh(["sh", os.path.join(ROOT, "tools", "deploy_pages.sh"), dist, pages, self.ver])
         local = {f: sha256(os.path.join(dist, f)) for f in sorted(os.listdir(dist))}
@@ -615,12 +804,16 @@ class Release:
         # the Move package: expected when the release commit records it (or this run tested it); with --verify-only,
         # when either name is there both must be
         want_move = bool(self.move_recorded or self.move_ok or (self.a.verify_only and set(move_names) & set(names)))
-        missing = [n for n in (versioned, STABLE, *(c.format(v=self.ver) for c in C1_ASSETS),
+        missing = [n for n in (versioned, STABLE,
                                *SMK_ASSETS, *(smk_versioned(n, self.ver) for n in SMK_ASSETS),
-                               LICENCE_ASSET, *(move_names if want_move else ()))
+                               LICENCE_ASSET, *PLUGIN_ASSETS, *(n.format(v=self.ver) for n in MPC_ASSETS),
+                               *(move_names if want_move else ()))
                    if n not in names]
         if missing or r.get("isDraft"):
             raise Stop(f"{r['url']}: assets {names} (missing {missing}), draft {r.get('isDraft')}")
+        retired = [n for n in (c.format(v=self.ver) for c in RETIRED) if n in names]
+        if retired:
+            raise Stop(f"{r['url']}: retired assets {retired} attached (the FM-1 has one package, frodhes.fwsc)")
         ev = [f"{r['url']} lists {', '.join(names)}"]
         if not want_move:
             ev.append("the Move package: not in this release (not tested)" if not set(move_names) & set(names) else
@@ -682,6 +875,8 @@ class Release:
             return None
         rec = json.load(open(self.a.device_done))
         d = rec.get("fm1", rec)                        # (a section per target; the old flat form is the FM-1's)
+        pending = [f"{k}: verdict {sec.get('verdict')!r}" for k, sec in (("fm1", d), ("move", rec.get("move") or {}))
+                   if "verdict" in sec and sec.get("verdict") != "PASS"]
         if self.has_move():
             self.move_device_done(rec.get("move"))
         if d.get("sha256") != self.sha:
@@ -692,7 +887,10 @@ class Release:
         if missing:
             raise Stop(f"--device-done {self.a.device_done}: tiers {done or '(none recorded)'} do not cover the needed "
                        f"{need} (missing {', '.join(missing)}); " + self.tiers()["lines"][0])
-        return (f"FM-1: tested before the release on this exact build (sha256 equal), tiers {'+'.join(done)} "
+        if pending and not self.a.dry_run:             # a draft record (written before the runs end) never releases
+            raise Stop(f"--device-done {self.a.device_done}: not passed ({'; '.join(pending)})")
+        return ((f"DRY-RUN, a real run stops here: the record is not passed ({'; '.join(pending)}). " if pending else "")
+                + f"FM-1: tested before the release on this exact build (sha256 equal), tiers {'+'.join(done)} "
                 f"(needed {'+'.join(need)}): " + "; ".join(d.get("runs", [])))
 
     def move_tiers(self):
@@ -830,18 +1028,19 @@ def cpu_cmd(eng):
 
 
 T1_CMD = [PY, "tools/hil_scan.py", "--tier", "must"]
+C1_SOAK = [PY, "tools/hil_c1_soak.py", "--row", "277", "--minutes", "6", "--stop-on-fail"]   # two cores under storm
 
 
 def device_plan(ver, tiers=("T0", "T1", "T2")):
     """step 4's commands in order (what s_device runs for these tiers) with what each must show, for --no-device
     to list"""
     q = " ".join
-    t1 = [f"echo y | {PY} tools/fm1_install.py build/frodhes-{ver}.fwsc",
+    t1 = [f"echo y | {PY} tools/fm1_install.py build/frodhes-{ver}-c1.fwsc",
           q(T1_CMD) + "   (T1 must-pass: exit 0, every scenario's counters 0)"]
     if "T2" not in tiers:
         return t1
     return (t1
-            + [q(cpu_cmd(e)) + f"   (worst <= {CPU_LIMIT_US} us, nothing shed)" for e in ENGINES]
+            + [q(cpu_cmd(e)) + f"   (worst <= {cpu_limit_us()} us, nothing shed)" for e in ENGINES]
             + [q([PY, "tools/hil_scan.py", "--only", SCAN_SET]) + "   (exit 0)",
                q([PY, "tools/hil_scan.py", "--only", "vibes_vel", "--source", "both"]) + "   (exit 0)",
                q([PY, "tools/hil_scan.py", "--marimba", "--source", "both"])
@@ -849,7 +1048,8 @@ def device_plan(ver, tiers=("T0", "T1", "T2")):
                "takes / clicks / drift / bypass / level re ST77 rows; KNOWN rows pass)"]
             + [q([PY, "tools/hil_jack.py", "--engine", e]) + f"   ({JACK_JSON[e]}: the jack connected"
                + ("; the A5 tails, the idle floor)" if e == "marimba" else ")") for e in ENGINES]
-            + [q([PY, "tools/vib_sampleback.py", "--engine", "marimba"]) + "   (Gate VD-M: 0 keys outside)"])
+            + [q([PY, "tools/vib_sampleback.py", "--engine", "marimba"]) + "   (Gate VD-M: 0 keys outside)"]
+            + [q(C1_SOAK) + "   (the two-core storm row: whole ISR <= 4800 us, 0 shed, core 1 clean; exit 0)"])
 
 
 def check_marimba_scan(rep):
@@ -907,15 +1107,24 @@ def check_sampleback(text):
     return f"vib_sampleback marimba: {m.group(1)} keys, 0 outside Gate VD-M (device vs host)"
 
 
+def cpu_limit_us():
+    """hil_cpu's per-interrupt bar for the image under test (fm1_ports.lat_half: 128-frame interrupts on the two-core
+    FM-1 package, 4500 x 128 / 256)"""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import fm1_ports
+    return round(CPU_LIMIT_US * fm1_ports.lat_half() / 256)
+
+
 def check_cpu(eng, text):
+    lim = cpu_limit_us()
     m = re.search(r"worst (\d+) us", text)
     if not m:
         raise Stop(f"hil_cpu {eng}: no 'worst' line:\n" + tail(text))
     worst = int(m.group(1))
     shed = [int(x) for x in re.findall(r"voices shed (\d+)", text)]
-    if worst > CPU_LIMIT_US or any(shed):
-        raise Stop(f"hil_cpu {eng}: worst {worst} us (limit {CPU_LIMIT_US}), voices shed {shed}")
-    return f"hil_cpu --worst {eng}: worst {worst} us <= {CPU_LIMIT_US}, voices shed {sum(shed)} in {len(shed)} scenarios"
+    if worst > lim or any(shed):
+        raise Stop(f"hil_cpu {eng}: worst {worst} us (limit {lim}), voices shed {shed}")
+    return f"hil_cpu --worst {eng}: worst {worst} us <= {lim}, voices shed {sum(shed)} in {len(shed)} scenarios"
 
 
 def check_jack(eng, rep):

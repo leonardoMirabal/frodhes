@@ -80,6 +80,8 @@ def main(argv=None):
         fm1_ports.force(a.port, fm1_ports.parse_loc(a.location) if a.location else None)
     import mido
     import sounddevice as sd
+    import lock
+    lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
     import fm1_midi
     import midi_guard
     names = fm1_ports.pick(mido.get_output_names())

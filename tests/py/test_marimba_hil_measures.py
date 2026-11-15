@@ -59,15 +59,19 @@ def test_jack_onsets_from_usb():
     assert np.ptp(d) <= 0.1, np.ptp(d)
 
 
-def test_take_uses_usb_for_the_jack_on_marimba(monkeypatch):
+def test_take_uses_usb_for_the_jack(monkeypatch):
     u, j, sched, keys, want = keys_take(keys=tuple(range(36, 97, 4)))
     ev = [e for s, k in zip(sched, keys) for e in ((s, "on", k, 100), (s + 0.9, "off", k, 0))]
     monkeypatch.setattr(h, "ENGINE", "marimba")
     T = h.Take("t", len(u) / FS, ev, np.stack([u, u], 1), j)
     assert max(abs((b - a) - w) for a, b, w in zip(T.on("usb"), T.on("jack"), want)) <= FS // 1000
-    monkeypatch.setattr(h, "ENGINE", "vibes")                                 # VIBES: align() as before
+    # VIBES too since 2026-11-15: align() alone put a NOISE take's jack onset a few ms off its NOISE 0 take, and the
+    # 0..60 ms contact difference read +4.54 on the jack against USB's +23.25 (T2 0.9.12, key 53); the saved FM-1
+    # takes of 2026-10-18 re-read offline: key 53 / 89 jack +16.69 / +30.22 -> +23.60 / +23.20 (USB +23.05 / +23.47)
+    monkeypatch.setattr(h, "ENGINE", "vibes")
     T2 = h.Take("t", len(u) / FS, ev, np.stack([u, u], 1), j)
-    assert T2.on("jack") == h.align(j, T2.sched)[0]
+    assert max(abs((b - a) - w) for a, b, w in zip(T2.on("usb"), T2.on("jack"), want)) <= FS // 1000
+    assert T2.on("jack") != h.align(j, T2.sched)[0]                          # (align() alone: off, the bug)
 
 
 def test_tuning_window_ends_at_the_hiss():
@@ -536,3 +540,62 @@ def test_marimba_chorus_speed_by_the_band(monkeypatch):
     d, _, fps_ = h.rel_trace(t, r0, "usb", 0.2, 5.3, 300, 3000)
     assert abs(h.lfo_rate(d, fps_, f * 0.4, f * 2.6, pearson=True) / f - 0.5) <= 0.02     # (without it: the octave)
     assert abs(h.lfo_rate(d, fps_, f * 0.4, f * 2.6, pearson=True, octave=True) / f - 1) <= 0.02
+
+
+def test_marimba_drift_probe_is_one_strike(monkeypatch):
+    """marimba_jump's "reference drift" reads one chord strike before and after the scan, not the roll: the roll's
+    loudness follows where each re-strike lands in the ringing bar (two host takes with +-1 ms of MIDI jitter: up to
+    0.30 LU apart in 24 seeds; the FM-1's T2 of 2026-11-15 read -0.33, USB and jack alike), a strike 0.03 at most"""
+    monkeypatch.setattr(h, "ENGINE", "marimba")
+    probe = []
+    for seed in (1, 3, 7):                                  # (the roll's pair: +0.06 / +0.30 / +0.27 LU)
+        V = h.VRig("usb", host=seed)
+        S = h.VSuite("marimba_jump", V)
+        h.marimba_jump(V, S)
+        tags = [t["tag"] for t in V.takes]
+        assert tags[0] == "jump-probe-a" and tags[tags.index("jump-ref-b") + 1] == "jump-probe-b"
+        row = [r for r in S.rows if r["check"] == "reference drift"][0]
+        assert "one strike" in row["setting"]
+        probe.append(abs(float(row["usb"].split()[0])))
+    assert max(probe) <= 0.1, probe
+
+
+def test_vibes_jump_keeps_its_references(monkeypatch):
+    """vibes_jump holds a chord (no roll): its references answer the drift as before, no probe takes"""
+    monkeypatch.setattr(h, "VDEBUG", True, raising=False)
+    monkeypatch.setattr(h, "ENGINE", "vibes")
+    V = h.VRig("both", dry_run=True)
+    h.vibes_jump(V, h.VSuite("vibes_jump", V))
+    assert not any(t["tag"].startswith("jump-probe") for t in V.takes)
+
+
+def test_wah_depth_over_the_whole_roll(monkeypatch):
+    """WAH DEPTH 0 / 64 / 127 on MARIMBA (the host build, marimba_fx's roll): in 20..300 ms from the first onset the
+    roll is still building up (one v80 note, then two, three: the touch wah's envelope rises with them), and DEPTH
+    127's 1-4 kHz rise over DEPTH 0 read 8.4..14.5 dB over 20 host seeds (rc-0.9.12's FM-1 T2: the jack 5.9 dB
+    against the 6 dB bar). WAH_W, the whole roll: 16.4..18.0 dB, the bar unchanged"""
+    monkeypatch.setattr(h, "ENGINE", "marimba")
+    got = {}
+    real = h.vibes_fx
+    try:
+        h.vibes_fx = lambda V, S, stim=None, extra=(): got.update(stim, extra=list(extra))
+        h.marimba_fx(None, None)
+    finally:
+        h.vibes_fx = real
+    ch, w = got["CH"], got["WAH_W"]
+    assert w[1] - w[0] >= 1.5 and w[0] >= 0.02 and max(e[0] for e in ch[1]) <= w[1] + 0.1
+    old, new = [], []
+    for seed in (3, 4, 10):                               # (the old window's low / high readings)
+        V = h.VRig("usb", host=seed)
+
+        def run(tag, s):
+            V.reset(list(s) + got["extra"], label=tag)
+            return V.take(tag, *ch)
+        T = {x: run(f"t-wah-{x}", [("TW_SW", 2), ("TW_DEPTH", x)]) for x in (0, 64, 127)}
+        dry = run("t-wah-dry", [])
+        for a, b, out in ((0.02, 0.3, old), (*w, new)):
+            v = [h.band_re(T[x], dry, "usb", 1000, 4000, a, b, sub=True)[0] for x in (0, 64, 127)]
+            assert v[0] < v[1] < v[2], (seed, a, v)
+            out.append(v[2] - v[0])
+    assert np.ptp(old) >= 4, old                          # (the 300 ms window: the roll's build-up, seed to seed)
+    assert min(new) >= 12 and np.ptp(new) <= 2.5, new     # (twice the 6 dB bar, steady)

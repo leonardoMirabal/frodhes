@@ -100,6 +100,7 @@ PY
     in_docker "cd '$T'
     echo '== coroutine';  '$B/frp_test_coro' 2>&1 | tail -3
     echo '== controller'; '$B/frp_test_gui_ctl' 2>&1 | grep -v '^PASS ' | tail -5
+    echo '== update';     rm -rf '$T/update-home'; '$B/frp_test_update' '$T/update-home' 2>&1 | tail -5
     echo '== view';       xvfb-run -a -s '-screen 0 1920x1200x24' '$B/frp_gui_demo' --selftest 2>&1 | tail -12
     echo '== clap host';  '$B/frp_clap_render' '$B/bundles/Frodhes.clap' --selftest 2>&1 | tail -4
     echo '== gate d';     . '$T/renders.sh'" | tee "$T/log.txt"

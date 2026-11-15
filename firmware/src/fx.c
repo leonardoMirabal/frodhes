@@ -15,8 +15,25 @@
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */
 #define FR_FAR(fn) fn
 #endif
+#ifndef FR_RAM2
+#define FR_RAM2                                 /* (frodhes.c: more of them, the one-core FM-1 image) */
+#define FR_FAR2(fn) fn
+#endif
 #ifndef FX_RAM                                  /* (frodhes.c: FR_RAM, or flash in FR_C1 builds: core 1 runs the effects from XIP) */
 #define FX_RAM FR_RAM
+#endif
+#ifndef FX_ENG_K                                /* the engine's level as the level-reading effects see it (engine.c:
+                                                 * the bars'); 1 without it */
+#define FX_ENG_K 32768
+#define FX_ENG_G 32768
+#define FX_ENG_DT 0
+#else
+#define FX_ENG_LVL 1                            /* (engine.c's table, indexed by FX_ENG_I) */
+#if FR_CHUNK
+#define FX_ENG_I fxc_eng                        /* (FR_C1: latched at the block's first chunk, as fxc_side) */
+#else
+#define FX_ENG_I (eng_cur & 1u)
+#endif
 #endif
 #ifndef FX_SIDE                                 /* the Rhodes' side signal the effects read (SPREAD): rhodes.c's own */
 #define FX_SIDE rh_side
@@ -73,10 +90,71 @@ static volatile uint32_t fx_quiet_blocks;
 static volatile int32_t fx_cmp_amk, fx_cmp_beta;        /* main loop (fx_set): the compressor's auto make-up (log2 Q12)
                                                          * and body lift (Q8), from THRESH and RATIO (cmp_auto) */
 static void cmp_auto(void);
+/* a Program Change's effect values, spread over the blocks after it (presets.c preset_load, fx_pend_poll): the
+ * block that carries the change (a chord, the pedal, a reverb TYPE from a CC with it) takes none of them, the next
+ * the delay's, then the front's (COMP, EQ, DRIVE, FILTER), then the modulation's and the rest, then the reverb's. Each starts its own glide or fade as a CC
+ * does, one block apart, so their first blocks' work (the delay's time fade, the compressor's and the EQ's starts,
+ * the reverb TYPE's fade) never stacks with the burst's on core 1 (the two-core storm soak, 2026-11-15). A CC to a
+ * value still waiting takes it over (the CC is newer). Main loop only: the ISR never reads these */
+#define FX_PEND_N 4u
+/* (own section, out of the compiler's global merge: in it they moved the merged variables the audio code reads, so
+ * that code grew 2..38 B (longer offsets) and moved in the flash cache; the two-core storm's KHLON thirds paid
+ * ~+140 us of core-1 busy for it, 2026-11-15) */
+#ifdef DINGHY_HOST
+#define FX_PEND_SECTION
+#define FX_PEND_TAB
+#else
+#define FX_PEND_SECTION __attribute__((section(".bss.fx_pend")))
+#define FX_PEND_TAB __attribute__((section(".data.fx_pend")))
+#endif
+static uint8_t fx_hold FX_PEND_SECTION;         /* main loop: fx_set keeps the values (preset_load) */
+static uint8_t fx_pv[FXP_N] FX_PEND_SECTION;    /* the kept values */
+static uint32_t fx_pm[FX_PEND_N][(FXP_N + 31u) / 32u] FX_PEND_SECTION;   /* the kept ids, per step */
+static uint8_t fx_ps FX_PEND_SECTION;           /* the next step to apply + 1, 0 = none waits */
+static uint32_t fx_pb FX_PEND_SECTION;          /* the block count the last step saw (frodhes.c blk_n) */
+/* each id's step, XOR 2 (0 = the default step 2): a table in RAM, in its own section, not a switch (its lookup
+ * table went to the end of .rodata and moved the effects' small tables after it in the flash cache, 2026-11-15) */
+#define FXP_S0(i) [i] = 0u ^ 2u
+#define FXP_S1(i) [i] = 1u ^ 2u
+#define FXP_S3(i) [i] = 3u ^ 2u
+static uint8_t fx_pend_tab[FXP_N] FX_PEND_TAB = {
+    FXP_S0(FXP_DL_SW), FXP_S0(FXP_DL_DEPTH), FXP_S0(FXP_DL_TIME), FXP_S0(FXP_DL_FDBK), FXP_S0(FXP_DL_SYNC),
+    FXP_S0(FXP_DL_TONE),
+    FXP_S1(FXP_DRIVE), FXP_S1(FXP_DRIVE_ROW), FXP_S1(FXP_DRV_TONE), FXP_S1(FXP_DRV_MIX), FXP_S1(FXP_DRV_SW),
+    FXP_S1(FXP_CMP_SW), FXP_S1(FXP_CMP_AMT), FXP_S1(FXP_CMP_ATK), FXP_S1(FXP_CMP_REL), FXP_S1(FXP_CMP_RATIO),
+    FXP_S1(FXP_CMP_GAIN), FXP_S1(FXP_EQ_LO), FXP_S1(FXP_EQ_MID), FXP_S1(FXP_EQ_FREQ), FXP_S1(FXP_EQ_HI),
+    FXP_S1(FXP_FL_TYPE), FXP_S1(FXP_FL_FREQ), FXP_S1(FXP_FL_RESO), FXP_S1(FXP_FL_LFO),
+    FXP_S3(FXP_RV_DEPTH), FXP_S3(FXP_RV_DECAY), FXP_S3(FXP_RV_TONE), FXP_S3(FXP_RV_PREDLY), FXP_S3(FXP_RV_TYPE),
+    FXP_S3(FXP_RV_SIZE), FXP_S3(FXP_RV_MOD), FXP_S3(FXP_RV_LOCUT),
+};
+static uint32_t fx_pend_step(uint32_t id)       /* (id < FXP_N: fx_set's check) */
+{
+    return fx_pend_tab[id] ^ 2u;
+}
 static void fx_set(uint32_t id, int32_t v)
 {
-    if (id < FXP_N) fx_p[id] = v < 0 ? 0 : v > 127 ? 127 : v;
+    uint32_t k;
+    if (id >= FXP_N) return;
+    v = v < 0 ? 0 : v > 127 ? 127 : v;
+    if (fx_hold) {
+        if (fx_p[id] == v && !(fx_pm[fx_pend_step(id)][id >> 5] >> (id & 31u) & 1u)) return;   /* (unchanged) */
+        fx_pv[id] = (uint8_t)v; fx_pm[fx_pend_step(id)][id >> 5] |= 1u << (id & 31u);
+        return;
+    }
+    for (k = 0; k < FX_PEND_N; k++) fx_pm[k][id >> 5] &= ~(1u << (id & 31u));   /* (a newer value than one kept) */
+    fx_p[id] = v;
     if (id == FXP_CMP_AMT || id == FXP_CMP_RATIO) cmp_auto();
+}
+static void fx_pend_apply(uint32_t k)           /* step k's kept values into fx_p, as fx_set would */
+{
+    uint32_t w, b, ca = 0;
+    for (w = 0; w < (FXP_N + 31u) / 32u; w++)
+        while (fx_pm[k][w]) {
+            b = (uint32_t)__builtin_ctz(fx_pm[k][w]); fx_pm[k][w] &= fx_pm[k][w] - 1u;
+            fx_p[32u * w + b] = fx_pv[32u * w + b];
+            ca |= 32u * w + b == FXP_CMP_AMT || 32u * w + b == FXP_CMP_RATIO;
+        }
+    if (ca) cmp_auto();
 }
 static volatile uint32_t fx_gz;                         /* blocks since the silence gate shut the output (0) */
 /* 500 ms under -66 dBFS, or 500 ms with the gate shut (BUGHUNT #27: an idle residue between -66 and -60 dBFS, KHLON's
@@ -166,6 +244,8 @@ static volatile uint32_t fxc_ce = 256u;               /* FR_LAT_HALF (frodhes.c 
 static uint32_t c1_est_blk;                              /* (host diagnostics: the block count, fx_process) */
 #endif
 static uint8_t fxc_side;                                 /* FX_SIDE_ON, latched at the block's first chunk (fx_process) */
+static uint8_t fxc_eng;                                  /* the engine (engc_fx), latched there too: FX_ENG_K / G / DT
+                                                          * of the block core 1 processes, not of the one core 0 began */
 static const int32_t *fxc_mono;                          /* the block's dry voices (fx_process's mono: whole at the last chunk) */
 #define FXC_1 (fxc_o == 0u)
 #define FXC_Z (fxc_e == fxc_n)
@@ -248,7 +328,7 @@ __attribute__((noinline)) static void xf_post_cf(int32_t *L, int32_t *R, const i
 }
 #endif
 #endif
-static inline int32_t softclip(int32_t x)                 /* Q15 tanh: x in Q15, flat beyond +-4 */
+static inline __attribute__((always_inline)) int32_t softclip(int32_t x)                 /* Q15 tanh: x in Q15, flat beyond +-4 */
 {
     uint32_t i;
     int32_t f;
@@ -256,6 +336,17 @@ static inline int32_t softclip(int32_t x)                 /* Q15 tanh: x in Q15,
     i = (uint32_t)(x + 131072) >> 10;
     f = (x + 131072) & 1023;
     return FX_TANH[i] + (((FX_TANH[i + 1] - FX_TANH[i]) * f) >> 10);
+}
+/* softclip for the running engine's level (k = FX_ENG_K, g = FX_ENG_G, a block's): the bars read 3 dB up, the result 3
+ * dB down (bars.h BAR_FX_K: their SND3 -3 dB a level); the Rhodes (k 32768): softclip itself */
+__attribute__((noinline)) static int32_t fx_sck_k(int32_t x, int32_t k, int32_t g)   /* (the bars' path: flash, the
+                                                 * RAM loops keep their size) */
+{
+    return (int32_t)(((int64_t)softclip((int32_t)(((int64_t)x * k + 16384) >> 15)) * g + 16384) >> 15);
+}
+static inline __attribute__((always_inline)) int32_t FX_SCK(int32_t x, int32_t k, int32_t g)
+{
+    return k == 32768 ? softclip(x) : fx_sck_k(x, k, g);
 }
 static inline __attribute__((always_inline)) int32_t osc_sine(uint32_t ph)   /* Q32 phase -> +-32767 */
 {
@@ -368,7 +459,7 @@ static uint8_t fl_cgv;                                      /* valid when fl_cgv
 static uint8_t fl_xt;                                       /* the TYPE it fades to */
 /* one sub-block of the filter at a TYPE (1..6): one loop per (mode, poles), no tests per sample (noinline: the loops
  * get its registers, as they had in fx_filter; a TYPE change runs it twice) */
-__attribute__((noinline)) static void fl_pass(int32_t *m, uint32_t n, const svf_t *c, uint32_t type, int32_t gp)
+FR_RAM2 __attribute__((noinline)) static void fl_pass(int32_t *m, uint32_t n, const svf_t *c, uint32_t type, int32_t gp)
 {
     switch (type) {
     case 1: fl_run(m, n, c, 0, 0, gp); break;
@@ -393,9 +484,9 @@ __attribute__((noinline)) static void fl_xrun(int32_t *m, uint32_t n, const svf_
 {
     int32_t ic0 = fl_ic[0], ic1 = fl_ic[1], op;
     memcpy(FL_XS, m, n * sizeof *m);
-    fl_pass(m, n, c, t0, gp);
+    FR_FAR2(fl_pass)(m, n, c, t0, gp);
     op = fl_op; fl_ic[0] = ic0; fl_ic[1] = ic1; fl_op = fl_op2;
-    fl_pass(FL_XS, n, c, t1, gp);
+    FR_FAR2(fl_pass)(FL_XS, n, c, t1, gp);
     fl_op2 = fl_op; fl_op = op;
     xf_blend(FL_XS, m, n, w0, w0 + 16 * (int32_t)n);
     memcpy(m, FL_XS, n * sizeof *m);
@@ -489,7 +580,7 @@ static __attribute__((noinline)) void fx_filter(int32_t *m, uint32_t n)
                 gp = fl_cgp;
             }
             if (fl_xw) fl_xrun(m + s0, s1 - s0, &fl_cc, type, fl_xt, gp, fl_xw - 1 + 16 * (int32_t)(s0 - sb));
-            else fl_pass(m + s0, s1 - s0, &fl_cc, type, gp);
+            else FR_FAR2(fl_pass)(m + s0, s1 - s0, &fl_cc, type, gp);
         }
         if (fl_xw) {                                     /* TYPE -> TYPE: the crossfade, 46 ms */
             fl_xw += 16 * (int32_t)(j - sb);
@@ -538,19 +629,33 @@ static int32_t dr_gl RH_SP_SEC(".data.fx_drgl") = -1, dr_kl RH_SP_SEC(".bss.fx_d
 static uint8_t dr_os_ok RH_SP_SEC(".bss.dr_os_ok");   /* FDRV's 2x state is valid (0: to rest at the next block;
                                                         * drive.c dr_os2) */
 static int32_t dr_sal RH_SP_SEC(".bss.fx_dr_sal");      /* FDRV's wet share at the block's end (fx_drive; fx_spread) */
-static int32_t dr_w = 32768, dr_tg = 4096, dr_tlp;      /* the wet share (Q15), the shelf's high gain (Q12), its low-pass */
+static int32_t dr_w = 32768, dr_tg = 4096, dr_tlp;      /* the wet's gain (Q15), the shelf's high gain (Q12), its low-pass */
+/* MIX (0.9.13, as Textura's MIX; it was a crossfade, the wet share 258 MIX): two gains, the wet's (dr_w) and the dry's
+ * (dr_d), out = (dry x d + wet x w) >> 15. 0 .. 64 the dry whole, the wet rising to whole (DR_WET); 64 both whole;
+ * 64 .. 127 the wet whole, the dry falling to nothing (DR_DRY). OFF, AMOUNT 0 and a TYPE switch go to w 0, d whole.
+ * Each gain glides on its own, 16 a sample (46 ms whole <-> nothing, as the share did): an OFF from 127 is the old
+ * crossfade (d + w stays whole), from 64 the wet alone fades; d + w never falls under whole on the way. Both are
+ * multiples of 256 (the TYPEs' ramp of 64 every 4 samples lands on them, drive.c) */
+#define DR_WET(v) ((v) >= 64 ? 32768 : (v) * 512)
+#define DR_DRY(v) ((v) <= 64 ? 32768 : (((127 - (v)) * 32768 / 63 + 128) & ~255))
+static int32_t dr_d RH_SP_SEC(".bss.fx_dr_d");          /* the dry's gain (Q15; 0: all wet, as dr_w's 32768 at boot) */
+/* the wet's share of the two (fx_spread aligns the side to it): w / (w + d), Q15; 0 at rest (w 0) */
+static int32_t dr_share(int32_t w, int32_t d) { return w ? (int32_t)(((uint32_t)w << 15) / (uint32_t)(w + d)) : 0; }
 static uint8_t dr_ton;                                  /* the shelf runs (its gain is not 1, or on its way) */
 /* TONE and MIX settled (0.9.5): the gliding loop below with its glides at rest, so each sample does what that loop
  * does then (the shelf at its gain tg when it runs, the wet share w), in registers (that loop: 125 instructions a
- * sample, its state in memory); shelf and full are constants at each use */
+ * sample, its state in memory); shelf and full are constants at each use. full (0.9.13, MIX's two gains, settled on
+ * the law where one of them is whole): 1 all wet, 2 the wet whole and the dry x d, 0 the dry whole and the wet x w,
+ * one multiply each, the same integers as dr_general's (x0 d + y w) >> 15 there (both products in one loop moved the
+ * make-up's multiply onto the stack: 22 -> 30 instructions a sample) */
 /* clampi(v, -230000, 230000) as smax + smin (the same value) */
 static inline int32_t dr_cl(int32_t v) { v = v > -230000 ? v : -230000; return v < 230000 ? v : 230000; }
 /* FDRV's shaper at 2x (drive.c dr_os2): the high-pass, the gain, the curve between the half-bands -> ys[]; the
  * loops below run its low-passes, make-up, TONE shelf and MIX at 1x on ys (dr_hp is dr_os2's) */
 static const int32_t *dr_os2(const int32_t *m, uint32_t n, int32_t gq, int32_t dgq, int32_t bias, int32_t b0);
 static inline __attribute__((always_inline)) void dr_settled(int32_t *m, const int32_t *ys, uint32_t n, int32_t k,
-                                                             int32_t mk, int32_t tg, int32_t w, const int shelf,
-                                                             const int full)
+                                                             int32_t mk, int32_t tg, int32_t w, int32_t d,
+                                                             const int shelf, const int full)
 {
     int32_t lp1 = dr_lp1, lp2 = dr_lp2, tlp = dr_tlp;
     uint32_t i;
@@ -563,15 +668,19 @@ static inline __attribute__((always_inline)) void dr_settled(int32_t *m, const i
             tlp += mulq15(y - tlp, DR_TA);
             y = tlp + (int32_t)(((int64_t)(y - tlp) * tg) >> 12);
         }
-        m[i] = full ? y : x0 + (int32_t)(((int64_t)(y - x0) * w) >> 15);
+        m[i] = full == 1 ? y : full == 2 ? y + (int32_t)(((int64_t)x0 * d) >> 15)   /* (the wet whole, the dry x d) */
+                                         : x0 + (int32_t)(((int64_t)y * w) >> 15);    /* (the dry whole, the wet x w) */
     }
     dr_lp1 = lp1; dr_lp2 = lp2; dr_tlp = tlp;
 }
 /* the gliding loop (TONE / MIX on their way, AMOUNT's ramp): out of app_audio (inlined, its registers moved the
  * defaults' and the settled loops: +1 instruction and a stack load each, 0.9.6); g, k, mk in Q8 from gq / kq / mq by
  * dgq / dkq / dmq a sample (0: constant) */
-__attribute__((noinline)) static void dr_general(int32_t *m, const int32_t *ys, uint32_t n, int32_t kq, int32_t mq,
-                                                 int32_t dkq, int32_t dmq, int32_t tt, int32_t wt)
+/* MIX's two gains ramp straight over the block (Q8: wq / gq by dwq / dgq a sample) to where their 16-a-sample glides end
+ * it (dr_after); the caller sets dr_w / dr_d to those ends */
+FR_RAM2 __attribute__((noinline)) static void dr_general(int32_t *m, const int32_t *ys, uint32_t n, int32_t kq, int32_t mq,
+                                                 int32_t dkq, int32_t dmq, int32_t tt, int32_t wq, int32_t dwq,
+                                                 int32_t gq, int32_t dgq)
 {
     uint32_t i;
     for (i = 0; i < n; i++) {
@@ -588,27 +697,40 @@ __attribute__((noinline)) static void dr_general(int32_t *m, const int32_t *ys, 
             y = dr_tlp + (int32_t)(((int64_t)(y - dr_tlp) * dr_tg) >> 12);
             if (dr_tg == 4096 && tt == 4096) dr_ton = 0;   /* back to flat: the shelf rests (y is exact again) */
         }
-        if (dr_w != wt) dr_w += dr_w < wt ? (wt - dr_w > 16 ? 16 : wt - dr_w) : -(dr_w - wt > 16 ? 16 : dr_w - wt);
-        m[i] = dr_w == 32768 ? y : x0 + (int32_t)(((int64_t)(y - x0) * dr_w) >> 15);
+        wq += dwq; gq += dgq;
+        m[i] = (int32_t)(((int64_t)x0 * (gq >> 8) + (int64_t)y * (wq >> 8)) >> 15);   /* (all wet: y exactly) */
     }
+}
+/* a gain toward its target at 16 a sample, n samples on (dr_general's glide, at a block's end) */
+static inline __attribute__((always_inline)) int32_t dr_after(int32_t g, int32_t t, int32_t n)
+{
+    int32_t st = 16 * n;
+    return g < t ? (t - g > st ? g + st : t) : (g - t > st ? g - st : t);
+}
+/* FDRV on the bars (0.9.13): their SND3 -3 dB is a level, so the shaper's gain reads them 3 dB up (bars.h BAR_FX_K) and
+ * the make-up gives the output back 3 dB down (BAR_MIX_G): driven as on 0.9.11. In flash (the RAM loops keep their size) */
+__attribute__((noinline)) static void dr_eng_lvl(int32_t *g, int32_t *mk)
+{
+    *g = (int32_t)(((int64_t)*g * FX_ENG_K + 16384) >> 15);
+    *mk = (int32_t)(((int64_t)*mk * FX_ENG_G + 16384) >> 15);
 }
 #if FR_CHUNK
 /* dr_classic and fx_drive_classic for a chunk: the settings, the ramp and the loop's choice at the first chunk; dr_w's
  * value at the block's end (dr_sal: fx_spread's first chunk reads it) worked out there too */
 static const int32_t *dr_os2_c(const int32_t *m, int32_t gq, int32_t dgq, int32_t bias, int32_t b0);
-static struct { int32_t g, k, mk, bias, b0, tt, wt, gq, kq, mq, dgq, dkq, dmq, w_end; uint8_t path; } dr_c;
-__attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t sw)
+static struct { int32_t g, k, mk, bias, b0, tt, wt, dt, gq, kq, mq, dgq, dkq, dmq, w_end, d_end, dwq, ddq; uint8_t path; } dr_c;
+FR_RAM2 __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t sw)
 {
     uint32_t o = fxc_o, e = fxc_e;
     const int32_t *ys;
     if (FXC_1) {
         int32_t d = fx_p[FXP_DRIVE], row = fx_p[FXP_DRIVE_ROW] & 3, g, k, mk, tv = fx_p[FXP_DRV_TONE], mv = fx_p[FXP_DRV_MIX];
-        int32_t wt = !sw ? 0 : mv >= 127 ? 32768 : mv * 258;
+        int32_t wt = !sw ? 0 : DR_WET(mv), dt = !sw ? 32768 : DR_DRY(mv);
         int32_t tt = tv >= 64 ? 4096 + (((tv - 64) * 4161) >> 6) : tv * 64;
         int32_t gq = -1, kq = 0, mq = 0, dgq = 0, dkq = 0, dmq = 0;
-        if (!d) { wt = 0; d = 1; }
-        dr_c.w_end = dr_w;
-        if (!wt && !dr_w) { dr_ton = 0; dr_tg = 4096; dr_gl = -1; dr_c.path = 0; return; }
+        if (!d) { wt = 0; dt = 32768; d = 1; }
+        dr_c.w_end = dr_w; dr_c.d_end = dr_d;
+        if (!wt && !dr_w && dr_d == 32768) { dr_ton = 0; dr_tg = 4096; dr_gl = -1; dr_c.path = 0; return; }
         if (dr_gl >= 0 && d != dr_dl) d = dr_dl + clampi(d - dr_dl, -DR_DSTEP, DR_DSTEP);
         dr_dl = d;
         g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
@@ -617,6 +739,7 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
         mk = ((30000 - d * 120) * DR_MU[row]) >> 12;
         mk = (mk * (int32_t)FX_DRV_LVL[d]) >> 15;
         mk = (mk * 39000) >> 15;
+        if (FX_ENG_K != 32768) FR_FAR(dr_eng_lvl)(&g, &mk);   /* the bars driven as on 0.9.11, given back 3 dB down */
         dr_c.bias = DR_BIAS[row];
         dr_c.b0 = softclip(dr_c.bias);
         if (tt > 8192) tt = 8192;
@@ -625,18 +748,18 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
             dgq = ((g - dr_gl) << 8) / (int32_t)n; dkq = ((k - dr_kl) << 8) / (int32_t)n; dmq = ((mk - dr_ml) << 8) / (int32_t)n;
         }
         dr_gl = g; dr_kl = k; dr_ml = mk;
-        if (gq < 0 && wt == 32768 && dr_w == 32768 && tt == 4096 && !dr_ton) dr_c.path = 1;
-        else if (gq < 0 && dr_tg == tt && dr_w == wt && (dr_ton ? tt != 4096 : tt == 4096))
-            dr_c.path = !dr_ton ? 2 : wt == 32768 ? 3 : 4;
+        if (gq < 0 && wt == 32768 && dr_w == 32768 && !dt && !dr_d && tt == 4096 && !dr_ton) dr_c.path = 1;
+        else if (gq < 0 && dr_tg == tt && dr_w == wt && dr_d == dt && (wt == 32768 || dt == 32768) &&
+                 (dr_ton ? tt != 4096 : tt == 4096))
+            dr_c.path = !dr_ton ? (wt == 32768 ? 6 : 2) : wt == 32768 && !dt ? 3 : wt == 32768 ? 7 : 4;
         else {
             dr_c.path = 5;
             if (gq < 0) { kq = k << 8; mq = mk << 8; }
-            {   /* (dr_general's glide: 16 a sample toward wt) */
-                int32_t st = 16 * (int32_t)n;
-                dr_c.w_end = dr_w < wt ? (wt - dr_w > st ? dr_w + st : wt) : (dr_w - wt > st ? dr_w - st : wt);
-            }
+            dr_c.w_end = dr_after(dr_w, wt, (int32_t)n);   /* (dr_general's ramps: to the 16-a-sample glides' ends) */
+            dr_c.d_end = dr_after(dr_d, dt, (int32_t)n);
+            dr_c.dwq = ((dr_c.w_end - dr_w) << 8) / (int32_t)n; dr_c.ddq = ((dr_c.d_end - dr_d) << 8) / (int32_t)n;
         }
-        dr_c.g = g; dr_c.k = k; dr_c.mk = mk; dr_c.tt = tt; dr_c.wt = wt;
+        dr_c.g = g; dr_c.k = k; dr_c.mk = mk; dr_c.tt = tt; dr_c.wt = wt; dr_c.dt = dt;
         dr_c.gq = gq; dr_c.kq = kq; dr_c.mq = mq; dr_c.dgq = dgq; dr_c.dkq = dkq; dr_c.dmq = dmq;
     }
     if (!dr_c.path) return;
@@ -652,11 +775,17 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
         }
         dr_lp1 = lp1; dr_lp2 = lp2;
     }
-    else if (dr_c.path == 2) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, 0, 0);
-    else if (dr_c.path == 3) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, 1, 1);
-    else if (dr_c.path == 4) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, 1, 0);
-    else dr_general(m + o, ys + o, e - o, dr_c.kq + dr_c.dkq * (int32_t)o, dr_c.mq + dr_c.dmq * (int32_t)o, dr_c.dkq,
-                    dr_c.dmq, dr_c.tt, dr_c.wt);
+    else if (dr_c.path == 2) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, dr_c.dt, 0, 0);
+    else if (dr_c.path == 6) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, dr_c.dt, 0, 2);
+    else if (dr_c.path == 3) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, dr_c.dt, 1, 1);
+    else if (dr_c.path == 4) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, dr_c.dt, 1, 0);
+    else if (dr_c.path == 7) dr_settled(m + o, ys + o, e - o, dr_c.k, dr_c.mk, dr_c.tt, dr_c.wt, dr_c.dt, 1, 2);
+    else {
+        FR_FAR2(dr_general)(m + o, ys + o, e - o, dr_c.kq + dr_c.dkq * (int32_t)o, dr_c.mq + dr_c.dmq * (int32_t)o, dr_c.dkq,
+                   dr_c.dmq, dr_c.tt, (dr_w << 8) + dr_c.dwq * (int32_t)o, dr_c.dwq, (dr_d << 8) + dr_c.ddq * (int32_t)o,
+                   dr_c.ddq);
+        if (FXC_Z) { dr_w = dr_c.w_end; dr_d = dr_c.d_end; }   /* (the block's last chunk: the ramps' ends) */
+    }
 }
 __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, int32_t sw)
 {
@@ -664,23 +793,24 @@ __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, i
     if (FXC_1) { hp = dr_hp; l1 = dr_lp1; l2 = dr_lp2; tl = dr_tlp; z = m[0]; }
     if (fxc_o <= (n >> 1) && (n >> 1) < fxc_e) z |= m[n >> 1];
     if (FXC_Z) z |= m[n - 1];
-    dr_classic(m, n, sw);
+    FR_FAR2(dr_classic)(m, n, sw);
     if (FXC_Z && !z && hp == dr_hp && l1 == dr_lp1 && l2 == dr_lp2 && tl == dr_tlp && (hp | l1 | l2 | tl))
         { dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; }
 }
 #else
-__attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t sw)   /* FDRV; sw: FXP_DRV_SW
+FR_RAM2 __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t sw)   /* FDRV; sw: FXP_DRV_SW
                                                         * (0 while it fades out for another TYPE: drive.c fx_drive) */
 {
     int32_t d = fx_p[FXP_DRIVE], row = fx_p[FXP_DRIVE_ROW] & 3, g, k, mk, bias, b0, tv = fx_p[FXP_DRV_TONE], mv = fx_p[FXP_DRV_MIX];
-    int32_t wt = !sw ? 0 : mv >= 127 ? 32768 : mv * 258;          /* the wet share it goes to */
+    int32_t wt = !sw ? 0 : DR_WET(mv), dt = !sw ? 32768 : DR_DRY(mv);   /* the gains it goes to */
     int32_t tt = tv >= 64 ? 4096 + (((tv - 64) * 4161) >> 6) : tv * 64;         /* the shelf's gain: 0 .. 1 .. 2 (Q12) */
     int32_t gq = -1, kq = 0, mq = 0, dgq = 0, dkq = 0, dmq = 0;   /* (gq >= 0: the ramp, Q8) */
     const int32_t *ys;
-    if (!d) { wt = 0; d = 1; }                          /* AMOUNT 0: off, faded out at AMOUNT 1's settings (it cut
+    if (!d) { wt = 0; dt = 32768; d = 1; }              /* AMOUNT 0: off, faded out at AMOUNT 1's settings (it cut
                                                         * to dry in one sample: AMOUNT 1 is not the dry signal, the
                                                         * high-pass, the bias and the make-up still act; the bug hunt) */
-    if (!wt && !dr_w) { dr_ton = 0; dr_tg = 4096; dr_gl = -1; return; }   /* off, or MIX 0: the dry signal, untouched */
+    if (!wt && !dr_w && dr_d == 32768) { dr_ton = 0; dr_tg = 4096; dr_gl = -1; return; }   /* off, or MIX 0: the dry
+                                                        * signal, untouched */
     if (dr_gl >= 0 && d != dr_dl) d = dr_dl + clampi(d - dr_dl, -DR_DSTEP, DR_DSTEP);
     dr_dl = d;
     g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
@@ -692,6 +822,7 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
     mk = ((30000 - d * 120) * DR_MU[row]) >> 12;
     mk = (mk * (int32_t)FX_DRV_LVL[d]) >> 15;          /* level-neutral: the drive adds tone, not volume (0.6) */
     mk = (mk * 39000) >> 15;                           /* +1.5 dB: measured on the FM-1, LUFS (0.8) */
+    if (FX_ENG_K != 32768) FR_FAR(dr_eng_lvl)(&g, &mk);   /* the bars driven as on 0.9.11, given back 3 dB down */
     bias = DR_BIAS[row];
     b0 = softclip(bias);
     /* the shaper's input x g >> 12 + bias needs a 64-bit product (|x| <= 230000, g <= 100870 at AMOUNT 127), but its
@@ -706,7 +837,8 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
     }
     dr_gl = g; dr_kl = k; dr_ml = mk;
     ys = dr_os2(m, n, gq < 0 ? g << 8 : gq, dgq, bias, b0);   /* the shaper at 2x (the gain's ramp in it) */
-    if (gq < 0 && wt == 32768 && dr_w == 32768 && tt == 4096 && !dr_ton) {   /* the defaults: the loop before the page */
+    if (gq < 0 && wt == 32768 && dr_w == 32768 && !dt && !dr_d && tt == 4096 && !dr_ton) {   /* the defaults: the loop
+                                                        * before the page */
         int32_t lp1 = dr_lp1, lp2 = dr_lp2, *e = m + n;   /* (0.9.5: the state in locals) */
         for (; m < e; m++) {
             int32_t y = *ys++;
@@ -717,15 +849,25 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
         dr_lp1 = lp1; dr_lp2 = lp2;
         return;
     }
-    if (gq < 0 && dr_tg == tt && dr_w == wt && (dr_ton ? tt != 4096 : tt == 4096)) {   /* settled: the glides at rest, the
-                                                        * shelf running (and staying on) or resting (dr_tg 4096) */
-        if (!dr_ton) dr_settled(m, ys, n, k, mk, tt, wt, 0, 0);   /* (MIX alone: all wet is the defaults) */
-        else if (wt == 32768) dr_settled(m, ys, n, k, mk, tt, wt, 1, 1);
-        else dr_settled(m, ys, n, k, mk, tt, wt, 1, 0);
+    if (gq < 0 && dr_tg == tt && dr_w == wt && dr_d == dt && (wt == 32768 || dt == 32768) &&
+        (dr_ton ? tt != 4096 : tt == 4096)) {           /* settled: the glides at rest (MIX on its law: one gain whole),
+                                                        * the shelf running (and staying on) or resting (dr_tg 4096) */
+        if (!dr_ton) {                                  /* (MIX alone: all wet is the defaults) */
+            if (wt == 32768) dr_settled(m, ys, n, k, mk, tt, wt, dt, 0, 2);
+            else dr_settled(m, ys, n, k, mk, tt, wt, dt, 0, 0);
+        }
+        else if (wt == 32768 && !dt) dr_settled(m, ys, n, k, mk, tt, wt, dt, 1, 1);
+        else if (wt == 32768) dr_settled(m, ys, n, k, mk, tt, wt, dt, 1, 2);
+        else dr_settled(m, ys, n, k, mk, tt, wt, dt, 1, 0);
         return;
     }
     if (gq < 0) { kq = k << 8; mq = mk << 8; }          /* (no ramp: the steps are 0) */
-    dr_general(m, ys, n, kq, mq, dkq, dmq, tt, wt);
+    {
+        int32_t w1 = dr_after(dr_w, wt, (int32_t)n), g1 = dr_after(dr_d, dt, (int32_t)n);
+        FR_FAR2(dr_general)(m, ys, n, kq, mq, dkq, dmq, tt, dr_w << 8, ((w1 - dr_w) << 8) / (int32_t)n, dr_d << 8,
+                   ((g1 - dr_d) << 8) / (int32_t)n);
+        dr_w = w1; dr_d = g1;
+    }
 }
 /* FDRV, and its silence (0.9.8, the residual after a panic): on zero input the rounding leaves fixed points that are
  * not 0 (the high-pass stops anywhere in -63 .. 64, in Q7 from 0.9.10: -64 .. 63 / 128 LSB; the shaper turns -hp
@@ -735,7 +877,7 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
 __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, int32_t sw)
 {
     int32_t hp = dr_hp, l1 = dr_lp1, l2 = dr_lp2, tl = dr_tlp, z = !(m[0] | m[n >> 1] | m[n - 1]);
-    dr_classic(m, n, sw);
+    FR_FAR2(dr_classic)(m, n, sw);
     if (z && hp == dr_hp && l1 == dr_lp1 && l2 == dr_lp2 && tl == dr_tlp && (hp | l1 | l2 | tl))
         { dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; }   /* (and the 2x state: drive.c dr_os2) */
 }
@@ -787,8 +929,10 @@ static int32_t wah_bp, wah_lp, wah_cr = -1;     /* the stage's state (x 64), the
 FX_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t k, int32_t *out, int32_t wgq,
                                                      int32_t wgs, int32_t depth, int32_t q)
 {
-    int32_t env = wah_env, ei = wah_ein, eo = wah_eout, es = wah_eslow, xi = wah_pi, xo = wah_po, dk = depth + 16;
-    int32_t et = (4194304 + dk - 1) / dk;       /* (env x dk) >> 16 reaches row 63 from env >= et: below it the
+    int32_t env = wah_env, ei = wah_ein, eo = wah_eout, es = wah_eslow, xi = wah_pi, xo = wah_po;
+    int32_t dk = (int32_t)(((depth + 16) * FX_ENG_K) >> 13);   /* (x 4: the bars' envelope read 3 dB up, bars.h
+                                                 * BAR_FX_K, their SND3 -3 dB a level; the Rhodes 4 (depth + 16)) */
+    int32_t et = (16777216 + dk - 1) / dk;      /* (env x dk) >> 18 reaches row 63 from env >= et: below it the
                                                  * product fits 32 bits */
     int32_t bp = wah_bp, lp = wah_lp, cr = wah_cr, f = cr < 0 ? 0 : (int32_t)FX_WAH_F[cr], mi = 0, mo = 0;
     int32_t wx[32];                             /* (the output on the bus' grain, x: pass 1 -> pass 2) */
@@ -803,7 +947,7 @@ FX_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t
         if (a > env) env += (a - env) >> 3; else env -= (env >> 11) + 1;
         if (env < 0) env = 0;
         {                                       /* the cutoff's row, 0 .. 63: up at once, down a row late */
-            int32_t row = env >= et ? 63 : (env * dk) >> 16;   /* env >= 0, dk > 0 */
+            int32_t row = env >= et ? 63 : (env * dk) >> 18;   /* env >= 0, dk > 0 */
             if (row > cr || row < cr - 1) { cr = row > cr ? row : row + 1; f = (int32_t)FX_WAH_F[cr]; }
         }
         {
@@ -841,7 +985,7 @@ FX_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t
 }
 /* the wah, the tremolo's gains settled at unity: L / R = the wah (onto the cleared fx_L / fx_R: the wah is their
  * only writer before this) */
-static void fx_wah_unity(const int32_t *mp, const int32_t *me, int32_t *lo, int32_t *ro, int32_t wgq, int32_t wgs,
+FR_RAM2 static void fx_wah_unity(const int32_t *mp, const int32_t *me, int32_t *lo, int32_t *ro, int32_t wgq, int32_t wgs,
                          int32_t depth, int32_t q)
 {
     uint32_t k = (uint32_t)(me - mp);
@@ -927,17 +1071,17 @@ __attribute__((noinline)) static void fx_trem_amp(const int32_t *m, int32_t *L, 
  * wah silent (off, its blend at 0) or the output quiet for 2 blocks: RATE's own (the wah from off starts there) */
 static int32_t wah_xw;                                   /* (below: the wah's blend) */
 static int32_t wah_q RH_SP_SEC(".data.fx_wahq") = -1;
-static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, int32_t *R, uint32_t n, int32_t sw)
+FR_RAM2 static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, int32_t *R, uint32_t n, int32_t sw)
 {
     int32_t depth = fx_p[FXP_TW_DEPTH], rate = fx_p[FXP_TW_RATE], qt = 9830 - rate * 58, wt[32];
     uint32_t inc = fx_tw_sync_inc ? fx_tw_sync_inc : FX_LFO_INC[rate], sb, j;
 #if FR_CHUNK
     if (FXC_1 && sw == 2 && (wah_q < 0 || !wah_xw || fx_quiet_blocks >= 2u)) wah_q = qt;
-    if (sw == 1 && fx_p[FXP_TW_SHAPE] > 64) { fx_trem_amp(m, L, R, n, inc); return; }
+    if (sw == 1 && fx_p[FXP_TW_SHAPE] > 64) { FR_FAR2(fx_trem_amp)(m, L, R, n, inc); return; }
     for (sb = fxc_o; sb < fxc_e; sb += 32u) {
 #else
     if (sw == 2 && (wah_q < 0 || !wah_xw || fx_quiet_blocks >= 2u)) wah_q = qt;
-    if (sw == 1 && fx_p[FXP_TW_SHAPE] > 64) { fx_trem_amp(m, L, R, n, inc); return; }   /* the amp law */
+    if (sw == 1 && fx_p[FXP_TW_SHAPE] > 64) { FR_FAR2(fx_trem_amp)(m, L, R, n, inc); return; }   /* the amp law */
     for (sb = 0; sb < n; sb += 32u) {
 #endif
         int32_t tl = 32768, tr = 32768, dl, dr, gl = tw_gl, gr = tw_gr, wgq = wah_g << 5, wgs = 0, wq = wah_q;
@@ -1024,13 +1168,13 @@ __attribute__((noinline)) static void fx_trem_x(const int32_t *m, int32_t *L, in
     }
     w1 = xf_next(wah_xw, sw == 2, n);
     if (tw_o) tw_gl = tw_gr = 32768;
-    fx_trem_k(m, L, R, n, 2);
+    FR_FAR2(fx_trem_k)(m, L, R, n, 2);
     if (!tw_o) xf_post_c(L, R, m, m, n, wah_xw, w1);
     else {
         memset(xf_d[0] + fxc_o, 0, (fxc_e - fxc_o) * sizeof xf_d[0][0]);
         memset(xf_d[1] + fxc_o, 0, (fxc_e - fxc_o) * sizeof xf_d[1][0]);
         tw_gl = gl; tw_gr = gr; tw_ph = ph;
-        fx_trem_k(m, xf_d[0], xf_d[1], n, 1);
+        FR_FAR2(fx_trem_k)(m, xf_d[0], xf_d[1], n, 1);
         xf_post_c(L, R, xf_d[0], xf_d[1], n, wah_xw, w1);
         if (FXC_Z && w1 == 32768) tw_gl = tw_gr = 32768;
     }
@@ -1044,12 +1188,12 @@ __attribute__((noinline)) static void fx_trem_x(const int32_t *m, int32_t *L, in
     }
     w1 = xf_next(wah_xw, sw == 2, n);   /* (never at rest here: the blend always runs) */
     if (tw_o) tw_gl = tw_gr = 32768;
-    fx_trem_k(m, L, R, n, 2);                           /* (L / R = the wah: fx_process clears them, the wah writes) */
+    FR_FAR2(fx_trem_k)(m, L, R, n, 2);                           /* (L / R = the wah: fx_process clears them, the wah writes) */
     if (!tw_o) xf_post(L, R, m, m, n, wah_xw, w1);
     else {                                              /* the tremolo, from its own gains and phase */
         memset(xf_d, 0, sizeof xf_d);
         tw_gl = gl; tw_gr = gr; tw_ph = ph;
-        fx_trem_k(m, xf_d[0], xf_d[1], n, 1);
+        FR_FAR2(fx_trem_k)(m, xf_d[0], xf_d[1], n, 1);
         xf_post(L, R, xf_d[0], xf_d[1], n, wah_xw, w1);
         if (w1 == 32768) tw_gl = tw_gr = 32768;         /* (the wah alone from here: its gains at unity) */
     }
@@ -1060,7 +1204,7 @@ static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t sw = fx_p[FXP_TW_SW];
     if (sw != 2) tw_o = (uint8_t)(sw == 1);
-    if (sw == 2 ? wah_xw == 32768 : !wah_xw) fx_trem_k(m, L, R, n, sw);   /* at rest: as before */
+    if (sw == 2 ? wah_xw == 32768 : !wah_xw) FR_FAR2(fx_trem_k)(m, L, R, n, sw);   /* at rest: as before */
     else fx_trem_x(m, L, R, n, sw);                     /* (the blend: out of app_audio) */
 }
 
@@ -1325,7 +1469,7 @@ static inline __attribute__((always_inline)) int32_t cho_tap_k(int32_t *x, uint3
 }
 /* one side over the block, its sub-blocks' settings in kb (in place; its own registers: inlined it spilled). Each side
  * reads only the line (written for the whole block first) and its own samples */
-__attribute__((noinline)) static int32_t cho_side(int32_t *x, const cho_k_t *kb, uint32_t n, int32_t hl, int32_t *ly)
+FR_RAM2 __attribute__((noinline)) static int32_t cho_side(int32_t *x, const cho_k_t *kb, uint32_t n, int32_t hl, int32_t *ly)
 {
     uint32_t sb;
     for (sb = 0; sb < n; sb += 32u, kb++) {
@@ -1449,8 +1593,8 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
         cp_ph += inc * 32u;
     }
     if (mv) {                                           /* (DEPTH moving: the ramps, from flash) */
-        cho_hl[0] = cho_side(L, cho_k[0], n, cho_hl[0], &cho_ly[0]);
-        cho_hl[1] = cho_side(R, cho_k[1], n, cho_hl[1], &cho_ly[1]);
+        cho_hl[0] = FR_FAR2(cho_side)(L, cho_k[0], n, cho_hl[0], &cho_ly[0]);
+        cho_hl[1] = FR_FAR2(cho_side)(R, cho_k[1], n, cho_hl[1], &cho_ly[1]);
     } else {
         cho_hl[0] = FR_FAR(cho_side_k)(L, cho_k[0], n, cho_hl[0], &cho_ly[0]);
         cho_hl[1] = FR_FAR(cho_side_k)(R, cho_k[1], n, cho_hl[1], &cho_ly[1]);
@@ -1704,7 +1848,9 @@ static void fx_comp(int32_t *m, uint32_t n)
     int32_t ka = (int32_t)FX_CMP_ATK[fx_p[FXP_CMP_ATK]], kr16 = (int32_t)FX_CMP_REL[fx_p[FXP_CMP_REL]] * CMP_KRM;
     int32_t kb = kr16 << 8, kr = kb;                                  /* RELEASE in Q24; kr: the detector's (adapted) */
     int32_t kas = kr16 >= CMP_SAK ? ka >> CMP_SAS : ka, beta = fx_cmp_beta;   /* kas: a small rise's attack */
-    int32_t thr = -((fx_p[FXP_CMP_AMT] * 27434) >> 7);              /* log2 Q12 re full scale: 0 .. -6.64 (-40 dB) */
+    int32_t thr = -((fx_p[FXP_CMP_AMT] * 27434) >> 7) - FX_ENG_DT;   /* log2 Q12 re full scale: 0 .. -6.64 (-40 dB);
+                                                        * the bars' detector reads them 3 dB up (bars.h BAR_FX_DT: their
+                                                        * SND3 -3 dB is a level, THRESH acts as on 0.9.11) */
     int32_t slope = CMP_SLOPE[fx_p[FXP_CMP_RATIO] & 7];
     int32_t amk = fx_cmp_amk;
     int32_t mk = (fx_p[FXP_CMP_GAIN] * 16461) >> 7;                 /* MAKEUP, log2 Q12 (the auto make-up: cmp_give) */
@@ -1836,6 +1982,9 @@ static int32_t dly_d = 4410 << 8, dly_lp, dly_hp, dly_dg = 32768, dly_sg;   /* d
 /* the dry's glide to its target dgt (Q15): 1/512 a sample, as before, and the last 511 one LSB a sample: the old
  * (dgt - dg) >> 9 stopped up to 511 short rising (x 0.98441, -0.137 dB: DEPTH 0 under the bypass after any take, for
  * good; 2026-11-10, tests/py/test_dly_depth0.py); falling it reached dgt already (the shift rounds down) */
+/* MIX's dry (0.9.13, as Textura's MIX): 0 .. 64 the dry whole (the echo rises: FX_DLY_WET), 64 .. 127 the dry falls to
+ * nothing (the echo whole); Q15. It was 32768 - MIX^2 (-0.7 dB at 50, -5.9 dB at 127) */
+#define DLY_DRY(v) ((v) <= 64 ? 32768 : ((127 - (v)) * 32768 + 31) / 63)
 #define DLY_DG_STEP(dg, dgt) do { int32_t e_ = (dgt) - (dg); (dg) += (e_ >> 9) + (e_ > 0 && e_ < 512); } while (0)
 static int32_t dly_sgk = 65536;                 /* the make-up (Q16) the last block ended on: each block ramps from it */
 static int32_t dly_fbk = -1;                    /* FDBK's feedback gain the last block ended on (-1: none yet): DIG / ANA
@@ -1915,10 +2064,11 @@ FX_RAM __attribute__((noinline)) static void dly_ramp(int32_t *m, uint32_t n, in
  * for bit); dgt: the dry's gain it eases to. */
 static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *R, uint32_t n, const int tape,
                                                            const int32_t msk, int32_t sg16, int32_t target, int32_t col,
-                                                           int32_t fb, int32_t wet, int32_t dgt, const int rst)
+                                                           int32_t fb, int32_t wet, int32_t dgt, const int rst,
+                                                           const int kb)
 {
     uint32_t w = dly_w, wow = dly_wow, flt = dly_flt, j, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;   /* c: the clean span behind w */
-    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg;
+    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg, ek = kb ? FX_ENG_K : 32768, eg = kb ? FX_ENG_G : 32768;
     int32_t wq = dly_wk << 8, ws = DLY_WSTEP(dly_wk, wet, n);   /* the echo's gain: a ramp from the last block's */
     int32_t fq = (dly_fbk < 0 ? fb : dly_fbk) << 8, fs = DLY_WSTEP(fq >> 8, fb, n);   /* the feedback's, the same */
     FX_K32 kcol = col;
@@ -1962,7 +2112,7 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
         else
             r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
         lp += (int32_t)(((int64_t)(r - lp) * kcol) >> 15);   /* (r - lp reaches 2^17 on a full-scale swing) */
-        f = tape ? softclip(lp) : lp;
+        f = !tape ? lp : kb ? fx_sck_k(lp, ek, eg) : softclip(lp);   /* (kb: the bars, dly_loop_kb) */
         hp += (f - hp + 64) >> 7;
         f -= hp;
         fq += fs; kfb = fq >> 8;
@@ -1988,6 +2138,13 @@ static uint32_t dly_sil RH_SP_SEC(".data.fx_dlysil") = DLY_LEN;
 static uint8_t dly_ana;                         /* the old loops last ran ANA: its tail (OFF) runs ANA's loop (0.9.5: the
                                                  * DIG loop took over at OFF, its tone and the softclip changed at once:
                                                  * a kink in the echo one delay time later, 24x a steady one's) */
+/* ANA on the bars (0.9.13): dly_loop with its soft clip at the engine's level (fx_sck_k: the bars' SND3 -3 dB a level,
+ * the tape's clip as on 0.9.11); in flash, the RAM copies keep their size */
+__attribute__((noinline)) static void dly_loop_kb(int32_t *L, int32_t *R, uint32_t n, int32_t sg16, int32_t target,
+                                                  int32_t col, int32_t fb, int32_t wet, int32_t dgt, int rst)
+{
+    dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, dgt, rst, 1);
+}
 __attribute__((noinline)) static void dly_clear_step(void)   /* one block's share of the reset's clearing */
 {
     uint32_t c = dly_w - dly_rb, k, p;
@@ -2118,8 +2275,8 @@ static void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
         dly_c.ddr = dr;
     }
     if (dly_c.routed) tp_route_run(L, R, n, dly_c.target, dly_c.fb, dly_c.wet);
-    else if (dly_c.sw == 2) dly_loop_ca(L, R, n, dly_c.target, dly_c.col, dly_c.fb, dly_c.wet, 32768 - dly_c.depth * dly_c.depth);
-    else if (dly_c.sw) dly_loop_cd(L, R, n, dly_c.target, dly_c.col, dly_c.fb, dly_c.wet, 32768 - dly_c.depth * dly_c.depth);
+    else if (dly_c.sw == 2) dly_loop_ca(L, R, n, dly_c.target, dly_c.col, dly_c.fb, dly_c.wet, DLY_DRY(dly_c.depth));
+    else if (dly_c.sw) dly_loop_cd(L, R, n, dly_c.target, dly_c.col, dly_c.fb, dly_c.wet, DLY_DRY(dly_c.depth));
     else dly_fade_c(L, R, n, dly_ana, 0, dly_c.target, dly_c.col, dly_c.fb, dly_c.wet, 32768, 0);
     if (FXC_Z) {
         int64_t ee = dly_c.e, m = dly_c.m;
@@ -2160,8 +2317,9 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
     int32_t sw = fx_p[FXP_DL_SW], depth = fx_p[FXP_DL_DEPTH], last = !sw && dly_son;   /* last: the send's last block */
     uint32_t sync = fx_dly_sync_samples, j;
     int32_t target = (int32_t)(sync ? sync : FX_DLY_T[fx_p[FXP_DL_TIME]]);
-    /* MIX (0.9.5, the user): the first echo as loud as the dry at 64 (it was -4.8 dB), +5.9 dB at 127 as before: the
-     * wet 0.875 at 64 (linear below), then up to 1.0; the dry's ease-down (dgt below) as it was */
+    /* MIX (0.9.13, as Textura's): 0 the dry alone; to 64 the dry whole and the echo rising to whole (FX_DLY_WET); 64
+     * both whole (the first echo as loud as the dry); past 64 the echo whole and the dry falling (DLY_DRY); 127 the
+     * echoes alone */
     int32_t wet = FX_DLY_WET[depth], fb = FX_DLY_FB[fx_p[FXP_DL_FDBK] & 127], col = 2000 + fx_p[FXP_DL_TONE] * 240, sg16;
     if (last) sw = dly_son;                                 /* the old EFFECT once more, its send ramped to 0 (sg16) */
     dly_son = (uint8_t)fx_p[FXP_DL_SW];
@@ -2218,9 +2376,10 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
         if (tp_route(L, R, n, sw, target, sg16, fb, wet, depth)) { dly_wk = wet; dly_fbk = fb; return; }
     } else dly_last = (uint8_t)sw;                          /* (what a switch to TAPE fades out) */
     if (sw) FR_FAR(dly_ramp)(dly_m, n, sg16);                       /* (dly_loop sets dly_sgk to sg16) */
-    /* the dry eases down as the mix rises (-0.7 dB at 50, -5.9 dB at 127): a full-mix delay no longer jumps +5 LU (0.8) */
-    if (sw == 2) dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, 32768 - depth * depth, rst);
-    else if (sw) dly_loop(L, R, n, 0, -1, sg16, target, col, fb, wet, 32768 - depth * depth, rst);   /* (the send's
+    /* the dry: whole to MIX 64, then falling to nothing at 127 (DLY_DRY) */
+    if (sw == 2 && FX_ENG_K != 32768) FR_FAR(dly_loop_kb)(L, R, n, sg16, target, col, fb, wet, DLY_DRY(depth), rst);
+    else if (sw == 2) dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, DLY_DRY(depth), rst, 0);
+    else if (sw) dly_loop(L, R, n, 0, -1, sg16, target, col, fb, wet, DLY_DRY(depth), rst, 0);   /* (the send's
                                                              * mask a constant: one register fewer in either loop) */
     else dly_fade(L, R, n, dly_ana, 0, sg16, target, col, fb, wet, 32768, 0);   /* the tail (OFF): DIG's or ANA's,
                                                              * dly_fade's loop at g 1 (the same integers as dly_loop's) */
@@ -2446,6 +2605,46 @@ static int32_t rv_hsz RH_SP_SEC(".bss.fx_rvhsz");      /* HALL's size from SIZE 
                                                         * wet; 0.9.10); at rest SIZE's own (a SIZE that has not moved
                                                         * renders as before) */
 static uint8_t rv_running;
+/* REVERB MIX (0.9.13, as Textura's MIX): 0 the dry alone; to 64 the dry whole and the reverb rising to whole (the send,
+ * RV_SEND: x MIX / 64, the return x0.5: MIX 127's level of 0.9.12's law); 64 both whole; past 64 the reverb whole and
+ * the dry falling (RV_DRY, rv_dry); 127 the reverb alone. It was a send only, v 258 (254 - v) / 127, the dry always
+ * whole. The send never exceeds 0.9.12's MIX 127 (32766): no line runs hotter than it could. INFINITE (rev_types.c)
+ * keeps 0.9.12's line level at every MIX (its level guard and SUSTAIN level are line levels): the send v 258 at the
+ * latched MIX vl, the return the rest, x RV_SEND(vl) / (2 x 258 vl) (rq / 2^15: x0.99 up to 64 .. x0.5 at 127) */
+#define RV_SEND(v) ((v) >= 64 ? 32766 : (v) * 512)
+#define RV_DRY(v) ((v) <= 64 ? 32768 : ((127 - (v)) * 32768 + 31) / 63)
+#define RV_DRYT(v, t, d) ((t) && !((t) == RV_INF && (d) >= 127) ? RV_DRY(v) : 32768)   /* the dry's target: whole with the
+                                                        * reverb OFF, and on INFINITE's FREEZE,
+                                                        * which takes nothing in: what is played over it stays heard (TYPE RV_INF, DECAY 127) */
+#define RV_DG_STEP 16                                   /* the dry's glide: 16 a sample, whole <-> nothing in 46 ms */
+static int32_t rv_dg RH_SP_SEC(".data.fx_rvdg") = 32768;   /* the dry's gain (Q15) as it glides */
+/* the dry x its gain over n samples, gliding toward t (32768 and there: nothing to do, the samples as they are) */
+FR_RAM2 static __attribute__((noinline)) void rv_dry(int32_t *L, int32_t *R, uint32_t n, int32_t t)
+{
+    int32_t g = rv_dg;
+    uint32_t j;
+#if defined(DINGHY_HOST) && defined(RV_SCAN_WET)
+    return;                                             /* (tests/c/rev_scan.c: the out is the input whole + the wet) */
+#endif
+    if (g == t) {                                       /* settled (MIX at rest): the loop without the glide's tests */
+        if (g == 32768) return;
+        if (!g) {                                       /* MIX 127: (x 0 + 16384) >> 15 is 0 for every x */
+            for (j = 0; j < n; j++) L[j] = R[j] = 0;
+            return;
+        }
+        for (j = 0; j < n; j++) {
+            L[j] = (int32_t)(((int64_t)L[j] * g + 16384) >> 15);
+            R[j] = (int32_t)(((int64_t)R[j] * g + 16384) >> 15);
+        }
+        return;
+    }
+    for (j = 0; j < n; j++) {
+        if (g != t) g += g < t ? (t - g > RV_DG_STEP ? RV_DG_STEP : t - g) : -(g - t > RV_DG_STEP ? RV_DG_STEP : g - t);
+        L[j] = (int32_t)(((int64_t)L[j] * g + 16384) >> 15);
+        R[j] = (int32_t)(((int64_t)R[j] * g + 16384) >> 15);
+    }
+    rv_dg = g;
+}
 static void fx_predelay(int32_t *x, uint32_t tgt)      /* one control block: x[] delayed by the tap */
 {
     uint32_t j;
@@ -2553,6 +2752,7 @@ static void fx_reset_state(void)
     memset(rev_comb, 0, sizeof rev_comb); memset(rev_ap, 0, sizeof rev_ap); memset(&hl, 0, sizeof hl);
     pd_on = 0; rv_running = 0; rev_reset_state();       /* (the pre-delay line: at its next use; the TYPE's
                                                          * state: rev_types.c) */
+    rv_dg = fx_p[FXP_RV_TYPE] ? RV_DRY(fx_p[FXP_RV_DEPTH]) : 32768;   /* (MIX's dry at once) */
     rh_lfsr = 0xACE1u; bar_lfsr = 0x1D872u; bar_mot_ph = 0;
     /* every voice ends and the shared pickup RLC / body states go to 0 (as at an engine change), and this block's
      * voice output is dropped (fx_process): the tails a take left under the gate's -60 dBFS rang on and the next take
@@ -2878,6 +3078,7 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
         static int32_t gate_g0;                        /* the gain at the block's first frame */
         static uint32_t gate_done;                     /* the block's frames gated */
         int32_t t0 = gate_tgt, glo = eng_cur ? GATE_LO_BARS : GATE_LO;
+        uint32_t js;
         if (fxc_e != fxc_ce - FR_LAT_TAIL && !FXC_Z) return;
         if (!gate_done) gate_g0 = gate_g;
         if (pk >= glo) { gate_quiet = 0; gate_tgt = 32768; }
@@ -2890,9 +3091,30 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
             }
             gate_g = g;
         }
+        js = gate_done;
+#if FR_LAT_EV
+        if (gate_tgt > t0 && eng_mid_at > gate_done && eng_mid_at < fxc_e && eng_mid_at == fxc_ce - FR_LAT_HALF) {
+            /* a note started at this interrupt's first frame (engine.c eng_mid) opens the gate: it opens from that
+             * frame, as one core's opens from the block's start for the note there. The frames before it (the last
+             * interrupt's, under the threshold: they kept the gate as it was at their own run) keep its old course;
+             * opened from them instead, a note from silence had its first frames unramped, by chance of its start */
+            const uint32_t m = eng_mid_at;
+            const int32_t rnd0 = t0 ? 0 : GATE_RND;
+            if (gate_g != 32768 || t0 != 32768)
+                for (j = gate_done; j < m; j++) {
+                    if (gate_g < t0) gate_g = gate_g + 512 > t0 ? t0 : gate_g + 512;
+                    else if (gate_g > t0) gate_g = gate_g - GATE_FALL(gate_g) < t0 ? t0 : gate_g - GATE_FALL(gate_g);
+                    if (gate_g != 32768) {
+                        out[2u * j] = (out[2u * j] * gate_g + rnd0) >> 15;
+                        out[2u * j + 1u] = (out[2u * j + 1u] * gate_g + rnd0) >> 15;
+                    }
+                }
+            js = m;
+        }
+#endif
         if (gate_g != 32768 || gate_tgt != 32768) {
             const int32_t rnd = gate_tgt ? 0 : GATE_RND;
-            for (j = gate_done; j < fxc_e; j++) {
+            for (j = js; j < fxc_e; j++) {
                 if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
                 else if (gate_g > gate_tgt) gate_g = gate_g - GATE_FALL(gate_g) < gate_tgt ? gate_tgt : gate_g - GATE_FALL(gate_g);
                 if (gate_g != 32768) {
@@ -3001,6 +3223,10 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
         }
         else if (dly_rst) dly_clear_step();
         fxc_side = FX_SIDE_ON;                         /* (the engine decides it at its block's start, eng_begin) */
+#ifdef FX_ENG_LVL
+        fxc_eng = engc_fx;                             /* (the bars' level for the level-reading effects, the same:
+                                                        * on a fade block the new engine's, as one core) */
+#endif
         fxc_mono = mono;
     }
     if (fx_p[FXP_RAW]) {

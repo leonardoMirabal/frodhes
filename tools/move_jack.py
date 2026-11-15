@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The Move's headphone / line jack against its USB-C audio, while MIDI plays Frodhes: the Move's hil_jack.py.
 
-    tools/move_jack.py [--engines rhodes,vibes,marimba] [--secs 60] [--nv 16] [--dev M6 --ch 5]
+    tools/move_jack.py [--engines rhodes,vibes,marimba] [--secs 60] [--nv 16] [--dev M6 --ch 5] [--usb-ch left|right]
                        [--midi NAME --audio NAME --midi-ch N] [--ws URL|none] [--host USER@HOST]
                        [--prove] [--no-preflight] [--out DIR] [--dry-run [--dry-inject KIND@S ...]]
 
@@ -114,6 +114,14 @@ def band_db(x, fs, f0, f1):
 
 
 # ----------------------------------------------------------------------------------------------------------- the rigs
+def usb_side(u, side):
+    """USB's channels with the one the jack carries first (side "left" or "right"): every comparison reads column 0.
+    A mono cable from the Move's stereo jack carries one channel only (the 2026-11-15 rig: the right one, M6 input
+    6), and with the effects' stereo the other channel differs from it"""
+    u = np.asarray(u)
+    return u[:, ::-1].copy() if side == "right" and u.ndim == 2 else u
+
+
 class MoveJack(hj.Jack):
     """hil_jack's Jack on the Move: the jack on the interface devname's input ch (1-based), USB = the Move's
     (move_hil.UsbRig rig, opened first: its MIDI port before any audio stream). both(dur, events) -> {"usb": (n, 2)
@@ -122,14 +130,16 @@ class MoveJack(hj.Jack):
     added to it as its second stream"""
     fake = False
 
-    def __init__(self, rig, devname="M6", ch=5):
+    def __init__(self, rig, devname="M6", ch=5, usb_ch="left"):
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         devs = [d for d in sd.query_devices() if d["name"] == devname]
         if not devs or devs[0]["max_input_channels"] < ch:
             raise SystemExit("no audio input %s with an input %d (have: %s)" % (devname, ch, ", ".join(
                 d["name"] for d in sd.query_devices() if d["max_input_channels"])))
         super().__init__(devname, ch, rig=rig)
-        self.ws = None
+        self.ws, self.usb_ch = None, usb_ch
 
     def fault_open(self, url, slot=0):
         """a WebSocket kept open over the proof: dev_fault is armed with no wait before the take starts (the clicks
@@ -180,6 +190,7 @@ class MoveJack(hj.Jack):
                    if st[k] <= a <= st[k] + dur]
             got[k] = (np.asarray(x, float) * 32768.0, ring.sr)
         u, usr = got["usb"]
+        u = usb_side(u, self.usb_ch)
         j, jsr = got["jack"]
         j = j[:, 0]
         if jsr != FS_J:
@@ -225,9 +236,9 @@ class DryJack:
     t outside the take's guards. Every jack figure of a dry run is SIMULATED"""
     fake = True
 
-    def __init__(self, seed=1, jinject=()):
+    def __init__(self, seed=1, jinject=(), usb_ch="left"):
         self.r = DryHost()
-        self.jinject, self.armed, self.seed = list(jinject), None, seed
+        self.jinject, self.armed, self.seed, self.usb_ch = list(jinject), None, seed, usb_ch
 
     def fault_open(self, url=None, slot=0):
         pass
@@ -270,6 +281,7 @@ class DryJack:
                         u[i] = np.clip(u[i] + DRY_CLICK, -32768, 32767)
                 jinj.append((kind, t))
         self.seed += 1
+        u = usb_side(u, self.usb_ch)                        # (the jack simulated from the channel it carries)
         j = hc.sim_jack(u, fs_usb=sr, gain=DRY_GAIN, seed=self.seed)
         j += np.random.default_rng(self.seed + 7).normal(0, 32768 * 10 ** (DRY_FLOOR_DBFS / 20), len(j))
         for kind, t in jinj:                                # (sim_jack: the jack JACK_DELAY late, its clock slow)
@@ -811,9 +823,10 @@ def estimate_s(engines, secs):
 # ------------------------------------------------------------------------------------------------------------ report
 def summary_md(R):
     L = ["# Move jack against USB: %s" % R["verdict"], "",
-         "%s; %s; jack: %s input %d; MIDI %s (channel %s), audio %s; Schwung WebSocket %s" % (
+         "%s; %s; jack: %s input %d, the Move's %s channel (USB's same channel compared); MIDI %s (channel %s), "
+         "audio %s; Schwung WebSocket %s" % (
              R["time"], "DRY RUN (the host build; the jack SIMULATED)" if R["dry_run"] else "the Move", R["rig"]["jack_dev"],
-             R["rig"]["jack_ch"], R["rig"]["midi"], R["rig"]["ch"], R["rig"]["audio"], R["ws"]), ""]
+             R["rig"]["jack_ch"], R["rig"].get("usb_ch", "left"), R["rig"]["midi"], R["rig"]["ch"], R["rig"]["audio"], R["ws"]), ""]
     if R.get("stopped"):
         L += ["**Stopped:** " + R["stopped"], ""]
     P = R.get("proof")
@@ -888,6 +901,9 @@ def parse(argv=None):
     ap.add_argument("--nv", type=int, default=mh.MOVE_VOICES, help="the worst takes' voices per chord")
     ap.add_argument("--dev", default="M6", help="the jack's audio interface (hil_jack's)")
     ap.add_argument("--ch", type=int, default=5, help="the interface's input the jack is on (1-based)")
+    ap.add_argument("--usb-ch", choices=("left", "right"), default="left",
+                    help="the Move's output channel the jack's cable carries (a mono cable: one of them); USB's same "
+                         "channel is compared")
     ap.add_argument("--midi", help="the MIDI output (a substring; default the Move's Standalone port)")
     ap.add_argument("--audio", help="the Move's audio input (a substring; default the Move's)")
     ap.add_argument("--midi-ch", type=int, default=None, help="the MIDI channel (default: slot 1's, read over Schwung)")
@@ -943,19 +959,19 @@ def run(a, out=print):
                 bad = [k for k, _ in inj if k not in ("jclick", "click", "jdrop", "jstep")]
                 if bad:
                     raise SystemExit("--dry-inject: %s (jclick, click, jdrop, jstep)" % bad)
-                J = DryJack(seed=a.seed + 1, jinject=inj)
+                J = DryJack(seed=a.seed + 1, jinject=inj, usb_ch=a.usb_ch)
             else:
                 if a.ws == "none":
                     raise SystemExit("the proof sets dev_fault over Schwung's WebSocket: --ws none cannot be proven")
                 rig = mh.UsbRig(a.midi, a.audio, chan["send"])      # (its MIDI port first, then the audio streams)
                 if "standalone" not in rig.port_name.lower() or any(b in rig.port_name.lower() for b in NEVER_MIDI):
                     raise SystemExit("MIDI %s: not the Move's Standalone port" % rig.port_name)
-                J = MoveJack(rig, a.dev, a.ch)
+                J = MoveJack(rig, a.dev, a.ch, a.usb_ch)
                 ks = mh.KeptState(a.ws, 0).__enter__()
             R["rig"] = {"midi": J.r.port_name, "audio": J.r.audio_name, "ch": J.r.ch, "jack_dev": a.dev,
-                        "jack_ch": a.ch, "fake": J.fake}
-            out("MIDI %s (channel %d), audio %s, jack %s input %d; about %.0f min; -> %s" % (
-                J.r.port_name, J.r.ch, J.r.audio_name, a.dev, a.ch, R["estimate_s"] / 60, d), flush=True)
+                        "jack_ch": a.ch, "usb_ch": a.usb_ch, "fake": J.fake}
+            out("MIDI %s (channel %d), audio %s, jack %s input %d (the %s channel); about %.0f min; -> %s" % (
+                J.r.port_name, J.r.ch, J.r.audio_name, a.dev, a.ch, a.usb_ch, R["estimate_s"] / 60, d), flush=True)
             if not a.no_preflight:
                 ok, pre = mh.preflight_cmd(ma, os.path.join(d, "preflight"), chan, srep, u=None if J.fake else J.r)
                 R["preflight"] = mh._plain(pre)
@@ -984,7 +1000,8 @@ def run(a, out=print):
             ks.__exit__(None, None, None)
             R["state"] = ks.report
     if J is None:
-        R.setdefault("rig", {"midi": "-", "audio": "-", "ch": "-", "jack_dev": a.dev, "jack_ch": a.ch, "fake": a.dry_run})
+        R.setdefault("rig", {"midi": "-", "audio": "-", "ch": "-", "jack_dev": a.dev, "jack_ch": a.ch, "usb_ch": a.usb_ch,
+                              "fake": a.dry_run})
     crashed = [E for E in R["engines"] if E.get("crash")]
     ok = all(E["verdict"] == "PASS" for E in R["engines"])
     if R["stopped"]:

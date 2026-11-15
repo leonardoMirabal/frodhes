@@ -20,7 +20,10 @@ build's own fade does), no more glitch events than the twin.
 Found (cand3 d202b740): the second half's skipped fade-in is harmless (those onsets are the gate-open twin's, sample
 for sample: a note played while the gate is open never had a fade-in), but the package opened the gate late on soft
 notes whose first frames stayed under the threshold (sent muted, then the full gain at once: MARIMBA soft, a jump of
-16 LSB where the twin's is 2), and the bar engines' threshold was 16, not one core's 32 (fx.c GATE_LO_BARS)."""
+16 LSB where the twin's is 2), and the bar engines' threshold was 16, not one core's 32 (fx.c GATE_LO_BARS).
+Since 0.9.12 a note started at the block's second interrupt (FR_LAT_EV) gets one core's fade-in from its own frame
+(engine.c eng_mid_at): skipped or not by chance of its start, two takes of the same note differed by up to 230 LSB
+on their first chunk (tests/py/test_lat_mid_start.py)."""
 import os
 
 import numpy as np

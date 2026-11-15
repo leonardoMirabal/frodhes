@@ -12,6 +12,7 @@
 #include "gui_platform.h"
 #include "gui_shot.h"
 #include "gen/params_map.h"
+#include "src/frp_update.h"
 
 struct frp_gui_clap {
     const clap_host_t *host;
@@ -111,6 +112,7 @@ static int b_setting_get(void *ctx, int key, int *v)
     case FRP_UI_FX_BYPASS: *v = frp_ui_fx_bypass(c->pc); return 0;
     case FRP_UI_HOST_BPM10: *v = frp_ui_host_bpm10(c->pc); return 0;
     case FRP_UI_WIN_W: if (!frp_ui_win_w(c->pc)) return -1; *v = frp_ui_win_w(c->pc); return 0;
+    case FRS_UPDCHK: *v = frp_update_enabled(); return 0;     /* (the plugin's, every project's: the settings file) */
     }
     frp_ui_settings_get(c->pc, &s);
     if (!(f = set_field(&s, key))) return -1;
@@ -127,6 +129,7 @@ static void b_setting_set(void *ctx, int key, int v)
     case FRP_UI_FX_BYPASS: frp_ui_fx_bypass_set(c->pc, v != 0); return;
     case FRP_UI_HOST_BPM10: return;
     case FRP_UI_WIN_W: frp_ui_win_w_set(c->pc, v); return;
+    case FRS_UPDCHK: frp_update_set_enabled(v != 0); return;
     }
     frp_ui_settings_get(c->pc, &s);
     if (!(f = set_field(&s, key))) return;
@@ -169,6 +172,9 @@ static int b_preset_index(void *ctx)
 }
 static int b_preset_load(void *ctx, int idx) { return frp_ui_preset_load(PC(ctx), idx); }
 static int b_preset_save_as(void *ctx, const char *name) { return frp_ui_preset_save(PC(ctx), name); }
+static int b_update(void *ctx, char ver[16]) { (void)ctx; return frp_update_available(ver); }
+static void b_update_open(void *ctx) { (void)ctx; frp_update_open_download(); }   /* (opens the package, or the
+                                                                                     * browser downloads it) */
 static void bind(frp_gui_clap_t *c)
 {
     frp_ui_host_t *h = &c->uh;
@@ -184,6 +190,7 @@ static void bind(frp_gui_clap_t *c)
     h->preset_entry = b_preset_entry; h->preset_index = b_preset_index;
     h->preset_load = b_preset_load; h->preset_save_as = b_preset_save_as;
     h->version = frp_ui_version_text();
+    h->update = b_update; h->update_open = b_update_open;
 }
 
 frp_gui_clap_t *frp_gui_clap_new(const clap_host_t *host, frp_core *pc)
@@ -268,6 +275,7 @@ static bool g_create(const clap_plugin_t *plugin, const char *api, bool is_float
     saved_size(c);
     c->core = frp_gui_new(&c->uh);
     if (!c->core) return false;
+    frp_update_poke();               /* (the window opened: CHECK FOR UPDATES when due, on a thread of its own) */
     c->view = frg_view_create(frp_gui_client(c->core), 1, 1);
     if (!c->view) { close_window(c); return false; }
     if (c->scale > 0.0) frg_view_set_scale(c->view, (float)c->scale);

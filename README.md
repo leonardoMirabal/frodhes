@@ -1,6 +1,7 @@
 # Frodhes
 
-**An electric piano, vibraphone and marimba, computed live, for the M-VAVE FM-1, the Ableton Move and your computer.**
+**An electric piano, vibraphone and marimba, computed live, for the M-VAVE FM-1, the Ableton Move, the Akai MPC and your
+computer.**
 
 No samples: every note is calculated as you play it, from how the real instrument works. A hammer strikes a tine
 and a pickup turns its motion into sound; a mallet strikes a bar and its tube rings along. Play softly and it is
@@ -13,11 +14,13 @@ Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/le
     <td align="center"><img src="docs/manual/img/piano.png?v=d41944c5" width="260" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"></td>
     <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ba262a7f" width="300" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
     <td align="center"><img src="docs/manual/img/plugin/plugin-main.png?v=a6729600" width="300" alt="The desktop plugin's window: the VOICE knobs, two effect sections and a keyboard"></td>
+    <td align="center"><img src="docs/manual/img/mpc/mpc-voice.png?v=ab028bbc" width="300" alt="Frodhes on the Akai MPC: the VOICE page, two panels of four knobs"></td>
   </tr>
   <tr>
     <td align="center"><b>On the M-VAVE FM-1</b>: colour screen, four knobs</td>
     <td align="center"><b>On the Ableton Move</b>: its own screen, eight knobs</td>
     <td align="center"><b>On your computer</b>: a plugin with its own window</td>
+    <td align="center"><b>On the Akai MPC</b>: its own pages, the Q-Links</td>
   </tr>
 </table>
 
@@ -52,12 +55,10 @@ What is new in each version: [the release notes](https://github.com/leonardoMira
 3. If something goes wrong, switch the FM-1 off, hold **OCT−** and switch it on. This starts the USB rescue, and
    you can install again from there.
 
-**One core or two.** `frodhes.fwsc` plays 10 voices on one of the FM-1's two processor cores. The release also has
-[`frodhes-c1.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-c1.fwsc), which runs
-the voices on one core and the effects on the other: 14 voices on every instrument, the reverb at the full sample
-rate, and a quicker answer to a note (about 6.5 ms from MIDI to the headphone jack, against about 10 ms).
-Install it from a terminal (`python3 tools/fm1_install.py frodhes-c1.fwsc`; the emulator page installs `frodhes.fwsc`). You can switch between the two at any time; your
-settings, presets and pattern stay.
+**Both cores.** Frodhes runs the voices on one of the FM-1's two processor cores and the effects on the other:
+14 voices on every instrument, the reverb at the full sample rate, and a quick answer to a note (about 6.5 ms from
+MIDI to the headphone jack). `frodhes.fwsc` is the FM-1's only package; installing it over the one-core package of
+0.9.10 or 0.9.11 keeps your settings, presets and pattern.
 
 Your settings and presets stay when you update. 0.9.10 changes the factory presets and some of their program numbers
 (four new, four gone, SUIT TREM now F08): [the list](docs/MANUAL.md#6-presets). You can always go back to M-VAVE's own
@@ -71,6 +72,7 @@ firmware:
 | [The Firmware Hub](https://thefirmwarehub.com/#fw-frodhes) | The FM-1's firmware catalogue: install and update from one place |
 | [mutant.cloud](https://mutant.cloud/#/p/frodhes) | Install over USB-MIDI in the browser, no account needed |
 | [fm1-editor.com](https://fm1-editor.com/firmware/#frodhes) | The community's firmware list with pictures |
+| altstrument: [FM-1 and SMK-37](https://altstrument.org/firmware/m-vave-fm-1/frodhes), [Move](https://altstrument.org/firmware/ableton-move/frodhes) | The community catalogue of alternative firmware and modules, with every Frodhes version |
 | [Web emulator](https://leonardomirabal.github.io/frodhes/) | Play Frodhes in the browser before you install it |
 
 Questions, bugs or ideas: [issues](https://github.com/leonardoMirabal/frodhes/issues). The community's own place is
@@ -107,6 +109,10 @@ Audio Unit on macOS.
 - Its own window: the FM-1's pages as cards with knobs, resizable. Presets, MIDI learn, the effects' bypass and the
   sustain latch are in it, and everything is saved with your project.
 - The host's tempo drives the synced effects. Any sample rate. Up to 16 instances in one project.
+- When a newer Frodhes is out, it downloads your system's package into Downloads, checks its SHA-256, and shows an
+  INSTALL key on the window that opens it (macOS: Installer; Windows / Linux: the zip's folder). Close your music
+  software, then install. It asks GitHub at most once a day while its window is open and installs nothing itself;
+  SETTINGS > UPDATES OFF turns it off ([details](docs/PLUGIN.md#check-for-updates)).
 - macOS 11 or newer (Apple silicon or Intel), Windows x64, Linux x86_64 or aarch64 (glibc 2.31 or newer). Nothing
   else to install.
 
@@ -150,15 +156,28 @@ To remove it, delete the `Frodhes.*` files again. More:
   <img src="docs/manual/img/plugin/plugin-effects.png?v=0564369e" width="384" alt="The plugin playing: the compressor and the tape delay on, their knobs and meters live">
 </p>
 
+## On the Akai MPC
+
+Frodhes runs on Akai MPC standalone hardware as a plugin (checked by a tester on an MPC): the desktop plugin's engine,
+16 voices on every instrument, the factory presets as programs, and the plugin's look on the MPC's screen: eight
+pages of large knobs in panels of four, one Q-Link group each. It needs MPC OS 3.10.1 or later with External Plugin
+Support on. Download [`frodhes-mpc.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-mpc.zip) (or build it with `make mpc`); how to install it and what to report:
+[docs/MPC.md](docs/MPC.md).
+
+<p align="center">
+  <img src="docs/manual/img/mpc/mpc-voice.png?v=ab028bbc" width="384" alt="Frodhes on the MPC: the VOICE page">
+  <img src="docs/manual/img/mpc/mpc-delay.png?v=7bc9cbad" width="384" alt="Frodhes on the MPC: the chorus and the delay">
+</p>
+
 ## Manual
 
 **[The user manual](docs/MANUAL.md)**: every page, knob and button, the presets, the effects and the MIDI map.
 
-![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=93a2d41c)
+![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=d74540c8)
 
 ## Other keyboards
 
-Frodhes also runs on the SMK-37 Pro, SMK-37 Elite and MKE-P37, with 10 voices as the FM-1's one-core package. Read
+Frodhes also runs on the SMK-37 Pro, SMK-37 Elite and MKE-P37, with 10 voices on one processor core. Read
 [docs/SMK37.md](docs/SMK37.md) before you install one.
 
 The files on the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest):
@@ -166,7 +185,6 @@ The files on the [release page](https://github.com/leonardoMirabal/frodhes/relea
 | Device | File |
 | --- | --- |
 | M-VAVE FM-1 | `frodhes.fwsc` |
-| M-VAVE FM-1, two cores | `frodhes-c1.fwsc` |
 | Ableton Move | `frodhes-module.tar.gz` |
 | SMK-37 Pro | `frodhes-smk37-pro.fwsc` |
 | SMK-37 Elite | `frodhes-smk37-elite.fwsc` |

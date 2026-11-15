@@ -1,0 +1,111 @@
+{
+  "comment": "The Akai MPC skin's layout (mpc/tools/make_skin.py renders it into mpc/skins/). keys: the MPC's six function keys under the screen, each a list of its pages (pressing the key again shows its next page). A page: two panels, one above the other; each panel is one Q-Link group of four (the top panel Q-Links 13-16, the lower one 9-12; bank direction RowTopDown, so a four-knob MPC banks to the top panel first) and holds four cards (a card: a parameter by name, its label, and 'bi' for a knob centred on zero, 'wide' for a card two columns wide). A panel's header carries its title and caption, a lamp (lit while 'lamp' is on), segmented switches ('switch': one or a list; touch) and a menu ('menu', touch; a double tap opens the list). program: the Program Mode Q-Links, the 16 most-used parameters by name, Q-Link 1..16 (1 = bottom left, 13 = top left).",
+  "accent": "ffff9826",
+  "keys": [
+    [
+      { "name": "VOICE", "panels": [
+        { "title": "VOICE", "caption": "HOW THE NOTE IS STRUCK", "cards": [
+          { "param": "Tone / strike", "label": "TONE / STRIKE", "bi": true },
+          { "param": "Bark / mallet", "label": "BARK / MALLET" },
+          { "param": "Bell / tube", "label": "BELL / TUBE" },
+          { "param": "Hammer / weight", "label": "HAMMER / WEIGHT" } ] },
+        { "title": "VOICE", "caption": "HOW NOTES DIE AWAY", "cards": [
+          { "param": "Decay / ring", "label": "DECAY / RING" },
+          { "param": "Release / damper", "label": "RELEASE / DAMPER" },
+          { "param": "Noise", "label": "NOISE" },
+          { "param": "Tune", "label": "TUNE", "bi": true } ] } ] },
+      { "name": "PLAY", "panels": [
+        { "title": "INSTRUMENT", "cards": [
+          { "param": "Type", "label": "TYPE" },
+          { "param": "Velocity response", "label": "RESPONSE" },
+          { "param": "Stereo spread", "label": "SPREAD" },
+          { "param": "Level", "label": "LEVEL", "bi": true } ] },
+        { "title": "PLAY", "cards": [
+          { "param": "Preset", "label": "PRESET", "wide": true },
+          { "param": "Sustain", "label": "SUSTAIN" },
+          { "param": "Effects bypass", "label": "EFFECTS BYPASS" } ] } ] }
+    ],
+    [
+      { "name": "COMP EQ", "panels": [
+        { "title": "COMP", "lamp": "Compressor", "switch": "Compressor", "menu": "Compressor ratio", "menuCaption": "RATIO", "cards": [
+          { "param": "Compressor threshold", "label": "THRESHOLD" },
+          { "param": "Compressor attack", "label": "ATTACK" },
+          { "param": "Compressor release", "label": "RELEASE" },
+          { "param": "Compressor make-up", "label": "MAKE-UP" } ] },
+        { "title": "EQ", "cards": [
+          { "param": "EQ low", "label": "LOW", "bi": true },
+          { "param": "EQ mid", "label": "MID", "bi": true },
+          { "param": "EQ mid frequency", "label": "MID FREQ" },
+          { "param": "EQ high", "label": "HIGH", "bi": true } ] } ] },
+      { "name": "DRIVE", "panels": [
+        { "title": "DRIVE", "lamp": "Drive type", "cards": [
+          { "param": "Drive type", "label": "TYPE" },
+          { "param": "Drive amount", "label": "AMOUNT" },
+          { "param": "Drive tone", "label": "TONE", "bi": true },
+          { "param": "Drive mix", "label": "MIX" } ] },
+        { "title": "MOTOR", "caption": "VIBES", "lamp": "Motor", "switch": "Motor", "cards": [
+          { "param": "Motor depth", "label": "DEPTH" },
+          { "param": "Motor speed", "label": "SPEED" },
+          { "param": "Motor shape", "label": "SHAPE" },
+          { "param": "Motor sync", "label": "SYNC" } ] } ] }
+    ],
+    [
+      { "name": "FILTER", "panels": [
+        { "title": "FILTER", "lamp": "Filter type", "cards": [
+          { "param": "Filter type", "label": "TYPE" },
+          { "param": "Filter cutoff", "label": "FREQ" },
+          { "param": "Filter resonance", "label": "RESO" },
+          { "param": "Filter LFO amount", "label": "LFO AMOUNT" } ] },
+        { "title": "FILTER LFO", "cards": [
+          { "param": "Filter LFO shape", "label": "SHAPE" },
+          { "param": "Filter LFO rate", "label": "RATE" },
+          { "param": "Filter LFO sync", "label": "SYNC" },
+          { "param": "Filter LFO retrigger", "label": "TRIGGER" } ] } ] }
+    ],
+    [
+      { "name": "MOD", "panels": [
+        { "title": "TREM/WAH", "lamp": "Tremolo / wah", "switch": ["Tremolo / wah", "Tremolo mode"], "cards": [
+          { "param": "Tremolo depth", "label": "DEPTH" },
+          { "param": "Tremolo rate", "label": "RATE" },
+          { "param": "Tremolo shape", "label": "SHAPE" },
+          { "param": "Tremolo sync", "label": "SYNC" } ] },
+        { "title": "PHASER", "lamp": "Phaser", "switch": "Phaser", "cards": [
+          { "param": "Phaser depth", "label": "DEPTH" },
+          { "param": "Phaser speed", "label": "SPEED" },
+          { "param": "Phaser feedback", "label": "FEEDBACK" },
+          { "param": "Phaser sync", "label": "SYNC" } ] } ] }
+    ],
+    [
+      { "name": "DELAY", "panels": [
+        { "title": "CHORUS", "lamp": "Chorus", "switch": "Chorus", "cards": [
+          { "param": "Chorus depth", "label": "DEPTH" },
+          { "param": "Chorus speed", "label": "SPEED" },
+          { "param": "Chorus feedback", "label": "FEEDBACK" },
+          { "param": "Chorus sync", "label": "SYNC" } ] },
+        { "title": "DELAY", "lamp": "Delay type", "switch": "Delay type", "menu": "Delay sync", "menuCaption": "SYNC", "cards": [
+          { "param": "Delay mix", "label": "MIX" },
+          { "param": "Delay time", "label": "TIME" },
+          { "param": "Delay feedback", "label": "FEEDBACK" },
+          { "param": "Delay tone", "label": "TONE" } ] } ] }
+    ],
+    [
+      { "name": "REVERB", "panels": [
+        { "title": "REVERB", "lamp": "Reverb type", "cards": [
+          { "param": "Reverb type", "label": "TYPE" },
+          { "param": "Reverb mix", "label": "MIX" },
+          { "param": "Reverb decay", "label": "DECAY" },
+          { "param": "Reverb tone", "label": "TONE", "bi": true } ] },
+        { "title": "REVERB", "caption": "THE ROOM", "lamp": "Reverb type", "cards": [
+          { "param": "Reverb pre-delay", "label": "PRE-DELAY" },
+          { "param": "Reverb size", "label": "SIZE" },
+          { "param": "Reverb modulation", "label": "MODULATION" },
+          { "param": "Reverb low cut", "label": "LOW CUT" } ] } ] }
+    ]
+  ],
+  "program": [
+    "Reverb mix", "Delay mix", "Tremolo depth", "Level",
+    "Drive amount", "Filter cutoff", "Chorus depth", "Reverb decay",
+    "Decay / ring", "Release / damper", "Hammer / weight", "Bark / mallet",
+    "Type", "Tone / strike", "Bell / tube", "Noise"
+  ]
+}

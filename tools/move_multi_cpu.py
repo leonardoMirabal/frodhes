@@ -38,6 +38,9 @@ import move_ws  # noqa: E402
 HOST = os.environ.get("MOVE_HOST", "ableton@move.local")
 URL = move_ws.URL
 INST = mi.INST
+# a subscribe to a slot holding Frodhes waits for the manager's re-read of every param: 2.9-5.5 s on 2026-11-14 (5 s,
+# move_ws's default, timed the restore out: "not restored: TimeoutError")
+WS_TIMEOUT_S = 15.0
 # /schwung-perf offsets (schwung-manager perf_shm.go, version 1)
 P_PERIOD, P_TOT_AVG, P_TOT_MAX, P_PRE_AVG, P_PRE_MAX = 24, 32, 40, 48, 56
 P_SYN_AVG, P_SYN_MAX, P_RND_MAX, P_OVR = 544, 576, 512, 844
@@ -89,6 +92,12 @@ def top_sections(rows, thr=150):
             if max(p["sec_max"][i] for p in rows) >= thr}
 
 
+def ovr_series(rows):
+    """Schwung's overruns per second between consecutive perf samples ((time, row) pairs)"""
+    return [round((b["overruns"] - a["overruns"]) / max(tb - ta, 1e-3), 1)
+            for (ta, a), (tb, b) in zip(rows, rows[1:])]
+
+
 class Perf(threading.Thread):
     """/dev/shm/schwung-perf once a second over one ssh"""
     def __init__(self):
@@ -122,11 +131,8 @@ def slot_modules(w):
     return m
 
 
-RING_BACKOFF_S = (0.3, 0.6, 1.2, 2.4, 4.8)     # the pauses before each new try after "ring full"
-
-
-def ring_full(e):
-    return isinstance(e, move_ws.SchwungError) and "ring full" in str(e)
+RING_BACKOFF_S = mh.RING_BACKOFF_S             # the pauses before each new try after "ring full" (move_hil's)
+ring_full = mh.ring_full
 
 
 def paced(fn, sleep=time.sleep, backoff=RING_BACKOFF_S, log=None):
@@ -168,7 +174,7 @@ class Slots:
 
     def __init__(self, url, slots, remote=None, state_read=None, state_restore=None, sleep=time.sleep):
         self.url, self.slots, self.report, self.before, self.state = url, list(slots), None, None, {}
-        self.remote = remote or (lambda: move_ws.Remote(url))
+        self.remote = remote or (lambda: move_ws.Remote(url, timeout=WS_TIMEOUT_S))
         self.state_read = state_read or mh.state_read
         self.state_restore = state_restore or mh.state_restore
         self.sleep = sleep
@@ -289,16 +295,28 @@ def fetch_any(local):
     return fetch
 
 
+def load_fresh(w, free, on, log=None, sleep=time.sleep):
+    """every slot of free emptied, then Frodhes loaded into the slots of on (new instances: a module write of the
+    name a slot already holds reloads nothing, and the instance keeps the engine.so copy made at its create;
+    2026-11-14: slot 1 still ran 0.9.11, loaded at the boot, after 0.9.12's install, and n=1 measured it). The slots
+    Schwung never confirmed (1-based)"""
+    bad = []
+    for s in free:
+        if not set_module(w, s, "", 6.0, sleep=sleep, log=log):
+            bad.append(s + 1)
+    for s in on:
+        if not set_module(w, s, "frodhes", 12.0, sleep=sleep, log=log):
+            bad.append(s + 1)
+    return sorted(set(bad))
+
+
 def run_n(n, secs, outdir, seed=1):
     res = {"n": n}
-    with move_ws.Remote(URL) as w:
+    with move_ws.Remote(URL, timeout=WS_TIMEOUT_S) as w:
         t0 = time.time()
         rss0 = rss_kb()
-        paced_log, unconfirmed = [], []
-        for s in FREE:
-            on = s in SLOTS[:n]
-            if not set_module(w, s, "frodhes" if on else "", 12.0 if on else 4.0, log=paced_log):
-                unconfirmed.append(s + 1)
+        paced_log = []
+        unconfirmed = load_fresh(w, FREE, SLOTS[:n], log=paced_log)
         if unconfirmed:
             raise RuntimeError("Schwung never confirmed the module of slot(s) %s" % unconfirmed)
         res["load_s"] = round(time.time() - t0, 1)
@@ -306,6 +324,12 @@ def run_n(n, secs, outdir, seed=1):
         res["rss_kb"] = rss_kb()
         res["rss0_kb"] = rss0
         res["inst"] = ssh("ls -d %s/*/ 2>/dev/null; cat %s/*/load.txt 2>/dev/null" % (INST, INST)).decode()
+        for s in SLOTS[:n]:                          # (the build each instance runs: the re-read brings it late)
+            try:
+                w.until(lambda r: "synth:r_version" in r.params.get(s, {}), WS_TIMEOUT_S)
+            except TimeoutError:
+                pass
+        res["versions"] = {s + 1: (w.params.get(s) or {}).get("synth:r_version") for s in SLOTS[:n]}
     ssh("rm -f %s/*/cpu-ring.log" % INST)
     rigs = [mh.TapRig(URL, fetch_any(os.path.join(outdir, "n%d" % n)), slot=SLOTS[s]) for s in range(n)]
     for s, r in enumerate(rigs):
@@ -330,6 +354,7 @@ def run_n(n, secs, outdir, seed=1):
     if idle:
         res["idle"] = {"pre_max": max(p["pre_max"] for p in idle), "tot_max": max(p["tot_max"] for p in idle),
                        "overruns_per_s": round((idle[-1]["overruns"] - idle[0]["overruns"]) / max(1, len(idle) - 1), 1),
+                       "series_ovr": ovr_series(base[2:]),
                        "syn_max": [max(p["syn_max"][i] for p in idle) for i in range(4)],
                        "sections": top_sections(idle),
                        "series_pre_max": [p["pre_max"] for p in idle]}
@@ -352,6 +377,8 @@ def run_n(n, secs, outdir, seed=1):
 
     def usb_rec(secs):
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         dev = [i for i, d in enumerate(sd.query_devices()) if "Move" in d["name"] and d["max_input_channels"] > 0]
         if dev:
             usb["x"] = sd.rec(int(secs * 44100), samplerate=44100, channels=2, dtype="int16", device=dev[0], blocking=True)
@@ -364,6 +391,8 @@ def run_n(n, secs, outdir, seed=1):
         t.start()
     for t in th:
         t.join()
+    tp1 = time.time()
+    time.sleep(IDLE_TAIL_S + IDLE_AFTER_S)          # (the idle window after the loads: A / B / A, see verdict)
     perf.end()
     if USB:
         ut.join()
@@ -394,7 +423,12 @@ def run_n(n, secs, outdir, seed=1):
         rows = mh.parse_ring(ssh("cat %s" % d).decode())
         rings[d.split("/")[-2]] = mh.cpu_summary(rows)
     res["rings"] = rings
-    during = [p for t, p in perf.rows if t >= tp0 + 3]
+    during = [p for t, p in perf.rows if tp0 + 3 <= t <= tp1]
+    after = [(t, p) for t, p in perf.rows if t >= tp1 + IDLE_TAIL_S]
+    if len(after) >= 3:
+        res["idle_after"] = {"overruns_per_s": round((after[-1][1]["overruns"] - after[0][1]["overruns"]) /
+                                                     max(1, len(after) - 1), 1),
+                             "series_ovr": ovr_series(after), "pre_max": max(p["pre_max"] for t, p in after)}
     if during:
         res["perf"] = {"tot_max": max(p["tot_max"] for p in during), "pre_max": max(p["pre_max"] for p in during),
                        "pre_avg": max(p["pre_avg"] for p in during), "period": during[-1]["period"],
@@ -402,6 +436,7 @@ def run_n(n, secs, outdir, seed=1):
                        "syn_avg": [max(p["syn_avg"][i] for p in during) for i in range(4)],
                        "overruns": during[-1]["overruns"] - (base[-1][1]["overruns"] if base else during[0]["overruns"]),
                        "overruns_per_s": round((during[-1]["overruns"] - during[0]["overruns"]) / max(1, len(during) - 1), 1),
+                       "series_ovr": ovr_series([(t, p) for t, p in perf.rows if tp0 + 3 <= t <= tp1]),
                        "sections": top_sections(during),
                        "series_pre_max": [p["pre_max"] for p in during],
                        "series_syn_sum_max": [sum(p["syn_max"]) for p in during],
@@ -432,11 +467,33 @@ def run_n(n, secs, outdir, seed=1):
 # a new engine is compared with (over it by more than REF_TOL: a regression to explain, not a failure by itself)
 BAR_US = {1: mh.U12_LIMIT_US, 2: 967, 3: 967}
 REF_1_US, REF_TOL = 573, 0.15
+OVR_TOL_PER_S, OVR_TOL_FRAC = 2.0, 0.10
+# the idle window after the loads (A / B / A): IDLE_TAIL_S for the release tails, then IDLE_AFTER_S read
+IDLE_TAIL_S, IDLE_AFTER_S = 3.0, 12.0
+
+
+def ovr_added(r):
+    """(the overruns per second the loads add, the idle rate they are judged against, how), or None with no idle rate.
+    THRESHOLD (2026-11-14, T2 0.9.12): Schwung's idle rate swings 93-173 /s within minutes (2026-11-14: one idle
+    window 116-137 /s before n = 1, 173 before n = 2 and 4, 93 before n = 3; under every load 143-173), and one idle
+    window before the load failed 0.9.11 and 0.9.12 alike (168-169 /s loaded vs 123-138 idle, n = 1). Now A / B / A:
+    the median of the per-second rates during the load against the higher of the medians of the idle windows just
+    before and just after it (an idle drift up or down between them is not the load's); the same tolerance. Without
+    the window after (an older report) or the series: the rates over the windows, as before"""
+    perf, idle, aft = r.get("perf") or {}, r.get("idle") or {}, r.get("idle_after") or {}
+    ls, i0, i1 = perf.get("series_ovr"), idle.get("series_ovr"), aft.get("series_ovr")
+    if ls and i0 and i1:
+        base = max(float(np.median(i0)), float(np.median(i1)))
+        return float(np.median(ls)) - base, base, "A/B/A medians"
+    rate, base = perf.get("overruns_per_s"), idle.get("overruns_per_s")
+    if base is None or rate is None:
+        return None
+    return rate - base, base, "one idle window"
 
 
 def verdict(r, n):
     """(PASS / FAIL / INFO, text) for one run_n result: every instance's ring worst within BAR_US[n], no ring gaps,
-    no Schwung overrun during the loads, no gated click on any tap (or on the USB-C audio)"""
+    no Schwung overruns added by the loads (over the idle rate), no gated click on any tap (or on the USB-C audio)"""
     rings = r.get("rings") or {}
     worst = max((s.get("worst", 0) for s in rings.values()), default=None)
     bad = []
@@ -446,8 +503,19 @@ def verdict(r, n):
         bad.append("worst %d us > %d us" % (worst, BAR_US[n]))
     if any(s.get("missing") for s in rings.values()):
         bad.append("ring gaps")
-    ovr = (r.get("perf") or {}).get("overruns")
-    if ovr:
+    vers = {v for v in (r.get("versions") or {}).values() if v}     # (a version not read in time: no verdict)
+    if len(vers) > 1:
+        bad.append("the instances run different builds (%s)" % ", ".join(sorted(map(str, vers))))
+    # Schwung's overrun counter also runs with no load (73-173 /s idle on 2026-11-03, -08 and -13, Frodhes idle or
+    # not playing): only overruns the loads add count, the rate during them over the idle rate by more than
+    # OVR_TOL_PER_S (or OVR_TOL_FRAC of the idle rate); with no idle rate read, any overrun counts as before
+    perf = r.get("perf") or {}
+    ovr, add = perf.get("overruns"), ovr_added(r)
+    if add is not None:
+        d, base, how = add
+        if d > max(OVR_TOL_PER_S, OVR_TOL_FRAC * base):
+            bad.append("Schwung overruns +%.1f /s under load over %.1f /s idle (%s)" % (d, base, how))
+    elif ovr:
         bad.append("%d Schwung overruns" % ovr)
     clicks = sum(t.get("gated", 0) for t in r.get("takes", [])) + (r.get("usb") or {}).get("gated", 0)
     if clicks:
@@ -479,7 +547,7 @@ def main():
     os.makedirs(out, exist_ok=True)
     allr = []
     with mi.move_lock("move_multi_cpu"):
-        with move_ws.Remote(URL) as w:
+        with move_ws.Remote(URL, timeout=WS_TIMEOUT_S) as w:
             other = {s + 1: m for s, m in slot_modules(w).items() if m not in ("", "frodhes")}
         global FREE, SLOTS
         if other and a.keep_others:

@@ -116,6 +116,7 @@ dly_wr_c
 dly_tail_over
 fx_pre_c
 rev_begin
++12  # (2026-11-15: rev_hq.c rq_st: 12 B smaller; the padding keeps the code after it where 0.9.12's storm passes measured it)
 dly_clear_step
 ilog2_q12
 cmp_gr_at
@@ -161,6 +162,7 @@ exp2_neg
 rev_locut
 rev_plate_run
 fx_process
++6  # (2026-11-15: rq_in's one argument less: 6 B smaller; the padding keeps the code after it where 0.9.12's storm passes measured it)
 c1_fx_job
 c1_lat_job
 fx_spread
@@ -181,7 +183,10 @@ ph_glide
 cho_side
 tp_mod_c
 rq_in
++10  # (2026-11-15: its HALL level from rq_st.cur: 10 B smaller; the padding keeps the code after it where 0.9.12's storm passes measured it)
 rev_hqh_run
++4044  # (2026-11-15: its warm-up reads, 52 B more: the code after it one cache way (4096 B) on, so every
+       # line of it maps to the same set as on 0.9.12's storm passes; 4 KB of flash)
 rq_sqrt15
 rev_inf_run
 rq_ret
@@ -197,3 +202,7 @@ ri_input
 ri_xrows
 ri_mix
 fx_width
+.rodata +4016  # (2026-11-15: the a14 merge's main-loop code (fx_pend_*, fx_set, preset_load), 80 B in the rest of .text:
+               # the tables after it (the KHLON drive's KH_G / KH_GFS / KH_RCP, TSH8's, the voices', the effects' small
+               # ones at the end) one cache way on, the same sets as on 0.9.12's storm passes; off by 704..784 B (a11b,
+               # a11c) the storm's KHLON thirds ran ~+140 us of core-1 busy)

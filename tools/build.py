@@ -222,6 +222,8 @@ def build_app():
         if not re.fullmatch(r"[A-Z0-9]{1,7}", DATA_FAMILY):
             raise SystemExit("DATA_FAMILY: 1..7 of A-Z 0-9")
         flags.append(f'-DDATA_FAMILY="{DATA_FAMILY}"')
+    if RAM2:
+        flags.append("-DFR_RAM2_ON")
     flags += os.environ.get("APP_DEFS", "").split()      # developer builds only, e.g. APP_DEFS=-DRH_PROF_STAGES
     flags += os.environ.get("DINGHY_DEFS", "").split()   # (a test build: DINGHY_DEFS=-DFELUCCA_UAC=0 ./build.sh)
     cmds = [("cc", "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),
@@ -257,8 +259,28 @@ def build_app():
                 raise SystemExit("app.ld: the rh_hermite line was not found (--c1 hot code)")
             # (pinned: the hot code starts at a fixed address, 0x02001400 (. inside .text counts from its start 0x02000120), however app_audio's size moves; ld fails if it grows
             # past it)
+            # (a line "+N": N bytes of padding there, so a function that shrank leaves the code after it where it was:
+            # the layout the FM-1 was measured on)
+            # (a line ".rodata +N": N bytes of padding between the rest of .text and .rodata, so the tables the
+            # audio reads (the KHLON drive's, the voices') keep their cache sets when the code before them changes)
+            ro = [n for n in names if n.startswith(".rodata")]
+            names = [n for n in names if not n.startswith(".rodata")]
             txt = txt.replace("KEEP(*(.text.app_audio)) " + k, "KEEP(*(.text.app_audio)) . = 0x12E0; " + k +
-                              "".join(f" *(.text.{n})" for n in names if n))
+                              "".join(f" . = . + {int(n[1:])};" if n.startswith("+") else f" *(.text.{n})"
+                                      for n in names if n))
+            if ro:
+                r = " *(.text*) *(.rodata*)"
+                if txt.count(r) != 1:
+                    raise SystemExit("app.ld: the .rodata line was not found (--c1 .rodata padding)")
+                txt = txt.replace(r, f" *(.text*) . = . + {int(ro[-1].split('+')[1])}; *(.rodata*)")
+    if RAM2:
+        # the one-core FM-1 image: RAMTEXT up to 0x01C07F00 (the room --c1 gives .ramx; crt0's boot status words stay
+        # at 0x01C07F00) for more of the audio's hot loops (frodhes.c FR_RAM2): the code it read from flash had
+        # outgrown the 32 KB cache
+        a = "RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x6000"
+        if txt.count(a) != 1:
+            raise SystemExit("app.ld: the RAMTEXT line was not found (FR_RAM2)")
+        txt = txt.replace(a, "RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x7F00")   # (crt0's status words at 0x01C07F00)
     if txt != ld.read_text():
         ld = OUT / "app.ld"
         ld.write_text(txt)
@@ -349,6 +371,7 @@ BAR_LOOPS = [("bar_run_lo", 32, "upper slot Q32, 4 samples"), ("bar_run_hi", 32,
 
 
 C1 = False                          # --c1: two cores (frodhes.c FR_C1), the FM-1 only
+RAM2 = False                        # the one-core FM-1 image: more hot loops in RAM (frodhes.c FR_RAM2)
 
 
 def c1_check(rt_names):
@@ -378,6 +401,19 @@ def c1_check(rt_names):
     return errors, notes
 
 
+def fault_check(syms, app_defs=None, c1=None):
+    """an FR_FAULT two-core image (APP_DEFS=-DFR_FAULT ./build.sh --c1) has the burn: frodhes.c's flt_burn in its
+    symbols. K6c (2026-11-15): FR_C1_LAT's app_audio and core-1 job never called it, so CC 117 / 118 were stored and
+    nothing burned; the device sweep read every step as step 0. [] or the error"""
+    app_defs = os.environ.get("APP_DEFS", "") if app_defs is None else app_defs
+    c1 = C1 if c1 is None else c1
+    if not c1 or not any(re.fullmatch(r"-DFR_FAULT(=.*)?", d) for d in app_defs.split()):
+        return []
+    if re.search(r"^[0-9a-f]+ .*\sflt_burn$", syms, re.M):
+        return []
+    return ["FR_FAULT: no flt_burn in the two-core image (CC 117 / 118 would burn nothing: frodhes.c FLT_BURN)"]
+
+
 def check(img, syms, dis, rt):
     errors, notes = [], []
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
@@ -389,14 +425,15 @@ def check(img, syms, dis, rt):
     # .ram_text (frodhes.c FR_RAM) runs with the flash on (an erase holds interrupts) and may call XIP through FR_FAR
     # (0.9.6: the effects' block functions moved there too)
     rt_fn, rt_calls, rt_names = None, [], []
+    fl_drv = lambda n: n.startswith("fl_") and n != "fl_pass"   # (fl_pass: the filter's loop, FR_RAM2, not the driver)
     for ln in rt.splitlines():
         mm = re.match(r"^([A-Za-z_][\w.]*):$", ln)
         if mm:
             rt_fn = mm.group(1)
             rt_names.append(rt_fn)
-        elif rt_fn and rt_fn.startswith("fl_") and re.search(r"\bcall\b", ln):
+        elif rt_fn and fl_drv(rt_fn) and re.search(r"\bcall\b", ln):
             rt_calls.append(f"{rt_fn}: {ln.strip()}")
-    if not any(n.startswith("fl_") for n in rt_names):
+    if not any(fl_drv(n) for n in rt_names):
         errors.append(".ram_text: the flash driver (fl_*) not found")
     if C1:
         e, n = c1_check(rt_names)
@@ -406,7 +443,7 @@ def check(img, syms, dis, rt):
         errors.append(f".ram_text: the flash driver contains calls: {rt_calls[:3]}")
     else:
         notes.append(f".ram_text: {len([ln for ln in rt.splitlines() if LINE.match(ln)])} insns, the flash driver "
-                     f"({sum(n.startswith('fl_') for n in rt_names)} functions) without calls")
+                     f"({sum(fl_drv(n) for n in rt_names)} functions) without calls")
     for ln in dis.splitlines():     # nothing may call or load an address in the chip ROM
         mm = LINE.match(ln)
         if not mm:
@@ -455,6 +492,7 @@ def check(img, syms, dis, rt):
     def sym(name):
         mm = re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M)
         return int(mm.group(1), 16) if mm else 0
+    errors += fault_check(syms)
     ram = sym("_bss_end") - 0x01C08000
     pool = sym("_pool_end") - 0x01C20000
     notes.append(f"image {len(img)} B of {APP_SLOT}; RAM .data+.bss {ram} B of 98304; pool {pool} B of 344064")
@@ -463,7 +501,8 @@ def check(img, syms, dis, rt):
                      f"{sym('_ramx_end'):#x} of 0x1c08000")
         hot = Path(os.environ.get("C1_HOT_FILE") or FW / "c1_hot.txt")
         if hot.exists():                 # every name of the hot list a function placed in the hot block (a renamed
-            names = [n for n in (l.split("#")[0].strip() for l in hot.read_text().splitlines()) if n]   # one: stale)
+            names = [n for n in (l.split("#")[0].strip() for l in hot.read_text().splitlines())
+                     if n and not n.startswith(("+", ".rodata"))]   # one: stale; "+N" / ".rodata +N" lines are padding)
             lo, hi = 0x02001400, 0x02001400 + 0x20000
             gone = [n for n in names if not lo <= sym(re.escape(n)) < hi]
             if gone:
@@ -591,7 +630,7 @@ def package(board="fm1", model="pro", release=None):
 
 
 def main():
-    global PRODUCT, VERSION, BOARD, APP_SLOT, APP_OPT, C1
+    global PRODUCT, VERSION, BOARD, APP_SLOT, APP_OPT, C1, RAM2
     ap = argparse.ArgumentParser()
     ap.add_argument("--release", metavar="X.Y.Z", help="release build: version string X.Y.Z, file frodhes-X.Y.Z.fwsc")
     ap.add_argument("--board", choices=sorted(BOARD_DEFS), default=None,
@@ -646,6 +685,7 @@ def main():
         C1 = True
         BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], "-DFR_C1=1"] + ([] if a.c1_256 else ["-DFR_C1_LAT=1"])
         name = name[:-len(".fwsc")] + ("-c1-256.fwsc" if a.c1_256 else "-c1.fwsc")
+    RAM2 = BOARD == "fm1" and not C1 and os.environ.get("FR_RAM2", "1") == "1"   # (FR_RAM2=0: the old layout, A/B)
     if a.usb_name is not None:
         if BOARD != "fm1":
             raise SystemExit("--usb-name: the FM-1 only")

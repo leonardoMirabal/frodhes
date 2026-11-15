@@ -5,7 +5,7 @@ owner token the holder's own tools inherit, a dead-holder reaper and a stale-loc
 
 A lock is a directory (mkdir is atomic), in the MAIN checkout's build/ (every worktree shares it):
   DEVICE  build/hil/DEVICE.lockdir     HEAVY  build/HEAVY.lockdir     HEAVY2  build/HEAVY2.lockdir
-  other   build/locks/<NAME>.lockdir
+  other   build/locks/<NAME>.lockdir   (USBAUDIO: one audio tool at a time, usb_audio())
 holding owner.json {name, token (random 128-bit), pid, ppid, host, who, why, session, since}, owner (one text line,
 "<who> <why> pid <pid> since <date>", what the older scripts read) and heartbeat (its mtime: the holder is alive).
 
@@ -52,6 +52,7 @@ PATHS = {"DEVICE": ("hil", "DEVICE.lockdir"), "HEAVY": ("HEAVY.lockdir",), "HEAV
 STALE_S = {"DEVICE": 30 * 60}          # no heartbeat for this long: LOCK-STALE (the others: STALE_DEFAULT_S)
 STALE_DEFAULT_S = 20 * 60
 REAP_GRACE_S = 10 * 60                 # a dead pid's lock is reaped once its heartbeat is this old
+REAP_S = {"USBAUDIO": 0}               # ... per lock (USBAUDIO: at once, a dead pid on this host holds no stream)
 ORPHAN_GRACE_S = 2 * 60                # a lock with no owner at all (no owner, no owner.json: only a heartbeat left, or
                                        # nothing) is reaped once it and its heartbeat are this old (a shell that has just
                                        # done mkdir writes its owner within a second)
@@ -152,7 +153,7 @@ def info(name, root=None):
     orphan = not own and not text and pid is None
     return dict(dir=d, owner=own, text=text or "(no owner file)", pid=pid, alive=alive, age_s=now - since,
                 beat_s=beat_s, stale=beat_s > STALE_S.get(name, STALE_DEFAULT_S) and not (alive and not own),
-                orphan=orphan, reapable=(alive is False and beat_s > REAP_GRACE_S)
+                orphan=orphan, reapable=(alive is False and beat_s >= REAP_S.get(name, REAP_GRACE_S))
                 or (orphan and beat_s > ORPHAN_GRACE_S and now - since > ORPHAN_GRACE_S))
 
 
@@ -303,7 +304,10 @@ class Lock:
                     line = describe(self.name, st)
                     if st["stale"]:
                         print(line, file=sys.stderr, flush=True)
-                    self.say(f"waiting for the lock: {line}")
+                    who = st["owner"].get("who") or st["text"].split(" pid ")[0]
+                    self.say(f"waiting for the {LABELS.get(self.name, self.name)} lock held by {who} pid {st['pid']}"
+                             f" ({'alive' if st['alive'] else 'dead' if st['alive'] is False else 'another host'}): "
+                             f"{line}")
                 said = time.time()
             time.sleep(self.poll_s)
         if self.beat_s:
@@ -339,6 +343,30 @@ class Lock:
 
 
 ensure = Lock
+
+LABELS = {"USBAUDIO": "USB-audio"}
+_USB_AUDIO = []
+
+
+def usb_audio(who=None, wait_s=6 * 3600.0, poll_s=2.0, root=None):
+    """one audio tool at a time on this computer: every tool that opens an FM-1 / Move USB audio stream (or the
+    interface's jack input) takes USBAUDIO first, right after importing sounddevice, and holds it to its exit (atexit;
+    a crash leaves a dead pid, reaped at once: REAP_S). A second tool queues with 'waiting for the USB-audio lock held
+    by <tool> pid <pid>'; a tool's own children (hil_scan's T2 suites, a wrapper's tools) inherit the token. Two audio
+    tools at once broke both: the 0.9.12 a11d T2 on unit 1 had a USB capture gap (+12 ms) and a jack-only FILTER OFF
+    1.31 dB while hil_monkey on unit 2 opened and closed a stream every 28 s (and PortAudio deadlocked on 2026-11-08).
+    FRODHES_USB_AUDIO_LOCK=0: not taken (a deliberate parallel run). Returns the Lock, or None"""
+    if os.environ.get("FRODHES_USB_AUDIO_LOCK", "1") == "0":
+        return None
+    if _USB_AUDIO:
+        return _USB_AUDIO[0]
+    import atexit
+    lk = Lock("USBAUDIO", root=root, who=who or os.path.basename(sys.argv[0] or "python"), why="USB audio",
+              wait_s=wait_s, poll_s=poll_s)
+    lk.acquire()
+    _USB_AUDIO.append(lk)
+    atexit.register(lk.release)
+    return lk
 
 
 def release_token(name, tok, root=None, say=print):

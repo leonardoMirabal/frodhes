@@ -74,6 +74,8 @@ def build(binary=BIN, extra=()):
     """the host build (make's rule), or a variant with extra compiler flags (sanitizers) at binary"""
     def make(b):
         if not extra:
+            # (HOST_DEFS reaches make through the environment; the Makefile's $(HOSTBIN).defs stamp rebuilds the
+            # binary when they change, so HOST_DEFS=-DFR_C1=1 never runs a stale one-core build)
             subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
         else:
             subprocess.run(["cc", "-O1", "-g", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", "-DAPP_VER=\"dev\"",

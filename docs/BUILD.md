@@ -40,7 +40,12 @@ only). Everything installs inside the project, in `.local/` (git-ignored):
 ```sh
 make setup        # .local/venv, the JieLi toolchain, the AC79 SDK files (sha256-checked)
 ./build.sh        # build/frodhes.fwsc;  ./build.sh --release X.Y.Z -> build/frodhes-X.Y.Z.fwsc
+./build.sh --c1   # build/frodhes-c1.fwsc, the two-core image: the FM-1's one released package
 ```
+
+The release publishes the two-core image (`./build.sh --c1 --release X.Y.Z`, `build/frodhes-X.Y.Z-c1.fwsc`) as
+`frodhes.fwsc` and `frodhes-X.Y.Z.fwsc`; install and test that file on the FM-1. The plain `./build.sh` image (one core,
+10 voices) stays for development and A/B tests.
 
 Every build, release or not, has the package identity `FM-1_958`; the version is only text on the screen and in the
 file name.
@@ -110,13 +115,14 @@ Releases are one command:
 
 ```sh
 tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device [--device-done FILE]] [--full] [--no-emulator] [--yes]
+                 --plugin-tested "macos windows linux-x86_64 linux-aarch64"
 ```
 
 It stops at the first failure and ends with a table of every step (done, skipped and why, failed). In order, it:
 
 1. picks the next version from the latest tag;
-2. checks the tree: on `main`, clean, not behind `origin/main`, the release-note fragments in `docs/changes/` well
-   formed (`tools/changes.py`);
+2. checks the tree: on `main` or the release branch (`rel-X.Y.Z`, `release-X.Y.Z`, or without the dots), clean,
+   not behind `origin/main`, the release-note fragments in `docs/changes/` well formed (`tools/changes.py`);
 3. runs the host tests and the release build;
 4. installs the build on the FM-1 and runs the tiers the change needs (`tools/test_map.py` maps every file to them):
    - on every release, the must-pass scenarios (`tools/hil_scan.py --tier must`): six real-use scenarios judged by
@@ -125,7 +131,9 @@ It stops at the first failure and ends with a table of every step (done, skipped
      on the Rhodes, VIBES and MARIMBA (and the MARIMBA sample-back);
    - `--device-done FILE` records FM-1 runs already made on the same build, checked by its sha256;
 5. checks the docs' links (no version in them: they link `releases/latest`), assembles the fragments into
-   `docs/releases/vX.Y.Z.md` and commits it with the fragments removed;
+   `docs/releases/vX.Y.Z.md` and commits it with the fragments removed; the commit's `Plugin tested:` line comes from
+   `--plugin-tested` and must name all four plugin platforms (the release workflow attaches only those packages, and
+   a release missing one stays a draft);
 6. asks before publishing, then stops with the commands for the release pull request (`main` is protected: the tool
    pushes nothing to it).
 
@@ -199,7 +207,7 @@ Frodhes changes its platform files in a few small places:
     unrolled on 64-bit sums (`uac_tap48` in `usb.c`, the same stream).
   - The USB audio ring keeps one more block in hand (`UA_HOLD`, `UA_N` 1024 in `usb.c`): a render of up to a whole
     block can no longer run it dry and repeat a frame. This adds 5.8 ms of USB latency.
-- **The second core (a build switch, off by default).** `tools/build.py --c1` (`FR_C1` in `frodhes.c`) builds a
+- **The second core (a build switch; the released FM-1 package is built with it).** `tools/build.py --c1` (`FR_C1` in `frodhes.c`) builds a
   two-core FM-1 image: `hal/fm1_core1.h` starts core 1 at boot through `APP_EARLY()` in `platform.c` (before the audio
   and the timers), holds it on every reset (`FM1_RESET_HOOK` in `hal/fm1_sys.h`) and on a fault of core 0
   (`FM1_FAULT_HOOK` in `hal/fm1_irq.h`); both hooks are empty in every other build. `app.ld` keeps the crash record

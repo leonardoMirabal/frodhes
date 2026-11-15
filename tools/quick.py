@@ -6,37 +6,37 @@ every change, before anything else. One line per engine / TYPE / effect: PASS or
 limit. The big grids (make release-diff, the long make pytest) are the net before a candidate, not the first check.
 
   dry       tools/dry_dist.py: H2..H6 re H1 in the strike's window (aH*) and the body's, the inharmonic residue, the
-            chords' IMD, the FM-1's keys through the key path at their hardest; against 0.9.9 (H2 + 1.5 dB, the rest
+            chords' IMD, the FM-1's keys through the key path at their hardest; against 0.9.11 (H2 + 1.5 dB, the rest
             + 3 dB, H3 <= -25 dB at v127). One line per config / TYPE / RESPONSE
   keys      tests/scripts/keyvel*.txt: the key path's velocities (KEY VEL 127: medium 107, floor 122, ...)
   fx        tools/fx_pristine.py (the FM-1 build): every effect but DRIVE at MIX / DEPTH 0, 64, 127: the limiter idle,
             no clamp, the level at 0 equal to the bypass, no added non-linearity. One line per effect
   bypass    tests/py/test_bypass_level.py: FX off keeps the compressor; FX off = FX on at MIX 0 (level and width)
   level     the absolute output: every TYPE (dry_dist's TYPE base) and each factory preset by name, a v127 chord and a
-            v127 note, critical-band loudness within 1.5 dB of 0.9.9's (RMS shown) and the peak at most 0.9.9's + 1 dB (USB's digital scale = the jack's at MASTER full: the
-            headphones' headroom). tests/baselines/quick_level_099.json
+            v127 note, critical-band loudness within 1.5 dB of 0.9.11's (RMS shown) and the peak at most 0.9.11's + 1 dB (USB's digital scale = the jack's at MASTER full: the
+            headphones' headroom). tests/baselines/quick_level_0911.json
   midi      MIDI velocity reaches the engine untouched: the same MIDI notes (v1 / 40 / 96 / 127) render byte for byte
             the same at every TOUCH (LIGHT MEDIUM HEAVY FIXED) and KEY VEL (1 96 127), and the setting did change
   pristine  tools/release_diff.py --grid fast: every TYPE x FM-1 / HQ x effects off / RAW / FX: the pristine ceilings
             (distortion, aliasing, the key-up click post-vs-pre, noise, clips, never louder after the key-up) and the
-            moves against 0.9.9 (tests/expected_changes.yaml). One line per TYPE
+            moves against 0.9.11 (tests/expected_changes.yaml). One line per TYPE
   crackle   tools/hil_crackle.py --host: the worst case (every voice, every effect, the pedal) through the glitch
             detectors, per engine
 The Move (K27; its HQ host build, MOVE_DEFS + HQ_DEFAULT=1: the plugin as it loads, 16 voices):
-  move-dry  tools/dry_dist.py --hq: the same cells against tests/baselines/dry_dist_099_hq.json (0.9.9's Move build)
+  move-dry  tools/dry_dist.py --hq: the same cells against tests/baselines/dry_dist_0911_hq.json (0.9.11's Move build)
   move-fx   tools/fx_pristine.py --builds hq: every effect but DRIVE, as fx, on the Move's build
   move-byp  tests/py/test_move_bypass_comp.py: the Move's FX off keeps the compressor, at the level of FX on
-  move-lvl  level's cases on the Move's build: RMS within 1.5 dB of 0.9.9's Move build, the peak at most + 1 dB
-            (tests/baselines/quick_level_099_hq.json)
+  move-lvl  level's cases on the Move's build: RMS within 1.5 dB of 0.9.11's Move build, the peak at most + 1 dB
+            (tests/baselines/quick_level_0911_hq.json)
   move-ui   Gate U (tools/gen_move_module.py --check) and move/ui/test_chain.mjs (the screen; no pad or step LED)
 
   tools/quick.py [--fm1 BIN] [--hq BIN] [--only dry,fx,...]      exit 1 on any FAIL; build/quick/report.txt
   tools/quick.py --save-level --fm1 BIN                          the level baseline (ONLY on the last release's build)
   tools/quick.py --save-level --hq BIN                           the Move's level baseline (the last release's Move
                                                                  build: tools/dry_dist.py --build-hq OUT --src TREE)
-  tools/quick.py --save-new-level --fm1 BIN --hq BIN             the presets 0.9.9 did not have: their own reference,
+  tools/quick.py --save-new-level --fm1 BIN --hq BIN             the presets 0.9.11 did not have: their own reference,
                                                                  on the build they came with (tests/baselines/
-                                                                 quick_level_new*.json)
+                                                                 quick_level_new*.json; none since 0.9.11)
 """
 import argparse
 import hashlib
@@ -55,12 +55,12 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 OUT = os.path.join(ROOT, "build", "quick")
 PY = sys.executable
-LEVEL_BASE = os.path.join(ROOT, "tests", "baselines", "quick_level_099.json")
-LEVEL_BASE_HQ = os.path.join(ROOT, "tests", "baselines", "quick_level_099_hq.json")
+LEVEL_BASE = os.path.join(ROOT, "tests", "baselines", "quick_level_0911.json")
+LEVEL_BASE_HQ = os.path.join(ROOT, "tests", "baselines", "quick_level_0911_hq.json")
 FS = 44100
 LVL_TOL, PEAK_TOL = 1.5, 1.0
 # THRESHOLD: the presets' peaks judged by the limiter-idle margin (fx.c LIM_T -2.7 dBFS, 0.3 dB under it) instead of
-# 0.9.9's peak + PEAK_TOL (shown as information); reason: the absolute ceiling is the headroom rule (742a2537), FINAL19 v2
+# 0.9.11's peak + PEAK_TOL (shown as information); reason: the absolute ceiling is the headroom rule (742a2537), FINAL19 v2
 PEAK_CEIL = -3.0
 
 
@@ -158,10 +158,10 @@ def check_bypass(b):
                 + ("" if not fails else "; " + ", ".join(f.split("::")[-1] for f in fails)))]
 
 
-# ---------------------------------------------------------------- level: the absolute output against 0.9.9
+# ---------------------------------------------------------------- level: the absolute output against 0.9.11
 # (2026-11-10, the proposed 19: the presets by NAME, not by slot, and judged by critical-band loudness (tools/cb_loud.py,
 # the level matching the presets were made with), RMS kept as information. THRESHOLD: cb loudness within +-1.5 dB of
-# 0.9.9's preset of the same name (was RMS +-1.5 dB by slot); the peak at most 0.9.9's + 1 dB as before. A preset 0.9.9
+# 0.9.11's preset of the same name (was RMS +-1.5 dB by slot); the peak at most 0.9.11's + 1 dB as before. A preset 0.9.11
 # did not have is judged against its own reference, measured on the build it came with (LEVEL_NEW / LEVEL_NEW_HQ).)
 LEVEL_TYPES = (("TYPE-ST77", 80, 0), ("TYPE-SUIT", 80, 32), ("TYPE-FELT", 80, 64), ("TYPE-DYNO", 80, 96),
                ("TYPE-VIBES", 79, 0), ("TYPE-MARIMBA", 79, 127))
@@ -222,13 +222,13 @@ def check_level(b, key="fm1", area="level"):
         base_new = {}
     got = level_all(b[key], area)
     # a level difference listed in tests/expected_changes.yaml ("quick-level/<fm1|hq>/<case>/<chord|note>", metric
-    # "level", min / max: the move against 0.9.9 in dB, critical-band) passes; its reason says why
+    # "level", min / max: the move against 0.9.11 in dB, critical-band) passes; its reason says why
     listed = [e for e in rd.load_expected(rd.EXPECTED) if str(e.get("match", "")).startswith("quick-level/")]
     out = []
     for name, segs in got.items():
         ref, new = (base, False) if name in base else (base_new, True)
         if name not in ref:
-            out.append(row(False, area, name, "no reference: a preset 0.9.9 did not have needs its own "
+            out.append(row(False, area, name, "no reference: a preset 0.9.11 did not have needs its own "
                            "(tools/quick.py --save-new-level on the build it came with)"))
             continue
         bad, worst = [], None
@@ -242,13 +242,13 @@ def check_level(b, key="fm1", area="level"):
                      and e.get("min", -99) <= dl <= e.get("max", 99) and str(e.get("reason", "")).strip() for e in listed)
             if abs(dl) > LVL_TOL and not ok:
                 bad.append(f"{s} cb {dl:+.1f} dB")
-            if m["peak"] > PEAK_CEIL:                # (the limiter-idle margin, not 0.9.9's peak: THRESHOLD below)
-                bad.append(f"{s} peak {m['peak']:.1f} dBFS ({dp:+.1f} re 0.9.9; limiter-idle ceiling {PEAK_CEIL})")
+            if m["peak"] > PEAK_CEIL:                # (the limiter-idle margin, not 0.9.11's peak: THRESHOLD below)
+                bad.append(f"{s} peak {m['peak']:.1f} dBFS ({dp:+.1f} re 0.9.11; limiter-idle ceiling {PEAK_CEIL})")
             if worst is None or abs(dl) > abs(worst[1]):
                 worst = (s, dl, m["peak"], dp, dr)
         tag = " (new: its own reference)" if new else ""
         out.append(row(not bad, area, name, (f"{worst[0]} cb {worst[1]:+.1f} dB (limit +-{LVL_TOL}; RMS {worst[4]:+.1f}), "
-                       f"peak {worst[2]:.1f} dBFS ({worst[3]:+.1f} re 0.9.9, ceiling {PEAK_CEIL})" if not bad else "; ".join(bad)) + tag))
+                       f"peak {worst[2]:.1f} dBFS ({worst[3]:+.1f} re 0.9.11, ceiling {PEAK_CEIL})" if not bad else "; ".join(bad)) + tag))
     return out
 
 
@@ -389,7 +389,7 @@ def main():
                     print(base)
             return 0
         for binary, base, ref, sub in ((a.fm1, LEVEL_NEW, LEVEL_BASE, "level"), (a.hq, LEVEL_NEW_HQ, LEVEL_BASE_HQ, "move-lvl")):
-            if binary:                                  # (this tree's presets 0.9.9 did not have, on this build)
+            if binary:                                  # (this tree's presets 0.9.11 did not have, on this build)
                 old = json.load(open(ref))["cases"]
                 new = [n for n in preset_names() if n not in old]
                 rev = subprocess.run(["git", "-C", ROOT, "rev-parse", "--short=8", "HEAD"], capture_output=True,

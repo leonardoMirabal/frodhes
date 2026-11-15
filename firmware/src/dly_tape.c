@@ -75,14 +75,29 @@ FX_RAM __attribute__((noinline)) static void tp_mod(uint32_t n, int32_t target, 
  * (dt: the delay per sample, from tp_mod); m[j] becomes sample j's echo (heard x wet: tp_loop). The dry's ease and the sum
  * into L / R in a pass of their own (tp_loop; 0.9.5 cpu-trim: in one loop the 20 values spilled, 128 instructions a
  * sample with 8 stack stores and 17 loads; each sample's arithmetic is the same, in the same order) */
+/* TAPE's transfer curve for the bars (0.9.13): their SND3 -3 dB is a level, so the curve reads them 3 dB up (k: bars.h
+ * BAR_FX_K) and its output comes back 3 dB down (g: BAR_MIX_G), the tape saturating as on 0.9.11; in flash (the RAM
+ * loops keep their size; the Rhodes never call it) */
+__attribute__((noinline)) static int32_t tp_sat_k(int32_t v, int32_t k, int32_t g)
+{
+    int32_t x;
+    uint32_t i;
+    v = (int32_t)(((int64_t)v * k + 16384) >> 15);
+    x = PH_CL(FX_HC(0, v, -65536, 65535), -65536, 65535) + 65536;
+    i = (uint32_t)x >> 9;
+    x &= 511;
+    x = FX_TAPE_SAT[i] + (((FX_TAPE_SAT[i + 1u] - FX_TAPE_SAT[i]) * x) >> 9);
+    return (x * g + 16384) >> 15;
+}
 static inline __attribute__((always_inline)) void tp_tape_k(int32_t *m, const int32_t *dt, uint32_t n, const int32_t msk,
-                                                            int32_t fb, const int rst)
+                                                            int32_t fb, const int rst, const int kb)
 {
     uint32_t w = dly_w, j, c = rst ? w - dly_rb : 0x7FFFFFFFu;
-    int32_t b1 = tp_b1, b2 = tp_b2, h1 = tp_h1, h2 = tp_h2;
+    int32_t b1 = tp_b1, b2 = tp_b2, h1 = tp_h1, h2 = tp_h2, ek = kb ? FX_ENG_K : 32768, eg = kb ? FX_ENG_G : 32768;   /* (ek, eg: the engine's
+                                                        * level, the bars' 3 dB up into the curve, its output back down) */
     FX_K32 kf = tp_kf, kr = tp_kq, kh = tp_kh, kfb = fb;
     for (j = 0; j < n; j++) {
-        int32_t d, r, x, y, in;
+        int32_t d, r, x, y, in, v;
         uint32_t i;
         d = dt[j];
         i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
@@ -109,10 +124,15 @@ static inline __attribute__((always_inline)) void tp_tape_k(int32_t *m, const in
         y = h2;
         /* the record head and the tape: send + regeneration through the transfer curve */
         in = m[j] & msk;                                /* (the send, ramped: dly_ramp; read here, where it is used) */
-        x = PH_CL(FX_HC(0, (in >> 1) + (int32_t)(((int64_t)y * kfb) >> 15), -65536, 65535), -65536, 65535) + 65536;
-        i = (uint32_t)x >> 9;
-        x &= 511;
-        dly_buf[w & (DLY_LEN - 1u)] = (int16_t)(FX_TAPE_SAT[i] + (((FX_TAPE_SAT[i + 1u] - FX_TAPE_SAT[i]) * x) >> 9));
+        v = (in >> 1) + (int32_t)(((int64_t)y * kfb) >> 15);
+        if (kb) x = tp_sat_k(v, ek, eg);                /* (the bars: tp_tape_kb) */
+        else {
+            x = PH_CL(FX_HC(0, v, -65536, 65535), -65536, 65535) + 65536;
+            i = (uint32_t)x >> 9;
+            x &= 511;
+            x = FX_TAPE_SAT[i] + (((FX_TAPE_SAT[i + 1u] - FX_TAPE_SAT[i]) * x) >> 9);
+        }
+        dly_buf[w & (DLY_LEN - 1u)] = (int16_t)x;
         w++;
         m[j] = y;                                       /* (heard x wet in tp_loop: ramped there) */
     }
@@ -121,12 +141,18 @@ static inline __attribute__((always_inline)) void tp_tape_k(int32_t *m, const in
 /* (three copies, 0.9.5 fx-trim: the developer reset's clean span only where it is (elsewhere c stays 0x7FFFFFFF, its
  * test never true), and the send on (-1) or off (0) as constants: 78 -> 71 instructions a sample with the send on,
  * 68 off, ~600 B more code, in .ram_text with tp_tape) */
+/* the bars (0.9.13): the tape pass with TAPE's curve at their level (tp_sat_k); in flash, one copy */
+__attribute__((noinline)) static void tp_tape_kb(int32_t *m, const int32_t *dt, uint32_t n, int32_t msk, int32_t fb)
+{
+    tp_tape_k(m, dt, n, msk, fb, dly_rst != 0, 1);
+}
 FX_RAM __attribute__((noinline)) static void tp_tape(int32_t *m, const int32_t *dt, uint32_t n, const int32_t msk,
                                                      int32_t fb)
 {
-    if (dly_rst) tp_tape_k(m, dt, n, msk, fb, 1);
-    else if (msk) tp_tape_k(m, dt, n, -1, fb, 0);
-    else tp_tape_k(m, dt, n, 0, fb, 0);
+    if (FX_ENG_K != 32768) FR_FAR(tp_tape_kb)(m, dt, n, msk, fb);
+    else if (dly_rst) tp_tape_k(m, dt, n, msk, fb, 1, 0);
+    else if (msk) tp_tape_k(m, dt, n, -1, fb, 0, 0);
+    else tp_tape_k(m, dt, n, 0, fb, 0, 0);
 }
 
 /* the sample loop: the tape pass (tp_tape: m[] in place, the echoes), then the dry easing to dgt plus the echo, x
@@ -225,7 +251,7 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
                                                int32_t dgt, int32_t gs)
 {
     uint32_t w = dly_w, wow = dly_wow, flt = dly_flt, j, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;
-    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg, g = dly_xg;
+    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg, g = dly_xg, ek = FX_ENG_K, eg = FX_ENG_G;
     int32_t kq = dly_sgk << 8, dk = n ? ((sg16 - dly_sgk) << 8) / (int32_t)n : 0;
     int32_t a = tape == 0 ? 0 : tape == 1 ? 32768 : dly_xm, da = tape == 2 ? TP_FADE : tape == 3 ? -TP_FADE : 0;
     int32_t cd = tape >= 2 ? ((col * 19661) >> 15) - col : 0, c0 = col;
@@ -261,7 +287,7 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
         r = (int32_t)(((int64_t)r * g) >> 15);
         lp += (int32_t)(((int64_t)(r - lp) * col) >> 15);
         f = lp;
-        if (a) f += (int32_t)(((int64_t)(softclip(lp) - lp) * a) >> 15);
+        if (a) f += (int32_t)(((int64_t)(FX_SCK(lp, ek, eg) - lp) * a) >> 15);
         hp += (f - hp + 64) >> 7;
         f -= hp;
         dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi(FX_HC(0, (in >> 1) + (int32_t)(((int64_t)f * fb) >> 15), -32768, 32767), -32768, 32767);
@@ -288,7 +314,7 @@ __attribute__((noinline)) static int dly_routed(int32_t sw, int32_t target)
 __attribute__((noinline)) static int tp_route(int32_t *L, int32_t *R, uint32_t n, int32_t sw, int32_t target,
                                               int32_t sg16, int32_t fb, int32_t wet, int32_t depth)
 {
-    int32_t dgt = 32768 - depth * depth, osw = dly_cur == 3 ? sw : dly_last;
+    int32_t dgt = DLY_DRY(depth), osw = dly_cur == 3 ? sw : dly_last;
     int32_t col = 2000 + fx_p[FXP_DL_TONE] * 240;
     if (dly_xo) {                                       /* DIG <-> ANA (fx.c dly_xo): the crossfade, tape 2 / 3 */
         dly_fade(L, R, n, dly_ana ? 2 : 3, sw ? -1 : 0, sg16, target, col, fb, wet, sw ? dgt : 32768, 0);
@@ -349,6 +375,7 @@ static int32_t dly_wk_msk;                             /* the send on (-1) or of
 __attribute__((noinline)) static void dly_wr_c(uint32_t w0, uint32_t n, int32_t sg16)
 {
     int32_t msk = dly_wk_msk, kq = dly_sgk << 8, dk = n ? ((sg16 - dly_sgk) << 8) / (int32_t)n : 0;
+    int32_t ek = FX_ENG_K, eg = FX_ENG_G;               /* (TAPE's curve on the bars: as tp_tape_k) */
     uint32_t j;
     if (dly_wp) dk = ((sg16 - dly_sgk) << 8) / 8;      /* (TAPE's fade: the first piece of 8 ramps, then sg16) */
     for (j = 0; j < n; j++) {
@@ -359,10 +386,14 @@ __attribute__((noinline)) static void dly_wr_c(uint32_t w0, uint32_t n, int32_t 
         if (dly_wm == 1u) x = clampi(FX_HC(0, (in >> 1) + dly_fbv[j], -32768, 32767), -32768, 32767);
         else {
             uint32_t i;
-            x = PH_CL(FX_HC(0, (in >> 1) + dly_fbv[j], -65536, 65535), -65536, 65535) + 65536;
-            i = (uint32_t)x >> 9;
-            x &= 511;
-            x = FX_TAPE_SAT[i] + (((FX_TAPE_SAT[i + 1u] - FX_TAPE_SAT[i]) * x) >> 9);
+            int32_t v = (in >> 1) + dly_fbv[j];
+            if (ek != 32768) x = tp_sat_k(v, ek, eg);
+            else {
+                x = PH_CL(FX_HC(0, v, -65536, 65535), -65536, 65535) + 65536;
+                i = (uint32_t)x >> 9;
+                x &= 511;
+                x = FX_TAPE_SAT[i] + (((FX_TAPE_SAT[i + 1u] - FX_TAPE_SAT[i]) * x) >> 9);
+            }
         }
         dly_buf[(w0 + j) & (DLY_LEN - 1u)] = (int16_t)x;
     }
@@ -374,7 +405,7 @@ static inline __attribute__((always_inline)) void dly_loop_c(int32_t *L, int32_t
                                                              int32_t dgt)
 {
     uint32_t o = fxc_o, e = fxc_e, w = dly_w, wow = dly_wow, flt = dly_flt, j, j0, j1, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;
-    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg;
+    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg, ek = FX_ENG_K, eg = FX_ENG_G;
     int32_t ws = DLY_WSTEP(dly_wk, wet, n), wq = (dly_wk << 8) + ws * (int32_t)o;
     int32_t f0 = dly_fbk < 0 ? fb : dly_fbk, fs = DLY_WSTEP(f0, fb, n), fq = (f0 << 8) + fs * (int32_t)o, kfb;   /* FDBK's
                                                           * ramp from the last block's (fx.c dly_loop), from frame o */
@@ -418,7 +449,7 @@ static inline __attribute__((always_inline)) void dly_loop_c(int32_t *L, int32_t
         else
             r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
         lp += (int32_t)(((int64_t)(r - lp) * kcol) >> 15);
-        f = tape ? softclip(lp) : lp;
+        f = tape ? FX_SCK(lp, ek, eg) : lp;
         hp += (f - hp + 64) >> 7;
         f -= hp;
         fq += fs; kfb = fq >> 8;
@@ -453,7 +484,7 @@ __attribute__((noinline)) static void dly_fade_c(int32_t *L, int32_t *R, uint32_
                                                  int32_t gs)
 {
     uint32_t o = fxc_o, e = fxc_e, w = dly_w, wow = dly_wow, flt = dly_flt, j, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;
-    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg, g = dly_xg;
+    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg, g = dly_xg, ek = FX_ENG_K, eg = FX_ENG_G;
     int32_t a = tape == 0 ? 0 : tape == 1 ? 32768 : dly_xm, da = tape == 2 ? TP_FADE : tape == 3 ? -TP_FADE : 0;
     int32_t cd = tape >= 2 ? ((col * 19661) >> 15) - col : 0, c0 = col;
     int32_t ws = DLY_WSTEP(dly_wk, wet, n), wq = (dly_wk << 8) + ws * (int32_t)o;
@@ -486,7 +517,7 @@ __attribute__((noinline)) static void dly_fade_c(int32_t *L, int32_t *R, uint32_
         r = (int32_t)(((int64_t)r * g) >> 15);
         lp += (int32_t)(((int64_t)(r - lp) * col) >> 15);
         f = lp;
-        if (a) f += (int32_t)(((int64_t)(softclip(lp) - lp) * a) >> 15);
+        if (a) f += (int32_t)(((int64_t)(FX_SCK(lp, ek, eg) - lp) * a) >> 15);
         hp += (f - hp + 64) >> 7;
         f -= hp;
         dly_fbv[j] = (int32_t)(((int64_t)f * fb) >> 15);
@@ -606,7 +637,7 @@ static struct { uint8_t kind, tape, post; int32_t msk, dgt, gs, gt, col; } tp_rc
                                                         * 2 TAPE; post: 1 the DIG <-> ANA fade's end, 2 TAPE's tail */
 static void tp_route_plan(int32_t sw, int32_t target, int32_t depth)
 {
-    int32_t dgt = 32768 - depth * depth, osw = dly_cur == 3 ? sw : dly_last;
+    int32_t dgt = DLY_DRY(depth), osw = dly_cur == 3 ? sw : dly_last;
     int32_t col = 2000 + fx_p[FXP_DL_TONE] * 240;
     tp_rc.post = 0;
     if (dly_xo) {

@@ -247,6 +247,60 @@ int main(void)
     CHECK(frp_gui_model(ctl)->settings == 0, "ESC closes them");
     paint();
 
+    /* CHECK FOR UPDATES: none known, no key; a newer release: the rail's UPDATE key (in the meter's place) and
+     * SETTINGS' UPDATE key, both open the download; the package downloaded: INSTALL on both; UPDATES OFF (saved through
+     * the host) hides them */
+    {
+        float r[4];
+        CHECK(!frp_gui_model(ctl)->upd_ver[0] && frp_gui_model(ctl)->upd_check == 1 && !frp_gui_model(ctl)->upd_state,
+              "no newer release: no notice, UPDATES ON");
+        CHECK(fh_find(frp_gui_frui(ctl), FRW_BUTTON, FRB_UPDATE_RAIL, &x, &y) < 0, "no newer release: no rail key");
+        snprintf(h.upd, sizeof h.upd, "%s", "0.9.13");
+        paint();
+        CHECK(!strcmp(frp_gui_model(ctl)->upd_ver, "0.9.13") && frp_gui_model(ctl)->upd_state == 1,
+              "a newer release reaches the window (%s)", frp_gui_model(ctl)->upd_ver);
+        CHECK(!frp_gui_find(ctl, FRW_BUTTON, FRB_UPDATE, r), "the band's UPDATE key is on the SETTINGS sheet only");
+        CHECK(fh_find(frp_gui_frui(ctl), FRW_BUTTON, FRB_UPDATE_RAIL, &x, &y) >= 0, "the rail: the UPDATE key is drawn");
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        CHECK(h.upd_opens == 1 && frp_gui_model(ctl)->settings == 0, "the rail's key opens the download (%d)", h.upd_opens);
+        h.upd_ready = 1;
+        paint();
+        CHECK(frp_gui_model(ctl)->upd_state == 2 && fh_find(frp_gui_frui(ctl), FRW_BUTTON, FRB_UPDATE_RAIL, &x, &y) >= 0,
+              "downloaded: INSTALL on the rail");
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        CHECK(h.upd_opens == 2, "INSTALL opens the package (%d)", h.upd_opens);
+        h.upd_ready = 0;
+        paint();
+        h.upd_opens = 0;
+        fh_find(frp_gui_frui(ctl), FRW_BUTTON, FRB_GEAR, &x, &y);
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        paint();
+        CHECK(fh_find(frp_gui_frui(ctl), FRW_BUTTON, FRB_UPDATE, &x, &y) >= 0, "SETTINGS: the UPDATE key is drawn");
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        CHECK(h.upd_opens == 1 && frp_gui_model(ctl)->settings == 1, "a click opens the release page (%d)", h.upd_opens);
+        CHECK(frp_gui_find(ctl, FRW_SEG, FRS_UPDCHK, r), "SETTINGS: the UPDATES switch is drawn");
+        ev(FRG_DOWN, FRG_LEFT, 0, r[0] + r[2] * 0.25f, r[1] + r[3] * 0.5f, 0, 0);
+        ev(FRG_UP, FRG_LEFT, 0, r[0] + r[2] * 0.25f, r[1] + r[3] * 0.5f, 0, 0);
+        paint();
+        CHECK(h.v[FRS_UPDCHK] == 0 && frp_gui_model(ctl)->upd_check == 0 && !frp_gui_model(ctl)->upd_ver[0] &&
+              !frp_gui_model(ctl)->upd_state && fh_find(frp_gui_frui(ctl), FRW_BUTTON, FRB_UPDATE, &x, &y) < 0,
+              "UPDATES OFF: saved, no notice");
+        ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_ESCAPE);
+        paint();
+        CHECK(fh_find(frp_gui_frui(ctl), FRW_BUTTON, FRB_UPDATE_RAIL, &x, &y) < 0, "UPDATES OFF: no rail key");
+        fh_find(frp_gui_frui(ctl), FRW_BUTTON, FRB_GEAR, &x, &y);
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        paint();
+        CHECK(frp_gui_find(ctl, FRW_SEG, FRS_UPDCHK, r), "SETTINGS again");
+        ev(FRG_DOWN, FRG_LEFT, 0, r[0] + r[2] * 0.75f, r[1] + r[3] * 0.5f, 0, 0);
+        ev(FRG_UP, FRG_LEFT, 0, r[0] + r[2] * 0.75f, r[1] + r[3] * 0.5f, 0, 0);
+        paint();
+        CHECK(h.v[FRS_UPDCHK] == 1 && !strcmp(frp_gui_model(ctl)->upd_ver, "0.9.13"), "UPDATES ON again: the notice is back");
+        ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_ESCAPE);
+        h.upd[0] = 0;
+        paint();
+    }
+
     /* typing a value: a double-click on the value text, digits, RETURN (one gesture); ESC leaves it */
     paint();
     {

@@ -51,10 +51,29 @@ static const uint16_t RQH_LEN[RQH_NL] = {1427, 1789, 2161, 2539, 2903, 3271, 363
 #define RQH_LMAX 4019u
 #define RQH_R 4128u                                     /* the ring's rows: >= RQH_LMAX + RQH_SW + 1 + a block, x 32 */
 _Static_assert(RQH_R >= RQH_LMAX + RQH_SW + 1u + 32u && RQH_R % 32u == 0u, "rev_hq_hall.c: the ring");
-#define RQH_KP 340                                      /* TONE's pole per damp step (Q15) */
+#define RQH_KP 340                                      /* TONE's pole per damp step (Q15), damp 0 .. 60 (TONE 64 .. 127) */
+/* TONE darker than its middle (damp 60 .. 150, TONE 63 .. 0): the pole at damp 60, 70 .. 150, linear between. The
+ * linear law (damp x 340) reached its 31500 cap at damp 93 and from there lost ~100 dB/s at 440 Hz against the half-rate
+ * HALL's ~3-28: TONE 0 killed the tail's fundamental too (vibes_fx REVERB TONE, the FR_C1 host: the tail 20 dB down,
+ * V2 re V1 -9.3 / -11.6 / +1.7 dB at TONE 0 / 64 / 127, brighter at 0 than at 64). Now 1 - pole falls geometrically
+ * from damp 60's (12368) to 3000 at 150: TONE 0's tail keeps its fundamental as the half-rate HALL's does (A4 v108, the
+ * tail's V1 8.3 dB under TONE 64's; one core 8.5), V2 re V1 -32.1 / -11.6 / +1.7 dB (one core -38.4 / -12.6 / -5.9).
+ * (The cap's 31500 left 1 - pole 1268.) Computed when TONE moves, not per sample */
+static const uint16_t RQH_KD[10] = {20400, 22201, 23740, 25055, 26178, 27138, 27958, 28658, 29257, 29768};
+static int32_t rqh_pole(int32_t d)
+{
+    int32_t i;
+    if (d <= 60) return clampi(d * RQH_KP, 0, 20400);
+    if (d >= 150) return RQH_KD[9];
+    i = (d - 60) / 10;
+    return RQH_KD[i] + (((int32_t)RQH_KD[i + 1] - (int32_t)RQH_KD[i]) * (d - 60 - i * 10)) / 10;
+}
 #define RQH_SGN 0x96u                                   /* the input's sign per line (bit k: - for line k) */
+#ifndef RQH_OUT                                         /* (a build may set it: tests/py's fault injection, -3 dB) */
 #define RQH_OUT 13800                                   /* the taps (Q13 of the row / 16 x 16: the half-rate HALL's Bark
-                                                         * loudness; rev_hq.c's return takes the 16 out) */
+                                                         * loudness; rev_hq.c's return takes the 16 out; 0.9.13: + 1.5 dB
+                                                         * at the input, rev_hq.c RQ_IN_HALL, the level in band) */
+#endif
 #define RQH_LOUD 2048                                   /* a line end this quiet (16x the line's scale, all 8, the last block)
                                                          * truncates: it then dies to exact zero; louder, they round. (It was
                                                          * 1024 at 4x: a loud tail switched to truncating while a louder one
@@ -221,7 +240,7 @@ static __attribute__((noinline)) void rev_hqh_run(rev_hqh_t *s, const int32_t *i
     if (c->size != s->gsz)                              /* (SIZE / MIX moved: the gains glide one size step a control
                                                          * block, 2.3 % of T60: a jump would step the tail) */
         rqh_gains(s, s->gsz < 0 ? c->size : s->gsz + (c->size > s->gsz ? 1 : -1));
-    if (c->damp != s->gdmp) { s->p = clampi(c->damp * RQH_KP, 0, 31500); s->gdmp = c->damp; }
+    if (c->damp != s->gdmp) { s->p = rqh_pole(c->damp); s->gdmp = c->damp; }
     for (i = 0; i < RQ_NC; i++) { s->x[i] = in[i]; act |= in[i]; }
     lo = s->amax < 2u * RQH_LOUD;
     FR_FAR(rqh_dif)(s, s->x, lo);
@@ -236,11 +255,18 @@ static __attribute__((noinline)) void rev_hqh_run(rev_hqh_t *s, const int32_t *i
         }
         r = s->w + RQH_R - D - 1u;                     /* (the row of sample 0's older sample) */
         r = r >= RQH_R ? r - RQH_R : r;
-        if (r + RQ_NC + 1u <= RQH_R && s->e >= RQH_WARM) q = s->ring + (r + 1u) * RQH_NL + k;
+        if (r + RQ_NC + 1u <= RQH_R && s->e >= D + 1u) q = s->ring + (r + 1u) * RQH_NL + k;   /* (every row read
+                                                         * written since the start: this line's warm-up is over) */
         else {                                          /* (the ring's end inside, or the warm-up: a contiguous */
-            uint32_t j;                                 /*  copy, the rows older than the start read as 0) */
-            for (i = 0, j = r; i < RQ_NC + 1u; i++, j = j + 1u == RQH_R ? 0u : j + 1u)
-                s->t[i * RQH_NL + k] = s->e + i >= D + 1u ? s->ring[j * RQH_NL + k] : 0;
+            uint32_t j, z = s->e >= D + 1u ? 0u : D + 1u - s->e;   /*  copy, the rows older than the start read
+                                                         * as 0: z of them, then the ring from row r + z on) */
+            int16_t *t = s->t + k;
+            if (z > RQ_NC + 1u) z = RQ_NC + 1u;
+            for (i = 0; i < z; i++) t[i * RQH_NL] = 0;
+            for (j = r + z >= RQH_R ? r + z - RQH_R : r + z; i < RQ_NC + 1u; i++) {
+                t[i * RQH_NL] = s->ring[j * RQH_NL + k];
+                j = j + 1u == RQH_R ? 0u : j + 1u;
+            }
             q = s->t + RQH_NL + k;
         }
         am |= FR_FAR(rqh_end)(q, (int32_t)f, &s->y[0][k], &s->lp[k], s->p, s->g[k], lo, &act);

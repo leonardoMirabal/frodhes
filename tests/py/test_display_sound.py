@@ -452,6 +452,16 @@ def body_slope(thr, slope=0.95):
     return slope * (1 - beta / 256)
 
 
+def bar_det_db(eng):
+    """the compressor detector's lift on the bars, dB (0.9.13, SND3): the bars come into the effects 3 dB down (bars.h
+    BAR_MIX_G) and the detector reads them 3 dB up (fx.c, FX_ENG_DT), so THRESH acts at 0.9.11's playing; 0 on the
+    Rhodes"""
+    if eng != "vibes":
+        return 0.0
+    s = open(os.path.join(ROOT, "firmware", "src", "bars.h")).read()
+    return -20 * np.log10(int(re.search(r"#define BAR_MIX_G (\d+)", s).group(1)) / 32768)
+
+
 def cmp_auto_db(thr, slope):
     """fx.c cmp_auto: THRESH's own make-up (dB) at this slope (1 - 1 / ratio)"""
     q = np.interp(thr, (56, 64, 80, 96, 112, 127), (0, 266, 993, 2026, 3500, 5017)) if thr > 56 else 0.0
@@ -472,7 +482,7 @@ def test_compressor_threshold_and_makeup(eng):
                                             cc(34, 107, thr), cc(35, 106, 127), "70 dump"] + hi, 7500)
         txt = w.state(70)[f"card.{PG['COMP']}.0"]
         a, b = frames(w.mid(0.15, 7.4), 441), frames(ref.mid(0.15, 7.4), 441)   # (mono sums: the dry width cancels)
-        lvl = 20 * np.log10(np.abs(b).max(axis=1) / 32768 + 1e-9)
+        lvl = 20 * np.log10(np.abs(b).max(axis=1) / 32768 + 1e-9) + bar_det_db(eng)   # (the level the detector reads)
         gr = 20 * np.log10(np.sqrt((b ** 2).mean(axis=1) + 1e-9) / np.sqrt((a ** 2).mean(axis=1) + 1e-9))
 
         auto, SL = cmp_auto_db(thr, 0.95), body_slope(thr)
@@ -489,6 +499,8 @@ def test_compressor_threshold_and_makeup(eng):
         assert min(es) < 0.3, (thr, min(es))
         assert_db(Ts[int(np.argmin(es))], txt, f"THRESH {thr}", tol=0.8)   # THRESHOLD 0.5 -> 0.8 dB (stage 2: -20.75 at
                                                                             # THRESH 64 with the body lift, -30.35, -37.85)
+        # (0.9.13: SND3's VIBES THRESHOLDs 0.4 dB RMS / 1.1 dB are back to 0.3 / 0.8: the detector reads the bars at
+        # 0.9.11's level, bar_det_db)
     ref = run(f"ds-mk-ref-{eng}", pre + note(100, 60, 30, 1500), 1700)
     for mk in (32, 64, 120):
         w = run(f"ds-mk{mk}-{eng}", pre + [cc(33, 113, mk), cc(34, 107, 1), cc(35, 106, 127), "70 dump"]

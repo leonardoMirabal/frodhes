@@ -117,7 +117,7 @@ CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_TONE=82, DRV_MIX=83, RV_
           EQ_HI=37)
 # FRODHES_LAT_HALF=128 (or 64): a build with frodhes.c FR_LAT_HALF: CC 116 reports an interrupt of that many frames;
 # every limit scales with it (4500 / 5000 / 5805 us x N / 256)
-LAT_SCALE = int(os.environ.get("FRODHES_LAT_HALF", "256")) / 256.0
+LAT_SCALE = fm1_ports.lat_half() / 256.0
 TARGET_US = round(4500 * LAT_SCALE)
 SHED_US = round(5000 * LAT_SCALE)
 
@@ -155,7 +155,7 @@ def default_voices(eng):
     import re
     src = open(os.path.join(os.path.dirname(__file__), "..", "firmware", "src", "rhodes.c")).read()
     key = "RH_VOICES" if eng == "rhodes" else "BAR_VOICES"
-    return int(re.search(r"#define " + key + r" (\d+)u", src).group(1))
+    return fm1_ports.image_voices(int(re.search(r"#define " + key + r" (\d+)u", src).group(1)))
 
 
 KEYADC = dict(off=1, idle=0, stress=2)                # --keyadc MODE -> CC 41 (firmware/src/keyvel.h KV_DEV_*)
@@ -523,6 +523,8 @@ def run_cpu(argv):  # noqa: C901
     usb_bad = []                                      # this run's scenarios with a USB fault (also USB_BAD_RUNS)
     if "--no-usb-stream" not in sys.argv:             # a DAW-like USB audio stream for the whole run (the default)
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         rate = int(sys.argv[sys.argv.index("--usb") + 1]) if "--usb" in sys.argv else 48000
         devs = fm1_ports.devices(sd.query_devices(), 2)
         if not devs:

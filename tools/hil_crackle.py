@@ -119,7 +119,7 @@ OUT = os.path.join(ROOT, "build", "hil", "stress_max")
 FS_HOST = 44100
 FS_JACK = 48000
 ENGINES = ("rhodes", "vibes", "marimba")
-LAT_SCALE = int(os.environ.get("FRODHES_LAT_HALF", "256")) / 256.0   # (a frodhes.c FR_LAT_HALF build: per interrupt,
+LAT_SCALE = fm1_ports.lat_half() / 256.0   # (a frodhes.c FR_LAT_HALF build: per interrupt,
 CPU_TARGET_US, SHEDDER_US = round(4500 * LAT_SCALE), round(5000 * LAT_SCALE)   # as hil_cpu.py / hil_c1_soak.py)
 CEIL = 24100                                  # fx.c LIM_T 24000 (+ rounding): information
 LIM_ON = 22000                                # a USB peak this high in the last 50 ms: the limiter is working
@@ -140,8 +140,11 @@ BEAT_S = 0.02901                              # 5 render blocks (5 x 256 / 44100
 GATED = ("repeat", "stale", "zero", "clip", "click", "step", "track")
 
 CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_MIX=83, RV_DECAY=92, RV_PREDLY=94, USB_VOL=114)
+# (DL_DEPTH / REV 64, 0.9.13 E2's MIX law: the echo and the reverb whole over the dry whole, the old 127's sound; at
+# 127 only the wet plays and nothing marks the strikes (the detectors' alignment fails); hil_cpu keeps 127, the
+# dry gain's CPU path; hil_must, hil_c1_soak and rh_devcmp as here)
 HEAVY = dict(DRIVE=127, DRV_MIX=64, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127,
-             PH_FDBK=127, CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
+             PH_FDBK=127, CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=64, DL_TIME=127, DL_FDBK=127, REV=64,
              RV_DECAY=127, RV_PREDLY=127, FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # hil_cpu's + the reverb's
 MODERATE = dict(DRIVE=60, CP_SW=64, CP_DEPTH=64, PH_SW=127, PH_DEPTH=64, DL_SW=48, DL_DEPTH=64, DL_TIME=60, REV=80)
 REG = dict(bass=[28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52, 53, 55],   # (13-16: --voices, FR_C1)
@@ -156,7 +159,7 @@ def voices(eng):
     """the firmware's voice count for an engine (rhodes.c RH_VOICES / BAR_VOICES)"""
     src = open(os.path.join(ROOT, "firmware", "src", "rhodes.c")).read()
     key = "RH_VOICES" if eng == "rhodes" else "BAR_VOICES"
-    return int(re.search(r"#define " + key + r" (\d+)u", src).group(1))
+    return fm1_ports.image_voices(int(re.search(r"#define " + key + r" (\d+)u", src).group(1)))
 
 
 # ---------------------------------------------------------------------------------------------------- the stimulus
@@ -729,11 +732,17 @@ def det_step(x, fs, ons, offs, lag=0.0, widen=0.0, step_db=12.0, win_ms=1000 * S
     there, with ref (a function (t_before, t_after, win) -> the jack's two levels in dB at those USB times, or None),
     a step the jack has too (same sign, within STEP_AGREE dB, over STEP_JACK_FLOOR) is the music's own and goes to
     own [(frame, detail)]; a USB-path step (a lost or repeated block, the ring) is on USB alone and stays an event.
-    agree (the jack's steps: a function like ref, the jack's times -> USB's two levels): a jack step USB has at the
+    agree (the jack's steps: a function like ref, the jack's times -> USB's left channel's two levels, the one the
+    jack carries): a jack step USB has at the
     same moment (same sign, within STEP_AGREE dB, its louder window over STEP_JACK_FLOOR) is the music's own and goes
     to own, anywhere in the take (rc3 rhodes-worst1, 2026-11-09: the jack +15 dB at 2.780 s, USB +13 dB there, a delay
     echo under the tremolo; USB's own detector judges that step on USB); a jack-path step (the codec, the DAC, the
-    output stage) is on the jack alone and stays an event.
+    output stage) is on the jack alone and stays an event. The jack carries USB's left channel only: in the first
+    period the jack's step is also held against USB's left channel (same sign as the stereo step, the jack within
+    STEP_AGREE of the left's): a stereo modulation (TREM PAN, the delay's sides) can move the right channel more, and
+    the jack then agrees with the left, not with the pair's mean (the 0.9.12 final crackle, rhodes-worst2 0.680 s:
+    USB +13 dB, the left +8, the right +13.5, the jack +7.9; a lost or repeated USB packet takes both channels, so
+    the left matching the jack proves the stream there).
     ons / offs on the recording's clock (map_clock), or the event clock and lag"""
     x = np.asarray(x, float)
     p = (x ** 2).mean(axis=1) if x.ndim == 2 else x ** 2
@@ -742,6 +751,8 @@ def det_step(x, fs, ons, offs, lag=0.0, widen=0.0, step_db=12.0, win_ms=1000 * S
     if n < 8:
         return []
     r = 10 * np.log10(p[:n * w].reshape(n, w).mean(axis=1) + 1e-3) - 20 * np.log10(32767)
+    rl = (10 * np.log10((x[:n * w, 0] ** 2).reshape(n, w).mean(axis=1) + 1e-3) - 20 * np.log10(32767)
+          if x.ndim == 2 else r)
     if periods:                                            # (the same 20 ms level every 5 ms: one period back)
         h = max(1, int(0.005 * fs))
         cs = np.concatenate([[0.0], np.cumsum(p)])
@@ -767,11 +778,12 @@ def det_step(x, fs, ons, offs, lag=0.0, widen=0.0, step_db=12.0, win_ms=1000 * S
         if periods and ref is not None and len(ons) and any(i * w / fs - P < ons.min() for P in periods):
             lv = ref(b * w / fs, i * w / fs, w / fs)       # (a modulation's first period: the jack decides)
             if lv is not None:
-                dj = lv[1] - lv[0]
-                if dj * d > 0 and abs(dj - d) <= STEP_AGREE and max(lv) > STEP_JACK_FLOOR:
+                dj, dl = lv[1] - lv[0], rl[i] - rl[b]
+                if max(lv) > STEP_JACK_FLOOR and dj * d > 0 and (abs(dj - d) <= STEP_AGREE or
+                                                                 (dl * d > 0 and abs(dj - dl) <= STEP_AGREE)):
                     if own is not None:
-                        own.append(((b + 1) * w, f"level {d:+.0f} dB, the jack {dj:+.0f} dB (a modulation's first "
-                                                 f"period)"))
+                        own.append(((b + 1) * w, f"level {d:+.0f} dB (the left {dl:+.0f}), the jack {dj:+.0f} dB (a "
+                                                 f"modulation's first period)"))
                     continue
         if agree is not None:
             lv = agree(b * w / fs, i * w / fs, w / fs)     # (USB at the same moment)
@@ -1055,13 +1067,17 @@ def analyse(usb, jack, fs_usb, events, lag_usb=0.0, lag_jack=None, widen=0.0, cc
                 k = int(tu * fs_usb)
                 res["jack"].append((i / FS_JACK, "click-lim" if 0 <= k < len(lim) and lim[k] else "click", d))
         def uref(tb, ti, ws):                                # (the jack's times -> USB's clock -> its 20 ms levels)
+            # (USB's LEFT channel, the one the jack carries: a stereo modulation can step the left more than the
+            # pair's mean; the 0.9.12 a11d crackle, marimba-worst1 0.680 s: the jack +18 dB, USB's left +15, the
+            # pair's mean under the 4 dB agreement; the mirror of det_step's first-period rule, 2026-11-15)
             out = []
             for tjk in (tb, ti):
                 a = int(round(float(map_clock((tjk - cj[0]) / (1.0 + cj[1]), cu)) * fs_usb))
                 n = int(round(ws * fs_usb))
                 if a < 0 or a + n > len(q):
                     return None
-                out.append(10 * np.log10((q[a:a + n].astype(float) ** 2).mean() + 1e-3) - 20 * np.log10(32767))
+                ql = q[a:a + n, 0] if q.ndim == 2 else q[a:a + n]
+                out.append(10 * np.log10((ql.astype(float) ** 2).mean() + 1e-3) - 20 * np.log10(32767))
             return out
         usb_steps = res["info"]["step_usb_too"] = []
         add("jack", FS_JACK, "step", lambda: det_step(jack, FS_JACK, gjt, offj, 0.0, widen, periods=per,
@@ -1473,6 +1489,8 @@ class Device:
 
     def __init__(self, rate, jack, jack_dev, jack_ch, blocksize=0, poll=True, mdev=None):
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         import hil_must
         self.hm, self.sd, self.poll = hil_must, sd, poll
         self.mdev = mdev or hil_must.Dev()                   # (the MIDI ports before any stream; T1 passes its own)

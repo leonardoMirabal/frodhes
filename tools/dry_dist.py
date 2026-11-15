@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """The dry engine's distortion: harmonics H2..H6 re H1 and the inharmonic residue of single notes, and the
-intermodulation of loud chords, with the effects off. The must-pass gate against 0.9.9 (tests/py/test_dry_distortion.py;
+intermodulation of loud chords, with the effects off. The must-pass gate against 0.9.11 (tests/py/test_dry_distortion.py;
 the FM-1 counterpart: tools/hil_jack.py's "dry distortion" section).
 
 Why (2026-11-08): the user heard heavy distortion at high velocity on the 0.9.10 Rhodes, effects off, on headphones;
@@ -10,11 +10,13 @@ Why (2026-11-08): the user heard heavy distortion at high velocity on the 0.9.10
 Cells (every one measured on the host build, 44.1 kHz):
   config    FXOFF (CC 111 127: the FX button's bypass) and RAW (CC 119 127: every effect and the limiter bypassed)
   TYPE      the four electric pianos (CC 80: 0 / 32 / 64 / 96)
-  RESPONSE  CC 40 0 (A, pickup excursion) and 127 (B, velocity map); 0.9.9 has no CC 40 (ignored: one method)
+  RESPONSE  CC 40 0 (A, pickup excursion) and 127 (B, velocity map); both judged against the base's A
+            (one method, as when 0.9.9 had no CC 40)
   notes     keys 28 33 45 57 69 81 93 x velocities 64 96 110 127: H2..H6 re H1 (dB, each the peak within +-3 % of
             k f0 in a Blackman-Harris window 150..650 ms after the strike) and "inh": the energy off every harmonic band
             (+-15 Hz or +-0.3 %, around k x the f0 measured on H1) up to 20 kHz re the energy of H1 (the aliasing and any inharmonic product; the tine's own
-            upper modes are in it too, so it is judged against 0.9.9, never alone)
+            upper modes are in it too, so it is judged against 0.9.11, never alone); and "inhw", the path's white floor
+            in the same bands re H1 (a measurement, never judged itself: see Limits)
   chords    4-note chords at v127 (low, mid, high): "imd", the energy off every harmonic band of the four notes re
             the energy of their fundamentals
   attack    every note and key cell also aH2..aH6: H2..H6 re H1 in the strike's own window, 0..150 ms (2026-11-08: the
@@ -23,18 +25,30 @@ Cells (every one measured on the host build, 44.1 kHz):
             reading under any floor, keyvel.c's curve at MEDIUM, its 127): "key<K>/max", judged as v127. Host only
             (nothing presses the FM-1's keys in tools/hil_jack.py --dist)
 
-Limits (judge): every value <= 0.9.9's same cell + 3 dB, H2 and aH2 + 1.5 dB (or <= -60 dB re H1: never heard, the
+Limits (judge): every value <= 0.9.11's same cell + 3 dB, H2 and aH2 + 1.5 dB (or <= -60 dB re H1: never heard, the
 path's floor); and at v127 and on the keys' cells the absolute ceiling H3 and aH3 re H1 <= -25 dB (the limit
-min(base + 3, -25)). A cell where 0.9.9 itself is above -25 keeps base + 3 (0.9.9 is the reference).
+min(base + 3, -25)). A cell where 0.9.11 itself is above -25 keeps base + 3 (0.9.11 is the reference).
+inh's limit is also never under the path's own white floor + 3 dB (inhw: the median off-harmonic bin's power, the
+floor's mean, over every off-harmonic bin, re H1; capped at one 16-bit rounding's power + WHITE_CAP dB): a measurement
+rule, not a loosening (2026-11-14, SND3). The off-harmonic energy of these notes is that floor at every velocity (inh -
+inhw -0.5 .. +8.4 dB over every cell of 0.9.11 and the candidate, FM-1 and HQ builds), white and of a constant absolute
+level (FXOFF 8.1 .. 9.7 dB over one rounding, RAW 4.5 .. 6.5), so a note played quieter (the velocity curve) read
+inh higher by exactly its level cut with no new product. A tonal product (aliasing, intermodulation) stands over the
+median and is judged as before; a white floor that rose more than WHITE_CAP over one rounding is judged as before too.
+A harmonic under one 16-bit step (its amplitude, H re H1 + h1, <= LSB_DB dBFS) is also held to 0.9.11's absolute level
++ 3 dB, not only its ratio (2026-11-14, SND3; the same idea as tools/release_diff.py H_ABS_FLOOR): the output's
+rounding leaves fixed harmonics of about -96 .. -100 dBFS on a periodic note (FXOFF-SUIT 81/64: H3 -98.9 dBFS on 0.9.11,
+-99.9 on the quieter candidate), and a quieter note read them higher re H1 by its level cut (H3 -62.0 -> -58.7). h1 /
+ah1: H1's amplitude in the window (dBFS); a base without them (an older baseline) keeps the ratio rule alone.
 
   tools/dry_dist.py --bin BIN [--out FILE]          measure a host binary, write the cells (JSON)
   tools/dry_dist.py --save                          measure the host binary BIN (default build/host/frodhes) and write
-                                                    tests/baselines/dry_dist_099.json (run it on a 0.9.9 build)
+                                                    tests/baselines/dry_dist_0911.json (run it on a 0.9.11 build)
   tools/dry_dist.py --judge CELLS.json [--base B]   the table and the verdict (exit 1 on a failure)
   --hq                                              the Move's HQ build instead: --save writes (and --judge reads)
-                                                    tests/baselines/dry_dist_099_hq.json; build one with --build-hq
+                                                    tests/baselines/dry_dist_0911_hq.json; build one with --build-hq
 
-The Move (and the plugin's HQ slots) have their own reference, dry_dist_099_hq.json: 0.9.9 (456b5da4) built with the
+The Move (and the plugin's HQ slots) have their own reference, dry_dist_0911_hq.json: 0.9.11 (279a7aff) built with the
 Move's defines and HQ_DEFAULT=1 (HQ_DEFS). The FM-1's does not hold there: FX on the Move keeps the compressor
 (FR_BYP_KEEP_CMP: the FXOFF chords), and the HQ voice has its own pickup from key 85 and its own pulse at every
 velocity (key 93's H3 differs by 1-2 dB at v64..96).
@@ -50,8 +64,8 @@ import wave
 import numpy as np
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-BASE = os.path.join(ROOT, "tests", "baselines", "dry_dist_099.json")
-BASE_HQ = os.path.join(ROOT, "tests", "baselines", "dry_dist_099_hq.json")
+BASE = os.path.join(ROOT, "tests", "baselines", "dry_dist_0911.json")
+BASE_HQ = os.path.join(ROOT, "tests", "baselines", "dry_dist_0911_hq.json")
 HQ_DEFS = ("-DFR_VOICES=16u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1", "-DHQ_DEFAULT=1")   # (the Makefile's
                                   # MOVE_DEFS, the HQ Rhodes on: the Move as it loads; make test-move's host-hq build)
 FS = 44100
@@ -83,13 +97,17 @@ A0, A1 = 0.0, 0.15                # s: the attack's window (aH2..aH6: the strike
 KEYK = (0, 4, 7, 11, 14, 19)      # the FM-1's own keys (analog: F3 A3 C4 E4 G4 C5 = notes 53 + k) through the key path
 KEY_HARD = 200                    # their driven reading: under any floor (KV_FLOOR_MIN 217): the hardest press, the most
                                   # the key path delivers at the TOUCH in force (MEDIUM)
-MARGIN_H2 = 1.5                   # H2 / aH2: <= 0.9.9 + 1.5 dB (the pickup's even-order growth, what a hard key press
+MARGIN_H2 = 1.5                   # H2 / aH2: <= 0.9.11 + 1.5 dB (the pickup's even-order growth, what a hard key press
                                   # brings up first)
 BAND = 0.03                       # the harmonic peaks: within +-3 % of k f0
 IBW, IREL = 15.0, 0.003           # inh / imd: a harmonic's band, +-15 Hz (the window's main lobe +-8 Hz, and a harmonic's own envelope: the harmonic decay glide from 0.4 s spreads H2 +-12 Hz)
                                   # or +-0.3 % (the pickup's products are exact multiples of the tine's frequency)
 MARGIN, CEIL_H3 = 3.0, -25.0
-FLOOR = -60.0                     # any value below -60 dB re H1 passes whatever 0.9.9 had: H5 at -90 dB moves by more
+WHITE_CAP = 12.0                  # dB: inhw at most one 16-bit rounding's white power (1/12 LSB^2) + this (measured
+                                  # <= 9.7: FXOFF 8.1 .. 9.7, RAW 4.5 .. 6.5, 0.9.11 and 0.9.13's FM-1 and HQ builds)
+LSB_DB = -90.3                    # dBFS: one 16-bit step's amplitude (20 log10(1 / 32768))
+INFO = ("inhw", "h1", "ah1")      # measured for the rules, not judged themselves
+FLOOR = -60.0                     # any value below -60 dB re H1 passes whatever 0.9.11 had: H5 at -90 dB moves by more
                                   # than 3 dB with any change and is not heard, and inh / imd down there are the path's
                                   # floor (the USB stream requantized to 16 bits at 48 kHz: 0.9.9's -91 dB chord imd read
                                   # -74 through the dry run's 44.1 -> 48 kHz path, 2026-11-08)
@@ -178,7 +196,7 @@ def tuned(p, fr, funds):
     return [fu * r for fu in funds]
 
 
-def harm_cells(seg, fund, fs=FS, pad=1, retune=True):
+def harm_cells(seg, fund, fs=FS, pad=1, retune=True, lsb=1.0):
     """H2..H6 re H1 (dB, band peaks) and inh: the power off the harmonic bands re the power of H1 (dB). retune: the
     f0 measured (tuned); not in the strike's 150 ms window (aH): its main lobe is +-27 Hz wide, so the H1 band at the
     low keys holds no peak of its own, its edge was taken for one (A1 55 Hz locked at 45.7 .. 47.5 Hz, H6 read at
@@ -192,7 +210,11 @@ def harm_cells(seg, fund, fs=FS, pad=1, retune=True):
         m = (fr > k * fund * (1 - BAND)) & (fr < k * fund * (1 + BAND))
         pk.append(p[m].max() if m.any() else 1e-30)
     h = [10 * np.log10(pk[k] / pk[0] + 1e-30) for k in range(1, 6)]
-    return h, (inharm(p, fr, [fund]) if retune else None)   # (inh: the analysis window's only; it retunes)
+    from scipy.signal.windows import blackmanharris
+    h1 = float(20 * np.log10(2 * np.sqrt(pk[0]) / float(np.sum(blackmanharris(len(seg)))) / (32768.0 * lsb) + 1e-15))
+    if not retune:                      # (h1: H1's amplitude, dBFS: a full-scale sine 0)
+        return h, None, None, h1
+    return (h,) + inharm_white(p, fr, [fund], len(seg), lsb) + (h1,)   # (inh: the analysis window's only; it retunes)
 
 
 def inharm(p, fr, funds):
@@ -209,6 +231,28 @@ def inharm(p, fr, funds):
     return float(10 * np.log10(b / (a + 1e-30) + 1e-30))
 
 
+def inharm_white(p, fr, funds, n, lsb=1.0):
+    """(inh, inhw): inharm's value and the path's white floor in the same off-harmonic bins re H1 (dB): the median
+    bin's power / ln 2 (an exponential power's mean) x the bins, capped at one rounding's power (lsb^2 / 12 per sample
+    through the window: sum(w^2) per bin, padded or not) + WHITE_CAP dB. n: the segment's samples (unpadded); lsb: one
+    16-bit step in x's units (1 for int16 samples, 1 / 32768 for floats)"""
+    from scipy.signal.windows import blackmanharris
+    use = (fr > 30) & (fr < 20000)
+    funds = tuned(p, fr, funds)
+    on, h1 = np.zeros(len(fr), bool), np.zeros(len(fr), bool)
+    for fu in funds:
+        h1 |= np.abs(fr - fu) < max(IBW, fu * IREL)
+        for k in range(1, int(20000 / fu) + 1):
+            on |= np.abs(fr - k * fu) < max(IBW, k * fu * IREL)
+    off = use & ~on
+    a, b, nb = p[h1].sum() + 1e-30, p[off].sum(), int(off.sum())
+    if not nb:
+        return float(10 * np.log10(b / a + 1e-30)), -300.0
+    q = lsb * lsb / 12.0 * float(np.sum(blackmanharris(n) ** 2)) * nb
+    w = min(float(np.median(p[off])) / np.log(2) * nb, q * 10 ** (WHITE_CAP / 10))
+    return float(10 * np.log10(b / a + 1e-30)), float(10 * np.log10(w / a + 1e-30))
+
+
 def strike(x, t, fs):
     """the strike's onset near its event time t (s): the first sample over a quarter of the peak in [t - 40, t + 120]
     ms. The FM-1's clock drifts against the recording's (500 ppm is 25 ms over a 50 s take), so a window placed by the
@@ -220,7 +264,7 @@ def strike(x, t, fs):
     return (i0 + int(np.argmax(a > 0.25 * a.max()))) / fs
 
 
-def measure_wave(x, t0=0.0, fs=FS, keys=False):
+def measure_wave(x, t0=0.0, fs=FS, keys=False, lsb=1.0):
     """the cells of one script's recording (x mono at fs; t0: where the script's 0 ms is in x, s). Every cell is a
     ratio, so the FM-1's USB at 48 kHz is judged against the host's 44.1 kHz reference as it is. keys: the script has
     the key cells (the host's)"""
@@ -231,9 +275,9 @@ def measure_wave(x, t0=0.0, fs=FS, keys=False):
         i0, i1 = int((ts + W0) * fs), int((ts + W1) * fs)
         seg = x[i0:i1]
         if kind in ("note", "key"):
-            h, inh = harm_cells(seg, f0(ns[0]), fs)
-            a, _ = harm_cells(x[int((ts + A0) * fs):int((ts + A1) * fs)], f0(ns[0]), fs, pad=8, retune=False)
-            out[label] = dict(H2=h[0], H3=h[1], H4=h[2], H5=h[3], H6=h[4], inh=inh,
+            h, inh, inhw, h1 = harm_cells(seg, f0(ns[0]), fs, lsb=lsb)
+            a, _, _, ah1 = harm_cells(x[int((ts + A0) * fs):int((ts + A1) * fs)], f0(ns[0]), fs, pad=8, retune=False)
+            out[label] = dict(H2=h[0], H3=h[1], H4=h[2], H5=h[3], H6=h[4], inh=inh, inhw=inhw, h1=h1, ah1=ah1,
                               aH2=a[0], aH3=a[1], aH4=a[2], aH5=a[3], aH6=a[4])
         else:
             p, fr = spectrum(seg, fs)
@@ -279,7 +323,8 @@ def build_hq(out, src=ROOT):
 
 
 def judge(cells, base, methods_base="A"):
-    """[(cell, metric, value, base, limit, ok)]; the base has one method (0.9.9): every method is held to it"""
+    """[(cell, metric, value, base, limit, ok)]; every method is held to the base's A (one
+    method, as 0.9.9 had)"""
     rows = []
     for tag, notes in cells.items():
         cfg, ty, _ = tag.split("-")
@@ -287,12 +332,20 @@ def judge(cells, base, methods_base="A"):
         for label, ms in notes.items():
             bn = bt.get(label, {})
             for m, v in ms.items():
+                if m in INFO:                 # (measurements for the rules below, not judged themselves)
+                    continue
                 b = bn.get(m)
                 if b is None:
                     rows.append((f"{tag} {label}", m, v, None, None, False))
                     continue
                 lim = b + (MARGIN_H2 if m in ("H2", "aH2") else MARGIN)
                 lim = max(lim, FLOOR)
+                if m == "inh" and ms.get("inhw") is not None:
+                    lim = max(lim, ms["inhw"] + MARGIN)   # the path's white floor + 3 dB (Limits)
+                ab = "ah1" if m.startswith("aH") else "h1"
+                if m.lstrip("a")[0] == "H" and ms.get(ab) is not None and bn.get(ab) is not None \
+                        and v + ms[ab] <= LSB_DB:       # a sub-LSB harmonic: its absolute level (Limits)
+                    lim = max(lim, b + bn[ab] - ms[ab] + MARGIN)
                 if m in ("H3", "aH3") and (label.endswith("/127") or label.endswith("/max")):
                     lim = min(b + MARGIN, CEIL_H3) if b <= CEIL_H3 else b + MARGIN
                 rows.append((f"{tag} {label}", m, v, b, lim, bool(v <= lim + 1e-9)))
@@ -304,7 +357,7 @@ def table(rows, only_bad=False, worst=40):
     lines = [f"{len(rows)} values, {len(bad)} over the limit"]
     show = bad if only_bad else sorted(rows, key=lambda r: (r[4] - r[2]) if r[4] is not None else -99)[:worst]
     for c, m, v, b, lim, ok in sorted(show, key=lambda r: (r[4] - r[2]) if r[4] is not None else -99)[:worst]:
-        lines.append(f"  {'ok  ' if ok else 'FAIL'} {c:28s} {m:4s} {v:7.1f} dB   0.9.9 {b if b is None else round(b, 1)!s:>6}"
+        lines.append(f"  {'ok  ' if ok else 'FAIL'} {c:28s} {m:4s} {v:7.1f} dB   0.9.11 {b if b is None else round(b, 1)!s:>6}"
                      f"   limit {lim if lim is None else round(lim, 1)!s:>6}   margin {'' if lim is None else round(lim - v, 1)}")
     return "\n".join(lines)
 
@@ -316,7 +369,7 @@ def main():
     ap.add_argument("--save", action="store_true")
     ap.add_argument("--judge")
     ap.add_argument("--base")
-    ap.add_argument("--hq", action="store_true", help="the Move's HQ reference (dry_dist_099_hq.json)")
+    ap.add_argument("--hq", action="store_true", help="the Move's HQ reference (dry_dist_0911_hq.json)")
     ap.add_argument("--build-hq", metavar="OUT", help="compile the HQ host build to OUT and exit")
     ap.add_argument("--src", default=ROOT, help="--build-hq: the source tree")
     ap.add_argument("--all", action="store_true", help="--judge: every failing value (else the 40 closest)")

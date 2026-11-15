@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 MAC_OK = re.compile(r"^(/usr/lib/libSystem\.B\.dylib|/usr/lib/libc\+\+\.1\.dylib|/usr/lib/libobjc\.A\.dylib|"
                     r"/System/Library/Frameworks/[A-Za-z0-9]+\.framework/.+)$")
 WIN_OK = re.compile(r"^(kernel32|user32|gdi32|shell32|ole32|oleaut32|advapi32|comdlg32|comctl32|uxtheme|dwmapi|"
-                    r"shcore|imm32|winmm|version|opengl32|d2d1|dwrite|windowscodecs|shlwapi|ws2_32|bcrypt|"
+                    r"shcore|imm32|winmm|version|opengl32|d2d1|dwrite|windowscodecs|shlwapi|ws2_32|bcrypt|winhttp|"
                     r"api-ms-win-core-[a-z0-9-]+)\.dll$", re.I)   # (no ucrtbase / api-ms-win-crt: the static CRT, /MT)
 LINUX_OK = re.compile(r"^(libc\.so\.6|libm\.so\.6|libdl\.so\.2|libpthread\.so\.0|librt\.so\.1|"
                       r"ld-linux[-a-z0-9_.]*\.so\.[12]|libX11\.so\.6|libxcb\.so\.1)$")

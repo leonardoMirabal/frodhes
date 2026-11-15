@@ -94,6 +94,34 @@ def parse(text, name="fragment"):
     return body
 
 
+# The notes are for players: what they hear, see and do. No internal details: no source or test paths, no commit
+# hashes, no code constants, no test gates or limits, no private research, no development tooling (brand names:
+# test_repo_hygiene, for every tracked file).
+INTERNAL = [
+    (re.compile(r"\b(?:tools|tests|firmware|plugin/src|plugin/ui|mpc/src|move/|build|private)/"), "a source / test path"),
+    (re.compile(r"\b[\w-]+\.(?:py|sh|c|h|cpp|m|S|yaml|json)\b"), "a source / test file name"),
+    (re.compile(r"(?<![\w/.-])[0-9a-f]{7,40}(?![\w/-])"), "a commit hash"),
+    (re.compile(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b"), "a code constant"),
+    (re.compile(r"\bGate [A-Z]\b|\bTHRESHOLD\b|\bexpected[_ ]changes\b|\bbaseline", re.I), "test machinery"),
+    (re.compile(r"\b(?:study|studies|findings|textura|claude|agent|tracker)\b", re.I),
+     "private research or development detail"),
+]
+
+
+def internal(frags):
+    """every internal detail a fragment would publish: ['file: section: what (text)']"""
+    out = []
+    for f, secs in frags:
+        for sec, body in secs.items():
+            if sec == "Tested":
+                out.append(f"{DIR}/{f}: '## Tested': how a change was tested stays in the commit, not the notes")
+                continue
+            for rx, what in INTERNAL:
+                for m in rx.finditer(re.sub(r"\]\(https?://[^)]*\)", "]()", body)):     # link targets are fine
+                    out.append(f"{DIR}/{f}: '## {sec}': {what} ({m.group(0)})")
+    return out
+
+
 def load(root=ROOT):
     """[(file name, {section: body})] of every fragment in file-name order; Bad with every problem"""
     d = os.path.join(root, DIR)
@@ -110,6 +138,7 @@ def load(root=ROOT):
     summ = [f for f, secs in frags if "Summary" in secs]
     if len(summ) > 1:
         errs.append(f"{DIR}/: '## Summary' in {len(summ)} fragments ({', '.join(summ)}): the notes have one summary line")
+    errs += internal(frags)
     if errs:
         raise Bad("\n".join(errs))
     return frags
@@ -117,14 +146,14 @@ def load(root=ROOT):
 
 def tagline(root=ROOT):
     """'a physically modelled ... for the M-VAVE FM-1' (and the devices after it) from docs/MANUAL.md's first bold line"""
-    m = re.search(r"^\*\*A (physically modelled .+? for the M-VAVE FM-1(?: and [^*.]+)?)\.\*\*",
+    m = re.search(r"^\*\*A (physically modelled .+? for the M-VAVE FM-1(?:(?:,| and) [^*.]+)?)\.\*\*",
                   open(os.path.join(root, "docs", "MANUAL.md"), encoding="utf-8").read(), re.M)
     if not m:
         raise Bad("docs/MANUAL.md: no '**A physically modelled ... for the M-VAVE FM-1.**' line for the notes' head")
-    return "a " + m.group(1)
+    return "a " + " ".join(m.group(1).split())    # (the line may wrap)
 
 
-def assemble(ver, frags, root=ROOT, move=True, c1=False, plugin=False):
+def assemble(ver, frags, root=ROOT, move=True, c1=False, plugin=False, mpc=None):
     """the release notes for ver from frags (load()); move: the release ships the Move package (its install route);
     c1: the FM-1's two-core image frodhes-c1.fwsc too; plugin: the desktop plugin's packages (their install routes);
     Bad if there are none or one names ver"""
@@ -158,6 +187,12 @@ def assemble(ver, frags, root=ROOT, move=True, c1=False, plugin=False):
                     "browser: **Install Custom Module > From GitHub URL**, `leonardoMirabal/frodhes`. Or download "
                     "`frodhes-module.tar.gz` below and use **From Tarball**. Details: "
                     f"[the Move manual]({BLOB}MOVE.md#install).")
+    if mpc is None:     # the MPC plugin ships whenever the tree builds it (release.yml's job mpc)
+        mpc = os.path.isfile(os.path.join(root, "mpc", "build.py"))
+    if mpc:
+        install += ("\n\n**Akai MPC**: `frodhes-mpc.zip` below (MPC OS 3.10.1 or later, External Plugin Support on). "
+                    "Copy its folder `Frodhes - VST - Frodhes` into `VST2 Plugins` at the top of the MPC's drive. "
+                    f"Details: [MPC.md]({BLOB}MPC.md#install-and-remove).")
     install += ("\n\n**SMK-37 Pro, SMK-37 Elite, MKE-P37**: `frodhes-smk37-pro.fwsc`, `frodhes-smk37-elite.fwsc` and "
                 f"`frodhes-mke-p37.fwsc` below. Read [SMK37.md]({BLOB}SMK37.md) first.")
     parts = [head,

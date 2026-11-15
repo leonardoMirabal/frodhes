@@ -80,6 +80,53 @@ def test_verdict_bars():
     assert _run([600], 1, takes=[{"gated": 1}])[0] == "FAIL"
 
 
+def test_verdict_overruns_over_idle():
+    """K2 (2026-11-13): Schwung's overrun counter runs at idle (173 /s on the Move, Frodhes idle); only the rate the
+    loads add fails a run (the 2026-11-13 runs: 160-173 /s under 2-3 instances against 173 /s idle: PASS)"""
+    assert _run([630, 640], 2, perf={"overruns": 5881, "overruns_per_s": 173.1}, idle={"overruns_per_s": 173.3})[0] == "PASS"
+    assert _run([630, 640], 2, perf={"overruns": 900, "overruns_per_s": 30.0}, idle={"overruns_per_s": 0.0})[0] == "FAIL"
+    assert _run([630, 640], 2, perf={"overruns": 9000, "overruns_per_s": 200.0}, idle={"overruns_per_s": 173.0})[0] == "FAIL"
+    assert _run([630, 640], 2, perf={"overruns": 60, "overruns_per_s": 1.5}, idle={"overruns_per_s": 0.0})[0] == "PASS"
+    assert _run([600], 1, perf={"overruns": 2})[0] == "FAIL"                 # no idle rate read: any overrun counts
+
+
+def _series(mean, spread, n, seed):
+    """per-second overrun rates: mean +- spread (Schwung's idle noise), n seconds"""
+    import numpy as np
+    return [round(float(x), 1) for x in mean + np.random.default_rng(seed).uniform(-spread, spread, n)]
+
+
+def test_ovr_series_from_perf_rows():
+    rows = [(10.0, {"overruns": 100}), (11.0, {"overruns": 270}), (12.5, {"overruns": 525})]
+    assert mc.ovr_series(rows) == [170.0, 170.0]
+
+
+def test_verdict_overruns_aba():
+    """A / B / A (T2 0.9.12, 2026-11-14): the idle rate swung 93-173 /s within minutes and one idle window before the
+    load failed 0.9.11 and 0.9.12 alike (n = 1: 169.0 /s loaded vs 131.0 idle on 0.9.11, 168.6 vs 135.2 on 0.9.12;
+    the idle windows read right after a load: 172.9-173.4, and once 92.9). The load is judged against the higher
+    median of the idle windows before and after it; an injected extra load still fails"""
+    # each build's recorded rates, the idle after a load at the 173 /s the windows after a load read: PASS
+    for idle0, load in ((131.0, 169.0), (135.2, 168.6)):
+        r = dict(perf={"overruns": 4900, "overruns_per_s": load, "series_ovr": _series(load, 4, 20, 1)},
+                 idle={"overruns_per_s": idle0, "series_ovr": _series(idle0, 20, 10, 2)},
+                 idle_after={"overruns_per_s": 173.0, "series_ovr": _series(173.0, 1, 12, 3)})
+        assert _run([624], 1, **r)[0] == "PASS", _run([624], 1, **r)
+        assert _run([624], 1, perf=r["perf"], idle=r["idle"])[0] == "FAIL"   # one idle window: the old false FAIL
+        # an extra load (a busy loop, a smaller CPU budget) adding 30 / 60 overruns a second over both idle windows
+        for extra in (30, 60):
+            hot = dict(r, perf=dict(r["perf"], series_ovr=_series(173.0 + extra, 4, 20, 4)))
+            v = _run([624], 1, **hot)
+            assert v[0] == "FAIL" and "A/B/A" in v[1], v
+    # the drift down between the windows (173 before, 93 after) and the load at the higher: PASS; over it by 2x the
+    # tolerance: FAIL
+    r = dict(perf={"overruns": 5000, "overruns_per_s": 170, "series_ovr": _series(171, 3, 20, 5)},
+             idle={"series_ovr": _series(173, 1, 10, 6)}, idle_after={"series_ovr": _series(93, 5, 12, 7)})
+    assert _run([630, 640], 2, **r)[0] == "PASS"
+    r["perf"] = dict(r["perf"], series_ovr=_series(173 + 2 * 17.3, 3, 20, 8))
+    assert _run([630, 640], 2, **r)[0] == "FAIL"
+
+
 # ---- pacing and the slots restored (K2: the 0.9.9 run of 2026-11-08, build/move/hil/multi/20261108-003510: the third
 # slot's upload hit "web param set ring full", the others broke on the barrier, Frodhes stayed in slots 3-4)
 RING = mc.move_ws.SchwungError("set_param failed: web param set ring full")
@@ -158,6 +205,21 @@ def test_set_module_waits_for_slot_info_and_paces_ring_full():
     assert w.mods[2] == "frodhes" and len([x for x in w.writes if x[0] == 2]) == 2 and len(log) == 1, (w.writes, log)
     n = len(w.writes)
     assert mc.set_module(w, 2, "frodhes", sleep=lambda s: None) and len(w.writes) == n   # (already there: no write)
+
+
+def test_load_fresh_reloads_a_slot_that_already_holds_frodhes():
+    """2026-11-14: after 0.9.12's install slot 1 still held the 0.9.11 instance loaded at the boot; a module write of
+    the same name reloads nothing, so n=1 measured 0.9.11. Every slot is emptied first, then 1..N loaded"""
+    w = FakeSchwung({0: "frodhes", 1: "frodhes", 2: "", 3: ""})
+    assert mc.load_fresh(w, [0, 1, 2, 3], [0], sleep=lambda s: None) == []
+    assert [x for x in w.writes if x[0] == 0] == [(0, "synth:module", ""), (0, "synth:module", "frodhes")], w.writes
+    assert w.mods == {0: "frodhes", 1: "", 2: "", 3: ""}
+
+
+def test_verdict_fails_on_mixed_builds():
+    """the instances' r_version must agree: a stale instance beside a new one is not a measurement of either"""
+    assert _run([600, 610], 2, versions={1: "0.9.11", 2: "DEV 4f5a"})[0] == "FAIL"
+    assert _run([600, 610], 2, versions={1: "DEV 4f5a", 2: "DEV 4f5a"})[0] == "PASS"
 
 
 def test_slots_restored_after_a_crash():

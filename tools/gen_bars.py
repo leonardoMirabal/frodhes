@@ -1343,8 +1343,15 @@ KN_TUBE_TOP = kn_tube()[127] / 32768.0
 
 
 def kn_nz(vb):
+    """KN_NZ: the contact noise's level over NOISE 1..127, a line in dB from lvl_db[0] to lvl_db[1]; with "top" =
+    [knee, dB] the line up to the knee, then a line from there to the top's dB at 127 (MARIMBA, 0.9.12: the tick at 127
+    2.5 dB up, the default and everything up to 64 as before)"""
     lo, hi = vb["T13b"]["lvl_db"]
-    return [0] + [int(round(32767 * 10 ** ((lo + (hi - lo) * v / 127.0) / 20))) for v in range(1, 128)]
+    db = [lo + (hi - lo) * v / 127.0 for v in range(128)]
+    if "top" in vb["T13b"]:
+        k, t = vb["T13b"]["top"]
+        db = [d if v <= k else db[k] + (t - db[k]) * (v - k) / (127.0 - k) for v, d in enumerate(db)]
+    return [0] + [int(round(32767 * 10 ** (db[v] / 20))) for v in range(1, 128)]
 
 
 def nz_bq(vb):

@@ -183,3 +183,246 @@ def test_comp_attack_by_the_strikes_level():
     # only up to the reduction) lets a slow attack's strike through unlifted: the crest moves too (10.97 / 14.27 /
     # 15.86 dB), still far less than the strike's level (-3.48 / -0.38 / +5.82)
     assert c[127] - c[0] < s[127] - s[0], (c, s)    # the old measure: less than the strike's level
+
+
+# ---- the T2 limits refreshed after 0.9.10's sound (2026-11-13): each on the host, where it reads what the FM-1 read
+# with 0.9.10 and 0.9.11 (T2 2026-11-12; the THRESHOLD notes in tools/hil_scan.py)
+def test_held_tail_on_the_host_closes_inside_the_take():
+    """the held A3 (REV 40): 0.9.10's longer hold closes the gate at 15.33 s (FM-1 15.3, 0.9.9 7.5); the limit stays
+    1 s before the take's end, so a gate that never closes still fails"""
+    r, rep = h.HostRig(1), {}
+    ok, msg = h.held_tail(r, rep)
+    last = rep["held_tail"]["last_nonzero_s"]
+    assert ok, msg
+    assert 14.5 <= last < h.HELD_TAIL_MAX <= h.HELD_TAIL_S - 1.0, last
+
+
+def test_bypass_on_the_host_within_the_refreshed_limit():
+    """bypass: the FX button keeps the compressor, the phaser 80 reads -2.5 LU by design: effects on 3.07 LU under the
+    bypass on the host (the mean of CHORDS_13 since 0.9.13; A3-C4-E4 alone 2.90; FM-1 3.2), under BYPASS_FX_LU (3.6);
+    bypassed re the compressor alone within 0.5"""
+    r, rep = h.HostRig(1), {}
+    ok, msg = h.bypass(r, rep)
+    b = rep["bypass"]
+    assert ok, msg
+    assert 2.5 <= b["bypassed"] - b["fx_on"] < h.BYPASS_FX_LU == 3.6, b
+    assert abs(b["bypassed"] - b["comp_only"]) < 0.5, b
+
+
+@pytest.mark.parametrize("suite", ["vibes_jump", "marimba_jump"])
+def test_jump_rows_on_the_host(monkeypatch, suite):
+    """the rows the FM-1 failed with 0.9.10 and 0.9.11 on stale limits pass on the host at the values the FM-1 read:
+    the phaser 80 held on (FXALL_EXPECT -2.5 +- 1), the bypass re all on's compressor alone, MARIMBA re ST77 (-1.7)"""
+    monkeypatch.setattr(h, "ENGINE", "marimba" if suite.startswith("marimba") else "vibes")
+    V = h.VRig("usb", host=1)
+    S = h.VSuite(suite, V)
+    h.VTESTS[suite](V, S)
+    rows = {(q["check"], q["setting"].split(",")[0]): q for q in S.rows}
+    want = [("phaser 80: on vs off", "held on"),
+            ("FX bypass (CC 111) with everything on", "re the compressor alone (all on's)")]
+    if suite == "marimba_jump":
+        want.append(("MARIMBA re ST77, A3-E4-A4 v100", "LUFS 0..1 s"))
+        assert h.MLEVEL_DB == -1.7
+        want.append(("delay DIG 50: switched under a chord", "the step at on / at off (fx_toggle)"))   # (E2: +2.02)
+    else:                                          # (E2, T2 0.9.12: the echoes on a whole dry, +1.56 / +2.19 LU)
+        want += [("delay DIG 50: on vs off", "held on"), ("delay ANA 50: on vs off", "held on"),
+                 ("reverb 50 (no switch: REV 0 -> 50): switched under a chord", "the step at on / at off (fx_toggle)")]
+    for k in want:
+        assert k in rows and rows[k]["status"] == "ok", (k, rows.get(k))
+    assert rows[("FX bypass (CC 111) with everything on", "re no effects")]["status"] == "info"
+
+
+# ---- T2 0.9.12 (2026-11-14): the rows the FM-1 failed on measures 0.9.10's dry width or 0.9.12's MIX law outdated
+def _vsuite(monkeypatch, suite):
+    monkeypatch.setattr(h, "ENGINE", "marimba" if suite.startswith("marimba") else "vibes")
+    V = h.VRig("usb", host=1)
+    S = h.VSuite(suite, V)
+    h.VTESTS[suite](V, S)
+    return {q["check"]: q for q in S.rows}
+
+
+def _num(cell):
+    return float(cell.split()[0].replace("+", ""))
+
+
+@pytest.mark.parametrize("suite, check", [("vibes_vel", "keys F3..F6: neighbour step"),
+                                          ("marimba_vel", "keys C2..C7: neighbour step")])
+def test_key_evenness_as_heard(monkeypatch, suite, check):
+    """the dry width (fx_width: S = -0.2 x the 570-4000 Hz band 10 ms back) is a 100 Hz comb on one channel: USB L
+    zigzags 2.5 dB key to key (the FM-1 2.48-2.58 on USB L and the jack since 0.9.10), the stereo sum 0.47 / 0.48
+    (0.9.9's FM-1: 0.48). The gate reads stereo; the one-channel row is information and shows the comb"""
+    rows = _vsuite(monkeypatch, suite)
+    st, one = rows[check], rows[check + ", one channel"]
+    assert st["status"] == "ok" and _num(st["usb"]) <= 1.0, st
+    assert one["status"] == "info" and _num(one["usb"]) >= 2.0, one
+
+
+@pytest.mark.parametrize("suite", ["vibes_fx", "marimba_fx"])
+def test_predelay_and_delay_mix_rows(monkeypatch, suite):
+    """REVERB PRE-DELAY by the side signals' cross-correlation (the envelopes read 0 ms for 40 under the width's own
+    side); DELAY DEPTH 50 -> 127 by the 1st echo's own level, E2's +2.14 dB (FX_DLY_WET 25600 -> 32768; the old row
+    read the 2nd echo re the 1st at 127, where the dry is gone)"""
+    rows = _vsuite(monkeypatch, suite)
+    for x, ex in ((64, 40), (127, 80)):
+        r = [q for k, q in rows.items() if k.startswith("REVERB PRE-DELAY") and k.endswith(f" {x}")][0]
+        assert r["status"] == "ok" and abs(_num(r["usb"]) - ex) <= 8, r
+    r = rows["DELAY DEPTH 50 -> 127"]
+    assert r["status"] == "ok" and abs(_num(r["usb"]) - 2.14) <= 0.5, r
+
+
+def test_effects_reverb_127_is_the_hall_alone():
+    """E2: REV 127 is the reverb alone; 'the direct sound' is the hall's early part, -8.1 LU (target -8.1 +- 3)"""
+    r, rep = h.HostRig(1), {}
+    ok, msg = h.effects(r, rep)
+    row = [q for q in rep["effects"]["rows"] if q["name"] == "reverb 127"][0]
+    assert ok, msg
+    assert abs(row["delta_lu"] + 8.1) <= 0.5 and row["lr_corr"] < 0.3, row
+
+
+class _GapRig(h.HostRig):
+    """the host rig with a recording gap (Rig.both's xruns) in the takes listed: the call count, 1-based"""
+
+    def __init__(self, gapped):
+        super().__init__(1)
+        self.gapped, self.calls, self.xruns = set(gapped), 0, []
+
+    def _rec(self, dur, events):
+        self.calls += 1
+        self.xruns = [("usb", "gap +11 ms at 0.52 s"), ("usb", "gap -11 ms at 0.54 s")] if self.calls in self.gapped else []
+        return super()._rec(dur, events)
+
+
+@pytest.mark.parametrize("gapped, flagged", [((2, 5, 6), False), ((2, 3, 4), True)])
+def test_presets_take_a_gapped_recording_again(monkeypatch, gapped, flagged):
+    """0.9.12's T2 failed presets on one F15 take with a step-and-back gap pair (its three levels within 0.0005 LU):
+    a take with a recording gap is taken again (PR_GAP_RETAKES 2), flagged only if every retake has one too"""
+    monkeypatch.setitem(h.REPEATS, "presets", 1)
+    monkeypatch.setattr(h, "PR_CHORDS", [h.CH_NOTES])     # (one take a preset: the call count as before 0.9.13)
+    monkeypatch.setattr(h, "PR_STARTERS", 0)
+    r, rep = _GapRig(gapped), {}
+    ok, msg = h.presets(r, rep)
+    rows = rep["presets"]
+    assert h.PR_GAP_RETAKES == 2 and len(rows) == h.PR_COUNT
+    if flagged:                                       # F02's take, then both retakes: gapped
+        assert not ok and "a recording gap at ['F02']" in msg, msg
+        assert rows[1]["gap_retakes"] == 2 and rows[1]["gaps"] == 2
+    else:                                             # F02 once, F04 twice: each retake clean
+        assert ok, msg
+        assert [q["gap_retakes"] for q in rows[:5]] == [0, 1, 0, 2, 0] and not any(q["gaps"] for q in rows)
+
+
+@pytest.mark.parametrize("fault", [False, True])
+def test_lfo_shape_square_steeper_than_sine(monkeypatch, fault):
+    """vibes_fx LFO SHAPE: SQR's steepest slope >= 2x SINE's (lfo_sweep + lfo_steep). 0.9.12's T2 read SINE 13.7 on
+    USB and 7.2 on the jack of one take (the 99th percentile over the trace took the decayed chord's dips into the
+    16-bit LSBs); with the floor and the half cycles' median the host reads SINE ~7, SQR ~22-23. The fault (SINE
+    played for SQR) must fail: ~1x"""
+    hs = h
+    monkeypatch.setattr(hs, "ENGINE", "vibes")
+    P = hs.vp()
+    e = hs.lfo_hz(P["LFO_RATE"]["de"])
+    V = hs.VRig("usb", host=1)
+    fb = [("FL_TYPE", 1), ("FL_FREQ", 64), ("FL_RESO", 0), ("FL_LFO", 0), ("LFO_SHAPE", 0),
+          ("LFO_RATE", P["LFO_RATE"]["de"]), ("LFO_SYNC", 0), ("LFO_RETRIG", 0)]
+
+    def run(label, st):
+        V.reset(st, label=label)
+        return V.take(label, *hs.ST_LONG)
+    ref = run("ref", fb)
+    lb = hs.with_(fb, ("FL_LFO", 127))
+    s0 = run("sine", hs.with_(lb, ("LFO_SHAPE", 0)))
+    s4 = run("sqr", hs.with_(lb, ("LFO_SHAPE", 0 if fault else 4)))
+    a, b = (hs.lfo_steep(*hs.lfo_sweep(t, ref, "usb", 0.2, 5.3, 250, 2000), e) for t in (s0, s4))
+    assert 5 <= a <= 9, a
+    if fault:
+        assert b < 1.3 * a, (a, b)
+    else:
+        assert b >= 2.8 * a, (a, b)
+    # the same SINE take requantised to 8-LSB steps (a 13-bit capture): the floor holds it (61 without it, seed 3)
+    x = np.round(s0.m("usb") * 4096) / 4096
+
+    class Q:
+        def m(self, s):
+            return x
+
+        def on(self, s):
+            return s0.on(s)
+
+        def pre(self, s):
+            return s0.pre(s)
+    assert abs(hs.lfo_steep(*hs.lfo_sweep(Q(), ref, "usb", 0.2, 5.3, 250, 2000), e) - a) < 0.5
+
+
+def test_c1_known_only_on_the_two_core_image(monkeypatch):
+    """C1_KNOWN (user decision 2026-11-14): only for the two-core image (FRODHES_IMAGE=c1 / --c1, or the host's
+    HOST_DEFS -DFR_C1=1), each within its band; the limits are the one-core ones (BYPASS_FX_LU 3.6, U04's target +0.5 +-
+    1.0). 0.9.13: the two-core reverb's 'bypass' and 'presets U04' items are gone (the HALL / INFINITE level in band
+    and the chord-robust rows); 'types' went in 0.9.12 (A2): none is left"""
+    monkeypatch.delenv("FRODHES_IMAGE", raising=False)
+    monkeypatch.delenv("HOST_DEFS", raising=False)
+    assert not h.c1_image()
+    monkeypatch.setenv("HOST_DEFS", "-DFR_C1=1")
+    assert h.c1_image()
+    monkeypatch.delenv("HOST_DEFS")
+    monkeypatch.setenv("FRODHES_IMAGE", "c1")
+    assert h.c1_image()
+    assert h.BYPASS_FX_LU == 3.6 and h.preset_target(h.PR_COUNT + 4, host=True) == (0.5, 1.0)
+    assert h.C1_KNOWN == {}                   # (0.9.12: the TYPEs their own character again; 0.9.13: the two-core
+                                              # reverb's bypass and U04 inside the one-core limits)
+
+
+# ---- 0.9.13: the chord-robust rows (bypass and the effects' reverb rows on CHORDS_13, presets on PR_CHORDS) and the
+# reverb's fault injection
+def test_chord_sets():
+    """CHORDS_13: A3-C4-E4, then 12 roots E1..C6, voicings in turn; PR_CHORDS: six in the targets' register; no
+    octave inside a chord (CH_NOTES' rule)"""
+    assert len(h.CHORDS_13) == 13 and h.CHORDS_13[0] == h.CH_NOTES == h.PR_CHORDS[0] and len(h.PR_CHORDS) == 6
+    assert min(min(c) for c in h.CHORDS_13) == 28 and max(c[0] for c in h.CHORDS_13) == 84
+    for c in h.CHORDS_13 + h.PR_CHORDS:
+        assert len(set(c)) == 3 and all((b - a) % 12 for a in c for b in c if b > a), c
+
+
+def _fault_rig():
+    """a two-core host build with the HALL and INFINITE returns 3 dB down (RQH_OUT, RI_OG x 0.708)"""
+    import hostrun
+    src = open(os.path.join(hostrun.ROOT, "firmware", "src", "rev_hq_hall.c")).read() + \
+        open(os.path.join(hostrun.ROOT, "firmware", "src", "rev_hq_inf.c")).read()
+    import re
+    o = int(re.search(r"#define RQH_OUT (\d+)", src).group(1))
+    g = int(re.search(r"#define RI_OG (\d+)", src).group(1))
+    b = os.path.join(hostrun.HOST, "fault-rev3db", "frodhes")
+    hostrun.build(b, extra=["-DFR_C1=1", f"-DRQH_OUT={o * 708 // 1000}", f"-DRI_OG={g * 708 // 1000}"])
+
+    class R(h.HostRig):
+        def _rec(self, dur, events):
+            orig = hostrun.run
+            hostrun.run = lambda *a, **k: orig(*a, **dict(k, binary=b))
+            try:
+                return super()._rec(dur, events)
+            finally:
+                hostrun.run = orig
+    return R(1)
+
+
+def test_effects_reverb_rows_fail_a_reverb_3db_quiet():
+    """the fault injection: the reverb 3 dB quiet must fail. The reverb alone on the 13 chords' mean, +-1.5 LU, fails
+    it (host: -11.1 against -8.1, -17.4 against -14.3); the bypass row (REV 50 under the phaser and chorus: the
+    reverb adds ~0.3..0.55 LU there) and the presets (U04: INFINITE under a delay and a chorus) move under 0.3 LU with
+    it, inside their limits, on one chord as on the mean (U04 -0.55 either way): they do not see the reverb's level,
+    the effects' reverb-alone rows do"""
+    r, rep = _fault_rig(), {}
+    ok, msg = h.effects(r, rep)
+    assert not ok and "'reverb 127'" in msg and "'reverb INF 127'" in msg, msg
+    rows = {q["name"]: q for q in rep["effects"]["rows"]}
+    assert rows["reverb 127"]["delta_lu"] < -9.6 and rows["reverb INF 127"]["delta_lu"] < -15.8, rows
+
+
+def test_effects_reverb_rows_on_the_chords_mean():
+    """the reverb rows on the host: their mean of CHORDS_13 at the targets (reverb 127 -8.1, INF -14.3, +-1.5), each
+    chord reported"""
+    r, rep = h.HostRig(1), {}
+    ok, msg = h.effects(r, rep)
+    assert ok, msg
+    rows = {q["name"]: q for q in rep["effects"]["rows"]}
+    for n, t in (("reverb 127", -8.1), ("reverb INF 127", -14.3)):
+        assert len(rows[n]["chord_lu"]) == 13 and abs(rows[n]["delta_lu"] - t) <= 1.0, rows[n]

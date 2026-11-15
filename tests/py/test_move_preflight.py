@@ -58,6 +58,20 @@ def test_residual_fails(tmp_path):
     t = rep["tap"]
     assert rep["idle"]["kind"] == "digital" and t["resid_db"] > mh.PF_RESID_DB and t["resid_bands_hz"], t
     assert abs(t["gain_db"] - 20 * np.log10(mh.FAKE_MIX)) < 0.1, t          # (the gain still Frodhes')
+    assert abs(t["main_ceiling_dbfs"] - (mh.LIM_DBFS + t["gain_db"])) < 0.01, t   # (Main Out's ceiling, recorded)
+
+
+def test_slot_volume_over_unity_fails():
+    """MOVE-LVL (2026-11-14): the 2026-11-13 run's slot volume 1.36 (the mix +2.67 dB) put Frodhes's -0.5 dBFS ceiling
+    at +2.2 dBFS and usb-stress clipped; the preflight records it with a warning (the device run decides), none at
+    unity and under; the report carries Main Out's ceiling"""
+    v = {"kind": "ok", "corr": 1.0, "gain_db": 4.87, "resid_db": -71.3, "resid_dbfs": -97.6, "resid_hz": [],
+         "resid_bands_hz": [], "mix_db": 2.67}
+    ok, txt = mh.tap_verdict(v)
+    assert ok and "WARNING " + mh.MIX_SAY in txt and "+2.2 dBFS" in txt and "-0.5)" in txt, txt
+    for mix in (0.0, -0.9, mh.PF_MIX_MAX_DB):
+        ok, txt = mh.tap_verdict(dict(v, mix_db=mix, gain_db=2.2 + mix))
+        assert ok and "WARNING" not in txt, (mix, txt)
 
 
 def test_tap_silent_and_not_on_main_out():

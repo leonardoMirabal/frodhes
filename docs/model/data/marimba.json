@@ -511,11 +511,16 @@
    -87.0,
    -31.0
   ],
+  "top": [
+   64,
+   -28.5
+  ],
   "gone_ms": 100,
   "src": "SERRA p. 259-261 (marimba, MEAS fit); VIBES T13b",
   "status": "ESTIMATE",
   "settle": "listening pack D (the tick at NOISE 127)",
-  "_doc_2026_10_19": "lvl_db [-87, -31] (VIBES [-60, -24]): NOISE 64 = -50 dB re the note's peak on C4 (VA-M7) and NOISE 127 a clear tick, its 60 ms RMS within 35 dB of the note's (the host test of the C engine; a [-77, -41] span left NOISE 127 43 dB under)"
+  "_doc_2026_10_19": "lvl_db [-87, -31] (VIBES [-60, -24]): NOISE 64 = -50 dB re the note's peak on C4 (VA-M7) and NOISE 127 a clear tick, its 60 ms RMS within 35 dB of the note's (the host test of the C engine; a [-77, -41] span left NOISE 127 43 dB under)",
+  "_doc_2026_11_15": "top [64, -28.5]: from NOISE 64 the line runs to -28.5 dB at 127 (2.5 dB over lvl_db's -31), NOISE 0..64 as before: the tick at 127 read -34.9 / -35.0 dB re the note on C6 against the gate's -35 (hil_scan marimba_decay, the host, one core and two cores); now -32.4 (C3 -27.8, C4 -28.9)"
  },
  "R1": {
   "_doc": "radiation: b ~ (f / f0)^exp / omega per mode (gen_bars bphys)",

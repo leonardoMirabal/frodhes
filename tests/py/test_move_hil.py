@@ -233,6 +233,35 @@ def test_usb_host_same_sound(tmp_path):
     assert not ok and "ANOTHER SOUND" in rep["verdict"] and abs(rep["gain_db"] + 6.02) < 0.1, rep["verdict"]
 
 
+def test_usb_host_notes_on_other_blocks_pass(tmp_path):
+    """MOVE-LVL 2026-11-14: MARIMBA (F15) on the Move, d2: 60 v100 -33.6 dB "DIFFERS", the host's sound with every note
+    on other blocks after CC 10 (LEVEL's dither, the reverb, the compressor run on from it). The host itself with the
+    notes 6 ms later passes on the timing floor; a note with a sound of its own over that floor still fails"""
+    class Later(mh.FakeRig):
+        extra = 0.0
+
+        def rec(self, dur, events):
+            es = [(t + (0.006 if k != "cc" else 0.0), k, a, b) for t, k, a, b in events]
+            h = mh._HOST_PHRASE(es, dur, 14)
+            x = np.zeros_like(h)
+            x[650:] = 1.69 * h[:-650]
+            if self.extra:                            # (60 v127's last half-second: a -30 dB tone on top)
+                _, marks, _ = mh.phrase_events()
+                t0 = [t for name, t, _ in marks if name == "60 v127"][0] + 0.5 + 0.006
+                i, n = int(t0 * 44100) + 650, int(0.5 * 44100)
+                lv = np.sqrt(np.mean(x[i:i + n, 0] ** 2))
+                x[i:i + n] += (self.extra * lv * np.sqrt(2) * np.sin(2 * np.pi * 523.25 * np.arange(n) / 44100))[:, None]
+            return {"x": np.round(x), "sr": 44100, "xruns": []}
+    ok, rep = mh.usb_host(Later(), str(tmp_path), program=14, out=lambda s: None)
+    w = {r["note"]: r for r in rep["rows"]}
+    assert ok, rep["verdict"]
+    assert w["60 v100"]["residual_net_db"] > -40 and w["60 v100"]["timing_db"] > -40, w["60 v100"]
+    r = Later()
+    r.extra = 10 ** (-20 / 20)
+    ok, rep = mh.usb_host(r, str(tmp_path), program=14, out=lambda s: None)
+    assert not ok and "60 v127" in rep["verdict"], rep["verdict"]
+
+
 def test_usb_host_quiet_mix_aligns_on_time(tmp_path):
     """a take as the 2026-10-30 USB-C run had it: Main Out 17.1 dB under the tap (the track's volume), 14.92 ms late,
     in whole LSB. Every note aligns on the take's one latency and the take passes"""
@@ -741,3 +770,40 @@ def test_usb_host_dig_stays_on_the_residual(tmp_path):
         mh.phrase_events = orig
     assert not rep["tape"] and ok, rep["verdict"]
     assert all(w["residual_net_db"] <= -40 for w in rep["rows"] if w["judged"])
+
+
+def test_usb_host_gives_the_host_the_moves_tempo():
+    """DELAY SYNC follows the Move's tempo on the device (move_bridge.h mb_inert): usb-host renders the host at it
+    (tests/host.c "T tempo"). F12 (DELAY TAPE, SYNC 8) at the set's 82 BPM is not F12 at the host's own 120, and 120
+    given is the host's own (2026-11-15: F12 DIFFERED on every note with the host at 120)"""
+    import numpy as np
+    ev, _, dur = mh.phrase_events()
+    own = mh.host_phrase(ev, dur, 11)
+    at120 = mh.host_phrase(ev, dur, 11, bpm10=1200)
+    at82 = mh.host_phrase(ev, dur, 11, bpm10=820)
+    assert np.array_equal(own, at120)
+    d = at82 - own
+    assert 20 * np.log10(np.sqrt(np.mean(d ** 2)) / np.sqrt(np.mean(own ** 2))) > -20
+
+
+def test_move_bpm10_bpm_first_then_the_saved_set():
+    assert mh.move_bpm10(96.5, {"track": {"tempo": 82.0}}) == 965
+    assert mh.move_bpm10(0.0, {"track": {"tempo": 82.0}}) == 820
+    assert mh.move_bpm10(0.0, {"track": {}}) is None and mh.move_bpm10(0.0, None) is None
+    song = '{"tempo": 82.0, "tracks": [{"midiInputMode": "auto", "devices": [], "mixer": {"volume": 0.0}}]}'
+    assert mh.parse_song(song)["tempo"] == 82.0
+
+
+def test_tap_lead_after_program_change():
+    """what is sent after a program change plays after it on the tap (VIBES' motor off after F13's change: before
+    it, the change turned the motor back on and d2's usb-host DIFFERED by -11 dB, 2026-11-15)"""
+    r = object.__new__(mh.TapRig)
+    r.ch = 1
+    r.pending = [("cc", 120, 0)] + [("cc", c, 0) for c in range(100)] + [("pc", 12, 0), ("cc", 47, 0)]
+    ev = r.lead()
+    pc = [t for t, s, a, b in ev if s == 0xC0][0]
+    assert pc >= 5 and ev[0][0] == 1
+    assert all(t < pc for t, s, a, b in ev[:101])          # (the panel before the change)
+    assert ev[-1] == (pc + 1, 0xB0, 47, 0)                 # (the motor off after it)
+    r.pending = [("pc", 0, 0)]
+    assert r.lead() == [(5, 0xC0, 0, 0)]                   # (as before: a lone change at 5 ms)

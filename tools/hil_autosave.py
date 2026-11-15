@@ -308,6 +308,8 @@ def take(name, rate, a, hm, sd, dev, udev, kind="setup", inv=1):
 def run(a):
     import hil_must as hm
     import sounddevice as sd
+    import lock
+    lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
     dev = hm.Dev()
     udev = hm.find_usb(sd)
     if udev is None:

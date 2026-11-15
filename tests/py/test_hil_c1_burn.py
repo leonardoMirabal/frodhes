@@ -111,13 +111,47 @@ def test_fault_code_only_in_diag_builds():
     assert "flt_burn" in inside and "flt_tab" not in outside and "flt_burn(" not in outside
     assert "#define FLT_BURN(k) ((void)0)" in outside
     assert not re.search(r"cc == 11[78]u", outside)
-    assert src.count("FLT_BURN(flt_c0)") == 1 and src.count("FLT_BURN(flt_c1)") >= 1
+    assert src.count("FLT_BURN(flt_c0)") >= 1 and src.count("FLT_BURN(flt_c1)") >= 1
+    import inspect
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import build
     for f in ("tools/build.py", "build.sh", "Makefile", ".github/workflows/release.yml"):
         p = os.path.join(ROOT, f)
         if os.path.exists(p):
-            assert "FR_FAULT" not in open(p).read(), f
+            t = open(p).read()
+            if f == "tools/build.py":                # (its fault_check reads APP_DEFS for FR_FAULT; nothing adds it)
+                t = t.replace(inspect.getsource(build.fault_check), "")
+            assert "FR_FAULT" not in t, f
     assert "cc == 117u" not in src.replace("if (cc == 117u) { flt_c0", "")      # (CC 117 / 118: the burn's alone)
     assert "cc == 118u" not in src.replace("if (cc == 118u) { flt_c1", "")
+
+
+@pytest.mark.skipif(not __import__("shutil").which(os.environ.get("CC", "cc")), reason="no C compiler")
+@pytest.mark.parametrize("defs", [["-DFR_C1=1", "-DFR_C1_LAT=1"], ["-DFR_C1=1"]], ids=["lat", "256"])
+def test_fault_image_burns_on_both_cores(defs):
+    """K6c (2026-11-15): the two-core package (FR_C1_LAT: tools/build.py --c1) had the CCs but no burn: its app_audio
+    and c1_lat_job never called FLT_BURN (only the 256-frame build's did), so the FM-1 sweep read every step as step
+    0. The app as an FR_FAULT --c1 image's compiler sees it (frodhes.c preprocessed with the device's defines) burns
+    on core 0 and on core 1, on the package's build and on the 256-frame one"""
+    import subprocess
+    r = subprocess.run([os.environ.get("CC", "cc"), "-E", "-P", "-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen",
+                        '-DFELUCCA_ID="FM-1_958"', '-DAPP_VER="0.0"', *defs, "-DFR_FAULT=1", "firmware/src/frodhes.c"],
+                       cwd=ROOT, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr[-2000:]
+    assert "flt_burn(flt_c0)" in r.stdout and "flt_burn(flt_c1)" in r.stdout, defs
+
+
+def test_build_fails_a_fault_image_without_the_burn():
+    """tools/build.py fault_check: an FR_FAULT --c1 image needs flt_burn in its symbols (K6c's image had none)"""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import build
+    with_burn = "0201a000 l     F .text\t 00000040 flt_burn\n01c13fc5 l       .bss\t 00000001 flt_c0\n"
+    without = "01c13fc5 l       .bss\t 00000001 flt_c0\n01c13fc6 l       .bss\t 00000001 flt_c1\n"
+    assert build.fault_check(without, "-DFR_FAULT=1", True)
+    assert build.fault_check(without, "-DFR_FAULT", True)
+    assert build.fault_check(with_burn, "-DFR_FAULT=1", True) == []
+    assert build.fault_check(without, "", True) == [] and build.fault_check(without, "-DFR_FAULT=1", False) == []
+    assert build.fault_check(without, "-DFR_FAULTX=1", True) == []
 
 
 def test_no_burn_while_the_unit_boots_after_a_reset(tmp_path, monkeypatch):

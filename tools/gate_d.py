@@ -299,7 +299,8 @@ def mode_core(g):
     except ImportError:
         print("Gate D: core tempo skipped (no numpy: run it with the venv, make gate-d)")
         return
-    scr = ["0 midi 0xB0 88 40", "0 midi 0xB0 89 127", "0 midi 0xB0 26 0", "0 midi 0xB0 25 83", "0 midi 0xB0 91 0",
+    # (DELAY MIX 64: the dry and the echo whole; 0.9.13 E2's law: at 127 the echo alone, no note onset to time it from)
+    scr = ["0 midi 0xB0 88 40", "0 midi 0xB0 89 64", "0 midi 0xB0 26 0", "0 midi 0xB0 25 83", "0 midi 0xB0 91 0",
            "0 midi 0xB0 106 0", "300 midi 0x90 72 127", "330 midi 0x80 72 0", "3000 end"]
     (d / "echo.txt").write_text("\n".join(scr) + "\n")
     for bpm in (100, 120):

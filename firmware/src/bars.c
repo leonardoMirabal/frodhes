@@ -3,6 +3,10 @@
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */
 #define FR_FAR(fn) fn
 #endif
+#ifndef FR_RAM2
+#define FR_RAM2                                 /* (frodhes.c: more of them, the one-core FM-1 image) */
+#define FR_FAR2(fn) fn
+#endif
 /* Frodhes bar engine: the code (its types, tables and state are in bars.h, included by engine.c). frodhes.c
  * includes this file last, after every other part of the app, so adding or growing an engine never moves or
  * re-inlines the Rhodes and effects code (measured: +150 us on the Rhodes worst case when bars.c sat before it). */
@@ -114,6 +118,9 @@ static int32_t bar_lsin(const bar_ms_t *s)
     return num > 0 ? (bar_log2_64((uint64_t)num) - bar_log2_32((uint32_t)s->k2) - 32 * 256) >> 1 : 0;
 }
 
+/* the bars' level into the mix (0.9.13, SND3; BAR_MIX_G: bars.h): one gain on the Q20 mix before the dithered cut
+ * (bar_render), so the tone and the floor stay */
+#define BAR_MIX(x) ((int32_t)(((int64_t)(x) * BAR_MIX_G + 16384) >> 15))
 #define BAR_PZI(pb, f, l) (((pb) * BAR_NFAM + (f)) * BAR_NLAYER + (l))
 static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
 {
@@ -125,13 +132,13 @@ static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
     if (f > BAR_NFAM - 1u) { f = BAR_NFAM - 1u; a = 0; }
     f2 = f + 1u < BAR_NFAM ? f + 1u : f;
     l = RH_VLAY_I[vel]; l2 = l + 1u < BAR_NLAYER ? l + 1u : l; w = RH_VLAY_W[vel];
-    rh_pz(v->pbuf, &BAR_PZB, BAR_PZI(pb, f, l));             /* hardness x velocity: one shape, once (the packed bank, rhodes.c
+    FR_FAR2(rh_pz)(v->pbuf, &BAR_PZB, BAR_PZI(pb, f, l));             /* hardness x velocity: one shape, once (the packed bank, rhodes.c
                                                      * rh_pz: the table's integers, so the same shape as before) */
-    if (w) rh_pz_mix(v->pbuf, &BAR_PZB, BAR_PZI(pb, f, l2), w);   /* A = p11 + ((p12 - p11) w >> 15): an int16 */
+    if (w) FR_FAR2(rh_pz_mix)(v->pbuf, &BAR_PZB, BAR_PZI(pb, f, l2), w);   /* A = p11 + ((p12 - p11) w >> 15): an int16 */
     if (a) {                                        /* B likewise, then A + ((B - A) a >> 8) (a 0: A) */
         int16_t b[BAR_PLEN + 2];
-        rh_pz(b, &BAR_PZB, BAR_PZI(pb, f2, l));
-        if (w) rh_pz_mix(b, &BAR_PZB, BAR_PZI(pb, f2, l2), w);
+        FR_FAR2(rh_pz)(b, &BAR_PZB, BAR_PZI(pb, f2, l));
+        if (w) FR_FAR2(rh_pz_mix)(b, &BAR_PZB, BAR_PZI(pb, f2, l2), w);
         for (i = 0; i < BAR_PLEN + 2u; i++) v->pbuf[i] = (int16_t)(v->pbuf[i] + (((b[i] - v->pbuf[i]) * a) >> 8));
     }
     {
@@ -1376,6 +1383,7 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
             bar_bd_m[sb][1] = bar_bd_m[sb][0]; bar_bd_m[sb][0] = o; bar_bd_o[sb][1] = bar_bd_o[sb][0]; bar_bd_o[sb][0] = y;
             o = y;
         }
+        o = BAR_MIX(o);
         if (o > hi) hi = o;
         if (o < lo) lo = o;
         { int32_t d = RH_DITH(r); mono_out[j] = (o + 16 + ((d - 16) & dm)) >> 5; }
@@ -1790,6 +1798,7 @@ __attribute__((noinline)) static void bar_chunk(int32_t *mono_out, uint32_t o, u
             bar_bd_m[sb][1] = bar_bd_m[sb][0]; bar_bd_m[sb][0] = ov; bar_bd_o[sb][1] = bar_bd_o[sb][0]; bar_bd_o[sb][0] = y;
             ov = y;
         }
+        ov = BAR_MIX(ov);
         if (ov > hi) hi = ov;
         if (ov < lo) lo = ov;
         { int32_t d = RH_DITH(r); mono_out[j] = (ov + 16 + ((d - 16) & dm)) >> 5; }

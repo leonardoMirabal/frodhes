@@ -5,6 +5,7 @@ import os
 import sys
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import hil_scan as h  # noqa: E402
@@ -87,3 +88,48 @@ def test_noise_floor_flags():
     assert h.noise_floor_flags(near, de) == {"usb": False, "jack": False}
     hiss = {"jack": {"c": {de: -52.0}, "cfl": -55.0}, "usb": None}
     assert h.noise_floor_flags(hiss, de) == {"jack": True, "usb": False}
+
+
+def test_phaser_fdbk_row_judges_without_motion_and_says_why():
+    """PHASER FDBK 0 vs 127: motion_f is NaN when no band stands 10 dB over the source's floor (the jack's hiss under a
+    notched take); the rc-0.9.12 T2 read the jack 'no value' with USB -0.3 / 4.1 dB: one NaN voided the row. Each
+    branch now judges on its own (the rule unchanged: the frame-by-frame branch must still pass), and a measure that
+    raised says what it raised"""
+    import hil_scan as hs
+    V = hs.VRig("both", dry_run=True)
+    S = hs.VSuite("vibes_fx", V)
+    ok = lambda v: (hs.finite(v[0]) and v[0] >= 1.5) or hs.apart_of_spread(v[1], v[2])   # noqa: E731
+    fmt = lambda v: (f"{v[0]:+.1f}" if hs.finite(v[0]) else "motion n/a") + f" / {v[1]:.1f} dB (spread {v[2]:.1f})"  # noqa: E731
+    valid = lambda v: hs.finite(v[1:])                    # noqa: E731
+    S.check("PHASER FDBK", "", {"usb": (-0.3, 4.1, 0.2), "jack": (float("nan"), 4.0, 0.9)}, ok, "", fmt=fmt, valid=valid)
+    S.check("PHASER FDBK", "", {"usb": (-0.3, 4.1, 0.2), "jack": (float("nan"), 1.0, 0.9)}, ok, "", fmt=fmt, valid=valid)
+    r1, r2 = S.rows
+    assert r1["ok"] and r1["jack"].startswith("motion n/a / 4.0")
+    assert not r2["ok"] and r2["src_ok"]["jack"] is False      # (the frame branch alone short of 2 dB: still a FAIL)
+    vals = S.per(lambda q: 1 / 0 if q == "jack" else 1.0)
+    S.check("raised", "", vals, lambda v: True, "")
+    assert S.rows[-1]["jack"] == "no value (ZeroDivisionError: division by zero)"
+
+
+@pytest.mark.parametrize("engine", ["marimba", "vibes"])
+def test_lfo_trig_while_the_note_stands(monkeypatch, engine):
+    """LFO TRIG KEY on the host's 4 A4 strikes (LP12, LFO 127, SINE, RATE de): KEY 1.00 and FREE far under the 0.8 bar
+    (a key that does not restart the LFO fails), and MARIMBA's trace held to the frames where every strike stands (its
+    A4 is 60 dB down by 0.4 s: the old 0.7 s window read the centroid of silence, the rc-0.9.12 T2 KEY 0.76 / 0.77)"""
+    import hil_scan as hs
+    monkeypatch.setattr(hs, "ENGINE", engine)
+    P = hs.vp()
+    lb = [("FL_TYPE", 1), ("FL_FREQ", 64), ("FL_RESO", 0), ("FL_LFO", 127), ("LFO_SHAPE", 0),
+          ("LFO_RATE", P["LFO_RATE"]["de"]), ("LFO_SYNC", 0)]
+    extra = [("RELEASE", 0)] if engine == "marimba" else []
+    rt = [0.1, 1.47, 2.93, 4.31]
+    st = (5.7, sum((hs.chord((69,), 108, s, s + 1.2) for s in rt), []))
+    V = hs.VRig("usb", host=3)
+    T = {}
+    for x in (0, 1):
+        V.reset(lb + [("LFO_RETRIG", x)] + extra, label=f"retrig {x}")
+        T[x] = V.take(f"t-retrig-{x}", *st)
+    key, free = hs.retrig_phase(T[1], "usb"), hs.retrig_phase(T[0], "usb")
+    assert key >= 0.95 and free <= 0.5, (key, free)
+    if engine == "marimba":                              # (the trace stops where the note has gone)
+        assert np.isnan(hs.retrig_phase(T[1], "usb", least=0.5))

@@ -1,0 +1,13 @@
+mpc/sdk/: three header files of the MPC Plugin SDK (mpc-plugin-builder-sdk), copied unchanged from its
+framework/ folder:
+
+    mpc_plugin.h  mpc_vst2_abi.h  mpc_resources.h
+
+Source:   https://github.com/inmusic-software/mpc-plugin-builder-sdk
+Commit:   febd2ca5bd9eb16c4a412837196e145566bc981b  (mpc/build.py SDK_COMMIT; the build checks the copies against it)
+Licence:  MIT, Copyright (c) 2026 inMusic Brands, Inc. (LICENSE in this folder)
+
+They are the only SDK files compiled into the plugin. The SDK's tools (the host simulator, the skin generator, the
+validator) are used at build time from a checkout of the same commit in .local/mpc-sdk (mpc/build.py fetches it);
+none of them is part of the plugin. The rest of mpc/ and everything it compiles from the Frodhes repository is
+GPL-3.0-only.

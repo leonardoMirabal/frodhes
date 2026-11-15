@@ -351,6 +351,15 @@ static const char *const COLOR_NAME[COLOR_N] = {
     "OCEAN", "CYAN", "AQUA", "MINT", "JADE", "GREEN", "LEAF",
     "LIME", "PEAR", "LEMON", "GOLD", "MANGO", "RED",
 };
+FR_COLD static uint16_t cd_comp(uint16_t c)                    /* an RGB565 colour's complement: its hue turned half
+                                                         * way, the same lightness and saturation (max + min - each;
+                                                         * Textura's, a MIX card past 64) */
+{
+    uint32_t r = (c >> 11) & 31u, g = (c >> 5) & 63u, b = c & 31u;
+    uint32_t r8 = r << 3 | r >> 2, g8 = g << 2 | g >> 4, b8 = b << 3 | b >> 2;
+    uint32_t mx = r8 > g8 ? (r8 > b8 ? r8 : b8) : (g8 > b8 ? g8 : b8), mn = r8 < g8 ? (r8 < b8 ? r8 : b8) : (g8 < b8 ? g8 : b8);
+    return RGB(mx + mn - r8, mx + mn - g8, mx + mn - b8);
+}
 FR_COLD static uint16_t cd_lighten(uint16_t c)                 /* an RGB565 colour half way to white */
 {
     uint32_t r = (c >> 11) & 31u, g = (c >> 5) & 63u, b = c & 31u;
@@ -408,7 +417,9 @@ FR_COLD static uint32_t leds_disp(void) { return LEDS_DISP[set.leds < LEDS_N ? s
  * other LEDS ways light the sounding keys: unchanged */
 FR_COLD static int leds_sus_lit(void) { return set.sus_leds && (set.leds == 3u || set.leds == 4u); }
 static uint8_t ui_cards = UI_CARDS_DEF;
-static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab, val, unit, dim, acc, seq, white; } mt;
+static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab, val, unit, dim, acc, seq, white, wet, wfill,
+                         mixl; } mt;                    /* wet, wfill, mixl: a MIX card's part past 64, its fill, the
+                                                         * line at 64 */
 /* a static in a section of its own, out of the compiler's global merge (merged in, it can split rhodes.c's rh_F / rh_x:
  * engine.c eq); nothing on the host */
 #ifdef DINGHY_HOST
@@ -441,7 +452,10 @@ FR_COLD static void mt_update(void)                             /* the tokens fo
         mt.hair = cd_shade(l->hair, pct); mt.seq = cd_shade(l->seq, pct);
         mt.tag = cd_shade(l->tag, pct); mt.lab = cd_shade(l->lab, pct); mt.val = cd_shade(l->val, pct);
         mt.unit = cd_shade(l->unit, pct); mt.dim = cd_shade(l->dim, pct); mt.white = cd_shade(C_WHITE, pct);
+        mt.mixl = cd_shade(RGB(150, 150, 156), pct);
     }
+    mt.wet = cd_comp(mt.edge); mt.wfill = cd_shade(mt.wet, UI_FILL_PCT > 0 ? UI_FILL_PCT : 45);   /* (the accent's
+                                                         * complement: a MIX past 64, the wet side) */
 }
 #define UI_ACC mt.acc                                   /* the title, SUS, a turned knob's label, the frame */
 #define FC_BG C_BLACK
@@ -1146,7 +1160,7 @@ FR_COLD static int cd_fit(char *v, int32_t room, uint8_t *shortf)
     return aa_text_w(&AF_L, v) <= room;
 }
 /* FADER: the bright edge at x ex (2 px), in the rows no text box (grown by CD_KEEP) covers at that x */
-FR_COLD static void cd_edge(int32_t ex, const int16_t *bx, uint32_t nb)
+FR_COLD static void cd_edge(int32_t ex, const int16_t *bx, uint32_t nb, uint16_t col)
 {
     uint64_t blocked = 0;
     uint32_t i;
@@ -1159,8 +1173,16 @@ FR_COLD static void cd_edge(int32_t ex, const int16_t *bx, uint32_t nb)
     for (y = 0; y <= (int32_t)RW_H; y++) {
         int free_row = y < (int32_t)RW_H && !(blocked >> y & 1u);
         if (free_row && y0 < 0) y0 = y;
-        if (!free_row && y0 >= 0) { if (y - y0 >= CD_MINSEG) cv_rect(ex, y0, 2, y - y0, mt.edge); y0 = -1; }
+        if (!free_row && y0 >= 0) { if (y - y0 >= CD_MINSEG) cv_rect(ex, y0, 2, y - y0, col); y0 = -1; }
     }
+}
+/* a dry / wet MIX (0.9.13, as Textura's variant B: DELAY MIX, DRIVE MIX, REVERB MIX, wherever they sit): its fill from
+ * the left, to 64 in the accent, past 64 in the accent's complement (the wet side), a 1 px line at 64 (dry and wet both
+ * whole); its text only DRY / 50/50 / WET at 0 / 64 / 127, nothing between (the bar says it) */
+FR_COLD static int slot_is_mix(uint32_t s) { return s == P_DL_DEPTH || s == P_DRV_MIX || s == P_RV_DEPTH; }
+FR_COLD static const char *cd_mix_text(int32_t val, int32_t hi)
+{
+    return val <= 0 ? "DRY" : val >= hi ? "WET" : val == 64 ? "50/50" : "";
 }
 /* the card's kind and how it is drawn (ui_cards 3..5: the kinds told apart at a glance; 1, 2: one meter for all) */
 enum { CK_AMOUNT, CK_SELECT, CK_TOGGLE };
@@ -1220,6 +1242,7 @@ FR_COLD static void draw_row_cards(uint32_t k)
         const char *lab = slot_label(ui_page, k), *u;
         int32_t hi, val = slot_val(s, &hi), le, kw = aa_text_w(&AF_S, kk), lw = aa_text_w(&AF_S, lab), vw, uw = 0, fw;
         int32_t idx, n, lit;
+        int mix;
         const ectl_t *c = eng_ctl(s);
         int16_t bx[16];
         uint8_t shortf;
@@ -1229,8 +1252,10 @@ FR_COLD static void draw_row_cards(uint32_t k)
         ui_row_drawn[k].kind = (uint8_t)(!hi ? RK_NONE : !slot_is_level(s) ? RK_CHOICE :
                                          c && c->kind == EK_DETENT ? RK_DETENT : RK_AMOUNT);
         slot_text(s, v);
+        mix = slot_is_mix(s) && hi > 0 && !cd_eq(v, "OFF");   /* (the reverb off: OFF, no bar, as before) */
         kind = cd_kind(s, v, val, hi, &idx, &n);
         style = cd_style(kind);
+        if (mix) p_strcpy(v, cd_mix_text(val, hi), 6);
         lit = cd_eq(v, "OFF") ? -1 : idx;               /* the option lit (OFF: none) */
         u = cd_unit(s, v);
         le = CD_PAD + (lw > kw ? lw : kw);
@@ -1255,7 +1280,11 @@ FR_COLD static void draw_row_cards(uint32_t k)
                     cv_rect(x, 0, 1, RW_H, cd_shade(mt.edge, (uint32_t)(UI_FILL_LO + (UI_FILL_PCT - UI_FILL_LO) * (x + 1) / fw)));
             }
 #else
-            cv_rect(0, 0, fw, RW_H, mt.fill);
+            if (mix) {                                  /* to 64 the accent, past it the complement */
+                int32_t cx = (int32_t)RW_W * 64 / hi;
+                cv_rect(0, 0, fw < cx ? fw : cx, RW_H, mt.fill);
+                if (fw > cx) cv_rect(cx, 0, fw - cx, RW_H, mt.wfill);
+            } else cv_rect(0, 0, fw, RW_H, mt.fill);
 #endif
 #define CD_BOX(a, b, c0, d) do { bx[4u * nb] = (int16_t)(a); bx[4u * nb + 1u] = (int16_t)(b); \
                                  bx[4u * nb + 2u] = (int16_t)(c0); bx[4u * nb + 3u] = (int16_t)(d); nb++; } while (0)
@@ -1264,7 +1293,8 @@ FR_COLD static void draw_row_cards(uint32_t k)
             CD_BOX(CD_VR - vw, CD_VR - 1, CD_BASE - AF_L_CAP_H, CD_BASE - 1);
             if (u) CD_BOX(CD_VR + CD_UGAP, CD_VR + CD_UGAP + uw - 1, ltop + AF_S_CAP_Y, CD_BASE - 1);
 #undef CD_BOX
-            cd_edge(clampi(fw - 2, 0, (int32_t)RW_W - 2), bx, nb);
+            cd_edge(clampi(fw - 2, 0, (int32_t)RW_W - 2), bx, nb,
+                    !mix || val < 64 ? mt.edge : val > 64 ? mt.wet : FC_VAL);   /* (a MIX at 64: white, both whole) */
         } else if (style == CS_LINE) {                  /* LINE: the track, amber to the fraction */
             cv_rect(0, CD_LINE_Y, RW_W, CD_LINE_H, mt.outline ? mt.outline : mt.track);
             if (fw > 0) cv_rect(0, CD_LINE_Y, fw, CD_LINE_H, mt.edge);
@@ -1298,6 +1328,7 @@ FR_COLD static void draw_row_cards(uint32_t k)
             aa_text_ov(CD_PAD, CD_KTAG_TOP, &AF_S, kk, mt.tag);
             aa_text_ov(CD_PAD, ltop, &AF_S, lab, hot ? UI_ACC : FC_LAB);
         }
+        if (mix && style == CS_FADER) cv_rect((int32_t)RW_W * 64 / hi, 0, 1, RW_H, mt.mixl);   /* (64) */
         aa_text_ovr(CD_VR, vtop, &AF_L, v, FC_VAL);
         if (u) aa_text_ov(CD_VR + CD_UGAP, ltop, &AF_S, u, mt.unit);
         if (hot) {                                      /* the knob being turned: a 1 px frame */

@@ -34,6 +34,20 @@
  * called through its address in a register the compiler cannot fold back (one instruction more a call) */
 #define FR_FAR(fn) (__extension__({ __typeof__(&fn) p_ = &fn; HAL_KEEP_REG(p_); p_; }))
 #endif
+/* FR_RAM2 (0.9.12): more audio hot loops in RAM on the one-core FM-1 image (tools/build.py sets FR_RAM2_ON and gives
+ * .ram_text RAMTEXT up to 0x01C07F00, the room the two-core image uses for .ramx; crt0's boot status words stay at
+ * 0x01C07F00). The audio's code read from flash had outgrown the 32 KB flash cache (8 ways of 4 KB, ~0.7 us a line
+ * missed): code added anywhere moved the rest and cost the worst block 40-90 us. The same C at another address: the
+ * same integers (a helper a RAM function calls is always_inline where flash inlined it anyway, or called through
+ * FR_FAR2). FR_FAR2: a call between flash and an FR_RAM2 function. Everywhere else (the two-core image, the SMK-37,
+ * the host) both are as before: flash, a direct call */
+#if defined(FR_RAM2_ON) && !defined(DINGHY_HOST) && !defined(DINGHY_WEB) && !(defined(FR_C1) && FR_C1)
+#define FR_RAM2 __attribute__((section(".ram_text.fr2")))
+#define FR_FAR2(fn) FR_FAR(fn)
+#else
+#define FR_RAM2
+#define FR_FAR2(fn) fn
+#endif
 /* FR_C1 (a build switch, off by default: ./build.sh with APP_DEFS=-DFR_C1=1, tools/build.py --c1): two cores. Core 0
  * renders the voices (14 by default, FR_VOICES), core 1 the whole effects chain and the master stage (fx_process, the
  * full-rate REVERB TYPEs, FR_REV_HQ), the block in C1_SUB chunks (app_audio below): core 1 runs chunk j - 1's effects
@@ -42,12 +56,13 @@
  * function core 1 reaches runs from flash (FX_RAM empty): the two cores never fetch code from RAM at once. Core 1 refuses a job it read wrong (core 0 renders it, core 1 stays on); a late job, refusals too often or
  * a fault of core 1 hold it for good: one core from then on, at FR_C1_NV1 voices (the effects from flash, the shedder
  * as the last guard). hal/fm1_core1.h (the FM-1), c1_host.h (the host's twin), app_audio below. The FM-1 firmware and
- * the host only: not the SMK-37, not the Move, not the web emulator. */
+ * the host and the web emulator (web/build.sh, since 2026-11-15: the FM-1's sound, 14 voices; c1_host.h runs core 1's
+ * job on the page's thread) only: not the SMK-37, not the Move. */
 #ifndef FR_C1
 #define FR_C1 0
 #endif
 #if FR_C1
-#if (defined(BOARD_SMK37) && BOARD_SMK37) || defined(FR_HQ) || defined(DINGHY_WEB)
+#if (defined(BOARD_SMK37) && BOARD_SMK37) || defined(FR_HQ)
 #error "FR_C1: the FM-1 firmware and its host build only"
 #endif
 #ifndef FR_VOICES
@@ -532,13 +547,20 @@ static int c1_stream_step(void)                 /* the frames ready, not done: t
 #if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)
 /* FR_FAULT (a diag build: APP_DEFS=-DFR_FAULT): extra load on demand, live, to find where the two-core build breaks.
  * CC 117 = core 0, CC 118 = core 1: value & 15 = the extra time in 100 us steps (0-1500 us a block), value & 64 =
- * the kind: 0 a spin on the timer, 64 reads over a 32 KB table in flash (XIP: the shared cache and the flash bus, as
+ * the kind: 0 a spin on the timer, 64 reads over 32 KB of flash (XIP: the shared cache and the flash bus, as
  * the effects' and voices' own code) plus writes to RAM. Core 0 burns at app_audio's start, core 1 at its job's
- * start. Never in a release build (tools/build.py: no FR_FAULT without APP_DEFS). */
+ * start: once a block on the 256-frame build, once an interrupt on FR_C1_LAT's (two a block: core 1's busy, a block's,
+ * grows by twice the value). Until 2026-11-15 FR_C1_LAT's app_audio and c1_lat_job had no burn: CC 117 / 118 were
+ * stored and never read (K6c, the FM-1: whole and busy never moved). tools/build.py fails an FR_FAULT --c1 image
+ * without flt_burn. noinline: the burn's loop stays out of app_audio (the hot code's pin). Never in a release build
+ * (tools/build.py: no FR_FAULT without APP_DEFS). */
 static volatile uint8_t flt_c0, flt_c1;
-static uint32_t flt_sink[64];
-static const uint32_t flt_tab[8192] = {1u, 2u, 3u};
-static inline __attribute__((always_inline)) void flt_burn(uint32_t k)
+static volatile uint32_t flt_sink[64];         /* (volatile: the RAM writes stay) */
+extern char _etext[];                           /* (app.ld: the end of the app's code in flash) */
+/* the flash kind reads the app's own last 32 KB of code and constants (cold: the hot block sits at .text's start), not
+ * a table of its own: a 32 KB table no longer fits the two-core image's slot (2026-11-15: XIP over by 6512 B) */
+#define flt_tab ((const uint32_t *)(((uintptr_t)_etext - 32768u) & ~(uintptr_t)31u))
+static __attribute__((noinline)) void flt_burn(uint32_t k)
 {
     uint32_t us = (k & 15u) * 100u, t0, i = 0, a = 0;
     if (!us) return;
@@ -585,8 +607,10 @@ static void c1_stream_job(uint32_t a)
 #endif
 }
 #endif
-/* core 1 held for good: from now on strikes take FR_C1_NV1 voices, the ones above fade out as a steal */
-static void c1_one_core(void)
+/* core 1 held for good: from now on strikes take FR_C1_NV1 voices, the ones above fade out as a steal. noinline
+ * (0.9.12): it runs once if ever, so its loops stay out of app_audio, which must end before the hot code's fixed
+ * address (tools/build.py --c1: 0x02001400; the LAT gate's onset fix had grown app_audio 6 B past it) */
+static __attribute__((noinline)) void c1_one_core(void)
 {
     uint32_t i;
     if (c1_nv <= FR_C1_NV1) return;
@@ -674,6 +698,7 @@ static void c1_lat_job(uint32_t a)              /* core 1, one an interrupt */
     uint32_t j0 = fm1_ticks(), i0 = 0, p0, ce = fxc_ce;
     if (!lat_o) { work = 0; idle = 0; }
 #endif
+    FLT_BURN(flt_c1);                           /* (FR_FAULT: core 1's extra load, CC 118; counted as its work) */
 #if defined(C1PF_ON)
     if (!lat_o) { uint32_t q0 = fm1_ticks(); fx_pre_c(); C1PF(55, fm1_ticks() - q0); }
 #else
@@ -712,6 +737,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #ifndef DINGHY_HOST
     uint32_t t0 = fm1_ticks(), us;
 #endif
+    FLT_BURN(flt_c0);                           /* (FR_FAULT: core 0's extra load, CC 117; inside the measured ISR) */
 #if FR_LAT_TAIL
     if (lat_pend) {                             /* the last interrupt's job: its tail done (core 1, or core 0 now) */
         lat_pend = 0;
@@ -1674,6 +1700,7 @@ FR_COLD static void app_main(void)
     snd_base_take();                            /* the record's sound: what plays if its preset is gone */
     if (fresh) {                                /* a first boot (or a lost record) plays F01, as the header says */
         preset_load(0);
+        fx_pend_flush();                        /* (its effect values at once: no block to spread them over) */
         set.undo_valid = 0;
     } else if (preset_boot()) {                 /* the preset last loaded or saved, as it is stored (params.c: the
                                                  * knobs turned after it are not kept, on purpose) */
@@ -1768,11 +1795,12 @@ FR_COLD static void app_main(void)
         if (!lat_mid()) tempo_lock_poll();
         src_poll();
         eng_pump();
-        if (!lat_mid()) { rev_poll(); rh_cc_poll(); }   /* (between blocks, as above) */
+        if (!lat_mid()) { fx_pend_poll(); rev_poll(); rh_cc_poll(); }   /* (between blocks, as above) */
 #else
         tempo_lock_poll();                      /* (tempo.c: the synced LFOs locked to the clock's beats) */
         src_poll();
         eng_pump();                             /* (notes.c: events that waited for room in the engine's ring) */
+        fx_pend_poll();                         /* (presets.c: a Program Change's effect values, a step a block) */
         rev_poll();                             /* (rev_types.c: HALL's lines cleared after a TYPE change) */
         rh_cc_poll();                           /* (rhodes.c: the note-on coefficients, when TUNE / DECAY / RELEASE moved) */
 #endif
@@ -1904,6 +1932,18 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "clklock")) snprintf(v, n, "%u", clk_follows());        /* the MIDI clock is followed */
     else if (!strcmp(key, "beatsmp")) snprintf(v, n, "%u", beat_samples());       /* samples a beat */
     else if (!strcmp(key, "dlysync")) snprintf(v, n, "%u", fx_dly_sync_samples);  /* the synced delay time */
+    else if (sscanf(key, "show%u", &a) == 1 && a < 4u) {   /* the text card a draws: a MIX's DRY / 50/50 / WET, "BAR"
+                                                         * between (its bar alone); else the card's own text */
+        uint32_t s = slot_at(ui_page, a);
+        int32_t hi, val = slot_val(s, &hi);
+        slot_text(s, t);
+        if (slot_is_mix(s) && hi > 0 && !cd_eq(t, "OFF")) { const char *x = cd_mix_text(val, hi); snprintf(v, n, "%s", *x ? x : "BAR"); }
+        else snprintf(v, n, "%s", t);
+    }
+    else if (!strcmp(key, "mixg"))                    /* the MIX gains (Q15) as they run: the delay's dry and echo,
+                                                         * the reverb's dry and send, the drive's dry and wet
+                                                         * (tests/py/test_mix_law.py) */
+        snprintf(v, n, "%d/%d/%d/%d/%d/%d", (int)dly_dg, (int)dly_wk, (int)rv_dg, (int)rv_sk, (int)dr_d, (int)dr_w);
     else if (!strcmp(key, "twph")) snprintf(v, n, "%u", tw_ph);                   /* the tremolo's LFO phase (Q32) */
     else if (!strcmp(key, "cpph")) snprintf(v, n, "%u", cp_ph);                   /* the chorus' */
     else if (!strcmp(key, "phph")) snprintf(v, n, "%u", ph_ph);                   /* the phaser's */
@@ -2032,7 +2072,7 @@ FR_COLD static void host_dump(void)
                                     "arpn", "arpv", "arpends", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "fxdrv", "label0", "card0", "label1", "card1", "label2", "card2",
                                     "label3", "card3", "bpm10", "setbpm", "vresp", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
-    char key[24], v[64];
+    char key[24], v[128];                 /* (v: rowbox writes up to 72 + NUL: gcc -Wformat-truncation) */
     uint32_t i, k;
     for (i = 0; i < sizeof K / sizeof K[0]; i++) { host_state(K[i], v, sizeof v); printf("@ %u %s %s\n", fm1_ms, K[i], v); }
     for (i = 0; i < PG_N; i++)

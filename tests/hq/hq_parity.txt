@@ -1,6 +1,7 @@
 # HQ parity (tests/py/test_rhodes_hq.py): keys 21..84 at the 8 layer velocities, overlapping, a pedal half-way,
-# all 4 TYPEs. On these keys at these velocities the HQ voice is the Classic voice exactly (no 2x pickup below
-# HQ_OS_LO, the exact pulse equal to the layer): the HQ render must be byte-identical to the Classic one.
+# all 4 TYPEs. On these keys at these velocities the HQ voice is the Classic voice to the pickup table's error (no 2x
+# pickup below HQ_OS_LO, the exact pulse equal to the layer, the 1x flux in closed form; built with HQ_HD_EXT 0): the
+# HQ render within 8 LSB (1.5 rms) of the Classic one (byte-identical until 0.9.12's exact 1x pickup).
 # the voicing at its defaults (dry_dist.TYPE_BASE, rc2's F01): 0.9.10's F01 is not the defaults
 0 midi 0xB0 28 64
 0 midi 0xB0 29 64

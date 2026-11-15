@@ -2,7 +2,9 @@
 """The HQ Rhodes (FR_HQ, the Move; private plan 06, firmware/src/hq/): parity with Classic, Gate H, the top keys.
 
 The HQ voice is the Classic voice with the exact hammer contact at every velocity, on keys >= 85 the pickup at
-2x, and on keys >= 60 a re-strike's live contact (the hammer against the ringing tine). Both builds here are the Move's settings (16 voices, FR_HQ); HQ_DEFAULT says whether new notes play HQ."""
+2x, and on keys >= 60 a re-strike's live contact (the hammer against the ringing tine); under the 2x keys the pickup
+in closed form, its soft notes' decay glide run past Classic's table limit, and above v120 the pulse's force at the
+fundamental matched to Classic's (0.9.12, the HQ uplift). Both builds here are the Move's settings (16 voices, FR_HQ); HQ_DEFAULT says whether new notes play HQ."""
 import os
 import pathlib
 import subprocess
@@ -23,23 +25,99 @@ D = os.path.join(ROOT, "build", "hq_test")
 DELAY = 31                                     # the 2x pickup's delay (rhodes_hq.c: 2P - 1)
 
 
-def binary(hq, live=True):
-    b = os.path.join(D, ("hq" if live else "hq-nolive") if hq else "classic")
-    return hostrun.once(b, lambda p: gate_h.build(hq, pathlib.Path(p), () if live else ("-DHQ_LIVE_MAX=0u",)))
+def binary(hq, live=True, ext=True):
+    b = os.path.join(D, (("hq" if live else "hq-nolive") + ("" if ext else "-noext")) if hq else "classic")
+    x = (() if live else ("-DHQ_LIVE_MAX=0u",)) + (() if ext else ("-DHQ_HD_EXT=0",))
+    return hostrun.once(b, lambda p: gate_h.build(hq, pathlib.Path(p), x))
 
 
-def render(hq, script, tag, live=True):
-    out = os.path.join(D, f"{tag}-{('hq' if live else 'hqt') if hq else 'cl'}")
-    subprocess.run([binary(hq, live), out, script], check=True, capture_output=True)
+def render(hq, script, tag, live=True, ext=True):
+    out = os.path.join(D, f"{tag}-{('hq' if live else 'hqt') if hq else 'cl'}{'' if ext else 'x'}")
+    subprocess.run([binary(hq, live, ext), out, script], check=True, capture_output=True)
     w = wave.open(out + ".wav")
     raw = w.readframes(w.getnframes())
     return raw, np.frombuffer(raw, dtype="<i2").astype(float).reshape(-1, 2)[:, 0]
 
 
 def test_parity_below_the_2x_keys_at_the_layers():
-    """keys 21..84 at the 8 layer velocities, every TYPE, the pedal: HQ is Classic, byte for byte"""
+    """keys 21..84 at the 8 layer velocities, every TYPE, the pedal: HQ with the glide stopped at Classic's limit
+    (HQ_HD_EXT 0) is Classic to the table's error: the exact pickup against Classic's Hermite table, at most 8 LSB
+    and 1.5 LSB rms over the take (measured 5 and ~1.0; until 0.9.12 the same pickup, byte for byte)"""
     s = os.path.join(ROOT, "tests/hq/hq_parity.txt")
-    assert render(True, s, "parity")[0] == render(False, s, "parity")[0]
+    h = np.frombuffer(render(True, s, "parity", ext=False)[0], dtype="<i2").astype(float)
+    c = np.frombuffer(render(False, s, "parity")[0], dtype="<i2").astype(float)
+    assert len(h) == len(c)
+    d = h - c
+    assert np.max(np.abs(d)) <= 8, np.max(np.abs(d))
+    assert np.sqrt(np.mean(d ** 2)) <= 1.5, np.sqrt(np.mean(d ** 2))
+
+
+def _held(tmp_path, notes, hold, tag, cc=None):
+    """each (key, vel) held `hold` s and released, one after another; the voicing at its defaults, FX off (CC 80 0),
+    or `cc`'s lines: Classic's and HQ's renders and each note's start / key-up sample"""
+    t, L, at = 0, cc or (dry_dist.type_base_lines(0) + ["0 midi 0xB0 80 0"]), []
+    for n, v in notes:
+        L += [f"{t + 20} midi 0x90 {n} {v}", f"{t + 20 + int(hold * 1000)} midi 0x80 {n} 0"]
+        at.append((n, v, int((t + 20) * 44.1), int((t + 20 + hold * 1000) * 44.1)))
+        t += int(hold * 1000) + 1500
+    L.append(f"{t} end")
+    s = tmp_path / f"{tag}.txt"
+    s.write_text("\n".join(L) + "\n")
+    return render(False, str(s), tag)[1], render(True, str(s), tag)[1], at
+
+
+def _harm(x, n, k):
+    """the level (dB) of harmonic k of key n in x (8192 points, Hann; the band +-25 % of the fundamental)"""
+    f = 440.0 * 2 ** ((n - 69) / 12.0)
+    S = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    fr = np.fft.rfftfreq(len(x), 1 / 44100.0)
+    return 10 * np.log10(np.sum(S[(fr > (k - 0.25) * f) & (fr < (k + 0.25) * f)]) + 1e-30)
+
+
+def _t60(x, n, k, a, b):
+    """harmonic k's T60 (s) from its level over [a, b) s, a least-squares line through 0.25 s steps"""
+    t = np.arange(a, b, 0.25)
+    y = [_harm(x[int(q * 44100):int(q * 44100) + 8192], n, k) for q in t]
+    return -60.0 / np.polyfit(t, y, 1)[0], np.array(y)
+
+
+def test_soft_glide_second_harmonic(tmp_path):
+    """the soft notes' glide past Classic's limit (0.9.12), STAGE 77 RAW (the sonic check's voicing): v20 and v40 held
+    8 s on keys 28, 48, 64. Over 0.5..7.5 s HQ's 2nd harmonic decays at least 1.5x slower than Classic's (Classic
+    reaches its table's limit in the first seconds; build/sonic/check0910.py's T60 H2/H1 soft row, to the noise floor:
+    0.54 -> 0.84, measured 0.65..0.93 per note), the fundamental's T60 is Classic's within 2 %, H2/H1 rises at most
+    8 dB over its 0.1 s value (measured 7.1 at key 28: the bloom, bounded); v64 (out of the glide's range) keeps
+    Classic's 2nd harmonic within 5 %; never louder after the key-up"""
+    notes = [(n, v) for n in (28, 48, 64) for v in (20, 40, 64)]
+    c, h, at = _held(tmp_path, notes, 8.0, "glide", ["0 midi 0xB0 119 127", "0 midi 0xB0 104 0"])
+    for n, v, a, up in at:
+        t0 = a / 44100.0
+        c1, _ = _t60(c, n, 1, t0 + 0.5, t0 + 7.5)
+        h1, y1 = _t60(h, n, 1, t0 + 0.5, t0 + 7.5)
+        c2, _ = _t60(c, n, 2, t0 + 0.5, t0 + 7.5)
+        h2, y2 = _t60(h, n, 2, t0 + 0.5, t0 + 7.5)
+        assert abs(h1 / c1 - 1) < 0.02, (n, v, c1, h1)
+        if v <= 40:
+            assert h2 / c2 >= 1.5, (n, v, c2, h2)
+            w = h[a + 4410:a + 4410 + 8192]
+            r0 = _harm(w, n, 2) - _harm(w, n, 1)
+            assert np.max(y2 - y1) - r0 <= 8.0, (n, v, np.max(y2 - y1) - r0)
+        else:
+            assert abs(h2 / c2 - 1) < 0.05, (n, v, c2, h2)
+        r = [np.sqrt(np.mean(h[up + i:up + i + 441] ** 2)) for i in range(0, 22050, 441)]
+        assert max(r[1:]) <= r[0], (n, v, "louder after the key-up")
+
+
+def test_top_velocities_fundamental_is_classic(tmp_path):
+    """v121..127 (0.9.12): the exact pulse's force at the fundamental matched to Classic's (hq_ir_tab), so the
+    fundamental's level over 0.05..0.45 s (release_diff's window) is Classic's within 0.05 dB on keys 33..84 (before:
+    -0.06 dB, -0.4 on key 96, the dynamics row's slope under the FM-1 build's)"""
+    notes = [(n, v) for n in (33, 45, 60, 72, 84) for v in (121, 124, 127)]
+    c, h, at = _held(tmp_path, notes, 0.6, "top")
+    for n, v, a, up in at:
+        w0, w1 = a + int(0.05 * 44100), a + int(0.45 * 44100)
+        d = _harm(h[w0:w1], n, 1) - _harm(c[w0:w1], n, 1)
+        assert abs(d) < 0.05, (n, v, d)
 
 
 def test_gate_h():

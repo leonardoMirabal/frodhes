@@ -2,7 +2,8 @@
 """RESPONSE (CC 40, the MIDI page's 4th card): what A and B do to the electric piano (rhodes.c rh_dyn, rh_touch_mode).
 
 A (FULL) is the dynamic response: the soft end goes down to -9 dB at v10 (-6.7 at v20, 0 from v40: 2026-11-09, the
-soft end back toward 0.9.9; v20 -> v127 ~32.1 dB over the keys, 34.5 before);
+soft end back toward 0.9.9; v20 -> v127 ~32.1 dB over the keys, 34.5 before), and from 0.9.13 a convex curve over it
+(tools/gen_rh_dyn.py: 0 at v24 and below and at v127, about -4.4 dB at v48..v64, -3.4 at v96);
 B (LIGHT) is the light touch: 0.9.9's velocity law (v20 -> v127 ~25.5 dB). Only the level of the soft end differs:
 the same drive, swing and harmonics at every key and velocity, so B is A times a gain (to the integers' rounding),
 the same from v40 up, and never under A. Measured on the host, the engine alone or effects off, LEVEL 64:
@@ -13,7 +14,8 @@ the same from v40 up, and never under A. Measured on the host, the engine alone 
 - the output gate (fx.c GATE_LO 16 LSB since A went deeper; 0.9.9 32): per velocity (1, 10, 20, 30), keys 21..96
   every 6th x the four TYPEs, no more A notes drop under it within 1 s (and so fade 0.4 s later) than 0.9.9's did
   under its own (0.9.9 measured: 10 / 8 / 5 / 4 of 52; this build 10 / 8 / 5 / 0);
-- B >= A at every key and velocity (0.05 dB), equal from v40 (0.05 dB), so v127 and the limiter's load are A's;
+- B >= A at every key and velocity (0.05 dB); from v40 B - A is A's convex cut (tools/gen_rh_dyn.py, 0.15 dB), 0 at
+  v127, so v127 and the limiter's load are B's;
 - pristine: A is B times one gain, the residual at most 4 LSB peak (the 16-bit rounding; harmonics re H1 the same:
   a measure of H3..H6 at a soft note reads the 16-bit floor, so the residual is the check);
 - CC 40 turned while a note sounds does not touch it (taken at the strike): the same samples;
@@ -31,6 +33,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 from hostrun import FS, run  # noqa: E402
 from bar_measure import lufs  # noqa: E402
+import gen_rh_dyn  # noqa: E402
 
 KEYS = (28, 33, 40, 45, 52, 57, 64, 69, 76, 81, 88, 93)
 VELS = (20, 40, 64, 96, 127)
@@ -70,8 +73,9 @@ def test_b_never_under_a_and_equal_from_mf(grid):
         for v in VELS:
             d = grid[(127, k, v)] - grid[(0, k, v)]
             assert d >= -0.05, f"key {k} v{v}: B {d:+.2f} dB under A"
-            if v >= 40:
-                assert abs(d) <= 0.05, f"key {k} v{v}: B {d:+.2f} dB re A (the same from v40)"
+            if v >= 40:                 # (THRESHOLD 0.9.13 SND3: was |d| <= 0.05, A = B from v40; A's convex cut since)
+                want = -gen_rh_dyn.CUT(v)
+                assert abs(d - want) <= 0.15, f"key {k} v{v}: B {d:+.2f} dB re A (A's convex cut {want:+.2f})"
 
 
 @pytest.mark.parametrize("k", (33, 57, 81))

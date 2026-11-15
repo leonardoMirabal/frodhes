@@ -41,6 +41,8 @@ class Jack:
     def __init__(self, devname, ch, rig=None):
         """rig: the device's own rig (tools/move_jack.py: the Move's move_hil.UsbRig), else the FM-1's (hil_scan.Rig)"""
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         self.sd = sd
         self.r = hs.Rig() if rig is None else rig
         self.jdev = [i for i, d in enumerate(sd.query_devices()) if d["name"] == devname][0]
@@ -330,8 +332,8 @@ def dist(J, a, out):
         hit = np.flatnonzero(np.abs(u[s0:]) > 1e-3)
         t0 = (s0 + hit[0]) / FS - first if len(hit) else 0.0           # where the script's 0 ms is in the take
         lags[tag] = round(1000 * t0, 1) if len(hit) else None           # (the first strike's onset re its note-on)
-        cells[tag] = dd.measure_wave(u, t0, FS)
-        jcells[tag] = dd.measure_wave(np.asarray(j, float), t0, FS)
+        cells[tag] = dd.measure_wave(u, t0, FS, lsb=1 / 32768)
+        jcells[tag] = dd.measure_wave(np.asarray(j, float), t0, FS, lsb=1 / 32768)
         print(f"  {tag:14s} lag {lags[tag]} ms", flush=True)
     rows = dd.judge(cells, base)
     rep = dict(dry_run=bool(a.dry_run), lag_ms=lags, cells=cells, jack_cells=jcells,

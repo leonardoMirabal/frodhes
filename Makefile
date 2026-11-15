@@ -16,7 +16,18 @@ setup:                     ## project-local venv, toolchain and the 3 SDK files
 	[ -x .local/jieli/toolchain/pi32v2/bin/clang ] || sh tools/get_toolchain.sh .local/jieli
 	sh tools/get_sdk.sh .local/fw-AC79_AIoT_SDK
 
-$(HOSTBIN): firmware/src/*.c firmware/src/*.h firmware/gen/*.h tests/host.c
+# the defs a host binary was built with: rewritten only when HOST_DEFS changes, so the binary is rebuilt then (a stale
+# one-core build never answers for HOST_DEFS=-DFR_C1=1, 2026-11-14). The comparison also runs when the Makefile is
+# read and forces the rebuild: make's 1 s timestamps miss a stamp written in the binary's second, and make reads the
+# binary's time before the stamp rule runs, so removing the binary there left none for the whole run (2026-11-15)
+ifneq ($(shell printf '%s\n' '$(HOST_DEFS)' | cmp -s - $(HOSTBIN).defs 2>/dev/null || echo x),)
+$(HOSTBIN): FORCE
+endif
+$(HOSTBIN).defs: FORCE
+	@mkdir -p $(dir $@); printf '%s\n' '$(HOST_DEFS)' | cmp -s - $@ || printf '%s\n' '$(HOST_DEFS)' > $@
+FORCE:
+
+$(HOSTBIN): firmware/src/*.c firmware/src/*.h firmware/gen/*.h tests/host.c $(HOSTBIN).defs
 	@mkdir -p build/host $(dir $@)
 	$(CC) $(CFLAGS_HOST) -o $@.$$$$ firmware/src/frodhes.c -lm && mv -f $@.$$$$ $@   # (a new file, renamed in: a test running it never sees it half-written)
 
@@ -284,7 +295,7 @@ gate-d: plugin             ## Gate D: the plugin renders the host build's audio 
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py
 
 DIST_ENGINES ?= hq
-plugin-dist: plugin        ## the dry-distortion gate (tools/dry_dist.py, against 0.9.9) through the CLAP, VST3 and AU
+plugin-dist: plugin        ## the dry-distortion gate (tools/dry_dist.py, against 0.9.11) through the CLAP, VST3 and AU
                            ## (macOS; the plugin's HQ sound; tools/plugin_dist.py)
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/plugin_dist.py --engines $(DIST_ENGINES)
 
@@ -310,3 +321,15 @@ plugin-hosts: plugin       ## macOS: the VST3 / AU in Apple's AU host and a JUCE
                            ## (tools/plugin_hosts.py; the AU must be installed; pip install pedalboard numpy)
 	$(PY) tools/plugin_hosts.py --bundles $(PLUGIN_BUILD)/bundles --render $(PLUGIN_BUILD)/frp_clap_render \
 	  --au ~/Library/Audio/Plug-Ins/Components/Frodhes.component
+
+# ---- the Akai MPC port (docs/MPC.md): the desktop plugin's engine as an MPC plugin (VST 2.4, arm32 + arm64), built
+# with the MPC Plugin SDK's toolchain (zig; the SDK fetched into .local/mpc-sdk on first use). Nothing is installed.
+MPC_J ?= 2
+.PHONY: mpc test-mpc
+mpc:                       ## build/mpc: the plugin folder (both ARM builds, validated), frodhes-mpc.zip, the native test build
+	nice -n 15 $(PY) mpc/build.py --target all --tools -j$(MPC_J)
+
+test-mpc: mpc plugin       ## the MPC port's tests: the 24-voice build for the comparisons, then tests/py/test_mpc.py (the host
+                           ## simulator, engines, programs, state, tempo, bit-exactness, a soak segment, ARM in Docker)
+	nice -n 15 $(PY) mpc/build.py --target native --voices 24 --out build/mpc24 -j$(MPC_J)
+	$(PY) -m pytest -q tests/py/test_mpc.py tests/py/test_mpc_skin.py

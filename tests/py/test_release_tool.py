@@ -34,7 +34,21 @@ def test_parse_args():
         rel.parse_args(["0.9"])
 
 
-def test_cpu_and_jack_checks():
+def test_cpu_bar_follows_the_image(monkeypatch):
+    """the FM-1 package (two cores, 128-frame interrupts): hil_cpu's worst is per interrupt, the bar 2250 us; a run
+    without FRODHES_LAT_HALF must not be judged on the 256-frame 4500 (0.9.12: the storms / CPU were)"""
+    monkeypatch.delenv("FRODHES_LAT_HALF", raising=False)
+    monkeypatch.delenv("FRODHES_IMAGE", raising=False)
+    ok = "a   voices shed 0\n\nworst 2240 us with 14 voices; design target 2250 us"
+    assert "<= 2250" in rel.check_cpu("rhodes", ok)
+    with pytest.raises(rel.Stop):
+        rel.check_cpu("rhodes", ok.replace("2240", "4321"))
+    monkeypatch.setenv("FRODHES_IMAGE", "one")
+    assert rel.cpu_limit_us() == 4500
+
+
+def test_cpu_and_jack_checks(monkeypatch):
+    monkeypatch.setenv("FRODHES_IMAGE", "one")
     ok = "a   voices shed 0\nb   voices shed 0\n\nworst 4321 us with 9 voices (74 %); design target 4500 us"
     assert "4321" in rel.check_cpu("rhodes", ok)
     with pytest.raises(rel.Stop):
@@ -64,9 +78,9 @@ def fake_shell(root, calls, notes_draft=False, changed=("docs/MANUAL.md", "firmw
             "git log --oneline origin/main..HEAD": "abcdef1 something\n",
             "git diff --name-only v0.9.2..HEAD": "".join(f + "\n" for f in changed),
         }
-        if s.startswith("./build.sh --release"):
+        if s.startswith("./build.sh --c1 --release"):
             os.makedirs(os.path.join(root, "build"), exist_ok=True)
-            open(os.path.join(root, "build", f"frodhes-{cmd[-1]}.fwsc"), "wb").write(b"fw")
+            open(os.path.join(root, "build", f"frodhes-{cmd[-1]}-c1.fwsc"), "wb").write(b"fw")
         return 0, replies.get(s, "1 passed\n")
     return sh
 
@@ -94,6 +108,7 @@ def tree(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("branch,ok", [("rel-0.9.3", True), ("release-0.9.3", True), ("rel-0.9.4", False),
+                                       ("rel-093", True), ("release-093", True), ("rel-094", False),
                                        ("ship-1c", False)])
 def test_preconditions_take_the_release_branch(tree, monkeypatch, capsys, branch, ok):
     """the release commit can be made on the release's own test branch (the local main may hold another session's
@@ -114,7 +129,7 @@ def test_dry_run_stops_before_push(tree, monkeypatch, capsys):
     o = capsys.readouterr().out
     assert not [c for c in calls if " push" in c or "tag -a" in c or "git commit" in c or "gh release" in c
                 or "git rm" in c or "git add" in c]
-    assert "make test" in calls and "./build.sh --release 0.9.3" in calls
+    assert "make test" in calls and "./build.sh --c1 --release 0.9.3" in calls
     assert not (tree / "docs" / "releases" / "v0.9.3.md").exists()       # nothing is written in a dry run
     assert sorted(os.listdir(tree / "docs" / "changes")) == ["a-other.md", "b-thing.md"]
     assert "--no-device: the FM-1 is NOT tested" in o and "stopped before any push" in o
@@ -126,6 +141,7 @@ def test_dry_run_stops_before_push(tree, monkeypatch, capsys):
     assert "python3 tools/fm1_install.py frodhes.fwsc" in notes
     assert f"the newest is always at {rel.LATEST_DL})" in notes and "`frodhes-smk37-pro.fwsc`, `frodhes-smk37-elite.fwsc`" in notes
     assert "**Move**" not in notes                                        # no move/ here: no Move package, no route
+    assert "**Computer (plugin)**" in notes                              # the plugin ships on every release
     i = [notes.index(s) for s in ("### New in 0.9.3\n- **A new thing.**\n  Its second line.",
                                   "### Changes\n- Another change.", "### Fixed\n- Fix A.\n- A fix, as in 0.9.2.",
                                   "Full manual:")]
@@ -168,7 +184,8 @@ def test_no_fragments_stops(tree, monkeypatch, capsys):
 
 def release_at_docs(tree, monkeypatch, calls, dry=False):
     monkeypatch.setattr(rel, "sh", fake_shell(str(tree), calls))
-    r = rel.Release(rel.parse_args(["patch", "--no-device"] + (["--dry-run"] if dry else [])))
+    r = rel.Release(rel.parse_args(["patch", "--no-device", "--plugin-tested", " ".join(rel.PLUGIN_PLATFORMS)]
+                                   + (["--dry-run"] if dry else [])))
     r.ver, r.prev, r.sha = "0.9.3", "v0.9.2", "f" * 64
     r.frags = rel.changes.load(str(tree))
     return r
@@ -216,8 +233,9 @@ def verify_shell(assets, readme, draft=False):
 
 def test_verify(monkeypatch, capsys):
     good = f"[`frodhes.fwsc`]({rel.LATEST_DL}) settings saved by 0.9.2 are read as they are"
-    both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *(c.format(v="0.9.3") for c in rel.C1_ASSETS), *rel.SMK_ASSETS, rel.LICENCE_ASSET,
-            *[rel.smk_versioned(n, "0.9.3") for n in rel.SMK_ASSETS]]
+    both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *rel.SMK_ASSETS, rel.LICENCE_ASSET,
+            *[rel.smk_versioned(n, "0.9.3") for n in rel.SMK_ASSETS],
+            *rel.PLUGIN_ASSETS, "frodhes-mpc.zip", "frodhes-0.9.3-mpc.zip"]
     tagged = "https://github.com/leonardoMirabal/frodhes/releases/download/v0.9.3/frodhes.fwsc"
     hits = []
 
@@ -230,8 +248,13 @@ def test_verify(monkeypatch, capsys):
     monkeypatch.setattr(rel, "sh", verify_shell(both, good))
     assert "README at v0.9.3 names no version" in r.s_verify() and hits == [rel.LATEST_DL]
     for assets, readme, sha, msg in ((both[:1] + both[2:], good, "a" * 64, r"missing \['frodhes.fwsc'\]"),
-                                     (both[:6] + both[7:], good, "a" * 64, r"missing \['frodhes-mke-p37.fwsc'\]"),
-                                     (both[:-1], good, "a" * 64, r"missing \['frodhes-0.9.3-mke-p37.fwsc'\]"),
+                                     (both[:4] + both[5:], good, "a" * 64, r"missing \['frodhes-mke-p37.fwsc'\]"),
+                                     (both + ["frodhes-c1.fwsc"], good, "a" * 64, "retired assets"),
+                                     (both[:8] + both[9:], good, "a" * 64, r"missing \['frodhes-0.9.3-mke-p37.fwsc'\]"),
+                                     (both[:-1], good, "a" * 64, r"missing \['frodhes-0.9.3-mpc.zip'\]"),
+                                     ([n for n in both if n != "frodhes-plugin-windows.zip"], good, "a" * 64,
+                                      r"missing \['frodhes-plugin-windows.zip'\]"),
+                                     (both + ["frodhes-0.9.3-c1.fwsc"], good, "a" * 64, "retired assets"),
                                      (both, good, "b" * 64, "the build's bbbb"),
                                      (both, good.replace(rel.LATEST_DL, "frodhes-0.9.3.fwsc"), "a" * 64,
                                       "versions named")):
@@ -275,7 +298,7 @@ def test_dry_run_lists_the_device_plan(tree, monkeypatch, capsys, changed, extra
     for line in plan:
         assert line in o
     py = rel.PY
-    t1 = [f"echo y | {py} tools/fm1_install.py build/frodhes-0.9.3.fwsc", f"{py} tools/hil_scan.py --tier must"]
+    t1 = [f"echo y | {py} tools/fm1_install.py build/frodhes-0.9.3-c1.fwsc", f"{py} tools/hil_scan.py --tier must"]
     t2 = [f"{py} tools/hil_cpu.py --worst",
           f"{py} tools/hil_cpu.py --worst --engine vibes",
           f"{py} tools/hil_cpu.py --worst --engine marimba",
@@ -285,7 +308,8 @@ def test_dry_run_lists_the_device_plan(tree, monkeypatch, capsys, changed, extra
           f"{py} tools/hil_jack.py --engine rhodes",
           f"{py} tools/hil_jack.py --engine vibes",
           f"{py} tools/hil_jack.py --engine marimba",
-          f"{py} tools/vib_sampleback.py --engine marimba"]
+          f"{py} tools/vib_sampleback.py --engine marimba",
+          f"{py} tools/hil_c1_soak.py --row 277 --minutes 6 --stop-on-fail"]
     assert [p.split("   (")[0] for p in plan] == t1 + (t2 if full else [])
     if not full:
         assert "hil_cpu.py --worst" not in o
@@ -305,7 +329,7 @@ def fake_fm1(hil, calls, changed):
             return 0, changed
         calls.append(s)
         if "hil_cpu" in s:
-            return 0, "a   voices shed 0\n\nworst 3400 us with 9 voices"
+            return 0, "a   voices shed 0\n\nworst 1700 us with 14 voices"
         if "--marimba" in s:
             (hil / "marimba-report.json").write_text(json.dumps(m_report()))
             return 1, "FAIL  marimba_jump"                        # (exits 1 on any FAIL row: judged by the report)
@@ -333,7 +357,7 @@ def test_device_step_runs_the_plan(tree, monkeypatch, changed, full):
     assert calls == [p.split("   (")[0] for p in rel.device_plan("0.9.3", need)]
     assert ev.startswith(f"tiers needed: {' + '.join(need)}") and "T1 hil_scan --tier must: exit 0" in ev
     if full:
-        assert "hil_cpu --worst marimba: worst 3400" in ev and "vib_sampleback marimba: 61 keys" in ev
+        assert "hil_cpu --worst marimba: worst 1700" in ev and "vib_sampleback marimba: 61 keys" in ev
         assert "hil_jack marimba: SNR 70.5" in ev and "every row ok" in ev
     else:
         assert "T2 not run (the map: no engine / DSP file changed; --full forces it)" in ev
@@ -640,7 +664,8 @@ def test_main_web_selftest(monkeypatch, capsys):
 def test_real_run_hands_off_the_pr_and_pushes_nothing(tree, monkeypatch, capsys):
     calls = []
     monkeypatch.setattr(rel, "sh", fake_shell(str(tree), calls))
-    assert rel.main(["patch", "--no-device", "--no-emulator", "--yes"]) == 3          # 3: handed off
+    assert rel.main(["patch", "--no-device", "--no-emulator", "--yes",
+                     "--plugin-tested", "macos windows linux-x86_64 linux-aarch64"]) == 3   # 3: handed off
     o = capsys.readouterr().out
     assert any(c.startswith("git commit") for c in calls)                           # the release commit, local
     assert not [c for c in calls if " push" in c or "tag -a" in c or "gh pr" in c or "gh release" in c], calls
@@ -688,7 +713,7 @@ def test_after_merge_tags_main_without_pushing_it(tree, monkeypatch, capsys):
     assert "git tag -a v0.9.3 -m Frodhes 0.9.3" in calls and "git push origin v0.9.3" in calls
     assert not [c for c in calls if "HEAD:main" in c or "push origin main" in c]
     assert not [c for c in calls if c in ("make test",) or c.startswith("make pytest")]   # tested before the PR
-    assert "./build.sh --release 0.9.3" in calls
+    assert "./build.sh --c1 --release 0.9.3" in calls
     assert " 7  publish        done" in o and " 4  FM-1           skipped  --after-merge" in o
     assert "release asset sha256" in o
 
@@ -710,3 +735,164 @@ def test_after_merge_needs_a_version():
         rel.parse_args(["patch", "--after-merge"])
     with pytest.raises(SystemExit):
         rel.parse_args(["0.9.3", "--after-merge", "--dry-run"])
+
+
+def test_release_commit_records_the_plugin_platforms(tree, monkeypatch, capsys):
+    """release.yml attaches only the plugin packages the release commit's "Plugin tested:" line names and
+    tools/release_assets.sh requires all of them: step 5 refuses to commit without all four platforms"""
+    msgs = []
+    for plug, ok in (("", False), ("macos windows", False), ("macos,windows,linux-x86_64,linux-arm", False),
+                     ("macos windows linux-x86_64 linux-aarch64", True)):
+        calls = []
+        base = fake_shell(str(tree), calls)
+
+        def sh(cmd, check=True, input=None, timeout=None, quiet=False, base=base):
+            if isinstance(cmd, list) and cmd[:2] == ["git", "commit"]:
+                msgs.append(input)
+            return base(cmd, check=check, input=input, timeout=timeout, quiet=quiet)
+        monkeypatch.setattr(rel, "sh", sh)
+        code = rel.main(["patch", "--no-device", "--no-emulator", "--yes", "--plugin-tested", plug])
+        o = capsys.readouterr().out
+        assert (code == 3) == ok, o
+        assert ("--plugin-tested" in o and "FAIL" in o) != ok, o
+    rel.main(["patch", "--dry-run", "--no-device", "--no-emulator"])           # a dry run warns, still shows the notes
+    o = capsys.readouterr().out
+    assert "WARNING, a real run stops here: --plugin-tested lacks" in o and "docs/releases/v0.9.3.md -----" in o, o
+    assert len(msgs) == 1 and "\nPlugin tested: macos windows linux-x86_64 linux-aarch64\n" in msgs[0], msgs
+
+
+def test_step3_is_reused_on_the_same_head(tree, monkeypatch, capsys):
+    """a passed step 3 (a clean tree) is recorded; the next run of the version on the same HEAD runs only the builds,
+    and they must give the recorded sha256; another HEAD, a dirty tree or --no-step3-cache runs the tests again"""
+    monkeypatch.setattr(rel, "step3_cache_dir", lambda: str(tree / "build" / "release-step3"))
+
+    def run(extra=(), head="abcdef1234567890", dirty=""):
+        calls = []
+        base = fake_shell(str(tree), calls)
+
+        def sh(cmd, check=True, input=None, timeout=None, quiet=False):
+            s = cmd if isinstance(cmd, str) else " ".join(cmd)
+            if s == "git rev-parse HEAD":
+                calls.append(s)
+                return 0, head + "\n"
+            if s == "git status --porcelain --untracked-files=no":
+                calls.append(s)
+                return 0, dirty
+            return base(cmd, check=check, input=input, timeout=timeout, quiet=quiet)
+        monkeypatch.setattr(rel, "sh", sh)
+        rel.main(["patch", "--dry-run", "--no-device", "--no-emulator", *extra])
+        return calls, capsys.readouterr().out
+
+    calls, o = run()
+    assert "make test" in calls and (tree / "build" / "release-step3" / "0.9.3-abcdef1234567890.json").exists()
+    calls, o = run()
+    assert "make test" not in calls and "./build.sh --c1 --release 0.9.3" in calls, calls
+    assert "step 3's record" in o and "the builds' sha256 = the recorded run's" in o
+    for extra, head, dirty in ((["--no-step3-cache"], "abcdef1234567890", ""), ((), "1234567890abcdef", ""),
+                               ((), "abcdef1234567890", " M tools/x.py\n")):
+        calls, o = run(extra, head, dirty)
+        assert "make test" in calls, (extra, head, dirty)
+    rec = tree / "build" / "release-step3" / "0.9.3-abcdef1234567890.json"
+    d = json.loads(rec.read_text())
+    d["sha256"] = "0" * 64                                      # a different build than the recorded one: stop
+    rec.write_text(json.dumps(d))
+    calls, o = run()
+    assert "make test" not in calls and "not reproducible" in o and "FAIL" in o
+
+
+def test_device_done_refuses_a_pending_record(tmp_path, monkeypatch):
+    """a draft --device-done (verdict PENDING, written while the device runs go on) passes a dry run with a warning
+    and stops a real run"""
+    monkeypatch.setattr(rel, "sh", lambda *a, **k: (0, "firmware/src/usb.c\n"))
+    f = tmp_path / "d.json"
+    f.write_text(json.dumps({"fm1": {"sha256": "ab" * 32, "tiers": ["T1", "T2"], "verdict": "PENDING", "runs": []}}))
+
+    def release(extra):
+        r = rel.Release(rel.parse_args(["0.9.9", "--no-device", "--device-done", str(f), "--full", *extra]))
+        r.ver, r.prev, r.sha = "0.9.9", "v0.9.8", "ab" * 32
+        monkeypatch.setattr(r, "has_move", lambda: False)
+        return r
+    assert "a real run stops here: the record is not passed (fm1: verdict 'PENDING')" in release(["--dry-run"]).device_done()
+    with pytest.raises(rel.Stop, match="not passed"):
+        release([]).device_done()
+
+
+def test_step3_is_reused_on_a_tools_only_descendant(tree, monkeypatch, capsys):
+    """a passed step 3 on an ancestor of HEAD is reused when only tools/*.py and tests/py/test_*.py changed since:
+    only their tests run (the changed test, every test naming a changed tool), then the builds; a firmware file,
+    tools/build.py or a non-ancestor runs everything"""
+    cdir = tree / "build" / "release-step3"
+    monkeypatch.setattr(rel, "step3_cache_dir", lambda: str(cdir))
+    (tree / "tests" / "py").mkdir(parents=True)
+    (tree / "tests" / "py" / "test_move_hil.py").write_text("import move_hil\n")
+    (tree / "tests" / "py" / "test_other.py").write_text("from move_hil import x\n")
+    (tree / "tests" / "py" / "test_unrelated.py").write_text("import gate_r\n")
+
+    def run(head, diff="", ancestor=True):
+        calls = []
+        base = fake_shell(str(tree), calls)
+
+        def sh(cmd, check=True, input=None, timeout=None, quiet=False):
+            s = cmd if isinstance(cmd, str) else " ".join(cmd)
+            calls.append(s)
+            if s == "git rev-parse HEAD":
+                return 0, head + "\n"
+            if s.startswith("git merge-base --is-ancestor"):
+                return (0 if ancestor else 1), ""
+            if s.startswith("git diff --name-only aaaa"):
+                return 0, diff
+            return base(cmd, check=check, input=input, timeout=timeout, quiet=quiet)
+        monkeypatch.setattr(rel, "sh", sh)
+        rel.main(["patch", "--dry-run", "--no-device", "--no-emulator"])
+        return calls, capsys.readouterr().out
+
+    calls, o = run("aaaa000000000000")                                  # the full step 3, recorded
+    assert "make test" in calls and (cdir / "0.9.3-aaaa000000000000.json").exists()
+    calls, o = run("bbbb000000000000", "tools/move_hil.py\ntests/py/test_move_hil.py\n")
+    py = [c for c in calls if " -m pytest " in c]
+    assert "make test" not in calls and "make pytest PY=" + rel.PY not in calls, calls
+    assert py and py[0].endswith("tests/py/test_move_hil.py tests/py/test_other.py"), py
+    assert "an ancestor of this HEAD bbbb000000" in o and (cdir / "0.9.3-bbbb000000000000.json").exists()
+    for head, diff, anc in (("cccc000000000000", "tools/move_hil.py\nfirmware/src/fx.c\n", True),
+                            ("dddd000000000000", "tools/build.py\n", True),
+                            ("eeee000000000000", "tools/move_hil.py\n", False)):
+        calls, o = run(head, diff, anc)
+        assert "make test" in calls, (head, diff)
+
+
+def test_step3_keeps_what_passed_and_a_gate_r_baseline_reruns_gate_r(tree, monkeypatch, capsys):
+    """a step 3 that stops at Gate R keeps make test and make pytest; a descendant that only re-saves the Gate R
+    baseline runs Gate R (and nothing it already passed), then the builds"""
+    cdir = tree / "build" / "release-step3"
+    monkeypatch.setattr(rel, "step3_cache_dir", lambda: str(cdir))
+
+    def run(head, diff="", gate_r_fails=False):
+        calls = []
+        base = fake_shell(str(tree), calls)
+
+        def sh(cmd, check=True, input=None, timeout=None, quiet=False):
+            s = cmd if isinstance(cmd, str) else " ".join(cmd)
+            calls.append(s)
+            if s == "git rev-parse HEAD":
+                return 0, head + "\n"
+            if s.startswith("git merge-base --is-ancestor"):
+                return 0, ""
+            if s.startswith("git diff --name-only aaaa"):
+                return 0, diff
+            if s.endswith("tools/gate_r.py") and gate_r_fails:
+                raise rel.Stop("Gate R: 7 of 130 renders differ")
+            return base(cmd, check=check, input=input, timeout=timeout, quiet=quiet)
+        monkeypatch.setattr(rel, "sh", sh)
+        rel.main(["patch", "--dry-run", "--no-device", "--no-emulator"])
+        return calls, capsys.readouterr().out
+
+    calls, o = run("aaaa000000000000", gate_r_fails=True)
+    rec = json.loads((cdir / "0.9.3-aaaa000000000000.json").read_text())
+    assert rec["passed"] == ["make test", "make pytest"] and "sha256" not in rec, rec
+    calls, o = run("bbbb000000000000", rel.GATE_R_BASE + "\n")
+    assert "make test" not in calls and "make pytest PY=" + rel.PY not in calls, calls
+    assert any(c.endswith("tools/gate_r.py") for c in calls) and "./build.sh --c1 --release 0.9.3" in calls, calls
+    rec = json.loads((cdir / "0.9.3-bbbb000000000000.json").read_text())
+    assert rec["passed"] == ["make test", "make pytest", "gate_r"] and rec["sha256"], rec
+    calls, o = run("aaaa000000000000")                  # the same HEAD again: Gate R still to run there
+    assert "make test" not in calls and any(c.endswith("tools/gate_r.py") for c in calls), calls

@@ -101,11 +101,11 @@ names the Move (default `ableton@move.local`).
   repository, and a placeholder would point at a file that does not exist. The catalog entry
   (`module-catalog.json` in Schwung's repository, `asset_name` `frodhes-module.tar.gz`) waits for that release.
 - **`make quick` covers the Move too** (`tools/quick.py`, on the HQ host build `build/host-hq/frodhes`, which is
-  `MOVE_DEFS` with the HQ Rhodes on, as the plugin loads): `move-dry` (`tools/dry_dist.py --hq` against 0.9.9's Move
-  build, `tests/baselines/dry_dist_099_hq.json`), `move-fx` (`tools/fx_pristine.py --builds hq`: every effect but
+  `MOVE_DEFS` with the HQ Rhodes on, as the plugin loads): `move-dry` (`tools/dry_dist.py --hq` against 0.9.11's Move
+  build, `tests/baselines/dry_dist_0911_hq.json`), `move-fx` (`tools/fx_pristine.py --builds hq`: every effect but
   DRIVE at 0 / 64 / 127), `move-byp` (`tests/py/test_move_bypass_comp.py`), `move-lvl` (every TYPE and F01..F19,
-  RMS within 1.5 dB and the peak at most + 1 dB of 0.9.9's Move build, `tests/baselines/quick_level_099_hq.json`,
-  saved with `tools/quick.py --save-level --hq` on 456b5da4 only) and `move-ui` (Gate U and
+  RMS within 1.5 dB and the peak at most + 1 dB of 0.9.11's Move build, `tests/baselines/quick_level_0911_hq.json`,
+  saved with `tools/quick.py --save-level --hq` on 279a7aff only) and `move-ui` (Gate U and
   `move/ui/test_chain.mjs`). About 16 s of the run, in parallel with the FM-1's checks.
 - **The gates**: `tools/ci_move.sh` is the Move's MT0 (Gate U: the generated module is current, `make test-move`,
   Gate M: the plugin replays the host renders, and the Move pytest suites). `make gate-p` (ASan + UBSan, the
@@ -133,7 +133,10 @@ names the Move (default `ableton@move.local`).
      `tools/gen_rhodes_hq_contact.py --check` (the dense velocity table and the live contact derive from the same
      hammer model and pins as the Classic layers: a change of those regenerates them, or the Move plays the old
      pulse). A change of the Classic pickup (`rhodes.c`) is mirrored in the HQ 2x pickup (`hq/rhodes_hq.c`
-     `hq_voice_init`, `HQ_PU_R`) for keys 85 and up; `tests/py/test_rhodes_hq.py` checks the constants.
+     `hq_voice_init`, `HQ_PU_R`) for keys 85 and up, and in the HQ exact 1x pickup (`hq_pickup1`, the same
+     constants) below them; `tests/py/test_rhodes_hq.py` checks the constants. A change of the harmonic decay glide
+     (`rh_hd_*`) is mirrored in `hq_hd_step` (HQ notes run it past `RH_OFF_MAX` to `HQ_OFF_MAX`), and a change of
+     the Classic pulse or `RH_PRATE` moves `hq_ir_tab` (built at load from both pulses: nothing to regenerate).
   4. `make move` and `tools/ci_move.sh` (MT0: Gate U, `make test-move`, Gate M against the new references).
   5. The parameters: a new parameter or a changed range shows up on the Move's pages when
      `tools/gen_move_module.py` is rerun (Gate U fails until then; `test_every_parameter_reachable_or_midi_only`
@@ -155,7 +158,10 @@ names the Move (default `ableton@move.local`).
      itself as a third case to see the spread, and trust the means and the quiet columns over one p99.9.
   2. One instance on the Move: `tools/move_hil.py d2 --path tap --engines rhodes,vibes,marimba --tests usb-stress`
      (16 voices, every effect heavy, the pedal; its `cpu` row is the plugin's own callback ring against U12).
-  3. Several: `tools/move_multi_cpu.py --n 1 2 3 --secs 30` (the worst take in N slots at once). It prints a
+  3. Several: `tools/move_multi_cpu.py --n 1 2 3 --secs 30` (the worst take in N slots at once). Each N starts
+     from new instances: every slot is emptied, then 1..N loaded (a slot that already holds Frodhes keeps the
+     engine it was created with, so after an install it would still play the old build). The report lists each
+     instance's `r_version`, and mixed builds fail the run. It prints a
      verdict per N (`verdict()`: the bars above) and exits 1 on a FAIL; N = 4 is reported only.
 - `tools/gen_move_module.py` writes `move/module/` (module.json, the pages, help.json, `move_ui.h`,
   `screen.js`: the pages from the FM-1's tables + the screen's code, `move/ui/screen_core.js`, and `canvas.js`: the
@@ -260,6 +266,10 @@ names the Move (default `ableton@move.local`).
   EVERY_MS FRAMES` or `off`, over Schwung's WebSocket; no page has it, off at load). The detector must stay
   silent on the first and find every click on the second, or the run stops without a verdict. `--prove` runs the
   proof only, `--dry-run` runs everything against the host build with a simulated jack (no device, no lock).
+  `--usb-ch left|right` (default left) names the Move channel the jack's cable carries: a mono cable from the
+  stereo jack carries one channel, and with the effects' stereo the other channel differs, so USB's same channel
+  is the one compared (the 2026-11-15 rig: the right channel on input 6, `--ch 6 --usb-ch right`; compared with
+  the left channel the worst takes failed on correlation alone, ncc 0.24-0.94).
   The jack on the M6 has a floor of -65.7 dBFS (the first device run, 2026-11-04; the FM-1's jack: about -91), so
   the jack-vs-USB correlation is judged against the floor measured in each take's lead, and the jack is aligned
   along the two recordings' clocks, not on a held chord's period. A jack-only level step (20 ms windows, 3 dB
@@ -340,7 +350,7 @@ names the Move (default `ableton@move.local`).
   `tools/gen_bars_hq.py` and `tools/gen_bars_hq_contact.py` write the two headers in `firmware/gen/hq/`
   (`--check` compares).
 - The dry distortion gate (`tools/dry_dist.py`, `tests/py/test_dry_distortion.py`) holds the HQ build to its own
-  0.9.9 reference, `tests/baselines/dry_dist_099_hq.json`. It is 0.9.9 (456b5da4) built with the Move's defines and
+  0.9.11 reference, `tests/baselines/dry_dist_0911_hq.json`. It is 0.9.11 (279a7aff) built with the Move's defines and
   `HQ_DEFAULT=1` (`dry_dist.HQ_DEFS`; `tools/dry_dist.py --build-hq OUT --src TREE`, then `--hq --save`). The FM-1's
   reference does not hold there: FX on the Move keeps the compressor, so the FXOFF chords differ, and the HQ pickup
   from key 85 moves key 93's H3 by 1-2 dB. `tools/dry_dist.py --hq --judge CELLS.json` judges against it.

@@ -56,6 +56,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fm1_ports  # noqa: E402  (the image under test: its interrupt frames)
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build", "hil", "c1soak")
 # CC 116 = 30: id -> name (hal/fm1_core1.h FR_C1_INFO_* + 30, frodhes.c midi_cc)
@@ -75,7 +76,7 @@ CC = dict(DRIVE=81, DRV_SW=84, DRV_MIX=83, CMP_SW=106, CMP_AMT=107, TW_SW=17, TW
           RV_PREDLY=94, RV_TYPE=95, FL_TYPE=70, FL_FREQ=74, FL_RESO=71, FL_LFO=72, EQ_LO=34, EQ_MID=35, EQ_HI=37,
           SPREAD=105, USB_VOL=114, RV_SIZE=73)
 HEAVY = dict(DRIVE=127, DRV_SW=76, DRV_MIX=64, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127,
-             PH_DEPTH=127, PH_FDBK=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127, RV_DECAY=127,
+             PH_DEPTH=127, PH_FDBK=127, DL_SW=80, DL_DEPTH=64, DL_TIME=127, DL_FDBK=127, REV=64, RV_DECAY=127,
              RV_PREDLY=127, RV_TYPE=32, FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64, EQ_LO=127, EQ_MID=0,
              EQ_HI=127, SPREAD=127, USB_VOL=127)          # DRV_SW 76: TSH8 (params.c DRV_CC84); RV_TYPE 32 HALL
 REV_TYPES = (32, 64, 96)                                 # HALL, PLATE, INFINITE (CC 95 in bands of 32)
@@ -106,7 +107,7 @@ def max_rev(t):
 MAX_DRV = (76, 70, 76)                                   # row 276: the drive TYPE in turn (CC 84): TSH8, KHLON, TSH8
 MAX_SWEEP = dict(FL_FREQ=(0, 127), DL_TIME=(60, 127), PH_DEPTH=(64, 127), TW_DEPTH=(64, 127), CMP_AMT=(60, 127),
                  DRIVE=(64, 127))                        # row 276: CC -> the sweep's range (a triangle, 100 ms steps)
-LAT_SCALE = int(os.environ.get("FRODHES_LAT_HALF", "256")) / 256.0   # (a frodhes.c FR_LAT_HALF build: per interrupt)
+LAT_SCALE = fm1_ports.lat_half() / 256.0   # (a frodhes.c FR_LAT_HALF build: per interrupt)
 LAT = LAT_SCALE != 1.0
 BARS = dict(app_us=round(5000 * LAT_SCALE), whole_us=round(4500 * LAT_SCALE), c1_busy_us=5000,   # (core 1's busy: per
             # 256-frame block in every build, frodhes.c app_audio's fr_c1_block_end; the interrupt's limits scale)
@@ -406,6 +407,8 @@ def run(a):  # noqa: C901 (the device run)
     mido, out, inp = ports(a)
     if not a.no_audio:
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         import fm1_ports
 
     def cc(c, v):
@@ -450,6 +453,9 @@ def run(a):  # noqa: C901 (the device run)
           f"voices {first.get('voices')}", flush=True)
     boot0 = decode(query(32)).get("boot")              # (the boot before the run: its reason, any crash record)
     print(f"boot before the run: {boot0}", flush=True)
+    query(127)                                           # (discarded: the app's worst block and the whole ISR since
+    # the last read reset, as query(30) above reset core 1's; 2026-11-15: the 0 s read carried the worst from before
+    # the soak, an hour of T2 on unit 1: whole 2468 at 0 s, <= ~2050 after)
     jobs_prev = first.get("jobs", -1)
     def setup(i):                                         # the engine i and every effect at its heaviest
         sel = ENGINES[i][0]
@@ -584,6 +590,7 @@ def run(a):  # noqa: C901 (the device run)
                     r2 = decode(query(30))
                     if r2.get("jobs") is not None:
                         jobs_prev = r2["jobs"]
+                    query(127)                            # (discarded: the boot's maxima, as before the soak)
                     reads.append(dict(t=round(time.monotonic() - t0, 1), settled=round(time.monotonic() - tw, 1)))
                     setup(eng_i)
                     if p["max"]:

@@ -2,6 +2,8 @@
 # at TONE 64, 96 and 127, then on BELL DYNO at 64 and 127, each 300 ms after its strike within 1.5 dB of TONE 64's
 # (before: -4 dB at 96, -9 dB at 127). tests/py/test_tone_level.py measures every TYPE, key and velocity.
 # The engine alone (CC 119 RAW), NOISE 0.
+# 0.9.13 (SND3, RESPONSE FULL's convex velocity curve): v100 plays 3.0 dB quieter (the same tone), the windows -3 dB
+# (TONE 64 -29.5, BELL DYNO -29.3); TONE's compensation is a ratio and holds as before.
 # Run: build/host/frodhes build/host/tone_level tests/scripts/tone_level.txt
 # (2026-11-10) the boot preset's voicing, compressor, reverb and LEVEL as this script was written for (F01 before the
 # proposed 19; dry_dist.TYPE_BASE): the script tests its feature, not F01's record
@@ -31,30 +33,30 @@
 50 midi 0xB0 104 0
 60 midi 0xB0 28 64
 100 midi 0x90 57 100
-400 expect rms > -28.4
-400 expect rms < -25.4
+400 expect rms > -31.4
+400 expect rms < -28.4
 500 midi 0x80 57 0
 1000 midi 0xB0 28 96
 1010 expect sound
 1100 midi 0x90 57 100
-1400 expect rms > -28.4
-1400 expect rms < -25.4
+1400 expect rms > -31.4
+1400 expect rms < -28.4
 1500 midi 0x80 57 0
 2000 midi 0xB0 28 127
 2100 midi 0x90 57 100
-2400 expect rms > -28.4
-2400 expect rms < -25.4
+2400 expect rms > -31.4
+2400 expect rms < -28.4
 2500 midi 0x80 57 0
 3000 midi 0xB0 80 96
 3010 midi 0xB0 28 64
 3100 midi 0x90 57 100
-3400 expect rms > -28.1
-3400 expect rms < -25.1
+3400 expect rms > -31.1
+3400 expect rms < -28.1
 3500 midi 0x80 57 0
 4000 midi 0xB0 28 127
 4010 expect sound
 4100 midi 0x90 57 100
-4400 expect rms > -28.1
-4400 expect rms < -25.1
+4400 expect rms > -31.1
+4400 expect rms < -28.1
 4500 midi 0x80 57 0
 5000 end

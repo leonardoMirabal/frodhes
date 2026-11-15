@@ -222,9 +222,10 @@ def _voice_cases():
             return h[1] - h[0], 6.0, f"H2/H1 {h[0]:+.1f} -> {h[1]:+.1f} dB"
 
         def bell(ty=ty):
-            """BELL (CC 30): the bright overtone at the strike. The energy above 3 kHz in the first 100 ms of a C5
-            rises 12 .. 24 dB from 0 to 10; at least 6"""
-            h = [band_db(rh_note(ty, [(30, v)], n=72).mid(0.2, 0.3), 3000, 16000) for v in (0, 127)]   # (the mono
+            """BELL (CC 30): the bright overtone at the strike. The energy above 1.5 kHz in the first 100 ms of a C4
+            (its bell partial ~7 f0) rises from 0 to 10; at least 6 (2026-11-13: a C4, not a C5: BELL's lift over 64
+            fades out over C4 .. C5, the upper register's tine kept clean)"""
+            h = [band_db(rh_note(ty, [(30, v)], n=60).mid(0.2, 0.3), 1500, 16000) for v in (0, 127)]   # (the mono
             # sum: the dry width's side carries C5's 3-4 kHz partials into one channel, FELT's -67 dB floor at BELL 0)
             return h[1] - h[0], 6.0, f"attack > 3 kHz {h[0]:.1f} -> {h[1]:.1f} dB"
 
@@ -272,11 +273,12 @@ _voice_cases()
 @case("voice-panel")
 def _voice_panel():
     """the VOICE page's knobs (EDIT, K1-K4) reach the sound as the CCs do: K3 BELL to 10 brightens the attack
-    (a C5's attack above 3 kHz); at least 6"""
-    a = R(CLEAN + ["30 turn 0 1", "33 turn 0 1", "40 turn 4 -64", "50 dump"] + note(200, 72, 100, 1300), 1700)
-    b = R(CLEAN + ["30 turn 0 1", "33 turn 0 1", "40 turn 4 63", "50 dump"] + note(200, 72, 100, 1300), 1700)
+    (a C4's attack above 1.5 kHz, as the BELL case: 0.9.13, a C5 at v100 under FULL's curve, 3 dB quieter, read 5.1 dB
+    over BELL 0's fixed floor, and BELL's lift fades over C4..C5 since SND2); at least 6"""
+    a = R(CLEAN + ["30 turn 0 1", "33 turn 0 1", "40 turn 4 -64", "50 dump"] + note(200, 60, 100, 1300), 1700)
+    b = R(CLEAN + ["30 turn 0 1", "33 turn 0 1", "40 turn 4 63", "50 dump"] + note(200, 60, 100, 1300), 1700)
     assert a.state(50)["page"] == "VOICE" and a.state(50)["label2"] == "BELL" and b.state(50)["card2"] == "10.0"
-    h = [band_db(w.seg(0.2, 0.3), 3000, 16000) for w in (a, b)]
+    h = [band_db(w.seg(0.2, 0.3), 1500, 16000) for w in (a, b)]
     return h[1] - h[0], 6.0, f"{h[0]:.1f} -> {h[1]:.1f} dB"
 
 
@@ -509,12 +511,12 @@ def _thr():
 
 @case("COMP-THRESH-panel")
 def _thr_panel():
-    """THRESH is the compressor's switch on its page: OFF, turned up it comes on (with MAKEUP +2.8 dB); the loud chord
+    """THRESH is the compressor's switch on its page: OFF, turned up it comes on (with MAKEUP +1.9 dB since 0.9.13; was +2.8); the loud chord
     3.8 dB under the bypass at -20; at least 2"""
     ref = R(CLEAN + CHORD5, 2000)
     w = R(CLEAN + goto("COMP") + ["100 turn 2 64", "110 dump"] + CHORD5, 2000)
     st = w.state(110)
-    assert st["p.33"] == "1" and st["card0"] == "-20" and st["card3"] == "+2.8", (st["p.33"], st["card0"], st["card3"])
+    assert st["p.33"] == "1" and st["card0"] == "-20" and st["card3"] == "+1.9", (st["p.33"], st["card0"], st["card3"])
     g = rms_db(ref.seg(0.25, 1.6)) - rms_db(w.seg(0.25, 1.6))
     return g, 2.0, f"{g:.1f} dB"
 
@@ -1038,8 +1040,9 @@ def _dana():
 @case("DELAY-SYNC")
 def _dsync():
     """DLY SYNC (TEMPO K4): 1/8 at 120 BPM = 250 ms between the note and its echo (+-3 %; the note comes 0.5 s after
-    the change: the line's time slews 1 sample a sample, and an echo written while it moves comes late)"""
-    w = R(CLEAN + SHORT + [cc(30, 88, 48), cc(31, 89, 127), cc(32, 26, 0)] + goto("TEMPO", 40) + detents(5, 1, 6, 100)
+    the change: the line's time slews 1 sample a sample, and an echo written while it moves comes late; MIX 64: the
+    note and its echo whole, 0.9.13 E2)"""
+    w = R(CLEAN + SHORT + [cc(30, 88, 48), cc(31, 89, 64), cc(32, 26, 0)] + goto("TEMPO", 40) + detents(5, 1, 6, 100)
           + ["150 dump"] + note(700, 72, 110, 40), 1700)
     assert w.state(150)[f"card.{PG['TEMPO']}.3"] == "1/8" and w.state(150)[f"card.{PG['DELAY']}.2"] == "1/8"
     x = w.seg(0.6, 1.6)                                                 # the onsets' strength, correlated

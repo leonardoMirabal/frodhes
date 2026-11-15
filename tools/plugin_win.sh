@@ -100,6 +100,7 @@ B="$B"
 cd "$T"
 echo "== coroutine";  wine "\$B/frp_test_coro.exe" 2>&1 | tail -3
 echo "== controller"; wine "\$B/frp_test_gui_ctl.exe" 2>&1 | grep -v '^PASS ' | tail -5
+echo "== update";     rm -rf "$T/update-home"; wine "\$B/frp_test_update.exe" "Z:$T/update-home" 2>&1 | tail -5
 echo "== view";       xvfb-run -a -s "-screen 0 1920x1200x24" wine "\$B/frp_gui_demo.exe" --selftest >/dev/null 2>&1; cat frp_gui_demo.log
 echo "== clap host";  wine "\$B/frp_clap_render.exe" "Z:\$B/bundles/CLAP/Frodhes.clap" --selftest 2>&1 | tail -4
 echo "== gate d";     . "$T/renders.sh"

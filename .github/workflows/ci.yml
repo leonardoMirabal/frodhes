@@ -7,45 +7,119 @@ on:
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+permissions:
+  actions: write                     # (a failure cancels the run: the step at the end of every job)
+  contents: read
 jobs:
+  # A pull request that changes only Markdown (README, docs/**/*.md) runs the docs job alone: the links, the manual
+  # against the code, the release-notes fragments, the repo hygiene. Every other job is then skipped, and a skipped
+  # required job counts as passed (`host` below accepts that only with docs green). A push to main runs everything.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.c.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: c
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != pull_request ]; then echo code=true >> "$GITHUB_OUTPUT"; exit 0; fi
+          git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD | tee files.txt
+          if [ -s files.txt ] && ! grep -qvE '\.md$' files.txt; then echo code=false; else echo code=true; fi | tee -a "$GITHUB_OUTPUT"
+      # a failure stops the run: every other job cancelled at once (the user, 2026-11-15); `host` still reads the
+      # failure, and runner-retry never reruns a job that ran (tests/py/test_release_workflow_logic.py)
+      - name: on a failure, cancel the whole run
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY"
+  docs:
+    needs: changes
+    if: needs.changes.outputs.code == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest PyYAML==6.0.3
+      - run: python3 tools/pytest_run.py -q -- tests/py/test_doc_links.py tests/py/test_docs_vs_code.py tests/py/test_changes.py tests/py/test_repo_hygiene.py tests/py/test_move_doc.py
+      # a failure stops the run: every other job cancelled at once (the user, 2026-11-15); `host` still reads the
+      # failure, and runner-retry never reruns a job that ran (tests/py/test_release_workflow_logic.py)
+      - name: on a failure, cancel the whole run
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY"
   # arm64 Linux: the same machine as a local `docker run python:3.14` on an Apple-silicon Mac (a replica of these jobs).
   # The host tests in 5 jobs at once: the scripts (make test, make host) and tests/py in 4 shards (tools/pytest_shard.py:
   # whole files, balanced by tests/py/shard_weights.json; together exactly `make pytest`). The required check is the
   # job `host` below: green only when every one of them is.
   host-scripts:
     runs-on: ubuntu-24.04-arm
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 websockets==16.1.1 pytest pytest-xdist==3.8.0 PyYAML==6.0.3
       - run: make test
       - run: make host
+      # a failure stops the run: every other job cancelled at once (the user, 2026-11-15); `host` still reads the
+      # failure, and runner-retry never reruns a job that ran (tests/py/test_release_workflow_logic.py)
+      - name: on a failure, cancel the whole run
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY"
   host-pytest:
     name: host-pytest ${{ matrix.shard }}/4
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04-arm
     strategy:
-      fail-fast: false
+      fail-fast: true                # (one shard fails: the others stop)
       matrix:
         shard: [1, 2, 3, 4]
     steps:
+      # the whole history and the tags: the level proofs (tests/py/test_level_proof.py, test_rev_level_proof.py) build
+      # the last release from its tag (tools/release_diff.py LAST); a shallow checkout has no tag (run 43723126582)
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 websockets==16.1.1 pytest pytest-xdist==3.8.0 mido==1.3.3 PyYAML==6.0.3
       - run: python3 tools/pytest_shard.py --check 4
       - run: make pytest PY=python3 SHARD=${{ matrix.shard }}/4
+      # a failure stops the run: every other job cancelled at once (the user, 2026-11-15); `host` still reads the
+      # failure, and runner-retry never reruns a job that ran (tests/py/test_release_workflow_logic.py)
+      - name: on a failure, cancel the whole run
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY"
   host:
     # the branch protection's context `host` (the same meaning as before the split: every host test passed): a failed,
     # cancelled or skipped job above fails it (a skipped required job would count as passed)
-    needs: [host-scripts, host-pytest]
+    # (a Markdown-only pull request: the docs job instead)
+    needs: [changes, docs, host-scripts, host-pytest]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - run: |
+          echo "changes: ${{ needs.changes.result }} (code ${{ needs.changes.outputs.code }}), docs: ${{ needs.docs.result }}"
           echo "host-scripts: ${{ needs.host-scripts.result }}, host-pytest (4 shards): ${{ needs.host-pytest.result }}"
+          test "${{ needs.changes.result }}" = success
+          if [ "${{ needs.changes.outputs.code }}" = false ]; then test "${{ needs.docs.result }}" = success; exit; fi
           test "${{ needs.host-scripts.result }}" = success && test "${{ needs.host-pytest.result }}" = success
   # The engines' tables are generated on macOS (Accelerate); their regeneration must give the committed headers byte
   # for byte on every machine (the solver-sensitive stages are pinned: rhodes_pins.json, bars_fe_pins.json,
   # bars_pins.json). The host job checks it on Linux arm64; this one on macOS, with the same numpy / scipy as the
   # development machine. It is required: a failure fails the run.
   generators-macos:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +133,14 @@ jobs:
         run: |
           python tools/pytest_run.py -v -rs -- tests/py/test_gen_bars.py tests/py/test_marimba_calib.py | tee gen.txt
           grep -q 'test_gen_bars.py::test_deterministic_and_up_to_date PASSED' gen.txt
+      # a failure stops the run: every other job cancelled at once (the user, 2026-11-15); `host` still reads the
+      # failure, and runner-retry never reruns a job that ran (tests/py/test_release_workflow_logic.py)
+      - name: on a failure, cancel the whole run
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY"
   # The browser emulator (web/build.sh, Emscripten pinned in tools/get_emsdk.sh) must build and pass its selftest
   # (tools/release.py --web-selftest: Chromium + WebKit at 1280 and 390 px, sound, a lit screen, no page errors, the
   # version shown, the installer through the page on a fake FM-1 in Chromium), the installer's own tests
@@ -66,6 +148,8 @@ jobs:
   # In Playwright's own image (Chromium and WebKit with their system libraries installed): the apt download of
   # WebKit's libraries (`playwright install --with-deps`) took 19 of this job's 20 minutes.
   web:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     container: mcr.microsoft.com/playwright/python:v1.64.0-noble
     steps:
@@ -91,10 +175,23 @@ jobs:
           python3 tools/pytest_run.py -q -rs -- tests/py/test_web_knobs.py > knobs.txt || { cat knobs.txt; exit 1; }
           cat knobs.txt
           ! grep -q SKIPPED knobs.txt
+      # a failure stops the run: every other job cancelled at once (the user, 2026-11-15); `host` still reads the
+      # failure, and runner-retry never reruns a job that ran (tests/py/test_release_workflow_logic.py)
+      - name: on a failure, cancel the whole run
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 -c "import os, urllib.request as u; e = os.environ; u.urlopen(u.Request(e['GITHUB_API_URL'] +
+          '/repos/' + e['GITHUB_REPOSITORY'] + '/actions/runs/' + e['GITHUB_RUN_ID'] + '/cancel', method='POST',
+          headers={'Authorization': 'Bearer ' + e['GH_TOKEN'], 'Accept': 'application/vnd.github+json'}))"
   # DRAFT (private plan 05 M1-16; not required, not yet run in CI): the Move's checks, MT0, in the Move's userland
   # (Debian bookworm arm64: its glibc), natively on GitHub's arm64 runner. The same script runs locally
   # (tools/ci_move.sh; on macOS its build step uses the arm64 bookworm image).
   move:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04-arm
     container: debian:bookworm
     steps:
@@ -107,3 +204,14 @@ jobs:
       # (the checkout belongs to another user than the container's root: git refuses it without this; gate_s reads git)
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - run: PY=/opt/venv/bin/python MOVE_RUN= PYTEST_N=auto NICE= sh tools/ci_move.sh
+      # a failure stops the run: every other job cancelled at once (the user, 2026-11-15); `host` still reads the
+      # failure, and runner-retry never reruns a job that ran (tests/py/test_release_workflow_logic.py)
+      - name: on a failure, cancel the whole run
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 -c "import os, urllib.request as u; e = os.environ; u.urlopen(u.Request(e['GITHUB_API_URL'] +
+          '/repos/' + e['GITHUB_REPOSITORY'] + '/actions/runs/' + e['GITHUB_RUN_ID'] + '/cancel', method='POST',
+          headers={'Authorization': 'Bearer ' + e['GH_TOKEN'], 'Accept': 'application/vnd.github+json'}))"

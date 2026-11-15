@@ -6,6 +6,9 @@ import json
 import os
 import subprocess
 
+import pytest
+import yaml
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 GATE = os.path.join(ROOT, "tools", "ci_gate.sh")
 SHA = "0123456789abcdef0123456789abcdef01234567"
@@ -167,10 +170,10 @@ def test_release_workflow_wiring():
     assert j["generators-macos"]["if"] == "needs.ci-gate.outputs.passed != 'true'"
     cond = " ".join(j["release"]["if"].split())
     assert cond == ("!cancelled() && needs.ci-gate.result == 'success' && needs.web.result == 'success' && "
-                    "needs.move.result == 'success' && needs.plugin.result == 'success' && "
+                    "needs.move.result == 'success' && needs.plugin.result == 'success' && needs.mpc.result == 'success' && "
                     "(needs.ci-gate.outputs.passed == 'true' "
                     "|| (needs.generators-macos.result == 'success' && needs.host.result == 'success'))")
-    assert j["release"]["needs"] == ["ci-gate", "generators-macos", "host", "web", "move", "plugin"]
+    assert j["release"]["needs"] == ["ci-gate", "generators-macos", "host", "web", "move", "plugin", "mpc"]
     # the fallback host tests: their own job on ci.yml's arm64 runner; the build stays on x86_64 (the JieLi toolchain)
     assert j["host"]["if"] == "needs.ci-gate.outputs.passed != 'true'" and j["host"]["needs"] == "ci-gate"
     assert j["host"]["runs-on"] == "ubuntu-24.04-arm" and j["release"]["runs-on"] == "ubuntu-latest"
@@ -190,18 +193,22 @@ def test_release_workflow_wiring():
     assert names.index("build") < names.index("build the SMK-37 packages") < names.index("draft release")
     for m in ("", " --model elite", " --model mke"):
         assert f'./build.sh --board smk37{m} --release "$V"' in smk
-    assert sum(b.count("./build.sh") for b in builds) == 5        # the FM-1 twice (one core, two cores), each SMK-37 model once
+    assert sum(b.count("./build.sh") for b in builds) == 4        # the FM-1 once (two cores), each SMK-37 model once
     b0 = " ".join(j["release"]["steps"][names.index("build")]["run"].split())
-    assert b0.index('./build.sh --c1 --release "$V"') < b0.index('./build.sh --release "$V"')   # the two-core image first
-    assert 'cp "build/frodhes-$V-c1.fwsc" build/publish/frodhes-c1.fwsc' in pub
-    assert '"build/frodhes-$V-c1.fwsc" build/publish/frodhes-c1.fwsc \\ ' in pub
-    assert './build.sh --release "$V"' in " ".join(j["release"]["steps"][names.index("build")]["run"].split())
+    assert './build.sh --c1 --release "$V"' in b0 and './build.sh --release "$V"' not in b0   # the FM-1: two cores only
+    assert 'cp "build/frodhes-$V-c1.fwsc" "build/frodhes-$V.fwsc"' in b0      # frodhes.fwsc / frodhes-X.Y.Z.fwsc = it
+    assert "frodhes-c1.fwsc" not in pub                                        # no second FM-1 package since 0.9.12
     ci = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))["jobs"]
     assert set(ci) >= {"host", "generators-macos"}                                     # ci_gate.sh's jobs
     # the host tests on arm64 in 5 jobs (the scripts, 4 pytest shards); `host` green only when all are
     assert ci["host-scripts"]["runs-on"] == ci["host-pytest"]["runs-on"] == "ubuntu-24.04-arm"
     assert ci["host-pytest"]["strategy"]["matrix"]["shard"] == [1, 2, 3, 4]
-    assert ci["host"]["needs"] == ["host-scripts", "host-pytest"] and ci["host"]["if"] == "always()"
+    assert ci["host"]["needs"] == ["changes", "docs", "host-scripts", "host-pytest"] and ci["host"]["if"] == "always()"
+    # a Markdown-only pull request runs the docs job alone; every other job (the required ones too) needs code
+    for j in ("host-scripts", "host-pytest", "generators-macos", "web", "move"):
+        assert ci[j]["needs"] == "changes" and ci[j]["if"] == "needs.changes.outputs.code == 'true'", j
+    assert ci["docs"]["if"] == "needs.changes.outputs.code == 'false'"
+    assert 'test "${{ needs.docs.result }}" = success' in " ".join(s.get("run", "") for s in ci["host"]["steps"])
     agg = " ".join(s.get("run", "") for s in ci["host"]["steps"])
     assert 'test "${{ needs.host-scripts.result }}" = success' in agg
     assert 'test "${{ needs.host-pytest.result }}" = success' in agg
@@ -263,18 +270,17 @@ def test_release_publish_step_uploads_both_names(tmp_path):
     assert p.returncode == 0, p.stderr
     args = (tmp_path / "gh.log").read_text().splitlines()
     assert args[:5] == ["release", "create", "v0.9.9", "build/frodhes-0.9.9.fwsc", "build/publish/frodhes.fwsc"]
-    assert args[5:7] == ["build/frodhes-0.9.9-c1.fwsc", "build/publish/frodhes-c1.fwsc"]   # the two-core image
-    assert args[7:10] == [f"build/publish/{rel.smk_versioned(n, '0.9.9')}" for n in rel.SMK_ASSETS]
-    assert args[10:13] == [f"build/publish/{n}" for n in rel.SMK_ASSETS]
-    assert args[13].split("#")[0] == "LICENSES/Apache-2.0.txt"  # the SDK files' licence text (Apache-2.0 s. 4)
-    assert args[14] == "--title"                  # nothing else attached
+    assert args[5:8] == [f"build/publish/{rel.smk_versioned(n, '0.9.9')}" for n in rel.SMK_ASSETS]
+    assert args[8:11] == [f"build/publish/{n}" for n in rel.SMK_ASSETS]
+    assert args[11].split("#")[0] == "LICENSES/Apache-2.0.txt"  # the SDK files' licence text (Apache-2.0 s. 4)
+    assert args[12] == "--title"                  # nothing else attached (no -c1 package since 0.9.12)
     for n in rel.SMK_ASSETS:                       # each the build of its own model, under both names
         assert (tmp_path / "build" / "publish" / n).read_bytes() == n.encode()
         assert (tmp_path / "build" / "publish" / rel.smk_versioned(n, "0.9.9")).read_bytes() == n.encode()
     assert args[-1] == "--draft" and "--latest" not in args      # published (and made latest) after the emulator
     assert args[args.index("--notes-file") + 1] == "docs/releases/v0.9.9.md"
     assert (tmp_path / "build" / "publish" / "frodhes.fwsc").read_bytes() == b"package"
-    assert (tmp_path / "build" / "publish" / "frodhes-c1.fwsc").read_bytes() == b"two cores"
+    assert not (tmp_path / "build" / "publish" / "frodhes-c1.fwsc").exists()
 
 
 def test_release_publish_step_rerun_replaces_the_assets(tmp_path):
@@ -580,3 +586,99 @@ def test_release_publishes_the_package_with_the_emulator():
     a = wf.index('sh tools/web_firmware.sh "build/frodhes-$V.fwsc" web/dist "$V"')
     assert all(f'"build/frodhes-$V-{b}.fwsc"' in wf[a:a + 400] for b in ("smk37", "smk37-elite", "smk37-mke"))
     assert a < wf.index("sh tools/deploy_pages.sh web/dist build/pages")
+
+
+@pytest.mark.parametrize("files, event, code", [
+    (["README.md"], "pull_request", "false"),
+    (["README.md", "docs/MANUAL.md"], "pull_request", "false"),
+    (["README.md", "tools/release.py"], "pull_request", "true"),
+    (["docs/manual/img/x.png"], "pull_request", "true"),
+    ([], "pull_request", "true"),
+    (["README.md"], "push", "true"),
+])
+def test_ci_docs_only_detection(tmp_path, files, event, code):
+    """ci.yml's changes step: code=false only for a pull request whose every changed file is Markdown"""
+    ci = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))["jobs"]
+    run = [st for st in ci["changes"]["steps"] if st.get("id") == "c"][0]["run"]
+    run = run.replace("${{ github.event_name }}", event).replace(
+        'git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD', "cat changed.txt")
+    (tmp_path / "changed.txt").write_text("".join(f + "\n" for f in files))
+    out = tmp_path / "out"
+    subprocess.run(["bash", "-c", run], cwd=tmp_path, env=dict(os.environ, GITHUB_OUTPUT=str(out)), check=True,
+                   capture_output=True)
+    assert out.read_text().split() == [f"code={code}"]
+
+
+# ---- a failure stops the ci run (the user, 2026-11-15): every job cancels the run on its failure; `host` still reads
+# the failure; runner-retry reruns only jobs GitHub never started (tools/runner_retry.py)
+
+def test_ci_a_failure_cancels_the_whole_run():
+    wf = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))
+    assert wf["permissions"] == {"actions": "write", "contents": "read"}
+    jobs = wf["jobs"]
+    assert jobs["host-pytest"]["strategy"]["fail-fast"] is True
+    for name, j in jobs.items():
+        if name == "host":                   # the roll-up: last, nothing left to cancel
+            continue
+        st = j["steps"][-1]
+        assert st["if"] == "failure()" and st["env"] == {"GH_TOKEN": "${{ github.token }}"}, name
+        if "container" in j:                 # (no gh in a job's own container: the REST call itself)
+            assert "/actions/runs/" in st["run"] and "/cancel" in st["run"] and "method='POST'" in st["run"], name
+            compile(st["run"].split('python3 -c "', 1)[1].rsplit('"', 1)[0], name, "exec")
+        else:
+            assert st["run"] == 'gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY"', name
+
+
+def test_ci_host_rollup_fails_on_a_cancelled_job():
+    """a cancelled job (the run stopped by another job's failure) never counts as passed: `host` runs always() and
+    requires success from each job it rolls up"""
+    host = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))["jobs"]["host"]
+    assert host["if"] == "always()"
+    agg = " ".join(s.get("run", "") for s in host["steps"])
+    for j in ("changes", "host-scripts", "host-pytest"):
+        assert f'test "${{{{ needs.{j}.result }}}}" = success' in agg, j
+    assert "cancelled" not in agg
+
+
+def _job(name, conclusion, steps):
+    return {"name": name, "conclusion": conclusion, "steps": [{"name": f"s{i}"} for i in range(steps)]}
+
+
+@pytest.mark.parametrize("jobs, rerun", [
+    # GitHub never started a job: rerun
+    ([_job("macos", "failure", 0), _job("host", "success", 5)], True),
+    ([_job("macos", "failure", 0), _job("windows", "failure", 0)], True),
+    # never started, siblings cancelled before they started (no step): still rerun
+    ([_job("macos", "failure", 0), _job("host-pytest 2/4", "cancelled", 0)], True),
+    # a real failure (steps ran): never rerun
+    ([_job("host-pytest 1/4", "failure", 6)], False),
+    # a real failure that cancelled the run: the siblings cancelled mid-way ran steps, no rerun
+    ([_job("host-pytest 1/4", "failure", 6), _job("host-pytest 2/4", "cancelled", 4), _job("web", "cancelled", 0)], False),
+    # a never-started job next to a real failure: the real failure wins, no rerun
+    ([_job("macos", "failure", 0), _job("host-pytest 3/4", "failure", 6)], False),
+    # a sibling cancelled mid-way next to a never-started failure: it ran, so no rerun
+    ([_job("macos", "failure", 0), _job("move", "cancelled", 3)], False),
+    # cancelled by hand or by a newer push (no failed job): never rerun, even with no step run
+    ([_job("host-pytest 1/4", "cancelled", 0), _job("web", "cancelled", 0)], False),
+    ([_job("host", "success", 5)], False),
+])
+def test_runner_retry_reruns_only_jobs_never_started(jobs, rerun, tmp_path):
+    import sys
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import runner_retry
+    assert runner_retry.decide(jobs)[0] is rerun
+    f = tmp_path / "jobs.json"
+    f.write_text(json.dumps({"total_count": len(jobs), "jobs": jobs}))
+    p = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "runner_retry.py"), str(f)], capture_output=True, text=True)
+    assert p.returncode == 0 and p.stdout.startswith("rerun:" if rerun else "no rerun:"), p.stdout + p.stderr
+
+
+def test_runner_retry_wiring():
+    rr = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "runner-retry.yml")))
+    cond = " ".join(rr["jobs"]["retry"]["if"].split())
+    assert "conclusion == 'failure'" in cond and "conclusion == 'cancelled'" in cond and "run_attempt < 3" in cond
+    steps = rr["jobs"]["retry"]["steps"]
+    assert steps[0]["uses"].startswith("actions/checkout")
+    body = steps[-1]["run"]
+    assert "/attempts/$ATTEMPT/jobs" in body and "tools/runner_retry.py jobs.json" in body
+    assert body.index("grep -q '^rerun:'") < body.index("gh run rerun")

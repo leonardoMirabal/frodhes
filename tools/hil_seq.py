@@ -3,6 +3,8 @@
 """The sequencer on the FM-1 over USB-MIDI and USB audio: live recording (REC, PLAY, three notes, the loop played
 back on the QUANT grid) and step recording (stopped: three notes, two steps apart at 1/8). Clears the pattern."""
 import sys, time, numpy as np, mido, sounddevice as sd
+import lock
+lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
 sys.path.insert(0, "tools")
 from hil_scan import param_defaults, CC, DRY
 import fm1_ports   # the FM-1's port names: Frodhes preferred, Felucca / FM-1 only as a fallback

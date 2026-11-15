@@ -1,6 +1,7 @@
 # Frodhes: user manual
 
-**A physically modelled electric piano, vibraphone and marimba for the M-VAVE FM-1 and the Ableton Move.**
+**A physically modelled electric piano, vibraphone and marimba for the M-VAVE FM-1, the Ableton Move, the Akai MPC
+and your computer.**
 
 Frodhes is free firmware that turns the M-VAVE FM-1 into an electric piano, a vibraphone and a marimba. Every note
 is computed live from the physics of the instrument: no recordings are played back. Around the instrument is a stage
@@ -40,6 +41,7 @@ firmware can always be put back ([how](#going-back-to-the-original-firmware)). S
 15. [Appendix: the SMK-37](#15-appendix-the-smk-37)
 16. [Appendix: the Ableton Move](#16-appendix-the-ableton-move)
 17. [Appendix: the desktop plugin](#17-appendix-the-desktop-plugin)
+18. [Appendix: the Akai MPC](#18-appendix-the-akai-mpc)
 
 ## 1. Getting started
 
@@ -63,12 +65,11 @@ until you install again: connect it and open the page, which offers **Resume the
 Safari and Firefox cannot install, because they cannot send SysEx. Use Chrome or Edge, or the terminal installer
 (see [Updating](#updating)). An SMK-37: see [SMK37.md](SMK37.md).
 
-**One core or two.** The release has two packages for the FM-1. `frodhes.fwsc` (the default, the one the page
-installs) runs everything on one of the chip's two processor cores and plays 10 voices. `frodhes-c1.fwsc` runs the
-voices on one core and the effects on the other: 14 voices on every instrument, the reverb types at the full sample
-rate (as on the Move), and a quicker answer to a note: about 6.5 ms from a MIDI note to the headphone jack
-(about 10 ms in `frodhes.fwsc`). Everything else is the same: the pages, the presets, your settings and pattern.
-Install `frodhes-c1.fwsc` from a terminal (see [Updating](#updating)); you can switch between the two at any time.
+**Both cores.** Frodhes uses both of the FM-1's processor cores: the voices run on one and the effects on the
+other. That gives 14 voices on every instrument, the reverb types at the full sample rate (as on the Move), and a
+quick answer to a note: about 6.5 ms from a MIDI note to the headphone jack. `frodhes.fwsc` is the FM-1's only
+package. (0.9.10 and 0.9.11 also had a one-core package with 10 voices; installing `frodhes.fwsc` replaces it, and
+your settings, presets and pattern stay.)
 
 **On a computer.** The same engine runs as a plugin in music software (CLAP, VST3, Audio Unit) on macOS, Windows and
 Linux: [PLUGIN.md](PLUGIN.md#packages).
@@ -146,9 +147,7 @@ python3 tools/fm1_install.py frodhes.fwsc
 ```
 
 Download [`frodhes.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes.fwsc) first:
-that link always gives the latest release (the two-core package:
-[`frodhes-c1.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-c1.fwsc), installed
-with `python3 tools/fm1_install.py frodhes-c1.fwsc`). Use the installer as it is in this repository now: an old copy may not
+that link always gives the latest release. Use the installer as it is in this repository now: an old copy may not
 find an FM-1 that runs Frodhes.
 
 ### Going back to the original firmware
@@ -181,6 +180,10 @@ letters (Hz, kHz, ms, s, dB, c for cents, %); the EQ's cards show the number onl
 - **An amount** (DEPTH, MIX, a time, a frequency ...): the card is a fader. It fills with warm amber from the left up
   to the value, with a bright amber edge where the fill ends (the edge stops short of the letters, so it never cuts a
   number): empty at 0, full at the top.
+- **A MIX** (DELAY MIX, DRIVE MIX, REVERB MIX): a fader in two colours, split by a thin grey line at the middle (64).
+  Up to the line it fills in the accent colour (the dry sound whole, the effect coming in); past it, in the accent's
+  opposite colour (the effect whole, the dry going out). The card reads **DRY** at 0, **50/50** at 64 and **WET** at
+  127, and shows the bar alone in between.
 - **A selector** (TYPE, EFFECT DIG / ANA / TAPE, a filter type, a note value, a scale, a chord type ...): the card is cut
   into one block per option, and the blocks light up to the option it is on, each with a small cap at its foot (amber
   lit, grey not); the option is written out in full (**STAGE 77**, **LP18**, **1/16**). An option called OFF lights no
@@ -247,7 +250,7 @@ stays dark; see LEDS on the DISPLAY page, and SUSTAIN LEDS on DISPLAY 2).
 
 ### PERFORM
 
-![PERFORM](manual/img/perform.png?v=fee52568)
+![PERFORM](manual/img/perform.png?v=f156e86f)
 
 The first page, made for playing: four knobs for the sound while you play. Out of the box they follow the effects
 chain from left to right: the drive, the filter's cutoff, and the dry / wet of the delay and the reverb:
@@ -273,7 +276,7 @@ The page after PERFORM (press **HOME** twice) carries the instrument's name as i
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **TYPE** | The instrument: **STAGE 77** (the classic stage piano), **SUITCASE** (with its own amp and four 12-inch speakers in a closed cabinet: warm lows, a gently rolled-off treble), **EARLY FELT** (early felt hammers: rounder, darker), **BELL DYNO** (a modified, bell-like voicing: glassy), **VIBES**, the vibraphone (see [VIBES](#vibes-the-vibraphone)), or **MARIMBA** (see [MARIMBA](#marimba)). Applies to the next notes. |
+| K1 | **TYPE** | The instrument: **STAGE 77** (the classic stage piano), **SUITCASE** (clean and round, with no bark, through its own amp and four 12-inch speakers in a closed cabinet: warm lows, a rolled-off treble), **EARLY FELT** (early felt hammers: rounder, darker), **BELL DYNO** (a modified, bell-like voicing: glassy), **VIBES**, the vibraphone (see [VIBES](#vibes-the-vibraphone)), or **MARIMBA** (see [MARIMBA](#marimba)). Applies to the next notes. |
 | K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE 1/3's TONE). On VIBES and MARIMBA: **MALLET** |
 | K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE 1/3's BELL). On VIBES: **MOTOR** on / off; on MARIMBA: **TUBE** |
 
@@ -289,7 +292,7 @@ The instrument's own pages: on an electric piano type there are two, right after
 | --- | --- | --- |
 | K1 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange, brighter all the way to the top at the same loudness |
 | K2 | **BARK** | How close the pickup is: more bark (the growl of hard notes) and more output. The hardest strikes (near velocity 127) stay clean: the growl levels off there instead of overdriving the pickup, and they are still louder and brighter than a firm note |
-| K3 | **BELL** | The bright metallic overtone at the start of each note |
+| K3 | **BELL** | The bright metallic overtone at the start of each note. Over 5.0 it adds more bell from C4 down, less toward C5 and none above, so the top keys stay clean; under 5.0 it takes the bell away on every key |
 | K4 | **HAMMER** | Hammer hardness: softer is darker, harder is brighter |
 
 ![VOICE 2/3](manual/img/voice2.png?v=55550a06)
@@ -317,7 +320,7 @@ velocity settings. They work in two separate layers:
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **RESPONSE** | How the instrument answers velocity, for every note (taken at each new note, so a change never jumps a ringing one). **FULL** (the default): the full dynamic range, soft notes very soft (about 34.5 dB from velocity 20 to 127). **LIGHT**: a light touch, soft notes come out louder (about 25.5 dB from 20 to 127, as 0.9.9), so even playing is easier. The tone is the same in both at every key and velocity, and both play at the same loudness from medium velocities up. On VIBES and MARIMBA, FULL is their own response and LIGHT lifts the soft notes by the same amount as on the electric piano (up to 9 dB, the same tone). Not part of a preset (CC 40) |
+| K1 | **RESPONSE** | How the instrument answers velocity, for every note (taken at each new note, so a change never jumps a ringing one). **FULL** (the default): the full dynamic range, soft notes very soft (about 32 dB from velocity 20 to 127), and the level rises slowly through the middle velocities and steeply toward the top, as a struck instrument does (velocity 64 about 19 dB under 127, 88 about 13 dB). **LIGHT**: a light touch, soft and medium notes come out louder (about 25.5 dB from 20 to 127, as 0.9.9), so even playing is easier. The tone is the same in both at every key and velocity: only the level differs, and the hardest notes play at the same loudness in both. On VIBES and MARIMBA, FULL is their own response and LIGHT lifts the soft notes by the same amount as on the electric piano (up to 9 dB, the same tone). Not part of a preset (CC 40) |
 | K2 | **TOUCH** | How the FM-1's keys turn a press into a velocity. **MEDIUM** (the default): a medium press plays KEY VEL, a harder one louder, a softer one quieter. **LIGHT**: the same press plays louder, for a light hand. **HEAVY**: you have to press harder for the same velocity. **FIXED**: every press plays KEY VEL, however hard (no key velocity) |
 | K3 | **KEY VEL** | How hard the FM-1's own keys strike: the velocity of a medium press (harder presses play louder, softer ones quieter), and with TOUCH at **FIXED** the velocity of every press. Around 60–80 soft and round, 96 medium (the default). With velocity on, a medium press plays at most 107, so a harder press always has room to play louder: KEY VEL from 108 to 127 lifts the soft presses instead (at 127 the lightest press plays 21). With TOUCH at FIXED, 108–127 is hard with bark. MIDI notes keep their own velocity. |
 
@@ -335,7 +338,7 @@ emulator has no velocity: its keys play at KEY VEL.
 
 ### COMPRESSOR
 
-![COMPRESSOR](manual/img/comp.png?v=672989af)
+![COMPRESSOR](manual/img/comp.png?v=bcdebf1d)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -345,7 +348,7 @@ emulator has no velocity: its keys play at KEY VEL.
 | K4 | **MAKEUP** | A trim on top of the compressor's own make-up: 0 to +24 dB |
 
 **THRESH** is its on / off: turn it up from OFF and the compressor comes on at −16 dB (where the presets set it) with
-MAKEUP at +2.8 dB, which keeps the volume of what you play about the same (a quiet, dying tail comes up, as under
+MAKEUP at +1.9 dB (+5.3 dB on VIBES and MARIMBA), which keeps the volume of what you play about the same (a quiet, dying tail comes up, as under
 any compressor; back to OFF switches it off). Switching it on or off fades
 over about 46 ms, so it never clicks. The bottom of the page is a gain-reduction meter, as on a hardware compressor: its segments light from 1 dB
 to 30 dB of reduction (scale 3, 6, 10, 20, 30), a bright segment holds the peak for a second, and the number on the
@@ -384,7 +387,7 @@ LOW, 35 MID, 36 MID FREQ, 37 HIGH (64 = +0.0 dB).
 
 ### DRIVE
 
-![DRIVE](manual/img/drive.png?v=8de4a56b)
+![DRIVE](manual/img/drive.png?v=3ff0b9f8)
 
 The amp drive, right after the compressor and the EQ (before the filter). AMOUNT can also be put on a PERFORM knob (DRIVE on ASSIGN). There are five drives, all
 overdrive types (none of them a fuzz): **FDRV** is the original Frodhes drive, and the other
@@ -396,7 +399,7 @@ live like the instruments, never sampled).
 | K1 | **EFFECT** | The drive's type, or **OFF**: **FDRV**, **KHLON**, **TSH8**, **OHCD** or **BHLUE** (below). Switching it on with AMOUNT at 0 gives it a starting amount. A new type takes over smoothly: the one playing fades out, then the new one fades in (about a tenth of a second); only one type plays at a time |
 | K2 | **AMOUNT** | How hard the piano drives the type, from clean to its fullest (what each type does on the way is below); at 0 there is no drive |
 | K3 | **TONE** | The type's own tone control (below). On FDRV the middle leaves the sound as it is; on the other four TONE is the circuit's own tone knob, so its middle is that circuit's usual voice, not always flat |
-| K4 | **MIX** | Dry / driven, the same on every type: 10.0 is all drive, lower blends the clean piano back in, 0 is clean |
+| K4 | **MIX** | Dry / driven, the same on every type and on every effect's MIX: from 0 (**DRY**, clean) to the middle the clean piano stays whole and the drive comes in; at the middle (**50/50**) both are whole; from there to the top (**WET**, the default) the drive stays whole and the clean piano goes out |
 
 The types:
 
@@ -494,12 +497,12 @@ their weight.
 
 ### DELAY
 
-![DELAY](manual/img/delay.png?v=967f1cb1)
+![DELAY](manual/img/delay.png?v=44b267de)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **EFFECT** | **OFF**, **DIG** (clean digital), **ANA** (darker, with a little wow and flutter), **TAPE** (a tape echo: one playback head, warm saturating repeats, playback-head EQ, wow and flutter) |
-| K2 | **MIX** | How loud the echoes are: at the middle (64) the first echo is as loud as the dry sound, at the top a little louder. Turning it up also lowers the dry sound a little (−1 dB at the middle, −6 dB at the top), so a full mix is not louder overall |
+| K2 | **MIX** | Dry / echoes: from 0 (**DRY**, no echoes) to the middle the dry sound stays whole and the echoes come up; at the middle (**50/50**) the first echo is as loud as the dry sound; from there to the top the echoes stay whole and the dry sound goes out, so at 127 (**WET**) only the echoes play |
 | K3 | **TIME** | Echo time, free in milliseconds; when DLY SYNC is set on TEMPO it shows and steps note values |
 | K4 | **FEEDBK** | How many echoes, the same at any MIX. On ANA and TAPE the top of the knob (from about 115) lets the echoes build up on their own (below) |
 
@@ -521,7 +524,7 @@ back on to the type it last used (TAPE too). Over MIDI, CC 88 picks the type in 
 
 ### REVERB
 
-![REVERB](manual/img/reverb.png?v=d6331413)
+![REVERB](manual/img/reverb.png?v=d4bb9255)
 
 The reverb, the last effect. It has three types: **HALL**, **PLATE** and **INFINITE**. Its second page, **REVERB 2**, has the pre-delay and three more controls. MIX can also be put on a
 PERFORM knob (REVERB on ASSIGN).
@@ -529,7 +532,7 @@ PERFORM knob (REVERB on ASSIGN).
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **TYPE** | **OFF**, **HALL**, **PLATE** or **INFINITE** (below). OFF stops what goes into the reverb and lets the tail ring out. Switching it on with MIX at 0 gives MIX a starting amount. A new type takes over at once: the old tail fades out in a few milliseconds and the new type starts empty, what goes into it fading in as quickly (no step under a ringing chord) |
-| K2 | **MIX** | How much reverb (0 = none, the tail rings out). With SIZE on AUTO (REVERB 2), more MIX also makes the space bigger on HALL and PLATE (on PLATE once the tail has died away; on INFINITE MIX is the level only) |
+| K2 | **MIX** | Dry / reverb: from 0 (**DRY**, no reverb; the tail rings out) to the middle the dry sound stays whole and the reverb comes up; at the middle (**50/50**) both are whole; from there to the top the reverb stays whole and the dry sound goes out, so at 127 (**WET**) only the reverb plays. With SIZE on AUTO (REVERB 2), more MIX also makes the space bigger on HALL and PLATE (on PLATE once the tail has died away; on INFINITE MIX is the level only) |
 | K3 | **DECAY** | How long the tail rings. HALL: 5.0 (the default), 0 about half as long, 10.0 about twice. PLATE: from under a second to about 6 s. INFINITE: from about 4 s to a minute; from 120 (**SUSTAIN**) the tail stops fading and what you play piles up on it, and at the very top, 127 (**FREEZE**), the tail holds exactly as it is and what you play stays dry |
 | K4 | **TONE** | The tail's treble: darker (more damping) or brighter (less); +0.0 (the default) in between. On PLATE it also darkens what goes in |
 
@@ -539,9 +542,9 @@ The types:
 | --- | --- |
 | **HALL** | A concert hall |
 | **PLATE** | A studio plate: dense from the first moment, bright, with no echoes you can pick out. Good for a ballad or a close, polished sound |
-| **INFINITE** | A huge space that no room has: very long, slowly moving tails that pile up into a pad. At DECAY SUSTAIN (120–126) the tail no longer fades: every note adds to it, up to a ceiling. At FREEZE (127) what is ringing holds, without growing or fading, while you play on top of it dry. Turn DECAY down from either and the tail dies away again |
+| **INFINITE** | A huge space that no room has: very long, slowly moving tails that pile up into a pad. At DECAY SUSTAIN (120–126) the tail no longer fades: every note adds to it, up to a ceiling. At FREEZE (127) what is ringing holds, without growing or fading, while you play on top of it dry (the dry sound whole at any MIX, so it is heard even at WET). Turn DECAY down from either and the tail dies away again |
 
-![REVERB on INFINITE: DECAY at the top reads FREEZE (120–126 read SUSTAIN)](manual/img/reverb-inf.png?v=e05f5b1a)
+![REVERB on INFINITE: DECAY at the top reads FREEZE (120–126 read SUSTAIN)](manual/img/reverb-inf.png?v=ebfd1068)
 
 When the reverb is OFF, a REVERB knob on PERFORM shows **OFF**; turning it up there switches the reverb on with the
 type you used last.
@@ -914,7 +917,7 @@ motor page: SELECT goes from VOICE 2/3 to the [velocity page](#voice-33-velocity
 | --- | --- | --- |
 | K1 | **RING** | How long a struck bar rings: from a quarter to about four times the normal time (the low notes' tube too). Above the middle (64) the notes are also turned down as RING rises, so that the hardest strike still stays just under full scale: the low ones the most (at 127 about 6 to 9 dB from C2 to G3, 3 dB at C4, under 1 dB from C6 up). So from about 72 up RING makes the low notes ring longer rather than louder; at 64 and under nothing changes |
 | K2 | **MUTE** | The player's hand when you let go of a key: **0** (MUTE 0.0) lets the note ring out as on a real marimba; up, the hand stops it sooner; at 10.0 it is 60 dB down well within a tenth of a second |
-| K3 | **NOISE** | The mallet's contact: a soft tick at the start of the note (no damper, so nothing at the key-up) |
+| K3 | **NOISE** | The mallet's contact: a soft tick at the start of the note (no damper, so nothing at the key-up). From 64 up the tick grows a little faster, so at 127 it stands out on the highest notes too |
 | K4 | **TUNE** | Fine tuning, ±50 cents (many marimbas are tuned to A = 442 Hz: +8) |
 
 **MUTE, not DAMPER.** On VIBES the second card of VOICE 2/4 is the DAMPER, the felt bar that stops the notes when you
@@ -944,7 +947,7 @@ MARIMBA (0–95 VIBES); Program Change 14 / 15 loads F15 / F16. **Polyphony:** 1
 
 ## 6. Presets
 
-![Browsing presets](manual/img/browse.png?v=041a80be)
+![Browsing presets](manual/img/browse.png?v=0757e8ef)
 
 Turn **PRESETS** to browse: **F01–F19** are the factory sounds (F13 and F14 are VIBES, F15 and F16 MARIMBA), **U01–U16** your own, after F19. A preset loads when you stop
 turning (after 0.4 s). If you did not mean to, **hold SAVE** (0.7 s) to go back to the sound you had before the
@@ -974,7 +977,7 @@ the tail.
 | Preset | What it is |
 | --- | --- |
 | F01 STAGE 77 | The stage piano: a bright tone, the bell full, the bark lower, a trace of hall (the sound Frodhes starts with) |
-| F02 SUITCASE | The suitcase piano: its cabinet, no vibrato, a gentle compressor, a bright tone, a soft hammer, a trace of hall |
+| F02 SUITCASE | The suitcase piano: its cabinet, no vibrato, a gentle compressor, the TONE up for brightness over its round voice, a soft hammer, a trace of hall |
 | F03 EARLY FELT | The early felt-hammer piano: its soft onset, a bright tone, a gentle compressor, a trace of hall |
 | F04 BELL DYNO | The bell voicing as it is, a short plate |
 | F05 WARM 77 | A warm stage piano: a gentle compressor, the tone and the bark a little up, a little hall |
@@ -1023,7 +1026,7 @@ The first save writes them to the FM-1 with your preset; from then on they are u
 again to store it, or **HOME** (or **OCT−**) to cancel. The name is made from the type and the effects that are on
 ("SUIT TRM PHA").
 
-![Save mode](manual/img/save.png?v=1972b9b8)
+![Save mode](manual/img/save.png?v=9673d68e)
 
 The save waits for silence: the bottom line says **SAVING...** until the sound has died away, then **SAVED**. INFINITE's SUSTAIN and FREEZE hold their tail without end, so while one of them is on the save waits and the bottom line says **SAVE WAITS: SUSTAIN ON** or **SAVE WAITS: FREEZE ON**; turn DECAY down (or change the type, or switch the reverb OFF), let the tail die away, and the save goes through. The settings are saved the same way, once it is quiet. A user
 preset can be overwritten but not deleted, and browsing skips the empty ones. There is no factory reset: F01–F19 are
@@ -1059,7 +1062,7 @@ crossfade), without changing any setting: compare the dry piano with your sound.
 piano's dynamics and level do not change: with the effects' depths at 0, FX on and off sound the same. The header shows **BYP** while they are off. It is not saved, so the FM-1 always starts with the effects
 on.
 
-![FX bypass](manual/img/bypass.png?v=7711c5d8)
+![FX bypass](manual/img/bypass.png?v=cc3f23b4)
 
 The order of the chain: **COMP → EQ → DRIVE → FILTER → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter.** The limiter at the
 end keeps even big chords of ten notes from ever clipping.
@@ -1127,13 +1130,11 @@ release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with ha
 up (CC 64 below 64) also releases a latched REC, so a real pedal always works as a pedal; with no CC 64 coming in,
 the latch stays on until you tap REC again.
 
-**Polyphony: 10 voices** on every instrument (14 with the two-core package, `frodhes-c1.fwsc`: [install](#install)), counting notes still ringing under the sustain and the notes that
+**Polyphony: 14 voices** on every instrument, counting notes still ringing under the sustain and the notes that
 chord mode, the arpeggiator and the sequencer play. Striking a note that is still sounding reuses its voice, so
 repeated notes do not use up voices. One note more takes over the quietest released note first, or else the oldest
-held one, with a short fade (1.5 ms), so there is no click. On VIBES and MARIMBA, more notes than voices at the same
-instant (a computer's chord, a sequencer step) start 10 at a time, one audio block (5.8 ms) apart, in order. In the
-two-core package, on every instrument, more than 5 notes at the same instant (a chord of 6 or more from a computer)
-start 5 at a time, 2.9 ms apart. The audio also has a safety guard: if it ever ran late, the quietest released note
+held one, with a short fade (1.5 ms), so there is no click. On every instrument, more than 5 notes at the same
+instant (a chord of 6 or more from a computer, a sequencer step) start 5 at a time, 2.9 ms apart, in order. The audio also has a safety guard: if it ever ran late, the quietest released note
 would be faded out rather than letting the sound break up. In testing, with every voice struck and every effect on,
 the guard never acts.
 
@@ -1273,11 +1274,11 @@ an uneven stream record it cleanly.
 | | |
 | --- | --- |
 | **Sound** | A physical model computed live, no samples. Electric pianos: hammer, tine, tonebar and pickup, every key a little different, the tine's slow whirl on E2–C6, SPREAD across the stereo field (CC 105); 4 types (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO). VIBES: a vibraphone, mallet, bar modes, tuned tube and motor. MARIMBA: rosewood bars, mallet, bar modes and tuned tube, no damper or motor (C2–C7 authentic) |
-| **Polyphony** | 10 voices (the electric pianos, VIBES and MARIMBA; 14 with the two-core package); an 11th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
+| **Polyphony** | 14 voices (the electric pianos, VIBES and MARIMBA); a 15th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
 | **Range** | 88 notes, A0–C8 over MIDI (notes outside play the nearest end); the 27 keys play F3–G5, OCT ±2 octaves, TRANSP ±24 semitones, TUNE ±50 cents |
 | **Velocity** | MIDI 1–127. The FM-1's keys: F3–C5 sense how firmly they land (TOUCH LIGHT / MEDIUM / HEAVY, KEY VEL the velocity of a medium press, default 96), C#5–G5 play the recent average; TOUCH FIXED: every key at KEY VEL (1–127) |
-| **Audio** | 44.1 kHz, integer processing, 256-frame blocks (5.8 ms; the two-core package plays each block in two halves of 2.9 ms, and a note starts at the next half); output limiter; silent between notes (no hiss on the USB audio) |
-| **Latency** | From a MIDI note (USB) to the headphone jack: about 10 ms; the two-core package about 6.5 ms (9 in 10 notes within 8 ms, the slowest 8.5 ms). To the USB audio, including the computer's buffers: about 13 ms; the two-core package about 10.5 ms |
+| **Audio** | 44.1 kHz, integer processing, 256-frame blocks (5.8 ms) played in two halves of 2.9 ms (a note starts at the next half), the voices on one core and the effects on the other; output limiter; silent between notes (no hiss on the USB audio) |
+| **Latency** | From a MIDI note (USB) to the headphone jack: about 6.5 ms (9 in 10 notes within 8 ms, the slowest 8.5 ms). To the USB audio, including the computer's buffers: about 10.5 ms |
 | **Outputs** | Stereo headphone jack (MASTER); USB audio to the computer, stereo 16-bit, 44.1 or 48 kHz, following MASTER or fixed (USB VOL) |
 | **MIDI in** | USB-MIDI and the TRS jack (on / off); CHANNEL ALL or 1–16 |
 | **MIDI out** | USB only: notes from the keys, chord mode, arpeggiator and sequencer. No clock, CC or program change out |
@@ -1328,10 +1329,24 @@ Audio Unit on macOS. It has the same instruments, effects and factory sounds as 
 in the higher-quality version, with 24 voices. Everything in this manual applies to the sound. Its own window shows the pages as cards
 with knobs, with the presets, MIDI learn, the effects' bypass and the sustain latch; your host saves everything with
 the project. The host's tempo drives the synced effects; the FM-1's sequencer, arpeggiator and chord mode are not in
-the plugin. The downloads, the install and the first-open steps for a plugin that is not signed yet:
-[the README](../README.md#on-your-computer-the-desktop-plugin).
+the plugin. When a newer Frodhes is out, the plugin downloads its package into Downloads and shows an INSTALL key on
+the window that opens it; close your music software, then install (it asks GitHub at most once a day; SETTINGS >
+UPDATES OFF turns it off:
+[PLUGIN.md](PLUGIN.md#check-for-updates)). The downloads, the install and the first-open steps for a plugin that is
+not signed yet: [the README](../README.md#on-your-computer-the-desktop-plugin).
 
 ![The desktop plugin's window: the VOICE knobs, two effect sections and a keyboard](manual/img/plugin/plugin-main.png?v=a6729600)
+
+## 18. Appendix: the Akai MPC
+
+Frodhes also runs on Akai MPC standalone hardware as a plugin (MPC OS 3.10.1 or later, External Plugin Support on):
+the desktop plugin's engine in the higher-quality version, 16 voices on every instrument, and the factory presets
+F01-F57 as its programs. Everything in this manual applies to the sound. Its pages on the MPC's screen show the
+plugin's look: eight pages of large knobs in panels of four, each panel one Q-Link group; touching a panel brings it
+under the Q-Links. The MPC's tempo drives the synced effects; the FM-1's sequencer, arpeggiator and chord mode are not
+in the plugin. The download, the install and the page list: [docs/MPC.md](MPC.md).
+
+![Frodhes on the Akai MPC: the VOICE page](manual/img/mpc/mpc-voice.png?v=ab028bbc)
 
 ---
 

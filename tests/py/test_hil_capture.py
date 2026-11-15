@@ -157,13 +157,21 @@ class FakeStream:
 
 
 class FakeSD:
+    """rates: each device's default_samplerate as PortAudio cached it (at its first use); opened: (device, rate,
+    extra_settings) per InputStream"""
     def __init__(self, rates, lat):
         self.rates, self.lat, self.base, self.sent = rates, lat, time.monotonic() - 500.0, []
+        self.opened = []
 
     def query_devices(self, dev):
         return {"default_samplerate": float(self.rates[dev]), "max_input_channels": 2 if dev == 0 else 6}
 
-    def InputStream(self, device, samplerate, channels, dtype, callback):
+    class CoreAudioSettings:
+        def __init__(self, change_device_parameters=False, fail_if_conversion_required=False):
+            self.change, self.exact = change_device_parameters, fail_if_conversion_required
+
+    def InputStream(self, device, samplerate, channels, dtype, callback, blocksize=0, extra_settings=None):
+        self.opened.append((device, samplerate, extra_settings))
         return FakeStream(device, samplerate, channels, callback, self.base, self.sent, self.lat[device])
 
 
@@ -180,9 +188,9 @@ def fake_rig(sd):
 
 
 def test_rig_takes_are_slices_on_the_event_clock():
-    """two devices at their own rates (44.1 / 48 kHz), the USB with 6 ms latency, the jack with 2 ms: in every take
-    (one stream for all of them) the note sits at its event time + latency on both, at FS"""
-    sd = FakeSD({0: 44100, 1: 48000}, {0: 0.006, 1: 0.002})
+    """two devices at their own rates (the USB opened at FS, the jack at its 44.1 kHz), the USB with 6 ms latency,
+    the jack with 2 ms: in every take (one stream for all of them) the note sits at its event time + latency on both, at FS"""
+    sd = FakeSD({0: 44100, 1: 44100}, {0: 0.006, 1: 0.002})
     r = fake_rig(sd)
     r.add_jack(1, 4)
     try:
@@ -204,6 +212,52 @@ def test_rig_takes_are_slices_on_the_event_clock():
             assert r.wait_silence(2.0)                                              # the polls: slices too
     finally:
         r.cap.close()
+
+
+def test_rig_usb_stream_switches_the_device_to_fs():
+    """the FM-1's USB stream at FS with the device itself switched to it and conversion refused, whatever PortAudio's
+    cached default_samplerate says. 2026-11-12 (0.9.10 / 0.9.11 T2, hil_scan --tier full): stress_max had switched the
+    FM-1 to 44.1 kHz in the same process, the cache still said 48 kHz, the stream opened at 48 kHz without the switch
+    and Core Audio converted: ADC-time steps of -10 / +10 ms every 0.134 s in every USB take"""
+    for cached in (44100, 48000):
+        sd = FakeSD({0: cached, 1: 48000}, {0: 0.006, 1: 0.002})
+        r = fake_rig(sd)
+        try:
+            r.capture()
+            dev, rate, ex = sd.opened[0]
+            assert (dev, rate) == (0, h.FS), sd.opened
+            assert ex is not None and ex.change and ex.exact, "the device switched, no conversion"
+            assert r.cap.rings["usb"].sr == h.FS
+        finally:
+            r.cap.close()
+
+
+def test_conversion_beat_is_a_gap_every_take():
+    """the signature the fix removes: block ADC times that step -10.7 ms and back 21 ms later every 0.1344 s (frames
+    continuous) make Ring.cut report gaps in every 0.5 s take, the pairs 0.134 s apart (hil_rate_check.beat reads
+    the period back); the same frames with honest ADC times: no gap"""
+    import hil_rate_check as rc
+    sr, blk = 48000, 512
+    n = int(20 * sr / blk)
+    t = 100.0 + np.arange(n) * blk / sr
+    bad = t.copy()
+    per = 0.1344
+    for i in range(n):
+        ph = (t[i] - 100.0) % per
+        if ph < 0.021:                                   # two blocks early by a buffer, then back on time
+            bad[i] -= blk / sr
+    for adc, want in ((t, 0), (bad, 1)):
+        r = h.Ring(sr, 1, secs=30)
+        for i in range(n):
+            r.push(np.zeros((blk, 1), np.float32), adc[i])
+        x = r.cut(101.0, 10.0)
+        assert x is not None
+        if not want:
+            assert r.gaps == []
+        else:
+            assert len(r.gaps) > 100
+            b = rc.beat(r.gaps)
+            assert b and abs(b["period"] - per) < 0.01 and abs(abs(b["step_ms"]) - 1000 * blk / sr) < 1.0, b
 
 
 def test_a_cut_never_stalls_the_callback():

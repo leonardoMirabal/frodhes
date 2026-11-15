@@ -273,6 +273,7 @@ int main(int argc, char **argv)
         snprintf(pd, sizeof pd, "%s/user-presets", outdir);
         setenv("FRODHES_PRESET_DIR", pd, 1);
     }
+    setenv("FRODHES_UPDATE_CHECK", "0", 0);          /* (no update check from the tests, unless asked: =1) */
     snprintf(exe, sizeof exe, "%s/Contents/MacOS/Frodhes", argv[1]);
     if (!(lib = dlopen(exe, RTLD_LOCAL | RTLD_NOW))) { fprintf(stderr, "%s\n", dlerror()); return 1; }
     entry = dlsym(lib, "clap_entry");

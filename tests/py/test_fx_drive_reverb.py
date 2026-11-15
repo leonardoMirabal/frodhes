@@ -79,14 +79,18 @@ def test_drive_mix_and_switch():
     full, _ = run("full", DRV, CHORD, 1300)
     m0, _ = run("mix0", DRV + [(83, 0)], CHORD, 1300)
     off, _ = run("off", DRV + [(84, 0)], CHORD, 1300)
-    half, _ = run("mix64", DRV + [(83, 64)], CHORD, 1300)
+    half, _ = run("mix32", DRV + [(83, 32)], CHORD, 1300)
+    both, _ = run("mix64", DRV + [(83, 64)], CHORD, 1300)
     assert np.array_equal(m0, dry)                   # MIX 0 = dry, sample for sample
     assert np.array_equal(off, dry)                  # OFF = dry, whatever the AMOUNT
-    a, b, h = (seg(x, 0.15, 0.95) for x in (dry, full, half))
+    a, b, h, w = (seg(x, 0.15, 0.95) for x in (dry, full, half, both))
     sig = rms_db(b)
     assert rms_db(b - a) > sig - 20                  # the drive is audible against the dry
-    assert rms_db(h - a) > sig - 30 and rms_db(h - b) > sig - 30   # MIX 64 lies audibly between the two
-    assert rms_db(h - a) < rms_db(b - a) - 3         # ... nearer the dry than the full drive is
+    # 0.9.13 E2 (the MIX law, as Textura's; it was a crossfade, MIX 64 "nearer the dry than the full drive"): MIX 32
+    # is the dry whole plus half the drive, MIX 64 the dry whole plus the drive whole
+    assert rms_db(h - a) > sig - 30 and rms_db(h - b) > sig - 30   # MIX 32 audibly unlike either
+    assert rms_db(h - a - b / 2) < sig - 30, (rms_db(h - a - b / 2), sig)
+    assert rms_db(w - a - b) < sig - 30, (rms_db(w - a - b), sig)
 
 
 def test_drive_tone_tilts():
@@ -129,7 +133,9 @@ def wet(tag, ccs, notes=HIT, end_ms=5000):
     the return is added to the dry signal)"""
     w, _ = run(tag, ccs, notes, end_ms)
     d, _ = run("rv-dry", [c for c in ccs if c[0] != 91] + [(91, 0)], notes, end_ms)
-    return w - d
+    v = [c[1] for c in ccs if c[0] == 91][-1]
+    g = 1.0 if v <= 64 else ((127 - v) * 32768 + 31) // 63 / 32768   # (0.9.13 E2: MIX past 64 lowers the dry, fx.c RV_DRY)
+    return w - g * d
 
 
 def t60(x, t0=0.45):
@@ -266,6 +272,9 @@ def test_drive_is_heard(eng, vel):
         f = np.fft.rfftfreq(len(x), 1 / FS)
         hi = 10 * np.log10(X[(f >= 1000) & (f < 3000)].sum() + 1e-9) - 10 * np.log10(X[f < 300].sum() + 1e-9)
         out[d] = (hi, 20 * np.log10(np.abs(x).max() / np.sqrt(np.mean(x * x))), rms_db(x))
-    assert out[127][0] - out[0][0] >= (15 if eng == "rhodes" else 5), out   # (VIBES starts brighter: +6 dB, the Rhodes +43)
-    assert out[127][1] < out[0][1] - (2 if vel >= 110 else 1), out   # (v95: 0.9.9 drops 1.8 dB, the clean 0.9.10 1.6)
+    # THRESHOLD (2026-11-14, SND3): the Rhodes at v95, the band 15 -> 14 dB and the crest step 1 -> 0.75 dB. RESPONSE
+    # FULL's convex curve plays v95 3.4 dB quieter into DRIVE, which drives it less: +14.4 dB and 0.81 dB (5.69 -> 4.88).
+    # v110 keeps 15 / 2
+    assert out[127][0] - out[0][0] >= (5 if eng != "rhodes" else 14 if vel < 110 else 15), out   # (VIBES starts brighter: +6 dB, the Rhodes +43)
+    assert out[127][1] < out[0][1] - (2 if vel >= 110 else 0.75), out   # (v95: 0.9.9 drops 1.8 dB, the clean 0.9.10 1.6)
     assert abs(out[64][2] - out[0][2]) <= 2.0, out

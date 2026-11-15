@@ -91,7 +91,7 @@ CC = dict(TYPE=80, DRIVE=81, TW_SW=17, TW_DEPTH=18, TW_RATE=19, TW_MODE=21, CP_S
           DL_SW=88, DL_DEPTH=89, DL_TIME=90, DL_FDBK=26, REV=91, PH_SW=12, PH_DEPTH=13, PH_SPEED=14, PH_FDBK=16,
           CMP_SW=106, CMP_AMT=107, CMP_ATK=108, CMP_REL=109, NOISE=104, SUS=64, RAW=119, CMP_RAT=112, CMP_GAIN=113,
           PH_SPEED2=14, CP_SPEED2=87, TW_SHAPE=22, DL_TONE=27, LEVEL=110, BYPASS=111, ARP=52, CHORD=56, SEQ=60, SQREC=63,
-          FL_TYPE=70, FL_FREQ=74, FL_RESO=71, FL_LFO=72)
+          FL_TYPE=70, FL_FREQ=74, FL_RESO=71, FL_LFO=72, RV_TYPE=95)
 DRY = dict(DRIVE=0, REV=0, TW_SW=0, CP_SW=0, PH_SW=0, DL_SW=0, CMP_SW=0, RAW=0, SUS=0, ARP=0, CHORD=0, SQREC=0, SEQ=0,
            FL_TYPE=0)
 # (ARP, CHORD, SEQ, SQREC: the arpeggiator, chord mode, the sequencer and its recording off)
@@ -161,7 +161,7 @@ def db(x):
 
 
 RESET_CC, RESET_LEAD = 10, 0.05   # the developer reset (fx.c fx_reset_state) and how long before a take's first note
-REPEATS = dict(types=3, presets=3, fx_all=2)   # takes per measure, their median judged (--repeats N: all of them)
+REPEATS = dict(types=3, presets=1, fx_all=2)   # (presets: per chord of PR_CHORDS, 0.9.13; 3 takes of one chord before)   # takes per measure, their median judged (--repeats N: all of them)
 
 
 def with_reset(events, lead=RESET_LEAD):
@@ -490,6 +490,8 @@ class Rig(RigBase):
     def __init__(self):
         import mido
         import sounddevice as sd
+        import lock
+        lock.usb_audio()                # (one audio tool at a time: tools/lock.py)
         self.sd = sd
         names = fm1_ports.pick(mido.get_output_names())
         if not names:
@@ -551,11 +553,18 @@ class Rig(RigBase):
         time.sleep((t0 + at * per - time.monotonic()) % span)
 
     def capture(self):
-        """the persistent recorder, opened at the first use (the FM-1's USB, stereo)"""
+        """the persistent recorder, opened at the first use (the FM-1's USB, stereo, at FS with the device itself
+        switched to FS and any conversion refused). Not at query_devices()' default_samplerate: PortAudio reads it
+        once, at its first use, so after stress_max (hil_crackle switches the FM-1 to 44.1 kHz) in the same process
+        (--tier full) it still said 48 kHz, the stream opened at 48 kHz on a device at 44.1 kHz and Core Audio
+        converted: the blocks' ADC times then stepped -10 ms and +10 ms 20 ms later every 0.134 s (7.44 Hz, two
+        ~10.7 ms buffer cadences beating), Ring.cut re-anchored on each step, and every USB take of the 0.9.10 /
+        0.9.11 T2 scans (2026-11-12) had a 10 ms hole and a 10 ms overwrite 7.44 times a second
+        (tools/hil_rate_check.py tells this apart from the FM-1's own USB stream on the device in ~2 min)"""
         if self.cap is None:
             import atexit
             self.cap = Capture(self.sd)
-            self.cap.add("usb", self.dev, (0, 1), 2)
+            self.cap.add("usb", self.dev, (0, 1), 2, sr=FS, switch_rate=True)
             atexit.register(self.cap.close)
         return self.cap
 
@@ -867,10 +876,11 @@ def types(r, rep):
                                   for j in range(i + 1, RHODES_TYPES)]   # (information: the bands 60 dB down floored)
     spread = max(out[t]["repeat_db"] for t in out)
     rep["types_repeat_db"] = spread
-    return min(dist) > 1.5 and max(lv) - min(lv) < 3, ("levels " + ", ".join(f"{lv[t]:.1f}" for t in range(RHODES_TYPES)) +
-                                                     " dB; spectral distance between types min " + f"{min(dist):.2f} dB (" +
-                                                     ", ".join(f"{d:.2f}" for d in dist) + f"); median of {reps('types')}"
-                                                     f" takes, their own spread <= {spread:.2f} dB")
+    ok = min(dist) > 1.5 and max(lv) - min(lv) < 3
+    return ok, ("levels " + ", ".join(f"{lv[t]:.1f}" for t in range(RHODES_TYPES)) +
+                " dB; spectral distance between types min " + f"{min(dist):.2f} dB (" +
+                ", ".join(f"{d:.2f}" for d in dist) + f"); median of {reps('types')}"
+                f" takes, their own spread <= {spread:.2f} dB")
 
 
 # The classic chords hold no octave: two notes an octave apart sum their coinciding partials (A3's 2nd and A4's 1st,
@@ -881,6 +891,27 @@ def types(r, rep):
 CH_NOTES = (57, 60, 64)                   # A3 C4 E4 (v100)
 FX_NOTES = (48, 55, 64)                   # C3 G3 E4 (v108: the FM-1's own keys)
 CHORD = [(0.05, "on", n, 100) for n in CH_NOTES] + [(1.25, "off", n, 0) for n in CH_NOTES]
+
+
+def chord_ev(notes, v=100):
+    """a chord's take events, as CHORD's"""
+    return [(0.05, "on", n, v) for n in notes] + [(1.25, "off", n, 0) for n in notes]
+
+
+# The chord-robust rows (0.9.13): a sustained note and its reverb meet at a phase fixed per frequency, so one chord's
+# loudness with the reverb on reads a draw of that interference: A3-C4-E4 + REV 50 read +1.16 LU over REV 0 on one
+# core, +0.28 on two cores, while 12 chords across the range read +0.55 / +0.28 on average (host, LUFS 0..1.1 s, the
+# bypass row's effects); the per-note spread is up to +-4 dB (release_diff k81v40 FX). bypass and the effects' reverb
+# rows judge the mean of CHORDS_13, presets (U04 too) the mean of PR_CHORDS, each chord's own reading reported. Roots
+# from E1 to C6, three voicings in turn (root position, first inversion, open: no octave between two notes, the
+# CH_NOTES rule above)
+_VOIC = ((0, 4, 7), (4, 7, 12), (0, 7, 16))
+CHORDS_13 = [CH_NOTES] + [tuple(r + d for d in _VOIC[k % 3]) for k, r in
+                          enumerate(int(round(28 + k * 56 / 11)) for k in range(12))]      # A3-C4-E4, then E1 .. C6
+# presets: six chords in the register its targets were set in (PRESET_TARGET, A3-C4-E4): a preset's TONE, filter and
+# drive move its level re F01 with the register (CHORDS_6 spread E1..C6 put 12 presets off their targets, a chord
+# span up to 21 LU); these average the reverb's draw where the targets hold
+PR_CHORDS = [CH_NOTES, (53, 57, 60), (55, 59, 62), (60, 64, 67), (62, 65, 69), (59, 62, 66)]   # A3 F3 G3 C4 D4 B3
 FX = [
     ("drive 64", dict(DRIVE=64)), ("drive 127", dict(DRIVE=127)),
     ("comp 64", dict(CMP_SW=127, CMP_AMT=64)), ("comp 127", dict(CMP_SW=127, CMP_AMT=127)),
@@ -889,6 +920,7 @@ FX = [
     ("phaser", dict(PH_SW=127, PH_DEPTH=100, PH_FDBK=64)), ("chorus", dict(CP_SW=64, CP_DEPTH=100)),
     ("delay dig", dict(DL_SW=48, DL_DEPTH=80, DL_TIME=64)), ("delay ana", dict(DL_SW=80, DL_DEPTH=80, DL_TIME=64)),
     ("reverb 64", dict(REV=64)), ("reverb 127", dict(REV=127)),
+    ("reverb INF 127", dict(REV=127, RV_TYPE=112)),     # (0.9.13: INFINITE alone, CC 95's 4th band)
     ("everything", dict(DRIVE=40, CMP_SW=127, CMP_AMT=64, TW_SW=64, TW_DEPTH=64, PH_SW=127, PH_DEPTH=64,
                         CP_SW=64, CP_DEPTH=64, DL_SW=48, DL_DEPTH=64, REV=64)),
 ]
@@ -922,7 +954,7 @@ def effects(r, rep):
     ref = r.take(1.5, CHORD)
     i0 = max(onset(ref, t=0.05), 0)
     base_direct = db(ref[i0:i0 + int(0.25 * FS)])
-    rows, bad = [], []
+    rows, bad, refs = [], [], None
     for name, kv in FX:
         r.dry(**kv)
         x = r.take(2.2, CHORD)
@@ -939,52 +971,117 @@ def effects(r, rep):
                    tail_db=db(x[i + int(1.3 * FS):i + int(1.9 * FS)]), clicks=clicks(x), window_s=w)
         rows.append(row)
         row["with_tail_db"] = db(x[i:i + int(w * FS)]) - base
+        if name.startswith("reverb"):                   # the chord-robust rows (0.9.13): delta_lu the mean of CHORDS_13
+            if refs is None:                            # (the direct sound re the dry's, each chord); the A3-C4-E4
+                r.dry()                                 # take above stays for the other columns
+                refs = []
+                for ch in CHORDS_13:
+                    y = r.take(1.5, chord_ev(ch))
+                    j = max(onset(y, t=0.05), 0)
+                    refs.append(lufs(y[j:j + int(0.25 * FS)] / 32768.0))
+                r.dry(**kv)
+            per = []
+            for ch, rf in zip(CHORDS_13, refs):
+                y = r.take(2.2, chord_ev(ch))
+                j = max(onset(y, t=0.05), 0)
+                per.append(lufs(y[j:j + int(0.25 * FS)] / 32768.0) - rf)
+            row.update(delta_lu=float(np.mean(per)), chord_lu=[float(v) for v in per], a3_lu=lu)
         lim = 99 if name.startswith(("comp", "everything")) else 3   # a compressor's level depends on the playing
         # loudness, not RMS: the wah's resonance adds +4.5 dB RMS in the mids but +0.2 LU (fx_all) to the ear
         wide = row["lr_corr"] < 0.8
         target = -2.5 if wide and name.startswith("chorus") else 0.0       # the chorus' width compensation (0.8;
         # the phaser has none: FXALL_EXPECT's note)
+        # THRESHOLD (0.9.13, chord-robust rows): the reverb rows judge the mean of CHORDS_13 (A3-C4-E4 alone until
+        # then), the targets unchanged; each chord's reading in the report (chord_lu)
+        if name == "reverb 127":
+            # THRESHOLD (2026-11-14, T2 0.9.12): E2's MIX law (0.9.12): 127 is the reverb alone, so the "direct
+            # sound" (0..0.25 s) is the hall's early part, the dry gone (L/R correlation 0.04): target 0 -> -8.1 LU,
+            # the same +-3 (FM-1 -8.07, host -8.10; the whole 1.1 s -3.3 dB; 0.9.11, the dry whole: FM-1 +0.7,
+            # host +0.54)
+            target = -8.1
+        if name in ("reverb 127", "reverb INF 127"):
+            # THRESHOLD (0.9.13): the reverb alone on the 13 chords' mean, +-3 -> +-1.5 LU (a tightening): the mean
+            # holds (host one core -8.0 / -14.2, two cores -8.2 / -14.5) and a reverb 3 dB quiet (the fault
+            # injection, tests/py/test_hil_limits.py: -11.1 / -17.4) must fail, which +-3 let through. INFINITE alone
+            # (new): -14.3
+            target, lim = (-8.1, 1.5) if name == "reverb 127" else (-14.3, 1.5)
         if abs(row["delta_lu"] - target) > lim or clip or row["clicks"]:
             bad.append(name)
     rep["effects"] = dict(dry_db=db(ref[i0:i0 + int(1.1 * FS)]), rows=rows)
-    summary = "; ".join(f"{q['name']} {q['delta_lu']:+.1f}" for q in rows)
+    summary = "; ".join(f"{q['name']} {q['delta_lu']:+.1f}" + (f" (the mean of {len(q['chord_lu'])} chords, "
+                         f"{min(q['chord_lu']):+.1f} .. {max(q['chord_lu']):+.1f})" if "chord_lu" in q else "") for q in rows)
     return not bad, (f"loudness vs dry (LU; delay/reverb: the direct sound; compressor: information): {summary}; "
                      f"problems: {bad or 'none'}")
+
+
+BYPASS_FX_LU = 3.6                 # bypass: effects on vs bypassed, at most (LU; THRESHOLD in bypass())
+
+
+def c1_image():
+    """the two-core FM-1 image (FR_C1) under test: FRODHES_IMAGE=c1 (or --c1) for the FM-1; on the host the build's
+    HOST_DEFS -DFR_C1=1. The C1_KNOWN rows apply only there"""
+    return os.environ.get("FRODHES_IMAGE", "").lower() == "c1" or \
+        bool(re.search(r"-DFR_C1=1\b", os.environ.get("HOST_DEFS", "")))
+
+
+# the two-core image's KNOWN items (classic suites; c1_image() only, each only inside its band; the one-core limits
+# unchanged): (band, reason). (0.9.13: the two-core reverb's 'bypass' and 'presets U04' gone: the HALL / INFINITE
+# level in band, rev_hq_hall.c / rev_hq_inf.c, and the chord-robust rows, CHORDS_13 / CHORDS_6)
+C1_KNOWN = {
+}
 
 
 @test
 def bypass(r, rep):
     """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs the compressor alone (the bypass
     keeps the compressor: FR_BYP_KEEP_CMP, the user 2026-11-08 "leave compressor aside of the efx off button")"""
+    def takes(dur):                                    # the mean of CHORDS_13 (the chord-robust rows, 0.9.13)
+        out = []
+        for ch in CHORDS_13:
+            x = r.take(dur, chord_ev(ch))
+            i = max(onset(x, t=0.05), 0)
+            out.append(lufs(x[i:i + int(1.1 * FS)] / 32768.0))
+        return np.array(out)
     r.dry()
-    a = r.take(1.5, CHORD)
+    a = takes(1.5)
     r.dry(CMP_SW=127, CMP_AMT=50, CMP_GAIN=15)
-    d = r.take(1.5, CHORD)
+    d = takes(1.5)
     r.dry(PH_SW=127, PH_DEPTH=80, CP_SW=64, CP_DEPTH=64, REV=50, DRIVE=30, CMP_SW=127, CMP_AMT=50, CMP_GAIN=15)
-    b = r.take(2.2, CHORD)
+    b = takes(2.2)
     r.cc_raw(111, 127)
     r.settle()
-    c = r.take(1.5, CHORD)
+    c = takes(1.5)
     r.cc_raw(111, 0)
-    lv = []
-    for x in (a, b, c, d):
-        i = max(onset(x, t=0.05), 0)
-        lv.append(lufs(x[i:i + int(1.1 * FS)] / 32768.0))
+    lv = [float(np.mean(x)) for x in (a, b, c, d)]
+    per = c - b                                        # effects on under the bypass, per chord
     rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2], comp_only=lv[3])
+    rep["bypass_chords"] = [dict(notes=list(ch), no_fx=float(w), fx_on=float(x), bypassed=float(y), comp_only=float(z))
+                            for ch, w, x, y, z in zip(CHORDS_13, a, b, c, d)]
     # the compressor as the panel switches it on (THRESH up: +2.8 dB makeup); before, it ran with no makeup and the
     # effects-on level sat 5 dB under the bypass by construction.
     # THRESHOLD (2026-11-09, coordinator sign-off 2026-11-09): the bypass is judged against the compressor alone (its settings as the effects-on row's),
     # within 0.5 LU as before; no effects at all is information. Since b2c9ab1b the bypass keeps the compressor, so
     # against no effects it reads its make-up: +2.2 LU on the host (the coordinator saw +0.8 on its run), by design (the
     # user's decision 2026-11-08); bypassed re the compressor alone +0.01 LU (host)
-    ok = abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) < 3
-    return ok, (f"no effects {lv[0]:.1f}, compressor alone {lv[3]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} "
-                f"LUFS (bypassed re the compressor alone {lv[2] - lv[3]:+.2f} LU)")
+    # THRESHOLD (2026-11-13): effects on vs bypassed 3 -> 3.6 LU. The bypass keeps the compressor (+2.4 LU here) and
+    # the phaser at DEPTH 80 reads -2.5 LU by design (FXALL_EXPECT, the peak trim), both 0.9.10; so effects on reads
+    # 3.2 LU under the bypass on the FM-1 with 0.9.10 and 0.9.11 (T2, 2026-11-12) and 3.07 on the host (0.9.9: 1.4,
+    # without both). 3.6: the 0.4 LU the limit had over its measured 2.6 when it was set (2026-10-17), over the
+    # device's +-0.3 LU spread
+    # THRESHOLD (0.9.13, chord-robust rows): the levels are the mean of CHORDS_13 (A3-C4-E4 alone until then), the
+    # limits unchanged. Host, effects on under the bypass: one core A3-C4-E4 3.07, the 13 chords' mean 2.95; two cores
+    # 0.9.12 3.80 / 3.22 (the C1_KNOWN band then). The fault injection (the HALL / INFINITE return -3 dB,
+    # tests/py/test_hil_limits.py) fails the 3.6 on the mean as it did on the one chord
+    ok = abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) < BYPASS_FX_LU
+    msg = (f"no effects {lv[0]:.1f}, compressor alone {lv[3]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} "
+           f"LUFS, the mean of {len(CHORDS_13)} chords (bypassed re the compressor alone {lv[2] - lv[3]:+.2f} LU; effects "
+           f"on under the bypass {lv[2] - lv[1]:.2f}, per chord {per.min():.2f} .. {per.max():.2f}, A3-C4-E4 {per[0]:.2f})")
+    return ok, msg
 
 
 FXALL = [  # (name, settings, expected: LU re clean within +-tol)
     ("drive 20", dict(DRIVE=20)), ("drive 64", dict(DRIVE=64)), ("drive 127", dict(DRIVE=127)),
-    ("comp on (-20 dB 4:1 +4.3)", dict(CMP_SW=127, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=23)),
+    ("comp on (-20 dB 4:1 +1.9)", dict(CMP_SW=127, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=10)),   # (0.9.13: +4.3, 23, was level-neutral at 0.9.11's levels; FULL's curve: +2.7 LU, the Rhodes' make-up 10)
     ("comp -40 dB 20:1 +4.3", dict(CMP_SW=127, CMP_AMT=127, CMP_RAT=127, CMP_GAIN=23)),
     ("trem pan 32", dict(TW_SW=64, TW_DEPTH=32)), ("trem pan 127", dict(TW_SW=64, TW_DEPTH=127)),
     ("trem am 64", dict(TW_SW=64, TW_DEPTH=64, TW_MODE=127)), ("trem am 127 square", dict(TW_SW=64, TW_DEPTH=127, TW_MODE=127, TW_SHAPE=64)),
@@ -994,8 +1091,9 @@ FXALL = [  # (name, settings, expected: LU re clean within +-tol)
     ("phaser 127 fb127", dict(PH_SW=127, PH_DEPTH=127, PH_FDBK=127)),
     ("chorus 32", dict(CP_SW=64, CP_DEPTH=32)), ("chorus 64", dict(CP_SW=64, CP_DEPTH=64)), ("chorus 127", dict(CP_SW=64, CP_DEPTH=127)),
     ("delay dig 50", dict(DL_SW=48, DL_DEPTH=50)), ("delay ana 127", dict(DL_SW=80, DL_DEPTH=127)),
-    ("reverb 32", dict(REV=32)), ("reverb 127", dict(REV=127)),
-    ("all on", dict(DRIVE=30, CMP_SW=127, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=23, TW_SW=64, TW_DEPTH=50, PH_SW=127, PH_DEPTH=60,
+    ("reverb 32", dict(REV=32)), ("reverb 64", dict(REV=64)),   # (0.9.13 E2: "reverb 127" until then; 64 is the send
+    # whole over the dry whole, as 127 was; 127 is now the reverb alone)
+    ("all on", dict(DRIVE=30, CMP_SW=127, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=10, TW_SW=64, TW_DEPTH=50, PH_SW=127, PH_DEPTH=60,
                     CP_SW=64, CP_DEPTH=50, DL_SW=48, DL_DEPTH=40, REV=40)),
 ]
 # fx_all's judgement (LU re clean): 0 +- 2 LU; the chorus 2.5 LU under when wide (fx.c: its width compensation, 0.8);
@@ -1021,7 +1119,10 @@ FXALL = [  # (name, settings, expected: LU re clean within +-tol)
 # 2026-11-08 (fx-level: no effect adds peak, tools/fx_pristine.py): 'phaser 80' -2.5 LU (the peak trim, fx.c PH_T: the
 # comb's in-phase bands had lifted a chord's attack +3.3 dB) by design. ('trem pan 127' -2.0 LU, each side capped at
 # unity, until 2026-11-09: PAN is 0.9.9's equal-power law again, judged at 0 +- 2)
-FXALL_EXPECT = {"drive 127": (-2.3, 1.0), "phaser 80": (-2.5, 1.0)}
+FXALL_EXPECT = {"drive 127": (-1.3, 1.0), "phaser 80": (-2.5, 1.0)}
+# (THRESHOLD 2026-11-14, SND3: drive 127 -2.3 -> -1.3. RESPONSE FULL's convex curve plays fx_all's v108 chord ~2.6 dB
+# quieter into DRIVE, which then drives (and compresses) it less: the host reads -1.29 LU, 0.9.11 -2.3. The DRIVE code
+# is unchanged; the FM-1 must read it again)
 
 
 def lufs(x):
@@ -1212,19 +1313,26 @@ def sustain(r, rep):
     return lb - la > 15, f"0.5 s after the key: damped {la:.1f} dB, with the pedal {lb:.1f} dB"
 
 
+# THRESHOLD (2026-11-13): the take 16 -> 18 s and the limit 15.0 -> 17.0 s (still 1 s before the take's end, as set in
+# 2415d303). 0.9.10's held note loses less over the hold (89e4ab30, the release diff's DECAY rows): the held A3 falls
+# ~3.6 dB/s where 0.9.9's fell ~7, so the gate closes at 15.3 s (0.9.9: 7.5). Measured 15.3 s on the FM-1 with 0.9.10
+# and 0.9.11 (T2, 2026-11-12) and 15.33 s on the host (a 45 s take: exact zero from 15.33 s on, the gate closes)
+HELD_TAIL_S, HELD_TAIL_MAX = 18.0, 17.0
+
+
 @test
 def held_tail(r, rep):
     r.dry(REV=40)
     ev = [(0.05, "on", 57, 100)]
-    x = r.take(16.0, ev)
+    x = r.take(HELD_TAIL_S, ev)
     r.note_off(57)
     g = r.lag(x, ev)                                  # times on the event clock (the note-on at 0.05 s)
-    env = [db(x[g + int(t * FS):g + int((t + 0.5) * FS)]) for t in np.arange(0, 15.5, 0.5)]
+    env = [db(x[g + int(t * FS):g + int((t + 0.5) * FS)]) for t in np.arange(0, HELD_TAIL_S - 0.5, 0.5)]
     nz = np.flatnonzero(np.abs(x).max(axis=1) > 0)
     rep["held_tail"] = dict(env_db=env, last_nonzero_s=float((nz[-1] - g) / FS) if len(nz) else 0.0,
                             hiss_8k_db=None)
     last = rep["held_tail"]["last_nonzero_s"]
-    return last < 15.0, f"held A3 with reverb: output reaches exact zero at {last:.1f} s (gate)"
+    return last < HELD_TAIL_MAX, f"held A3 with reverb: output reaches exact zero at {last:.1f} s (gate)"
 
 
 @test
@@ -1269,11 +1377,23 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 # (2026-11-10, FINAL19 v2: each preset at 0.9.9's preset of the same name by critical-band loudness, the limiter
 # idle, the LEVEL-cut ones under it: the targets re-measured on rc4 by name (host, re F01; F11 RESO SWEEP's +1.4 host
 # is +1.2 on the FM-1 by HOST_SHIFT). The starters U01..U09 kept their LEVELs: v2's F01 sits ~1.2 LU over them)
-PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1.8, 1.0), "RESO SWEEP": (1.2, 1.0),
+# (0.9.13 E2, the MIX law as Textura's, stored values kept: DREAM's REVERB MIX 76 is past the middle, its dry -1.8 dB:
+# -1.0 -> -2.1 (host -2.15), no LEVEL retune until the user's jack listening; THRESHOLD in the E2 commit)
+PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1.8, 1.0), "RESO SWEEP": (2.3, 1.0),
+                 "BELL DYNO": (-1.4, 1.5), "WARM DRIVE": (1.8, 1.5),
                  "VIBES": (-1.1, 1.0), "VIBES ECHO": (-0.9, 1.0), "MARIMBA": (-5.2, 1.0), "WOOD ECHO": (-8.1, 1.0),
-                 "TAPE ECHO": (-0.5, 1.0), "DREAM": (-1.0, 1.0), "U02": (-1.3, 1.0), "U03": (-1.6, 1.0),
+                 "TAPE ECHO": (0.0, 1.0), "DREAM": (-2.1, 1.0), "U02": (-1.3, 1.0), "U03": (-1.6, 1.0),
                  "U04": (0.5, 1.0), "U05": (-1.2, 1.0), "U06": (-1.4, 1.0), "U07": (-1.2, 1.0), "U08": (-1.9, 1.0),
                  "U09": (-1.1, 1.0)}
+# THRESHOLD (0.9.13, the chord-robust rows: presets on PR_CHORDS' mean, A3-C4-E4 alone until then): RESO SWEEP 1.2 ->
+# 2.3, BELL DYNO 0 -> -1.4 (+-1.5 as before), WARM DRIVE 0 -> 1.8 (+-1.5). Their level re F01 moves with the notes (a
+# resonant filter's sweep, the bell's register, a drive): host, one core / two cores, on the six chords F11 +2.48 /
+# +2.62 (HOST_SHIFT +0.2 on top of the target), F04 -1.52 / -1.32, F19 +1.70 / +1.90; on A3-C4-E4 F11 +2.0..+2.1, F04
+# -1.1..-1.4, F19 +1.0..+1.3. Every other target holds on the six chords (both builds)
+# THRESHOLD (0.9.13, the same rows): TAPE ECHO -0.5 -> 0.0 (+-1.0 as before). Its repeats (FDBK 72) land in the
+# 1.1 s window by register, the same every take: host c1 re F01 per chord 0.00, -0.25, +0.05, +0.71, +0.66, +0.11
+# (mean +0.21, every seed; A3-C4-E4 alone 0.00); FM-1 unit 1 (two cores, 2026-11-15) +0.5, at the old target's edge.
+# Its reverb is PLATE, which the 0.9.13 reverb level does not touch: the chords moved it, not the sound
 # (2026-11-09, fx-level: 0.9.9's absolute level and balance again (742a2537: every LEVEL -19, then the presets the
 # effects had made quieter back to 0.9.9's loudness): the host reads F09 +2.0, F13 +3.1, F14 +3.2, F15 +0.2, F16 -1.8,
 # F18 +1.1, U02 +0.9, U04 +1.2 re F01 (the 0.9.10 headroom trims below are superseded: F04 -0.1, F08 +1.3, U07 -0.2
@@ -1294,6 +1414,7 @@ PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1
 # the user bank's starters (presets.c PR_NS: U01..U09 in a bank never saved): judged on the host only (a device's bank
 # may hold the player's own presets), each within 1 LU of F01 on the chord; presets 20.. in the rows = U01..
 PR_STARTERS = 9
+PR_GAP_RETAKES = 2      # presets(): a take with a recording gap is taken again up to this many times
 
 
 def preset_pc(p):
@@ -1350,20 +1471,32 @@ def presets(r, rep):
         for p in range(PR_COUNT + (PR_STARTERS if isinstance(r, HostRig) else 0)):
             r.cc_raw(120, 0)
             r.pc(preset_pc(p))
-            ks = []
-            for k in range(reps("presets")):
-                quiet = r.settle()                         # (False: no exact silence in 10 s, a note still sounds)
-                r.clock_align(192)                         # bar 1 of 2: F11 swings 5 LU over its 2BAR sweep (0, 1/3, 2/3: -0.4, -5.6, -4.4 re F01); its phase 0 is the host's
-                if jk:
-                    dd = r.both(2.0, with_reset(CHORD), jack=True)
-                    x, j = dd["usb"] * 32768, dd["jack"][:, 0]
-                else:
-                    x, j = r.take(2.0, CHORD), None
+            ks, retakes = [], 0
+            for k in range(reps("presets") * len(PR_CHORDS)):  # (each chord of PR_CHORDS reps("presets") times)
+                ev = chord_ev(PR_CHORDS[k // reps("presets")])
+                # a take whose recording stream had a gap (Ring.cut: a block's ADC time off its frames, the cut
+                # re-anchored there) is not the preset's sound: taken again, up to PR_GAP_RETAKES times, and flagged
+                # only if every one has a gap. 0.9.12's T2 flagged F15 for one take with a step-and-back pair while
+                # its three levels agreed within 0.0005 LU
+                for g in range(PR_GAP_RETAKES + 1):
+                    quiet = r.settle()                     # (False: no exact silence in 10 s, a note still sounds)
+                    r.clock_align(192)                     # bar 1 of 2: F11 swings 5 LU over its 2BAR sweep (0, 1/3, 2/3: -0.4, -5.6, -4.4 re F01); its phase 0 is the host's
+                    if jk:
+                        dd = r.both(2.0, with_reset(ev), jack=True)
+                        x, j = dd["usb"] * 32768, dd["jack"][:, 0]
+                    else:
+                        x, j = r.take(2.0, ev), None
+                    gaps = [str(g_) for g_ in getattr(r, "xruns", []) if "gap" in str(g_)]
+                    if not gaps:
+                        break
+                    if g < PR_GAP_RETAKES:
+                        retakes += 1
+                        print(f"   {preset_label(p + 1)} take {k + 1}: a recording gap ({'; '.join(gaps[:2])}): taken again",
+                              flush=True)
                 lv, i = level(x / 32768.0, 200 / 32768)
                 q = dict(level=lv, onset_ms=1000 * i / FS, rms_db=db(x[i:i + int(1.1 * FS)]),
                          peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12),
-                         clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x), quiet=bool(quiet),
-                         gaps=[str(g) for g in getattr(r, "xruns", []) if "gap" in str(g)])
+                         clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x), quiet=bool(quiet), gaps=gaps)
                 if j is not None:
                     floor = float(np.abs(j[:int(0.04 * FS)]).max()) if len(j) else 0.0
                     q["jack"], ij = level(j, max(4 * floor, 0.01 * float(np.abs(j).max())))
@@ -1371,15 +1504,21 @@ def presets(r, rep):
                 ks.append(q)
                 np.savez_compressed(os.path.join(d, f"{preset_label(p + 1)}-{k + 1}.npz"), usb=(x / 32768).astype(np.float32),
                                     jack=(j if j is not None else np.zeros(0)).astype(np.float32))
+            # the level: the mean over PR_CHORDS of each chord's median take (the chord-robust rows, 0.9.13); spread_lu
+            # the takes' own spread (repeatability), chord_lu each chord's level
+            n_ = reps("presets")
+            per = [float(np.median([q["level"] for q in ks[c * n_:(c + 1) * n_]])) for c in range(len(PR_CHORDS))]
             lv = [q["level"] for q in ks]
-            row = dict(preset=p + 1, level=float(np.median(lv)), spread_lu=float(max(lv) - min(lv)),
+            row = dict(preset=p + 1, level=float(np.mean(per)), chord_lu=per,
+                       spread_lu=float(max(max(lv[c * n_:(c + 1) * n_]) - min(lv[c * n_:(c + 1) * n_]) for c in range(len(PR_CHORDS)))),
                        rms_db=float(np.median([q["rms_db"] for q in ks])), peak_db=max(q["peak_db"] for q in ks),
                        clipped=max(q["clipped"] for q in ks), clicks=max(q["clicks"] for q in ks),
                        onset_ms=[round(q["onset_ms"], 1) for q in ks], not_quiet=sum(not q["quiet"] for q in ks),
-                       gaps=sum(len(q["gaps"]) for q in ks))
+                       gaps=sum(len(q["gaps"]) for q in ks), gap_retakes=retakes)
             if jk:
                 jl = [q["jack"] for q in ks]
-                row.update(jack=float(np.median(jl)), jack_spread_lu=float(max(jl) - min(jl)),
+                jper = [float(np.median(jl[c * n_:(c + 1) * n_])) for c in range(len(PR_CHORDS))]
+                row.update(jack=float(np.mean(jper)), jack_spread_lu=float(max(max(jl[c * n_:(c + 1) * n_]) - min(jl[c * n_:(c + 1) * n_]) for c in range(len(PR_CHORDS)))),
                            jack_onset_ms=[round(q["jack_onset_ms"], 1) for q in ks])
             rows.append(row)
     rep["presets"] = rows
@@ -1393,12 +1532,13 @@ def presets(r, rep):
     # their own targets above hold them); reason: WOOD ECHO -8.1 LU re F01 with the limiter idle (the coordinator 2026-11-10)
     sv = [q["level"] for q in rows if preset_key(q["preset"]) not in LEVEL_CUT] or lv
     ok = max(sv) - min(sv) < 8 and not bad and not loud and not gapped
-    msg = (f"F01..{preset_label(len(rows))} loudness " + ", ".join(f"{v:.1f}" for v in lv) + f" LUFS (span {max(lv) - min(lv):.2f}; median of"
-           f" {reps('presets')} takes, their own spread <= {spread:.2f} LU); clipping/clicks {bad or 'none'}")
+    msg = (f"F01..{preset_label(len(rows))} loudness " + ", ".join(f"{v:.1f}" for v in lv) + f" LUFS (span {max(lv) - min(lv):.2f}; the mean of"
+           f" {len(PR_CHORDS)} chords F3..A4, each the median of {reps('presets')} take(s), their own spread <= {spread:.2f} LU; "
+           f"a preset's chords span <= {max(max(q['chord_lu']) - min(q['chord_lu']) for q in rows):.2f} LU); clipping/clicks {bad or 'none'}")
     if loud:
         msg += f"; no exact silence before a take at {[preset_label(q) for q in loud]} (a note still sounding: those levels are not the preset)"
     if gapped:
-        msg += f"; a recording gap at F{gapped}"
+        msg += f"; a recording gap at {[preset_label(q) for q in gapped]} (after {PR_GAP_RETAKES} retakes)"
     # each preset re F01 against its target (PRESET_TARGET): the Rhodes F01..F12 within 1.5 LU (AGENTS.md's rule; F07
     # -1.9, F08 -1.7, F10 -4.0 LU until their LEVEL was set, 2026-10-24), VIBES and MARIMBA by their own level
     host = isinstance(r, HostRig)
@@ -1412,9 +1552,13 @@ def presets(r, rep):
         jl = [q["jack"] for q in rows]
         rel = [(a - lv[0]) - (b - jl[0]) for a, b in zip(lv, jl)]      # USB vs jack, each re its own F01
         mis = [q["preset"] for q, m in zip(rows, rel) if abs(m) > MISMATCH_DB]
-        ok = ok and max(jl) - min(jl) < 8
+        # THRESHOLD (2026-11-13): the jack's 8 LU span over the same presets as USB's (FINAL19 v2's LEVEL_CUT ones
+        # out, the coordinator 2026-11-10); it had kept them, so WOOD ECHO's -7.8 failed it on the FM-1 with 0.9.10
+        # and 0.9.11 (span 10.6 / 10.5 LU; without LEVEL_CUT 4.8 / 4.6, USB 4.7 / 4.4)
+        sj = [v for q, v in zip(rows, jl) if preset_key(q["preset"]) not in LEVEL_CUT] or jl
+        ok = ok and max(sj) - min(sj) < 8
         msg += (f"; jack (re its own scale) {', '.join(f'{v - jl[0]:+.1f}' for v in jl)} LU re F01 (span"
-                f" {max(jl) - min(jl):.2f}, spread <= {max(q['jack_spread_lu'] for q in rows):.2f}); USB-jack"
+                f" {max(jl) - min(jl):.2f}, without LEVEL_CUT {max(sj) - min(sj):.2f}, spread <={max(q['jack_spread_lu'] for q in rows):.2f}); USB-jack"
                 f" disagreement <= {max(abs(m) for m in rel):.2f} LU{' at F' + str(mis) if mis else ''}")
     return ok, msg
 
@@ -1565,7 +1709,7 @@ class Take:
         """the onsets (samples) of the note-ons, in event order"""
         if src not in self._on:
             self._on[src] = align(self.m(src), self.sched)
-            if src == "jack" and self.usb is not None and ENGINE == "marimba":
+            if src == "jack" and self.usb is not None:
                 o = jack_by_usb(self.m("usb"), self.on("usb"), self.jack, self._on["jack"][0])
                 self._on["jack"] = (o, (o[0] / FS - self.sched[0]) if o else 0.0,
                                     [i / FS - s for i, s in zip(o, self.sched)])
@@ -1600,27 +1744,54 @@ class Take:
         return self.m(src)[:max(0, self.at(src, min(on)) - FS // 200)]
 
 
-def jack_by_usb(u, ou, j, oj, pre=0.005, post=0.05, search=0.02, min_r=0.5):
-    """the jack's onsets from USB's, recorded at once (the MARIMBA suites): each USB strike (pre .. post s around its
+def jack_by_usb(u, ou, j, oj, pre=0.005, post=0.05, search=0.02, min_r=0.5, fine=0.02, fine_search=0.001):
+    """the jack's onsets from USB's, recorded at once (the MARIMBA suites; VIBES too since 2026-11-15: vibes_decay's
+    NOISE contact read the jack +4.54 dB against USB's +23.25 on a jack onset a few ms off): each USB strike (pre .. post s around its
     onset; USB is exact zero before an isolated strike, so its onset is exact) found in the jack by cross-correlation
     within +-search s of align()'s jack onset (normalised |r| >= min_r, else align's stays). align() alone put the
     jack's onsets 2-15 ms late (the hiss under the 6 dB / 1 ms rise; the low notes' slow attack): the FM-1's keys
     C2..C7 take of 2026-10-19 read on the jack a level span 12.1 dB, a neighbour step 4.34 dB and C7 -46 c, where the
     jack is USB x -12.65 dB +-0.05 on every key (span 8.6 / step 0.48 dB, as USB). The interface's polarity (the M6
-    reads the jack inverted) does not matter: |r|"""
+    reads the jack inverted) does not matter: one polarity for the whole take, the sign whose best r summed over the
+    strikes is the larger (the low notes decide it), then each strike at its best r of that sign. Each strike's own |r|
+    took a high note half a period off: F6's 0..50 ms strike is near a sine, r +0.998 half a period from the true lag's
+    -0.997, and the jack's window 0.35 ms off left a tonal residue in vibes_decay's NOISE contact (the host with a
+    fractional lag: USB-jack up to -8.4 dB on key 89, tests/py/test_vibes_noise_contact.py). The polarity fixed, a
+    whole period stays as ambiguous (7 of 108 host strikes a period off), so each pick is refined within
+    +-fine_search s on a short window (pre .. fine s: the strike's rise decides it; 0 of 108)"""
     a0, a1, w = int(pre * FS), int(post * FS), int(search * FS)
-    out = []
+    rs = []
     for a, b in zip(ou, oj):
         x = np.asarray(u[max(0, a - a0):a + a1], float)
         lo = max(0, b - a0 - w)
         seg = np.asarray(j[lo:b - a0 + len(x) + w], float)
         if len(x) < a1 or not np.any(x) or len(seg) <= len(x):
-            out.append(b)
+            rs.append(None)
             continue
         c = np.correlate(seg, x, "valid")
         e = np.sqrt(np.convolve(seg * seg, np.ones(len(x)), "valid") * np.dot(x, x)) + 1e-30
-        k = int(np.argmax(np.abs(c) / e))
-        out.append(lo + k + (a - max(0, a - a0)) if abs(c[k]) / e[k] >= min_r else b)
+        rs.append((lo + (a - max(0, a - a0)), c / e, a))
+    sg = 1.0 if sum(z[1].max() for z in filter(None, rs)) >= sum((-z[1]).max() for z in filter(None, rs)) else -1.0
+    out, a2, fw = [], int(fine * FS), int(fine_search * FS)
+    for b, z in zip(oj, rs):
+        if z is None:
+            out.append(b)
+            continue
+        k = int(np.argmax(sg * z[1]))
+        if sg * z[1][k] < min_r:
+            out.append(b)
+            continue
+        o, a = z[0] + k, z[2]
+        x = np.asarray(u[max(0, a - a0):a + a2], float)          # (the fine pick: the onset at x's index a - start)
+        lo = max(0, o - (a - max(0, a - a0)) - fw)
+        seg = np.asarray(j[lo:lo + len(x) + 2 * fw], float)
+        if len(seg) > len(x) and np.any(x):
+            c = np.correlate(seg, x, "valid")
+            e = np.sqrt(np.convolve(seg * seg, np.ones(len(x)), "valid") * np.dot(x, x)) + 1e-30
+            kf = int(np.argmax(sg * c / e))
+            if sg * c[kf] / e[kf] >= min_r:
+                o = lo + kf + (a - max(0, a - a0))
+        out.append(o)
     return out
 
 
@@ -2236,6 +2407,37 @@ def stft(x, n=1024, hop=240):
     return F, np.fft.rfftfreq(n, 1 / FS), FS / hop
 
 
+def retrig_phase(t, q, a=0.05, b=0.75, below=40.0, over=15.0, least=0.2):
+    """LFO TRIG: the mean correlation, over every pair of strikes, of the centroid traces from each onset (a .. b s,
+    each detrended), over the frames where every strike stands within `below` dB of the loudest frame and `over` dB
+    over the source's floor (its pre-roll): NaN when that is under `least` s. The whole 0.7 s took MARIMBA's A4 past
+    its end (60 dB down by 0.4 s, exact zero on USB from 0.5 s, the jack's hiss): the centroid of silence or hiss
+    read KEY 0.76 / 0.77 (rc-0.9.12 T2, USB / jack) and 0.38 .. 0.82 before; gated, the FM-1's saved takes read KEY
+    1.00 / 0.99 (FREE -0.14 / 0.14) and the host 1.00 on every seed (FREE <= 0.33: a key that does not restart the
+    LFO stays far under the 0.8 bar; tests/py/test_hil_scan_measures.py)"""
+    m = t.m(q)
+    tr, lv, fps = [], [], 1.0
+    for i in t.on(q):
+        F, fr, fps = stft(cut(m, i, a, b))
+        s = (fr > 100) & (fr < 12000)
+        p = F[:, s].sum(1)
+        tr.append((F[:, s] * fr[s]).sum(1) / (p + 1e-30))
+        lv.append(10 * np.log10(p + 1e-30))
+    pre = np.asarray(t.pre(q), float)
+    fl = -1e9
+    if len(pre) > 2048 and np.any(pre):
+        Fp, frp, _ = stft(pre)
+        fl = 10 * np.log10(Fp[:, (frp > 100) & (frp < 12000)].sum(1).mean() + 1e-30)
+    n = min(len(x) for x in tr)
+    L = np.array([v[:n] for v in lv])
+    bad = np.flatnonzero(~((L >= L.max() - below) & (L >= fl + over)).all(0))
+    n = int(bad[0]) if len(bad) else n
+    if len(tr) < 2 or n < least * fps:
+        return float("nan")
+    tr = [x[:n] - np.polyval(np.polyfit(np.arange(n), x[:n], 1), np.arange(n)) for x in tr]
+    return float(np.mean([np.corrcoef(tr[i], tr[j])[0, 1] for i in range(len(tr)) for j in range(i + 1, len(tr))]))
+
+
 def cen_trace(x):
     F, fr, fps = stft(x)
     s = (fr > 100) & (fr < 12000)
@@ -2331,6 +2533,25 @@ def floor_sub(p, f, most_db=FLOOR_SUB_MAX_DB):
     return float(max(p - f, p * 10 ** (-most_db / 10)))
 
 
+def band_re(t, r, q, lo, hi, a=0.05, b=1.05, sub=False):
+    """a band's level (dB) of take t re the reference take r, the same window from each onset; and whether t's
+    band is within 6 dB of its floor (then it reads the floor: an upper bound). sub: each take's floor (its
+    pre-roll, the same band) taken off first (floor_sub)"""
+    x, y = cut(t.m(q), t.on(q)[0], a, b), cut(r.m(q), r.on(q)[0], a, b)
+    n = min(len(x), len(y))
+    X, fr = welch(x[:n])
+    Y, _ = welch(y[:n])
+    m_ = (fr >= lo) & (fr < hi)
+    F, _ = welch(t.pre(q)) if np.any(t.pre(q)) else (None, None)
+    lim = F is not None and X[m_].sum() < 4 * F[m_].sum()
+    xp, yp = X[m_].sum(), Y[m_].sum()
+    if sub:
+        G, _ = welch(r.pre(q)) if np.any(r.pre(q)) else (None, None)
+        xp = floor_sub(xp, None if F is None else F[m_].sum())
+        yp = floor_sub(yp, None if G is None else G[m_].sum())
+    return float(10 * np.log10(xp / (yp + 1e-30) + 1e-30)), bool(lim)
+
+
 NOISE_FLOOR_MARGIN_DB = 6.0  # marimba NOISE contact: NOISE de's excess within this of the hiss read the same way is
                              # the floor (the jack)
 NOISE_FLOOR_XSRC_DB = 6.0    # ... and so is a jack reading this far over USB's (the same strike recorded at once:
@@ -2415,6 +2636,40 @@ def detrend2(d):
 
 def p2p(d, lo=2, hi=98):
     return float(np.percentile(d, hi) - np.percentile(d, lo))
+
+
+LFO_FLOOR_LSB = 4.0     # lfo_sweep's floor: white noise of this rms (LSB of 16 bits), ~-78 dBFS
+
+
+def lfo_sweep(t, r, q, a, b, lo, hi, lsb=LFO_FLOOR_LSB):
+    """rel_trace's band level of take t re the reference r (dB, detrended), both over a floor: the take's pre-roll
+    (the jack's hiss) or white noise of lsb LSB rms, whichever is higher. A held VIBES chord decays ~50 dB in the
+    5 s trace, so the filter's low phase takes USB's band down to the 16-bit LSBs, where the ratio is quantisation
+    noise and its slopes run to 3000 dB/s; the jack's hiss held the same dips smooth (0.9.12's T2: one take, SINE's
+    steepest slope 13.7 on USB, 7.2 on the jack). With the floor the host reads SINE 7.1, SQR 22-23 (seeds 1-3), and
+    7.1 with the SINE take requantised to 8-LSB steps (61.2 without the floor)"""
+    x, y = cut(t.m(q), t.on(q)[0], a, b), cut(r.m(q), r.on(q)[0], a, b)
+    n = min(len(x), len(y))
+    A, fps = band_trace(x[:n], lo, hi)
+    B, _ = band_trace(y[:n], lo, hi)
+    m = np.count_nonzero((np.fft.rfftfreq(2048, 1 / FS) >= lo) & (np.fft.rfftfreq(2048, 1 / FS) < hi))
+    F = float(np.sum(np.hanning(2048) ** 2)) * m * (lsb / 32768) ** 2     # white noise: E|X_k|^2 = var * sum(w^2)
+    fl = t.pre(q)
+    if len(fl) > 2400 and np.any(fl):
+        F = max(F, float(band_trace(fl, lo, hi)[0].mean()))
+    return detrend2(10 * np.log10((A + F) / (B + F))), fps
+
+
+def lfo_steep(d, fps, hz):
+    """an LFO sweep's (lfo_sweep) steepest slope re a sine of its p-p (2..98 %) and rate hz: the median over the
+    trace's half cycles of each one's steepest slope (25 ms smoothed). Every half cycle holds one of a sine's slope
+    peaks and one of a square's steps, so one stray frame (a beat null, a USB cut's re-anchor) moves one half cycle,
+    not the verdict, where the 99th percentile over the whole trace (~10 frames of ~1000) took the strays"""
+    sm = np.convolve(d, np.ones(5) / 5, "same")
+    s = np.abs(np.diff(sm[2:-2])) * fps
+    w = max(2, int(round(fps / (2 * hz))))
+    peaks = [s[i:i + w].max() for i in range(0, len(s) - w + 1, w)]
+    return float(np.median(peaks) / (p2p(d) * hz + 1e-9)) if peaks else 0.0
 
 
 def gain_trace(t, r, q, a, b, hop=240):
@@ -2502,13 +2757,24 @@ class VSuite:
         self.name, self.V, self.rows, self.t0 = name, V, [], time.time()
 
     def per(self, fn, srcs=None):
-        """fn(src) on every recorded source (USB: its left channel, as the jack's cable)"""
-        return {s: _safe(fn, s) for s in (srcs or self.V.sources())}
+        """fn(src) on every recorded source (USB: its left channel, as the jack's cable). A source whose fn raised:
+        None, and the exception kept for the next check's cell ('no value (ValueError: ...)'), which said only 'no
+        value' (rc-0.9.12 T2: PHASER FDBK's jack, the cause unknown)"""
+        out, self.err = {}, {}
+        for s in (srcs or self.V.sources()):
+            try:
+                out[s] = fn(s)
+            except Exception as e:
+                out[s], self.err[s] = None, f"{type(e).__name__}: {e}"[:80]
+                if VDEBUG:
+                    import traceback
+                    traceback.print_exc()
+        return out
 
     def usb(self, fn):
         return {"usb": _safe(fn, "usb")} if self.V.want_usb else {}
 
-    def check(self, check, setting, vals, ok, crit, level=False, fmt=None, info=False, floor=None):
+    def check(self, check, setting, vals, ok, crit, level=False, fmt=None, info=False, floor=None, valid=None):
         """one row: vals {src: value}; ok(value) -> bool on each source; level: a level change in dB / LU, compared
         between USB and the jack; floor {src: True}: that source's value stands on its floor (the jack's hiss), so the
         two are not compared (no MISMATCH) and its cell says so"""
@@ -2519,8 +2785,9 @@ class VSuite:
                 txt[s] = "n/a" if s in self.V.sources() else "-"
                 continue
             v = vals[s]
-            if v is None or not finite(v):
-                res[s], txt[s] = False, "no value"
+            if v is None or not (valid or finite)(v):
+                why = getattr(self, "err", {}).get(s) if v is None else None
+                res[s], txt[s] = False, "no value" + (f" ({why})" if why else "")
                 continue
             try:
                 res[s] = bool(ok(v))
@@ -2773,6 +3040,13 @@ def vibes_decay(V, S):
             m = {x: T[x].m(q) for x in T}
             ring = ms_db(cut(m[0], o[0], 0, 0.06))
             c = {x: excess_db(cut(m[x], o[x], 0, 0.06), cut(m[0], o[0], 0, 0.06)) - ring for x in (de, 127)}
+            # 48 -> 127 as the aligned difference re NOISE 0 (m_contact_db), each with the two takes' hiss taken off:
+            # the spectral excess (c) had the jack's hiss in NOISE 48's ~10 dB over it (its excess 1.26 x Q's: no
+            # expectation of 0), and the rc-0.9.12 T2 read the jack 1.4-3.0 dB under USB on F3 / A4 / F6 (MISMATCH);
+            # the host with the jack's -92.5 dBFS hiss -0.3..-2.1 dB, the aligned difference +-0.4
+            # (tests/py/test_vibes_noise_contact.py). c stays for the floor flag and the 127 row
+            cf = {x: m_contact_db(m[x], o[x], m[0], o[0], coarse=0.02, px=T[x].pre(q), pr=T[0].pre(q))[0]
+                  for x in (de, 127)}
             kn = {x: knock_db(m[x], o[x], m[0], o[0]) for x in (de, 127)}
             # the floor: two takes of hiss alone leave an excess 3.5 dB under the hiss (E[max(P - 1.26 Q, 0)] =
             # P / 2.26 for exponential bins); a value within 6 dB of it is the jack's hiss, not NOISE (round 1:
@@ -2780,11 +3054,12 @@ def vibes_decay(V, S):
             pr = [T[x].pre(q) for x in T]
             fx = max((10 * np.log10(np.mean(np.asarray(p_, float) ** 2) + 1e-24) for p_ in pr if len(p_) > 2000 and np.any(p_)),
                      default=-240.0) - 3.5 + 6.0
-            return dict(c=c, k=kn, strike=rdb(cut(m[0], o[0], 0.05, 0.3)), note=rdb(cut(m[0], o[0], 1.4, 1.5)),
+            return dict(c=c, cf=cf, k=kn, strike=rdb(cut(m[0], o[0], 0.05, 0.3)), note=rdb(cut(m[0], o[0], 1.4, 1.5)),
                         cfl=c[de] + ring < fx, kfl=kn[de] < fx)
         vals = S.per(nz)
         CC = P["NOISE"]["cc"]
-        S.check(f"NOISE (CC {CC}) contact {de} -> 127", f"key {n}, 0..60 ms", {s: v and v["c"][127] - v["c"][de] for s, v in vals.items()},
+        S.check(f"NOISE (CC {CC}) contact {de} -> 127", f"key {n}, 0..60 ms, aligned re NOISE 0, less the floor",
+                {s: v and v["cf"][127] - v["cf"][de] for s, v in vals.items()},
                 lambda v: v >= 6, ">= +6 dB", level=True, floor={s: bool(v and v["cfl"]) for s, v in vals.items()})
         S.check("NOISE 127 contact re the note", f"key {n}", {s: v and v["c"][127] for s, v in vals.items()},
                 lambda v: v > -35, "> -35 dB (a clear tick)", fmt=lambda v: f"{v:.1f} dB")
@@ -2947,10 +3222,22 @@ def vibes_vel(V, S):
 
     def med_dev(lv, idx):
         return [abs(lv[i] - np.median(lv[max(0, i - 3):i + 4])) for i in idx]
-    S.check("keys F3..F6: neighbour step", "every key, v100", {s: v and float(np.abs(np.diff(v[0][ins])).max()) for s, v in vals.items()},
+    # THRESHOLD (2026-11-14, T2 0.9.12): the evenness gates on USB stereo (as heard). 0.9.10's dry width (fx.c
+    # fx_width: L = M + S, R = M - S, S = -0.2 x the 570-4000 Hz band 10 ms back) is a 100 Hz comb on each channel
+    # alone, +1.6 / -1.9 dB at a bar's fundamental by its pitch: one channel zigzags key to key (0.9.10 / 0.9.11 /
+    # 0.9.12 FM-1 2.5-2.6 dB on USB L and the jack alike, the host the same; 0.9.9 0.48), the stereo sum does not
+    # (L^2 + R^2 cancels S). USB L and the jack (one channel) stay as information, their difference flagged
+    keys_st = S.usb(lambda q: np.array([lu(cut(t.usb, i, 0, 0.9)) for i in t.on(q)]))
+    S.check("keys F3..F6: neighbour step", "every key, v100, USB stereo (as heard)",
+            {s: None if v is None else float(np.abs(np.diff(v[ins])).max()) for s, v in keys_st.items()},
             lambda d: d <= 1.5, "<= 1.5 dB (bar_scan S9)", fmt=lambda d: f"{d:.2f} dB")
-    S.check("keys F3..F6: off the +-3-key median", "", {s: v and float(max(med_dev(v[0], ins))) for s, v in vals.items()},
+    S.check("keys F3..F6: off the +-3-key median", "USB stereo (as heard)",
+            {s: None if v is None else float(max(med_dev(v, ins))) for s, v in keys_st.items()},
             lambda d: d <= 1.5, "<= 1.5 dB", fmt=lambda d: f"{d:.2f} dB")
+    S.check("keys F3..F6: neighbour step, one channel", "every key, v100, USB L vs jack (the dry width's comb)",
+            {s: v and float(np.abs(np.diff(v[0][ins])).max()) for s, v in vals.items()},
+            lambda d: True, "information (one channel: the width's +1.6 / -1.9 dB comb)", level=True, info=True,
+            fmt=lambda d: f"{d:.2f} dB")
     S.check("keys outside F3..F6 (every 3rd): off the median", "21..50, 92..107",
             {s: v and float(max(med_dev(v[0], out_))) for s, v in vals.items()}, lambda d: d <= 3, "<= 3 dB",
             fmt=lambda d: f"{d:.2f} dB")
@@ -2982,6 +3269,7 @@ def vibes_fx(V, S, stim=None, extra=()):
     PH0 = st.get("PH0", ST_PH0)            # PHASER / CHORUS SPEED 0's takes (and DEPTH 0 refs): ST_LONG is too short
     jfloor = st.get("JFLOOR", False)       # the DRIVE rows: the jack judged against its own distortion floor
     v3line = st.get("V3LINE", False)       # DRIVE TONE's V3 as a line (m_line_db), clear of the resampler's image
+    wah_w = st.get("WAH_W", (0.02, 0.3))  # WAH DEPTH's window from the first onset (s): VIBES' strike
     dl_wow = st.get("DL_WOW", False)       # DELAY DIG vs ANA judged by the tape's wow / flutter (the spectrum: info)
 
     def run(label, settings, stim, motor=False):
@@ -3001,24 +3289,6 @@ def vibes_fx(V, S, stim=None, extra=()):
     def FD(t1, t2, q, a=0.2, b=5.3):
         """frame_dist of two takes, the same window from each onset"""
         return frame_dist(cut(t1.m(q), t1.on(q)[0], a, b), cut(t2.m(q), t2.on(q)[0], a, b), FDN)
-
-    def band_re(t, r, q, lo, hi, a=0.05, b=1.05, sub=False):
-        """a band's level (dB) of take t re the reference take r, the same window from each onset; and whether t's
-        band is within 6 dB of its floor (then it reads the floor: an upper bound). sub: each take's floor (its
-        pre-roll, the same band) taken off first (floor_sub)"""
-        x, y = cut(t.m(q), t.on(q)[0], a, b), cut(r.m(q), r.on(q)[0], a, b)
-        n = min(len(x), len(y))
-        X, fr = welch(x[:n])
-        Y, _ = welch(y[:n])
-        m_ = (fr >= lo) & (fr < hi)
-        F, _ = welch(t.pre(q)) if np.any(t.pre(q)) else (None, None)
-        lim = F is not None and X[m_].sum() < 4 * F[m_].sum()
-        xp, yp = X[m_].sum(), Y[m_].sum()
-        if sub:
-            G, _ = welch(r.pre(q)) if np.any(r.pre(q)) else (None, None)
-            xp = floor_sub(xp, None if F is None else F[m_].sum())
-            yp = floor_sub(yp, None if G is None else G[m_].sum())
-        return float(10 * np.log10(xp / (yp + 1e-30) + 1e-30)), bool(lim)
 
     def nm(n):
         return f"{n} (CC {P[n]['cc']})"
@@ -3123,11 +3393,10 @@ def vibes_fx(V, S, stim=None, extra=()):
     T = {x: run(f"filter-shape-{x}", with_(lb, ("LFO_SHAPE", x)), ST_LONG) for x in (0, 4, 5)}
 
     def shp(t, q):
-        """the sweep's steepest slope re a sine of its p-p and rate (SINE ~6 with the band's bends, SQR its steps:
+        """the sweep's steepest slope re a sine of its p-p and rate (SINE ~7 with the band's bends, SQR its steps:
         20+), and the spread of its cycle means at the card's rate (S&H holds a new level every cycle)"""
+        slope = lfo_steep(*lfo_sweep(t, lref, q, 0.2, 5.3, 250, 2000), e)
         d, f_ = sweep(t, q)
-        sm = np.convolve(d, np.ones(5) / 5, "same")
-        slope = float(np.percentile(np.abs(np.diff(sm)) * f_, 99) / (p2p(d) * e + 1e-9))
         tt = np.arange(len(d)) / f_
         cyc = [d[(tt >= a0) & (tt < a0 + 1 / e)].mean() for a0 in np.arange(0, tt[-1] - 1 / e, 1 / e)]
         return slope, float(np.std(cyc))
@@ -3155,15 +3424,11 @@ def vibes_fx(V, S, stim=None, extra=()):
     st_rt = (5.7, sum((chord((69,), 108, s, s + 1.2) for s in rt), []))
     T = {x: run(f"filter-retrig-{x}", with_(lb, ("LFO_RETRIG", x)), st_rt) for x in (0, 1)}
 
-    def same_phase(t, q):
-        o = t.on(q)
-        tr = [cen_trace(cut(t.m(q), i, 0.05, 0.75))[0] for i in o]
-        n = min(len(x) for x in tr)
-        tr = [x[:n] - np.polyval(np.polyfit(np.arange(n), x[:n], 1), np.arange(n)) for x in tr]
-        return float(np.mean([np.corrcoef(tr[a], tr[b])[0, 1] for a in range(len(tr)) for b in range(a + 1, len(tr))]))
-    S.check(f"LFO TRIG {nm('LFO_RETRIG')} KEY", "4 strikes off the LFO's period: the sweep restarts",
-            S.per(lambda q: (same_phase(T[1], q), same_phase(T[0], q))), lambda v: v[0] >= 0.8,
-            "KEY: mean correlation of the sweeps >= 0.8 (FREE: information)", fmt=lambda v: f"KEY {v[0]:.2f} / FREE {v[1]:.2f}")
+    S.check(f"LFO TRIG {nm('LFO_RETRIG')} KEY",
+            "4 strikes off the LFO's period: the sweep restarts (while the note stands 40 dB)",
+            S.per(lambda q: (retrig_phase(T[1], q), retrig_phase(T[0], q))), lambda v: v[0] >= 0.8,
+            "KEY: mean correlation of the sweeps >= 0.8 (FREE: information)", fmt=lambda v: f"KEY {v[0]:.2f} / FREE {v[1]:.2f}",
+            valid=lambda v: finite(v[0]))
 
     # DRIVE
     db_ = [("DRV_SW", 1), ("DRIVE", 40), ("DRV_TONE", 64), ("DRV_MIX", 127)]
@@ -3283,9 +3548,10 @@ def vibes_fx(V, S, stim=None, extra=()):
     # a touch wah: DEPTH is how far the strike opens it (host TREM-WAH). Round 1 compared the spectral distances to
     # dry, which the wah's static filter dominates at any DEPTH (14.1 / 14.2 dB at 127 / 64)
     # (each take's hiss taken off first, floor_sub: the jack's DEPTH 0 rode its floor, +5.9 dB once on MARIMBA)
-    wr = S.per(lambda q: [band_re(T[x], dry["ch"], q, 1000, 4000, 0.02, 0.3, sub=True) for x in (0, 64, 127)])
+    wr = S.per(lambda q: [band_re(T[x], dry["ch"], q, 1000, 4000, *wah_w, sub=True) for x in (0, 64, 127)])
     wo = {s_: v and [c for c, _ in v] for s_, v in wr.items()}
-    S.check("WAH DEPTH 0 / 64 / 127: the strike opens it", "1-4 kHz re no effect, 20..300 ms, less the floor", wo,
+    S.check("WAH DEPTH 0 / 64 / 127: the strike opens it",
+            f"1-4 kHz re no effect, {round(1000 * wah_w[0])}..{round(1000 * wah_w[1])} ms, less the floor", wo,
             lambda v: v[0] < v[1] < v[2] and v[2] - v[0] >= 6, "in order, 127 >= 6 dB over 0",
             fmt=lambda v: " / ".join(f"{c:+.1f}" for c in v) + " dB", floor={s_: bool(v and v[0][1]) for s_, v in wr.items()})
     S.check("WAH DEPTH 64", "vs no effect", S.per(lambda q: sdist(B(T[64], q), B(dry['ch'], q))), lambda v: v >= 1.5,
@@ -3348,11 +3614,15 @@ def vibes_fx(V, S, stim=None, extra=()):
     # fed back, as Felucca's; host response at DEPTH 80: the peak +2.9 -> +9.3 dB, the notches -62 .. -79 -> -11 ..
     # -17 dB), so the motion stays (vibes: -0.5 dB) and the whole window's spectrum averages the moving peak away
     # (the FM-1's jack: 1.8 dB). Frame by frame, the sweeps in step, the timbre is 3.9 dB apart (2026-10-18)
+    # (the two branches each on its own: motion_f is NaN when no band stands 10 dB over the source's floor 90 % of the
+    # time, which the jack's hiss can do to a notched take; the frame-by-frame branch still judges. The rc-0.9.12 T2
+    # read the jack 'no value' with USB -0.3 / 4.1: a NaN in any of the three voided the whole row)
     S.check(f"PHASER FDBK {nm('PH_FDBK')} 0 vs 127", "DEPTH 80; frame by frame",
             S.per(lambda q: (mot(T[127], q) - mot(T[0], q), FD(T[127], T[0], q), FD(p80, T[P["PH_FDBK"]["de"]], q))),
-            lambda v: v[0] >= 1.5 or apart_of_spread(v[1], v[2]),
+            lambda v: (finite(v[0]) and v[0] >= 1.5) or apart_of_spread(v[1], v[2]),
             "motion >= +1.5 dB or, frame by frame, sqrt(d^2 - spread^2) >= 2 dB and >= the spread (two takes of one "
-            "setting)", fmt=lambda v: f"{v[0]:+.1f} / {v[1]:.1f} dB (spread {v[2]:.1f})")
+            "setting)", fmt=lambda v: (f"{v[0]:+.1f}" if finite(v[0]) else "motion n/a") + f" / {v[1]:.1f} dB (spread {v[2]:.1f})",
+            valid=lambda v: finite(v[1:]))
     T = {k: run(f"phaser-sync-{k.replace('/', '')}", with_(pb127, ("PH_SYNC", sync_idx(k))), ST_LONG) for k in ("1/4", "1/8")}
     S.check(f"PHASER SYNC {nm('PH_SYNC')} 1/8 vs 1/4", "300-3000 Hz re DEPTH 0",
             S.per(lambda q: (phrate(T['1/8'], q, 2, 0.125, 5), phrate(T['1/4'], q, 2, 0.125, 5))),   # 0.25-10 Hz: any BPM
@@ -3441,8 +3711,23 @@ def vibes_fx(V, S, stim=None, extra=()):
             S.per(lambda q: (echo_levels(xs(T[0], q), T0, 1)[0], echo_levels(xs(T[50], q), T0, 1)[0])),
             lambda v: v[1] - v[0] >= 6, "50 stands >= 6 dB over 0 (0: the note's own residue)",
             fmt=lambda v: f"{v[0]:.1f} -> {v[1]:.1f} dB")
-    S.check("DELAY DEPTH 50 -> 127", "the 1st echo", S.per(lambda q: echo_levels(xs(T[127], q), T0, 1)[0] - echo_levels(xs(T[50], q), T0, 1)[0]),
-            lambda v: v >= 3, ">= +3 dB", level=True)
+    # THRESHOLD (2026-11-14, T2 0.9.12): E2's MIX law (0.9.12) puts the echo whole from 64 (FX_DLY_WET 25600 at 50,
+    # 32768 at 127: +2.14 dB) and the dry out at 127, so 127 has no direct sound: its first sound is the 1st echo (the
+    # onset lands there) and the row read the 2nd echo re the 1st (FM-1 -0.04 / -0.08, host -0.05; 0.9.11 +8.3, the
+    # dry whole and the echo still rising). Now the 1st echo's own level: 50's re its direct + the direct's peak, 127's
+    # the take's first peak; the law's +2.14 dB +-1
+    def echo1_abs(t, q, wet_only=False):
+        """the 1st echo's peak (dB): echo_levels' window around the direct's peak + T0, or (wet_only) the same
+        window around the take's first peak, which is the echo (the envelope still rises at 50 ms on the bars)"""
+        x = xs(t, q)
+        e = env_lin(x)
+        p0 = int(np.argmax(e[:50]))
+        if not wet_only:
+            return 20 * np.log10(e[p0] + 1e-12) + echo_levels(x, T0, 1)[0]
+        return 20 * np.log10(e[max(0, p0 - max(10, int(0.1 * T0))):p0 + max(15, int(0.1 * T0))].max() + 1e-12)
+    S.check("DELAY DEPTH 50 -> 127", "the 1st echo's level (127: the echo alone, MIX law)",
+            S.per(lambda q: echo1_abs(T[127], q, True) - echo1_abs(T[50], q)),
+            lambda v: abs(v - 2.14) <= 1.0, "+2.1 +-1 dB (E2: echo x 25600 -> 32768)", level=True)
     dl100 = with_(dlb, ("DL_DEPTH", 100))
     dtk = {}
     for x in (0, P["DL_TIME"]["de"], 127):
@@ -3534,19 +3819,27 @@ def vibes_fx(V, S, stim=None, extra=()):
             fmt=lambda v: " / ".join(f"{c:+.1f}" for c in v[:3]) + " dB", floor=rf)
     T = {x: run(f"reverb-pdly-{x}", with_(r100, ("RV_PREDLY", x)), ST_STAC) for x in (0, 64, 127)}
     def side_lag(t, t0, q):
-        """the hall's side signal (L - R; the dry VIBES is mono) of t against PDLY 0's: the lag (ms) of best
-        correlation of their dB envelopes (floor at -60 dB), 0..120 ms. Round 1 took a 10 % threshold crossing, which
-        the hall's own build-up moved (23 ms for 40)"""
-        def env(tk):
+        """the hall's side signal (L - R) of t against PDLY 0's: the lag (ms, 0..120) of their best normalised
+        cross-correlation over 0.5 s. The pre-delay delays the hall's input alone, so the hall's side is PDLY 0's
+        shifted (host r 0.96 / 0.88 at 64 / 127). THRESHOLD (2026-11-14, T2 0.9.12): it compared the side's dB
+        envelopes; since 0.9.10's dry width (fx_width: a side of its own, ~20 dB under the hall's, from the dry note
+        on, at every PDLY) and that hall's slow build-up (~100 ms) the envelopes read 64: 0 ms (expected 40) and
+        127: 97-117 ms (80) on every FM-1 take of 0.9.10 / 0.9.11 / 0.9.12, the host 0 / 0 (0.9.11) and 0 / 102;
+        the signals on the host: 42.8 / 84.9 ms. Round 1 took a 10 % threshold crossing, which the hall's own
+        build-up moved (23 ms for 40)"""
+        def side(tk):
             i = tk.on(q)[0]
-            e_ = edb1(((tk.usb[:, 0] - tk.usb[:, 1]) / 2)[i:i + int(0.6 * FS)])
-            return np.maximum(e_, e_.max() - 60)
-        a_, b_ = env(t), env(t0)
-        c_ = [np.corrcoef(a_[k:k + 400], b_[:400])[0, 1] for k in range(0, 121)]
-        return float(np.argmax(c_))
+            return ((tk.usb[:, 0] - tk.usb[:, 1]) / 2)[i:i + int(0.62 * FS)]
+        a_, b_ = side(t), side(t0)
+        n = int(0.5 * FS)
+        b_ = b_[:n]
+        nb = np.sqrt(np.dot(b_, b_)) + 1e-12
+        c_ = [np.dot(a_[k:k + n], b_) / (nb * (np.sqrt(np.dot(a_[k:k + n], a_[k:k + n])) + 1e-12))
+              for k in range(0, min(int(0.12 * FS), len(a_) - n) + 1)]
+        return 1000 * float(np.argmax(c_)) / FS
     for x in (64, 127):
         ex = pdly_ms(x)
-        S.check(f"REVERB PRE-DELAY {nm('RV_PREDLY')} {x}", f"the side signal re PDLY 0's (envelope lag), expected {ex:.0f} ms",
+        S.check(f"REVERB PRE-DELAY {nm('RV_PREDLY')} {x}", f"the side signal re PDLY 0's (cross-correlation lag), expected {ex:.0f} ms",
                 S.usb(lambda q: side_lag(T[x], T[0], q)), lambda v: abs(v - ex) <= 15, "within 15 ms (USB stereo)",
                 fmt=lambda v: f"{v:.0f} ms")
 
@@ -3619,9 +3912,20 @@ def _jump(V, S, jumps, ch=None, extra=()):
     """ch: the stimulus (default the FXCH chord v108 held 3.3 s), extra: settings added to every reset (marimba_jump:
     a sustained roll, MUTE 0)"""
     P = vp()
+    roll = ch is not None
     ch = ch or chord(FXCH, 108, 0.1, 3.4)
     st = (3.6, ch)
-    refs = []
+    refs, probes = [], []
+    # the drift probe (a roll only): one chord strike before and after the scan. A roll's loudness follows where each
+    # re-strike lands in the bar still ringing, so it moves with the MIDI timing (+-1 audio block on the FM-1): two
+    # takes of the same roll read 0.13 LU apart (sd) on the host with +-1 ms of jitter, 0.30 at most in 24 seeds,
+    # and -0.33 on the FM-1 (T2 0.9.12, USB and jack alike); one chord strike: sd 0.008, 0.03 at most
+    # (2026-11-15). The rolls stay the references of the steps; the probe answers "was the scan disturbed"
+    probe = (1.6, chord(FXCH, M_FX_VEL, 0.1, 1.2))
+    use_probe = roll and not (V.offline and not os.path.exists(os.path.join(V.offline, "jump-probe-a.json")))
+    if use_probe:
+        V.reset(list(extra), label="jump drift probe")
+        probes.append(V.take("jump-probe-a", *probe))
     V.reset(list(extra), label="jump ref")
     refs.append(V.take("jump-ref-a", *st))
 
@@ -3640,6 +3944,9 @@ def _jump(V, S, jumps, ch=None, extra=()):
         rows.append((name, held, tog))
     V.reset(list(extra), label="jump ref (end)")
     refs.append(V.take("jump-ref-b", *st))
+    if use_probe:
+        V.reset(list(extra), label="jump drift probe (end)")
+        probes.append(V.take("jump-probe-b", *probe))
     lfo = {"TW_SW": lfo_hz(P["TW_RATE"]["de"]), "PH_SW": lfo_hz(P["PH_SPEED"]["de"], True),
            "CP_SW": lfo_hz(P["CP_SPEED"]["de"], True), "MOT_ON": mot_hz(P["MOT_RATE"]["de"])}
     for name, held, tog in rows:
@@ -3660,7 +3967,25 @@ def _jump(V, S, jumps, ch=None, extra=()):
         cor = corr_lr(cut(held.usb, held.on("usb")[0], 0.2, 1.8)) if held.usb is not None else 1.0
         tgt = -2.5 if wide and cor < 0.8 else 0.0
         lim = 3.0 if comp else 2.0 if ph else JUMP_LU
+        # THRESHOLD (2026-11-13): the phaser at DEPTH 80 held on, fx_all's own target for it (FXALL_EXPECT -2.5 +- 1.0,
+        # the 0.9.10 peak trim fx.c PH_T) instead of 0 +- 2: VIBES -2.84 stereo / -2.97 left / -2.95 jack, MARIMBA
+        # -2.37 / -2.44 / -2.43 on the FM-1 with 0.9.11 (0.9.10: -2.79 / -2.90 / -2.95, -2.38 / -2.37 / -2.42; T2
+        # 2026-11-12), the host -2.81 / -2.93, -2.37 / -2.36 (0.9.9's FM-1: +0.29 / +0.22, MARIMBA)
+        if ph and name in FXALL_EXPECT:
+            tgt, lim = FXALL_EXPECT[name]
         tlim = 4.0 if comp else JUMP_LU
+        # THRESHOLD (2026-11-14, T2 0.9.12): E2's MIX law (0.9.12) keeps the dry whole up to MIX 64 and brings the
+        # effect in on top (0.9.11: the delay's dry fell 0.7-1.1 LU at 50 to make room; the reverb's send at 50 was
+        # 0.63, now 0.78, +1.8 dB of hall). Switched on at 50 the echoes / the hall add to an untouched dry, so the
+        # step is their share: delay 50 held on vs off 1.5 -> 2.5 LU (VIBES FM-1 DIG +1.56 / +1.63 / +1.65, ANA +2.22 /
+        # +2.20 / +2.21 (stereo / USB L / jack); host +1.56 / +1.64, +2.19 / +2.17; 0.9.11 host +0.68, +1.27 with the
+        # direct sound -0.69 / -0.75, now +0.00 / -0.06), switched under a chord 1.5 -> 2.5 LU (MARIMBA DIG on FM-1
+        # +1.72 / +1.73, host +2.02; 0.9.11 host +0.16); reverb 50 switched 1.5 -> 2.0 LU (VIBES FM-1 +1.35 / -1.53,
+        # jack -1.66; host +1.32 / -1.50; 0.9.11 host +1.03 / -1.20)
+        if sw[0] == "DL_SW":
+            lim, tlim = 2.5, 2.5
+        elif sw[0] == "RV_DEPTH":
+            tlim = 2.0
 
         def static(q, stereo=False):
             return lq(held, q, 0, hw, stereo) - np.mean([lq(r, q, 0, hw, stereo) for r in refs])
@@ -3719,7 +4044,9 @@ def _jump(V, S, jumps, ch=None, extra=()):
                 fmt=lambda d: f"{d[0]:+.2f} / {d[1]:+.2f} LU", info=bool(cyc))
         S.check(f"{name}: clicks at the switches", "", {s: x and x[2] for s, x in v.items()}, lambda c: c == 0, "0",
                 fmt=lambda c: str(c))
-    S.check("reference drift", "the dry chord, start vs end", S.per(lambda q: lq(refs[1], q, 0, 1.8) - lq(refs[0], q, 0, 1.8)),
+    dr = probes or refs
+    S.check("reference drift", "the dry chord, start vs end" + (" (one strike, 0..1.0 s)" if probes else ""),
+            S.per(lambda q: lq(dr[1], q, 0, 1.0 if probes else 1.8) - lq(dr[0], q, 0, 1.0 if probes else 1.8)),
             lambda d: abs(d) <= 0.3, "within 0.3 LU (else the scan was disturbed)", level=True)
     V.reset(ALL_ON + list(extra), label="all on")
     a = V.take("jump-all-on", *st)
@@ -3727,8 +4054,18 @@ def _jump(V, S, jumps, ch=None, extra=()):
     V.send(111, 127)
     b = V.take("jump-bypass", *st)
     V.send(111, 0)
+    # THRESHOLD (2026-11-13): the bypass against all on's compressor alone, not against no effects, as fx_all's bypass
+    # since stage 2 (2026-11-10): the FX button keeps the compressor (FR_BYP_KEEP_CMP, 0.9.10). Against no effects it
+    # read the compressor's own level on the FM-1 with 0.9.10 and 0.9.11 (T2, 2026-11-12): VIBES -0.58 / -0.55 LU,
+    # MARIMBA -1.48 / -1.55 (the jack the same within 0.05), the host -0.54 / -1.55. Within 0.5 LU as before
+    cmp_only = [kv for kv in ALL_ON if kv[0].startswith("CMP_")]
+    V.reset(cmp_only + list(extra), label="all on's compressor alone")
+    k = V.take("jump-comp-alone", *st)
+    S.check("FX bypass (CC 111) with everything on", "re the compressor alone (all on's)",
+            S.per(lambda q: lq(b, q, 0, 1.8) - lq(k, q, 0, 1.8)), lambda d: abs(d) <= 0.5,
+            "within 0.5 LU (fx_all: the bypass keeps the compressor)", level=True)
     S.check("FX bypass (CC 111) with everything on", "re no effects", S.per(lambda q: lq(b, q, 0, 1.8) - lq(refs[0], q, 0, 1.8)),
-            lambda d: abs(d) <= 0.5, "within 0.5 LU (fx_all)", level=True)
+            lambda d: True, "information (the compressor's own level)", level=True, info=True)
     S.check("everything on re no effects", "fx_all 'all on'", S.per(lambda q: lq(a, q, 0, 1.8) - lq(refs[0], q, 0, 1.8)),
             lambda d: True, "information", level=True, info=True)
 
@@ -3747,8 +4084,11 @@ MVELS = (8, 24, 40, 64, 88, 100, 117, 127)
 # VIBES's; every MARIMBA strike is held under -0.5 dBFS by the top roll-off and the RING ceiling, so the A3-E4-A4 v100
 # chord reads -1.5 LU re ST77: FM-1 scans 3 and 4, -1.50 USB / -1.48 jack). 0.9.10: MARIMBA unchanged, the Rhodes
 # louder: this suite on the host build (--host) reads -3.22 (0.9.9's host -0.99, its FM-1 -1.50); the FM-1 value to
-# confirm on the next scan
-MLEVEL_DB = -3.2
+# confirm on the next scan.
+# THRESHOLD (2026-11-13): -3.2 -> -1.7 (+-1 LU as before). The FM-1 read -1.71 USB / -1.61 jack with 0.9.10 and
+# -1.67 / -1.63 with 0.9.11 (T2, 2026-11-12); the host (v0.9.11) reads -1.67 too: the -3.22 above was measured on
+# an interim 0.9.10 build
+MLEVEL_DB = -1.7
 M_CAPPED = {(84, "SOFT", "MED")}
 M_FX_RATE, M_FX_JIT, M_FX_SEED, M_FX_VEL = 8.0, 0.0, 1, 80   # marimba_fx's roll: per note, the jitter, the seed (m_fx_roll)          # both contacts at T7f's cap at v100 (marimba_va.capped, VA-M9's exceptions)
 
@@ -3771,9 +4111,12 @@ STRUCK_KNOWN = (
      "USER DECISION 2026-11-05: the echoes of a strike that dies in ~1 s add more to the 1.8 s loudness than on a held "
      "chord (DIG +4.38, ANA +3.31 LU); the direct sound (0..0.25 s, information) is unchanged; band 0 .. +6 LU"),
     (r"^marimba_jump$", r"^reverb 50 \(no switch: REV 0 -> 50\): (on vs off|switched under a chord)", r"",
-     lambda d: max(abs(x) for x in (d if isinstance(d, tuple) else (d,))) <= 3.0,
+     lambda d: max(abs(x) for x in (d if isinstance(d, tuple) else (d,))) <= 3.5,
      "USER DECISION 2026-11-05: the hall over a dying roll is a larger share of its loudness than over a held chord "
-     "(+1.57 LU held, +1.20 / -1.74 switched; limit 1.5); band |step| <= 3 LU"),
+     "(+1.57 LU held, +1.20 / -1.74 switched; limit 1.5); band |step| <= 3.5 LU"),
+    # THRESHOLD (2026-11-14, T2 0.9.12): the band 3.0 -> 3.5 LU: E2's MIX law keeps the dry whole at REV 50, so the
+    # switch adds / takes the whole wet: host +1.99 / -3.02 (0.9.11 host +1.58 / -2.54; the same with the bars' -3 dB
+    # at LEVEL or before the effects)
     (r"^marimba_fx$", r"^CHORUS DEPTH .* 0 -> 127$", r"^spectral motion$", lambda d: d >= 0.6,
      "USER DECISION 2026-11-05: on the roll the chorus moves the spectrum +0.9 / +1.0 dB at DEPTH 127 (limit +1): each "
      "strike resets the bands the chorus would move; band >= +0.6 dB"),
@@ -3890,7 +4233,7 @@ def frac_delay(x, d):
     return np.fft.irfft(X * np.exp(-2j * np.pi * np.arange(len(X)) * d / N), N)[:n]
 
 
-def m_contact_db(mx, ox, mr, orf, a=0.0, b=0.06, fit=(0.1, 0.3), lag_ms=6.0):
+def m_contact_db(mx, ox, mr, orf, a=0.0, b=0.06, fit=(0.1, 0.3), lag_ms=6.0, coarse=0.3, px=None, pr=None):
     """NOISE's contact as the gate measures it (tests/py/test_marimba_controls_audible.py, marimba_scan's P4 host
     numbers): the RMS of take x minus the NOISE 0 take r over a..b s from the strike, re r's own RMS there, both
     rectangular windows. The engine is deterministic apart from NOISE, so once x is aligned on r to a fraction of a
@@ -3898,14 +4241,17 @@ def m_contact_db(mx, ox, mr, orf, a=0.0, b=0.06, fit=(0.1, 0.3), lag_ms=6.0):
     ambiguity, which a lone C6 partial has), then the fraction (+-1 sample, 0.01 steps) where it is least over fit
     (after the contact, the ring alone). The spectral excess before (m_excess_db: a flat-start window, the bins under
     the ring's partials dropped, 1.26 x the ring subtracted) read C6 1.2-1.6 dB low (-35.4 dB on the FM-1, USB and
-    jack, and on the host, where the gate's sample-exact difference is -33.8; C4 -29.7 for -31.9). Returns (dB, lag)"""
+    jack, and on the host, where the gate's sample-exact difference is -33.8; C4 -29.7 for -31.9). coarse: the whole
+    lag's window, -5 ms .. coarse s (a high bar note is near a sine: over 0.3 s F6 took a lag a period off, the
+    strike's rise decides it in 20 ms). px / pr: the takes' pre-rolls, their mean squares (the difference's hiss, in
+    expectation exactly their sum) taken off (floor_sub). Returns (dB, lag)"""
     pad = int(0.02 * FS)
     x = np.asarray(cut(mx, ox, -0.02, 0.4), float)
     y = np.asarray(cut(mr, orf, -0.02, 0.4), float)
     n = min(len(x), len(y))
     x, y = x[:n], y[:n]
     L = int(lag_ms * FS / 1000)
-    a0, a1 = max(L, pad - int(0.005 * FS)), min(n - L, pad + int(0.3 * FS))
+    a0, a1 = max(L, pad - int(0.005 * FS)), min(n - L, pad + int(coarse * FS))
     rr = [np.sum((x[a0 + k:a1 + k] - y[a0:a1]) ** 2) for k in range(-L, L + 1)]
     d0 = -(int(np.argmin(rr)) - L)
     f0, f1_ = pad + int(fit[0] * FS), min(n, pad + int(fit[1] * FS))
@@ -3914,6 +4260,8 @@ def m_contact_db(mx, ox, mr, orf, a=0.0, b=0.06, fit=(0.1, 0.3), lag_ms=6.0):
     xs = frac_delay(x, d)
     w0, w1 = pad + int(a * FS), pad + int(b * FS)
     e = np.mean((xs[w0:w1] - y[w0:w1]) ** 2)
+    if px is not None and pr is not None and len(px) > FS // 50 and len(pr) > FS // 50 and np.any(px) and np.any(pr):
+        e = floor_sub(e, float(np.mean(np.asarray(px, float) ** 2) + np.mean(np.asarray(pr, float) ** 2)))
     return float(10 * np.log10(e + 1e-30) - 10 * np.log10(np.mean(y[w0:w1] ** 2) + 1e-30)), float(d)
 
 
@@ -4003,6 +4351,41 @@ def m_drop_rate(x, t_off, db=30.0, win=0.005, hop=0.001, fit=False):
         if len(k) >= 5:
             return float(-np.polyfit(t[k], e[k], 1)[0])
     return float(db / max(t[above[-1]] - t_off, hop))
+
+
+def m_stop_slope(x, t_off, fl=None, db=20.0, start=3.0, over=10.0, smooth=0.001):
+    """the slope (dB/s) of a stop's first db dB, onset-aligned: the note's envelope (the analytic signal's power,
+    smoothed over 1 ms: no window that a low note's period or a 5 ms RMS smears) falls start dB under its level over
+    the 20 ms before the key-up t_off (s), then the least-squares slope over the next db dB. The key-up's place on the
+    damper's 32-frame grid and the damper's own delay move when the stop starts, not its slope, and the depth stays
+    over the source's floor (fl: its pre-roll; the jack's hiss): db is cut to the level before the key-up minus
+    start minus the floor minus over, at least 6 dB. m_drop_rate, the time from the key-up to a 30 dB drop, read every
+    fast stop on the jack at ~700 dB/s (its 5 ms window and the hiss at the drop's end: the 0.9.12 two-core T2, pedal up
+    and half both 702, USB 845 / 759)"""
+    from scipy.signal import hilbert
+    x = np.asarray(x, float)
+    i0 = int(t_off * FS)
+    a = max(0, i0 - FS // 50)
+    seg = x[a:]
+    w = max(1, int(smooth * FS))
+    p = np.convolve(np.abs(hilbert(seg)) ** 2, np.ones(w) / w, "same")
+    e = 10 * np.log10(p + 1e-30)
+    k0 = i0 - a
+    ref = 10 * np.log10(np.mean(p[max(0, k0 - FS // 50):k0]) + 1e-30)
+    if fl is not None and len(fl) >= FS // 10 and np.any(fl):
+        db = max(6.0, min(db, ref - start - rdb(fl) - over))
+    b = np.flatnonzero(e[k0:] < ref - start)
+    if not len(b):
+        return float("nan")
+    b0 = k0 + int(b[0])
+    c = np.flatnonzero(e[b0:] < ref - start - db)
+    if not len(c):
+        return float("nan")
+    b1 = b0 + int(c[0])
+    if b1 - b0 < 4:
+        return float(db / max((b1 - b0) / FS, 1 / FS))
+    t = np.arange(b0, b1 + 1) / FS
+    return float(-np.polyfit(t, e[b0:b1 + 1], 1)[0])
 
 
 def m_audible_s(m, i, fl, t0=0.05, t1=0.6, over=20.0, lo=0.15):
@@ -4105,6 +4488,13 @@ def marimba_voice(V, S):
                 fmt=lambda v: f"{v[0]:.2f} -> {v[1]:.2f} s")
 
 
+def pedal_order_ok(v):
+    """marimba_decay's pedal row: v = [up, half, down] dB/s (m_stop_slope), on USB and the jack alike: down < half < up
+    and up / down >= 3x"""
+    up, half, down = v
+    return down < half < up and up / down >= 3.0
+
+
 @vtest
 def marimba_decay(V, S):
     """MARIMBA VOICE 2/2: RING, MUTE (the hand), the pedal, NOISE (no knock), TUNE; the MOTOR CCs inert"""
@@ -4151,9 +4541,10 @@ def marimba_decay(V, S):
                 fmt=lambda v: f"{v[0]:.0f} / {v[1]:.0f} / {v[2]:.0f} dB/s")
         S.check("pedal down holds at MUTE 127", f"key {n}", S.per(lambda q: r(("ped", 127), q, True) / r("held", q, True)),
                 lambda v: abs(v - 1) <= 0.01, "within 1 % of the held decay (the envelope's slope)", fmt=lambda v: f"x{v:.3f}")
-        S.check("pedal up / half / down (MUTE 127)", f"key {n}",
-                S.per(lambda q: [r(("ped", p_), q) for p_ in (0, 50, 127)]),
-                lambda v: v[2] < v[1] < v[0] and v[0] / v[2] >= 3.0, "down < half < up, up / down >= 3x",
+        S.check("pedal up / half / down (MUTE 127)", f"key {n}, the stop's first 20 dB (m_stop_slope)",
+                S.per(lambda q: [m_stop_slope(cut(T[("ped", p_)].m(q), T[("ped", p_)].on(q)[k], 0, 2.3), holds[k],
+                                              T[("ped", p_)].pre(q)) for p_ in (0, 50, 127)]),
+                pedal_order_ok, "down < half < up, up / down >= 3x",
                 fmt=lambda v: f"{v[0]:.0f} / {v[1]:.0f} / {v[2]:.0f} dB/s")
     # NOISE: the contact (0..60 ms) and, with no damper, nothing at the key-up
     ev, dur = strikes((48, 60, 84), (100,), gap=3.0, hold=1.5)
@@ -4252,9 +4643,16 @@ def marimba_vel(V, S):
                       for i, n in zip(o, keys)])
         return lv, c
     vals = S.per(kl)
-    S.check("keys C2..C7: neighbour step", "every key, v100",
-            {s_: v and float(np.abs(np.diff(v[0])).max()) for s_, v in vals.items()}, lambda d: d <= 1.5,
-            "<= 1.5 dB (PLAN M1, D)", fmt=lambda d: f"{d:.2f} dB")
+    # THRESHOLD (2026-11-14, T2 0.9.12): on USB stereo (as heard), as vibes_vel: one channel carries 0.9.10's dry
+    # width comb (FM-1 0.9.10 / 0.9.11 / 0.9.12 2.0-3.7 / 2.57 / 2.53 dB USB L, 2.57-2.58 jack; 0.9.9 0.48)
+    keys_st = S.usb(lambda q: np.array([lu(cut(t.usb, i, 0, 1.0)) for i in t.on(q)]))
+    S.check("keys C2..C7: neighbour step", "every key, v100, USB stereo (as heard)",
+            {s_: None if v is None else float(np.abs(np.diff(v)).max()) for s_, v in keys_st.items()},
+            lambda d: d <= 1.5, "<= 1.5 dB (PLAN M1, D)", fmt=lambda d: f"{d:.2f} dB")
+    S.check("keys C2..C7: neighbour step, one channel", "every key, v100, USB L vs jack (the dry width's comb)",
+            {s_: v and float(np.abs(np.diff(v[0])).max()) for s_, v in vals.items()}, lambda d: True,
+            "information (one channel: the width's +1.6 / -1.9 dB comb)", level=True, info=True,
+            fmt=lambda d: f"{d:.2f} dB")
     # (information, as tools/marimba_scan.py's M1 row, the user 2026-11-05: the 1 s loudness falls 8.6 dB C2 -> C7
     # because the high bars die in ~0.3 s; the peaks are within 4 dB, the neighbour step above gates the evenness)
     S.check("keys C2..C7: level span", "", {s_: v and float(v[0].max() - v[0].min()) for s_, v in vals.items()},
@@ -4346,6 +4744,11 @@ def marimba_fx(V, S):
                 NOTE=(ST_NOTE[0], m_fx_roll((69,), v, 0.1, 1.6)),
                 ATK=ST_CH,               # COMP ATTACK: a strike out of silence (on a roll the compressor never lets go)
                 BW=(0.05, 2.05),         # the spectra over the whole roll: two takes of one roll 0.2-0.8 dB apart at 1 s
+                WAH_W=(0.05, 2.05),      # WAH DEPTH over the whole roll, not its first 300 ms: there the roll is still
+                #                          building up (one v80 note, then two, three: the touch wah's envelope with
+                #                          them) and DEPTH 127's 1-4 kHz rise read 8.4..14.5 dB over 20 host seeds (FM-1
+                #                          rc-0.9.12 T2: USB 8.3, the jack 5.9 against the 6 dB bar); over the whole
+                #                          roll 16.4..18.0 (tests/py/test_marimba_hil_measures.py)
                 CS_PERIOD=True,          # CHORUS SYNC by the period: the harmonic sum took the 1/4's 3rd harmonic
                 CS_BAND=True,            # CHORUS SPEED 50 / 127 by the band re DEPTH 0: the centroid read 1.31 for 0.87
                 SPREAD=True,             # FILTER OFF judged against two dry takes of the roll (one more take)
@@ -4457,7 +4860,8 @@ def run_classic(names, r=None, report="report"):
         except Exception as e:  # keep scanning
             ok, msg = False, f"error: {e!r}"
         fails += not ok
-        line = f"{'ok  ' if ok else 'FAIL'}  {n:13s} {msg}  ({time.time() - t0:.0f} s)"
+        st = "KNOWN" if isinstance(ok, str) else "ok  " if ok else "FAIL"   # (KNOWN: a C1_KNOWN item, not a failure)
+        line = f"{st}  {n:13s} {msg}  ({time.time() - t0:.0f} s)"
         print(line, flush=True)
         lines.append(line)
     r.dry()
@@ -4503,8 +4907,11 @@ def main(argv=None):
     ap.add_argument("--offline", nargs="?", const=os.path.join(OUT, "vibes"), metavar="DIR",
                     help="VIBES suites: re-analyse the takes saved by --wav (default build/hil/vibes/), no MIDI / audio;"
                          " report build/hil/vibes-offline.md (+ .json)")
+    ap.add_argument("--c1", action="store_true", help="the FM-1 runs the two-core image: its C1_KNOWN items (as FRODHES_IMAGE=c1)")
     ap.add_argument("--rate", type=int, choices=(44100, 48000), help="stress_max: the USB rate (default 44100)")
     a = ap.parse_args(argv)
+    if a.c1:
+        os.environ["FRODHES_IMAGE"] = "c1"
     if a.only and "stress_max" in a.only.split(","):   # the cracks test: tools/hil_crackle.py (its own recorder, rates)
         import hil_crackle
         rest = [n for n in a.only.split(",") if n != "stress_max"]

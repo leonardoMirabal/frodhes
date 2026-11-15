@@ -6,7 +6,9 @@ A "Frodhes" name wins: when one exists, only the Frodhes ports are candidates. T
 are a fallback for when no Frodhes port exists (just after an install from the stock firmware or the rescue).
 NEVER names are other firmware on another unit and are never matched, not even as a fallback.
 
-  pick(names)        the candidate names, Frodhes ones only when any exist (keeps the order given)
+  pick(names)        the candidate names, Frodhes ones only when any exist (keeps the order given); with a location
+                     pinned (FM1_LOCATION=0x..., pin_audio) only the ports at that USB location (CoreMIDI), and a
+                     name another port shares is refused
   first(names)       pick(names)[0], or None
   devices(devs, ch)  the indices of sounddevice.query_devices() entries picked the same way, with >= ch inputs; with
                      a location pinned (pin_audio(loc), FM1_LOCATION=0x...) only the one at that USB location
@@ -39,6 +41,32 @@ import sys
 PREFER = "frodhes"
 PORT_KEYS = ("frodhes", "felucca", "fm-1")   # Frodhes since the rename; Felucca before; fm-1 the stock name
 NEVER = ("textura",)                         # another unit's firmware: never opened, never probed
+
+
+# the image under test (0.9.12 on: the FM-1's one package is the two-core image, FR_C1 + FR_C1_LAT, 14 voices,
+# 128-frame interrupts). FRODHES_IMAGE=one for a one-core image (the SMK files, older FM-1 releases); FRODHES_LAT_HALF
+# overrides the interrupt's frames. Every FM-1 tool takes its limits and voice count from here, never its own default.
+def image():
+    """'c1' (the two-core FM-1 package, the default) or 'one' (FRODHES_IMAGE=one)"""
+    v = os.environ.get("FRODHES_IMAGE", "c1").lower()
+    if v not in ("c1", "one"):
+        sys.exit(f"FRODHES_IMAGE={v!r}: c1 (the FM-1 package) or one (a one-core image)")
+    return v
+
+
+def lat_half():
+    """the audio interrupt's frames: FRODHES_LAT_HALF, else 128 on the two-core image, 256 on a one-core one"""
+    return int(os.environ.get("FRODHES_LAT_HALF") or (128 if image() == "c1" else 256))
+
+
+def image_voices(src_count):
+    """the voices of the image under test: frodhes.c FR_VOICES 14 on the two-core image, else rhodes.c's count"""
+    return 14 if image() == "c1" else src_count
+
+
+def image_line():
+    """one line for a tool's header: which image the limits are for"""
+    return f"image {image()}: {lat_half()}-frame interrupts, limits x {lat_half()}/256"
 
 
 FORCED = os.environ.get("FM1_PORT") or None  # force(); FM1_PORT=NAME does the same for every tool
@@ -280,7 +308,20 @@ def is_fm1(name, keys=PORT_KEYS):
     return not _never(name) and any(k in n for k in keys)
 
 
-def pick(names, keys=PORT_KEYS):
+def pick(names, keys=PORT_KEYS, at=None, lists=None, devs=None):
+    """the FM-1 candidates among the MIDI port names. With a location pinned (FM1_LOCATION=0x..., pin_audio, a tool's
+    --location) only the names of the ports at that USB location (CoreMIDI's USBLocationID: a stale CoreMIDI name
+    too), and a name another port shares is refused (SystemExit: opening by name would take either). 2026-11-15:
+    pick() ignored the location; with two units plugged in, FM1_LOCATION=0x21130000 took unit 1's port while
+    devices() took unit 2's audio, and hil_scan played one unit and recorded the other's silence. at / lists / devs:
+    midi_at(loc), rtmidi's (inputs, outputs), usb_devices() (the tests)"""
+    if AUDIO_LOC is not None:
+        return _pick_at(names, AUDIO_LOC, at, lists, devs)
+    return _by_name(names, keys)
+
+
+def _by_name(names, keys=PORT_KEYS):
+    """pick() by the names alone (devices() too: its location is CoreAudio's, judged there)"""
     if FORCED:
         return [n for n in names if FORCED.lower() in n.lower()]
     names = [n for n in names if not _never(n)]
@@ -288,19 +329,70 @@ def pick(names, keys=PORT_KEYS):
     return mine if mine else [n for n in names if any(k in n.lower() for k in keys)]
 
 
+def _pick_at(names, loc, at=None, lists=None, devs=None):
+    where = f"FM1_LOCATION=0x{loc:08x}"
+    m = midi_at(loc) if at is None else at
+    if m is None:
+        sys.exit(f"{where}: no CoreMIDI on this computer: the unit's MIDI ports cannot be told by location")
+    if lists is None:
+        import rtmidi
+        lists = (rtmidi.MidiIn().get_ports(), rtmidi.MidiOut().get_ports())
+    ins, outs = lists
+    here = midi_names_at(loc, ins, outs, m)
+    if here is None:
+        sys.exit(f"{where}: the MIDI port list changed while it was read: run again")
+    mine = set(here[0]) | set(here[1])
+    if not mine:
+        sys.exit(f"{where}: no MIDI port at that USB location")
+    devs = usb_devices() if devs is None else devs
+    if devs is not None:
+        usb = usb_name_at(loc, devs)
+        if usb is None or _never(usb) or any(_never(n) for n in mine):
+            sys.exit(f"{where}: the USB device there is {usb!r}, not an FM-1 this tool may open")
+    dup = sorted(n for n in mine if ins.count(n) > 1 or outs.count(n) > 1)
+    if dup:
+        sys.exit(f"{where}: its MIDI port name {dup[0]!r} is another port's too: opening it by name could take the other "
+                 "unit (give one unit its own USB name: tools/build.py --usb-name)")
+    return [n for n in names if n in mine]
+
+
 def first(names, keys=PORT_KEYS):
     p = pick(names, keys)
     return p[0] if p else None
 
 
-def devices(devs, ch=2, keys=PORT_KEYS, ca=None):
+class _Stale(Exception):
+    """PortAudio's device list is not CoreAudio's (devices())"""
+
+
+def devices(devs, ch=2, keys=PORT_KEYS, ca=None, sd=None):
     """the FM-1's audio inputs among sounddevice's devs. Two units share the name "Frodhes FM-1": with a location
     pinned (pin_audio, a tool's --location, FM1_LOCATION=0x... for every tool) only the device at that USB location
     (CoreAudio's device UID); without one, two FM-1 audio devices are refused (SystemExit), never one taken at
-    random. ca: coreaudio_devices() (the tests)"""
+    random. ca: coreaudio_devices() (the tests).
+    PortAudio reads its device list once, when sounddevice starts: after a device change (an FM-1 rebooted by an
+    install, a unit plugged in) it is not CoreAudio's any more, and the locations cannot be read. Then PortAudio's
+    list is re-read once (sd: the sounddevice module; default the imported one when ca is read here, not given) and
+    the pick retried on it; the indices returned are the re-read list's (the callers query sd by index afterwards).
+    2026-11-14: a tool exited "CoreAudio's list is not sounddevice's" after a device change"""
+    try:
+        return _devices(devs, ch, keys, ca)
+    except _Stale as e:
+        sd = sd or (sys.modules.get("sounddevice") if ca is None else None)
+        if sd is None:
+            sys.exit(str(e))
+        sd._terminate()                           # (sounddevice's own re-read of PortAudio's list)
+        sd._initialize()
+        try:
+            return _devices(sd.query_devices(), ch, keys, None if ca is None else ca)
+        except _Stale as e2:
+            sys.exit(str(e2) + " (after re-reading PortAudio's list)")
+
+
+def _devices(devs, ch, keys, ca):
     devs = list(devs)
     ok = [i for i, d in enumerate(devs) if d["max_input_channels"] >= ch]
-    names = pick([devs[i]["name"] for i in ok], keys)
+    names = _by_name([devs[i]["name"] for i in ok], keys)
     if FORCED_AUDIO:                          # (force(): the unit by exclusion, its audio by its USB name)
         names = [devs[i]["name"] for i in ok if FORCED_AUDIO.lower() in devs[i]["name"].lower()]
     sel = [i for i in ok if devs[i]["name"] in names]
@@ -309,10 +401,14 @@ def devices(devs, ch=2, keys=PORT_KEYS, ca=None):
     ca = coreaudio_devices() if ca is None else ca
     if ca is None or [n for n, _ in ca] != [d["name"] for d in devs]:
         if AUDIO_LOC is not None:
-            sys.exit(f"--location 0x{AUDIO_LOC:08x}: the audio devices' USB locations cannot be read (CoreAudio's "
-                     "list is not sounddevice's): no audio device taken")
-        sys.exit(f"{len(sel)} FM-1 audio devices ({', '.join(devs[i]['name'] for i in sel)}) and their USB locations "
-                 "cannot be read: give the unit's --location (or FM1_LOCATION=0x...)")
+            msg = (f"--location 0x{AUDIO_LOC:08x}: the audio devices' USB locations cannot be read (CoreAudio's "
+                   "list is not sounddevice's): no audio device taken")
+        else:
+            msg = (f"{len(sel)} FM-1 audio devices ({', '.join(devs[i]['name'] for i in sel)}) and their USB locations "
+                   "cannot be read: give the unit's --location (or FM1_LOCATION=0x...)")
+        if ca is None:                            # (off macOS: nothing to re-read)
+            sys.exit(msg)
+        raise _Stale(msg)
     if AUDIO_LOC is None:
         where = ", ".join(f"{devs[i]['name']!r} at " + (f"0x{uid_loc(ca[i][1]):08x}" if uid_loc(ca[i][1]) is not None
                                                         else "?") for i in sel)

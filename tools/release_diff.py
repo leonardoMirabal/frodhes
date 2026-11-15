@@ -14,14 +14,17 @@ release as a whole. This does, in two sizes:
         (measured on the last release, LAST below; `--save-base` on that tree's binaries, never on a candidate).
   full  the release diff (a gate target, `make release-diff`; about a minute): the same plus keys across the range at
         v20 / 40 / 64 / 96 / 110 / 127, three chords and every factory preset (F01..F19). The last release is built
-        from git (LAST) and measured live, so its numbers can never be re-saved from a candidate.
+        from git (LAST) and measured live, so its numbers can never be re-saved from a candidate. Full mode adds the
+        two-core FM-1 build ("c1", C1_DEFS: the package that ships, ./build.sh --c1) on every FM-1 case, against the
+        last release's own two-core build: the FM-1's verdict (2026-11-14; the one-core "fm1" cases stay, the
+        SMK-37's design, as a regression).
 
 Measured per note (mono, 44.1 kHz; t = the strike): H2..H6 re H1 (dB, band peaks +-3 % of k f0, 50..450 ms), "inh"
 (the energy off every harmonic band re H1: aliasing and any inharmonic product), "level" (RMS over the hold, dBFS),
 "peak" (the attack's peak, first 100 ms), "cent" (spectral centroid, Hz), "decay" (dB lost over the hold; "silent" when its last 150 ms are exact zeros), "keyup"
 (the level 80..280 ms after the key-up re the last 200 ms before it; "silent" when that window is exact zeros, a
 state compared as silent / sounding, never a dB of zeros; an effects-on cell: the median of the shifts that sound), "clk" (the largest 1 ms second-difference peak
-re the median: in the body re the body, after the key-up re the 200 ms before it: clicks), and in full mode "lu" (K-weighted loudness of the hold), "cb" (critical-band
+re the median, never under 1 LSB (CLK_REF_FLOOR): in the body re the body, after the key-up re the 200 ms before it: clicks), and in full mode "lu" (K-weighted loudness of the hold), "cb" (critical-band
 loudness, phon-like, tools/cb_loud.py) and "lim" (RAW minus effects-off level: on the FM-1 build the output limiter's
 gain reduction; on HQ, whose effects-off keeps the compressor, the compressor's and the limiter's together: hq DYNO
 FXOFF chord-low's +1.5 is the compressor, the limiter reads 0 there, build/t3/limgr.py, 2026-11-09). Per
@@ -43,7 +46,8 @@ The verdict (exit 1 on any failure):
   diffs     every value that moves by more than TOL in EITHER direction must be listed, with a reason, in the
             expected-changes file (tests/expected_changes.yaml); anything unlisted fails.
 
-  tools/release_diff.py [--grid fast|full] [--fm1 BIN] [--hq BIN]   judge (default: this tree's host builds)
+  tools/release_diff.py [--grid fast|full] [--fm1 BIN] [--hq BIN] [--c1 BIN]   judge (default: this tree's host
+                         builds; given binaries: only their cases, --c1 the two-core FM-1's full-mode cases)
       --report FILE      also write the report (the biggest moves first) to FILE
       --draft FILE       write the unlisted moves as expected-changes entries to fill in (reason: TODO fails)
       --save-base        (fast) measure --fm1/--hq and write the fast baseline: ONLY on the last release's tree
@@ -66,12 +70,15 @@ import numpy as np
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))     # (cb_loud; the pool's spawned workers too)
 import dry_dist  # noqa: E402  (its TYPE_BASE: the TYPE cases on the engine's voicing)
-LAST = "v0.9.9"                    # the last release (456b5da4); move with every release, never to a candidate
+LAST = "v0.9.11"                   # the last release (279a7aff); move with every release, never to a candidate
 OUT = os.path.join(ROOT, "build", "release_diff")
 BASE_FAST = os.path.join(ROOT, "tests", "baselines", "release_diff_fast.json")
 EXPECTED = os.path.join(ROOT, "tests", "expected_changes.yaml")
 FS = 44100
 HQ_DEFS = ["-DFR_VOICES=16u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1", "-DHQ_DEFAULT=1"]
+C1_DEFS = ["-DFR_C1=1", "-DFR_C1_LAT=1"]   # the two-core FM-1 package (tools/build.py --c1): 14 voices, the full-rate
+                                           # reverb, 128-frame interrupts; full mode only
+FM1_BUILDS = ("fm1", "c1")                 # the FM-1's builds: the same cases (the FX button keeps the compressor)
 TYPES = (("ST77", 80, 0), ("SUIT", 80, 32), ("FELT", 80, 64), ("DYNO", 80, 96), ("VIBES", 79, 0), ("MARIMBA", 79, 127))
 CONFIGS = {"FXOFF": [(111, 127)], "RAW": [(119, 127)], "FX": []}
 METHODS = (("A", 0), ("B", 127))
@@ -120,18 +127,18 @@ def cases(grid, tree=None):
     last release's preset of that name, loaded by its own program change there)"""
     g, out = GRID[grid], []
     names = preset_names(tree) if g["presets"] else []
-    for build in ("fm1", "hq"):
+    for build in (("fm1", "hq", "c1") if grid == "full" else ("fm1", "hq")):
         for tname, tcc, tval in TYPES:
             for cfg, ccs in CONFIGS.items():
                 for m, mv in METHODS:
                     setup = [(110, 0xB0, tcc, tval), (120, 0xB0, 40, mv)] + [(100, 0xB0, c, v) for c, v in ccs] + \
                             [(dry_dist.TYPE_BASE_T, 0xB0, c, v) for c, v in dry_dist.TYPE_BASE]   # (not F01's voicing)
-                    if cfg == "FXOFF" and build == "fm1":    # the dry engine, as v0.9.9's bypass: the FX button keeps
+                    if cfg == "FXOFF" and build in FM1_BUILDS:   # the dry engine, as v0.9.9's bypass: the FX button keeps
                         setup.append((125, 0xB0, 106, 0))    # the compressor from 0.9.10 (fx.c FR_BYP_KEEP_CMP), so
                                                              # COMP off too (the HQ build kept it in v0.9.9 already)
                     keys = g["keys_ep"] if tcc == 80 else g["keys_bar"]
                     out.append((f"{build}/{tname}/{cfg}/{m}", build, setup, keys, "type"))
-        if grid == "full" and build == "fm1":
+        if grid == "full" and build in FM1_BUILDS:
             for tname, tcc, tval in TYPES:
                 for cname, ccn in CONTROLS:
                     for cv in (0, 127):
@@ -228,14 +235,23 @@ def offharm(p, fr, funds):
     return db(p[use & ~on].sum() / (p[h1].sum() + 1e-30))
 
 
+CLK_REF_FLOOR = 1.0                 # LSB: clicks()' reference (ref's median 1 ms peak of the second difference) is never
+                                    # under one int16 step. A note that decays into exact zeros in more than half its
+                                    # window had a median of 0 and read its own smooth sine re 1e-9 as a +200 dB click
+                                    # (MARIMBA FX A k89v40 203.7 dB: largest second difference 15.5 LSB, lower than
+                                    # v0.9.11's 20.0). Cells whose median is 1 LSB or more read as before; an injected
+                                    # 1 ms step found before is found after (tests/py/test_release_diff.py; the
+                                    # coordinator 2026-11-14)
+
+
 def clicks(x, ref):
-    """dB: the largest 1 ms peak of the second difference in x re ref's median 1 ms peak; -100 at most below (a
-    numerical floor: a silent tail reads -300, a tail of float residue -150, neither is a click)"""
+    """dB: the largest 1 ms peak of the second difference in x re ref's median 1 ms peak (at least CLK_REF_FLOOR); -100
+    at most below (a numerical floor: a silent tail reads -300, a tail of float residue -150, neither is a click)"""
     def frames(y):
         d = np.abs(np.diff(y, 2))
         n = len(d) // 44
         return d[:n * 44].reshape(n, 44).max(1) if n else np.zeros(1)
-    return max(db((frames(x).max() / (np.median(frames(ref)) + 1e-9)) ** 2), -100.0)
+    return max(db((frames(x).max() / max(float(np.median(frames(ref))), CLK_REF_FLOOR)) ** 2), -100.0)
 
 
 def key_rise(tail, pre):
@@ -399,9 +415,9 @@ def _job(a):
 
 
 def measure_all(bins, grid, tag, n=None, tree=None):
-    """{case id: cells} for every case, the builds' binaries {fm1, hq} (tree: whose preset names)"""
+    """{case id: cells} for every case of the builds in bins {fm1, hq[, c1]} (tree: whose preset names)"""
     tmp = os.path.join(OUT, tag)
-    jobs = [(bins[c[1]], c, grid, tmp) for c in cases(grid, tree)]
+    jobs = [(bins[c[1]], c, grid, tmp) for c in cases(grid, tree) if c[1] in bins]
     n = n or int(os.environ.get("PRISTINE_N", os.environ.get("PYTEST_N", "2")) or 2)
     with Pool(max(1, n)) as pool:
         res = dict(pool.map(_job, jobs, chunksize=2))
@@ -429,13 +445,14 @@ def cc_build(tree, path, defs=()):
     return path
 
 
-def tree_bins(tree, outdir):
-    """the FM-1 and HQ host builds of a tree, built in parallel"""
+def tree_bins(tree, outdir, c1=False):
+    """the FM-1 and HQ host builds of a tree (c1: the two-core FM-1's too), built in parallel"""
     from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(2) as ex:
+    with ThreadPoolExecutor(3) as ex:
         a = ex.submit(cc_build, tree, os.path.join(outdir, "fm1"))
         b = ex.submit(cc_build, tree, os.path.join(outdir, "hq"), HQ_DEFS)
-        return {"fm1": a.result(), "hq": b.result()}
+        c = ex.submit(cc_build, tree, os.path.join(outdir, "c1"), C1_DEFS) if c1 else None
+        return {"fm1": a.result(), "hq": b.result(), **({"c1": c.result()} if c else {})}
 
 
 def last_tree(path=None):
@@ -463,7 +480,8 @@ def last_cells(grid, base_tree=None):
     cache = os.path.join(OUT, f"last-{grid}-{key}.json")
     if os.path.exists(cache):
         return json.load(open(cache))
-    cells = measure_all(tree_bins(tree, os.path.join(OUT, "last-bin")), grid, "last-" + grid, tree=tree)
+    cells = measure_all(tree_bins(tree, os.path.join(OUT, "last-bin"), c1=grid == "full"), grid, "last-" + grid,
+                        tree=tree)
     json.dump(cells, open(cache, "w"))
     return cells
 
@@ -718,7 +736,7 @@ def draft(moves, path):
 
 def run(grid="fast", bins=None, expected=EXPECTED, base_tree=None):
     """(ok, report text, cand, base, fails, moves)"""
-    bins = bins or tree_bins(ROOT, os.path.join(OUT, "cand"))
+    bins = bins or tree_bins(ROOT, os.path.join(OUT, "cand"), c1=grid == "full")
     cand = measure_all(bins, grid, "cand-" + grid)
     if grid == "fast":
         doc = json.load(open(BASE_FAST))
@@ -749,6 +767,7 @@ def main():
     ap.add_argument("--grid", choices=GRID, default="fast")
     ap.add_argument("--fm1")
     ap.add_argument("--hq")
+    ap.add_argument("--c1", help="the two-core FM-1 host build (full mode; C1_DEFS)")
     ap.add_argument("--expected", default=EXPECTED)
     ap.add_argument("--report")
     ap.add_argument("--draft")
@@ -758,6 +777,8 @@ def main():
     a = ap.parse_args()
     t0 = time.time()
     bins = {"fm1": os.path.abspath(a.fm1), "hq": os.path.abspath(a.hq)} if a.fm1 and a.hq else None
+    if bins and a.c1:
+        bins["c1"] = os.path.abspath(a.c1)
     if a.save_base:
         if a.grid != "fast" or not bins:
             raise SystemExit("--save-base: --grid fast with --fm1 and --hq of the last release's tree")

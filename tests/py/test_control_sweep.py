@@ -57,6 +57,10 @@ BASE = {
     # the same thing. Still caught on 61baedac's own renders: a zipper (0.3 dB at every CC step) reads 9.5 / 10.1 /
     # 6.1 (wet 11.7) / 7.6 (wet 20.9); a 2.5 dB step under 1 ms reads zipper 9.1 / 2.0 / 7.6 / 8.1.
     "wah RATE": {"zipper": (2.2, 2.04, "the wah's rate swept under fresh strikes")},
+    # THRESHOLD (0.9.13 E2, the MIX law as Textura's): past 64 the dry falls to nothing at 127, its gain gliding
+    # (46 ms, no step); the window-to-window level falls 3.3 dB at MIX 115 on the way up (the chord -28.7 -> -32.0
+    # dBFS), 1.75 over the statics' (0.9.12 had no dry fall; HALL's own reads under 1.5)
+    "rev PLATE auto MIX": {"jump": (1.9, None, "the MIX law's dry falling past 64, by design")},
 }
 
 

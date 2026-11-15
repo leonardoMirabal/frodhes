@@ -39,7 +39,7 @@ static uint8_t eq_run[EQ_NB];                           /* the band runs (off 0 
 static uint8_t eq_cok;                                  /* the coefficients are those of the positions (0: make) */
 
 /* one band over n samples in place: rh_df1_t's arithmetic (rhodes.c), st = m1 m2 o1 o2 e */
-__attribute__((noinline)) static void eq_df1(int32_t *p, uint32_t n, const int32_t *c, int32_t *st)
+FR_RAM2 __attribute__((noinline)) static void eq_df1(int32_t *p, uint32_t n, const int32_t *c, int32_t *st)
 {
     int32_t c0 = c[0], c1 = c[1], c2 = c[2], c3 = -c[3], c4 = -c[4];
     int32_t m1 = st[0], m2 = st[1], o1 = st[2], o2 = st[3], e = st[4];
@@ -56,7 +56,7 @@ __attribute__((noinline)) static void eq_df1(int32_t *p, uint32_t n, const int32
 /* the same while a knob glides: the coefficients ramp from c to t over the n (32) samples, one step a sample (the
  * step-wise update of each sub-block left a zipper of -75 dB under a 1 kHz tone at a full-speed MID sweep; ramped,
  * the sweep's own sidebands only), then c = t exactly */
-__attribute__((noinline)) static void eq_df1g(int32_t *p, uint32_t n, int32_t *c, const int32_t *t, int32_t *st)
+FR_RAM2 __attribute__((noinline)) static void eq_df1g(int32_t *p, uint32_t n, int32_t *c, const int32_t *t, int32_t *st)
 {
     int32_t k[5], d[5], i;
     int32_t m1 = st[0], m2 = st[1], o1 = st[2], o2 = st[3], e = st[4];
@@ -181,8 +181,8 @@ __attribute__((noinline)) static void fx_eq(int32_t *m, uint32_t n)
         if (mv) gl = (uint32_t)eq_glide(&eq_g[0], tg[0]) | (uint32_t)(eq_glide(&eq_f, tf) | eq_glide(&eq_g[1], tg[1])) << 1 |
                      (uint32_t)eq_glide(&eq_g[2], tg[2]) << 2;
         for (b = 0; b < EQ_NB; b++) {
-            if (gl >> b & 1u) { eq_coef(b, t); eq_df1g(m + sb, e, eq_c[b], t, eq_st[b]); }
-            else if (eq_run[b]) eq_df1(m + sb, e, eq_c[b], eq_st[b]);
+            if (gl >> b & 1u) { eq_coef(b, t); FR_FAR2(eq_df1g)(m + sb, e, eq_c[b], t, eq_st[b]); }
+            else if (eq_run[b]) FR_FAR2(eq_df1)(m + sb, e, eq_c[b], eq_st[b]);
             else if (e >= 2u) eq_hist(b, m + sb, e);
         }
         if (!mv) break;
@@ -218,8 +218,8 @@ __attribute__((noinline)) static void fx_eq(int32_t *m, uint32_t n)
         if (mv) gl = (uint32_t)eq_glide(&eq_g[0], tg[0]) | (uint32_t)(eq_glide(&eq_f, tf) | eq_glide(&eq_g[1], tg[1])) << 1 |
                      (uint32_t)eq_glide(&eq_g[2], tg[2]) << 2;
         for (b = 0; b < EQ_NB; b++) {
-            if (gl >> b & 1u) { eq_coef(b, t); eq_df1g(m + sb, e, eq_c[b], t, eq_st[b]); }
-            else if (eq_run[b]) eq_df1(m + sb, e, eq_c[b], eq_st[b]);
+            if (gl >> b & 1u) { eq_coef(b, t); FR_FAR2(eq_df1g)(m + sb, e, eq_c[b], t, eq_st[b]); }
+            else if (eq_run[b]) FR_FAR2(eq_df1)(m + sb, e, eq_c[b], eq_st[b]);
             else if (e >= 2u) eq_hist(b, m + sb, e);
         }
         if (!mv) break;
