@@ -97,27 +97,39 @@ static void cmp_auto(void);
  * the reverb TYPE's fade) never stacks with the burst's on core 1 (the two-core storm soak, 2026-11-15). A CC to a
  * value still waiting takes it over (the CC is newer). Main loop only: the ISR never reads these */
 #define FX_PEND_N 4u
-static uint8_t fx_hold;                         /* main loop: fx_set keeps the values (preset_load) */
-static uint8_t fx_pv[FXP_N];                    /* the kept values */
-static uint32_t fx_pm[FX_PEND_N][(FXP_N + 31u) / 32u];   /* the kept ids, per step */
-static uint8_t fx_ps;                           /* the next step to apply + 1, 0 = none waits */
-static uint32_t fx_pb;                          /* the block count the last step saw (frodhes.c blk_n) */
-static uint32_t fx_pend_step(uint32_t id)
+/* (own section, out of the compiler's global merge: in it they moved the merged variables the audio code reads, so
+ * that code grew 2..38 B (longer offsets) and moved in the flash cache; the two-core storm's KHLON thirds paid
+ * ~+140 us of core-1 busy for it, 2026-11-15) */
+#ifdef DINGHY_HOST
+#define FX_PEND_SECTION
+#define FX_PEND_TAB
+#else
+#define FX_PEND_SECTION __attribute__((section(".bss.fx_pend")))
+#define FX_PEND_TAB __attribute__((section(".data.fx_pend")))
+#endif
+static uint8_t fx_hold FX_PEND_SECTION;         /* main loop: fx_set keeps the values (preset_load) */
+static uint8_t fx_pv[FXP_N] FX_PEND_SECTION;    /* the kept values */
+static uint32_t fx_pm[FX_PEND_N][(FXP_N + 31u) / 32u] FX_PEND_SECTION;   /* the kept ids, per step */
+static uint8_t fx_ps FX_PEND_SECTION;           /* the next step to apply + 1, 0 = none waits */
+static uint32_t fx_pb FX_PEND_SECTION;          /* the block count the last step saw (frodhes.c blk_n) */
+/* each id's step, XOR 2 (0 = the default step 2): a table in RAM, in its own section, not a switch (its lookup
+ * table went to the end of .rodata and moved the effects' small tables after it in the flash cache, 2026-11-15) */
+#define FXP_S0(i) [i] = 0u ^ 2u
+#define FXP_S1(i) [i] = 1u ^ 2u
+#define FXP_S3(i) [i] = 3u ^ 2u
+static uint8_t fx_pend_tab[FXP_N] FX_PEND_TAB = {
+    FXP_S0(FXP_DL_SW), FXP_S0(FXP_DL_DEPTH), FXP_S0(FXP_DL_TIME), FXP_S0(FXP_DL_FDBK), FXP_S0(FXP_DL_SYNC),
+    FXP_S0(FXP_DL_TONE),
+    FXP_S1(FXP_DRIVE), FXP_S1(FXP_DRIVE_ROW), FXP_S1(FXP_DRV_TONE), FXP_S1(FXP_DRV_MIX), FXP_S1(FXP_DRV_SW),
+    FXP_S1(FXP_CMP_SW), FXP_S1(FXP_CMP_AMT), FXP_S1(FXP_CMP_ATK), FXP_S1(FXP_CMP_REL), FXP_S1(FXP_CMP_RATIO),
+    FXP_S1(FXP_CMP_GAIN), FXP_S1(FXP_EQ_LO), FXP_S1(FXP_EQ_MID), FXP_S1(FXP_EQ_FREQ), FXP_S1(FXP_EQ_HI),
+    FXP_S1(FXP_FL_TYPE), FXP_S1(FXP_FL_FREQ), FXP_S1(FXP_FL_RESO), FXP_S1(FXP_FL_LFO),
+    FXP_S3(FXP_RV_DEPTH), FXP_S3(FXP_RV_DECAY), FXP_S3(FXP_RV_TONE), FXP_S3(FXP_RV_PREDLY), FXP_S3(FXP_RV_TYPE),
+    FXP_S3(FXP_RV_SIZE), FXP_S3(FXP_RV_MOD), FXP_S3(FXP_RV_LOCUT),
+};
+static uint32_t fx_pend_step(uint32_t id)       /* (id < FXP_N: fx_set's check) */
 {
-    switch (id) {
-    case FXP_DL_SW: case FXP_DL_DEPTH: case FXP_DL_TIME: case FXP_DL_FDBK: case FXP_DL_SYNC: case FXP_DL_TONE:
-        return 0;
-    case FXP_DRIVE: case FXP_DRIVE_ROW: case FXP_DRV_TONE: case FXP_DRV_MIX: case FXP_DRV_SW:
-    case FXP_CMP_SW: case FXP_CMP_AMT: case FXP_CMP_ATK: case FXP_CMP_REL: case FXP_CMP_RATIO: case FXP_CMP_GAIN:
-    case FXP_EQ_LO: case FXP_EQ_MID: case FXP_EQ_FREQ: case FXP_EQ_HI:
-    case FXP_FL_TYPE: case FXP_FL_FREQ: case FXP_FL_RESO: case FXP_FL_LFO:
-        return 1;
-    case FXP_RV_DEPTH: case FXP_RV_DECAY: case FXP_RV_TONE: case FXP_RV_PREDLY: case FXP_RV_TYPE: case FXP_RV_SIZE:
-    case FXP_RV_MOD: case FXP_RV_LOCUT:
-        return 3;
-    default:
-        return 2;
-    }
+    return fx_pend_tab[id] ^ 2u;
 }
 static void fx_set(uint32_t id, int32_t v)
 {
