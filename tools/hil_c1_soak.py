@@ -451,6 +451,9 @@ def run(a):  # noqa: C901 (the device run)
           f"voices {first.get('voices')}", flush=True)
     boot0 = decode(query(32)).get("boot")              # (the boot before the run: its reason, any crash record)
     print(f"boot before the run: {boot0}", flush=True)
+    query(127)                                           # (discarded: the app's worst block and the whole ISR since
+    # the last read reset, as query(30) above reset core 1's; 2026-11-15: the 0 s read carried the worst from before
+    # the soak, an hour of T2 on unit 1: whole 2468 at 0 s, <= ~2050 after)
     jobs_prev = first.get("jobs", -1)
     def setup(i):                                         # the engine i and every effect at its heaviest
         sel = ENGINES[i][0]
@@ -585,6 +588,7 @@ def run(a):  # noqa: C901 (the device run)
                     r2 = decode(query(30))
                     if r2.get("jobs") is not None:
                         jobs_prev = r2["jobs"]
+                    query(127)                            # (discarded: the boot's maxima, as before the soak)
                     reads.append(dict(t=round(time.monotonic() - t0, 1), settled=round(time.monotonic() - tw, 1)))
                     setup(eng_i)
                     if p["max"]:

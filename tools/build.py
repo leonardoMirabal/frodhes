@@ -259,8 +259,11 @@ def build_app():
                 raise SystemExit("app.ld: the rh_hermite line was not found (--c1 hot code)")
             # (pinned: the hot code starts at a fixed address, 0x02001400 (. inside .text counts from its start 0x02000120), however app_audio's size moves; ld fails if it grows
             # past it)
+            # (a line "+N": N bytes of padding there, so a function that shrank leaves the code after it where it was:
+            # the layout the FM-1 was measured on)
             txt = txt.replace("KEEP(*(.text.app_audio)) " + k, "KEEP(*(.text.app_audio)) . = 0x12E0; " + k +
-                              "".join(f" *(.text.{n})" for n in names if n))
+                              "".join(f" . = . + {int(n[1:])};" if n.startswith("+") else f" *(.text.{n})"
+                                      for n in names if n))
     if RAM2:
         # the one-core FM-1 image: RAMTEXT up to 0x01C07F00 (the room --c1 gives .ramx; crt0's boot status words stay
         # at 0x01C07F00) for more of the audio's hot loops (frodhes.c FR_RAM2): the code it read from flash had
@@ -489,7 +492,8 @@ def check(img, syms, dis, rt):
                      f"{sym('_ramx_end'):#x} of 0x1c08000")
         hot = Path(os.environ.get("C1_HOT_FILE") or FW / "c1_hot.txt")
         if hot.exists():                 # every name of the hot list a function placed in the hot block (a renamed
-            names = [n for n in (l.split("#")[0].strip() for l in hot.read_text().splitlines()) if n]   # one: stale)
+            names = [n for n in (l.split("#")[0].strip() for l in hot.read_text().splitlines())
+                     if n and not n.startswith("+")]   # one: stale; "+N" lines are padding)
             lo, hi = 0x02001400, 0x02001400 + 0x20000
             gone = [n for n in names if not lo <= sym(re.escape(n)) < hi]
             if gone:
