@@ -271,8 +271,11 @@ class Release:
         problems, ev = [], []
         branch = out(["git", "rev-parse", "--abbrev-ref", "HEAD"])
         # main, or the release's test branch (rel-X.Y.Z / release-X.Y.Z: the release commit goes in through its PR; the
-        # local main can hold another session's work); --after-merge runs on main only
-        if branch != "main" and (self.a.after_merge or branch not in (f"rel-{self.ver}", f"release-{self.ver}")):
+        # local main can hold another session's work; also without the dots, rel-0912 / release-095); --after-merge runs
+        # on main only
+        v, vd = self.ver, self.ver.replace(".", "")
+        if branch != "main" and (self.a.after_merge or branch not in (f"rel-{v}", f"release-{v}", f"rel-{vd}",
+                                                                      f"release-{vd}")):
             problems.append(f"on branch {branch!r}, not main" + ("" if self.a.after_merge else
                                                                  f" or rel-{self.ver} / release-{self.ver}"))
         dirty = out(["git", "status", "--porcelain", "--untracked-files=no"]).splitlines()

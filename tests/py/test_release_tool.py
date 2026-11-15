@@ -108,6 +108,7 @@ def tree(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("branch,ok", [("rel-0.9.3", True), ("release-0.9.3", True), ("rel-0.9.4", False),
+                                       ("rel-093", True), ("release-093", True), ("rel-094", False),
                                        ("ship-1c", False)])
 def test_preconditions_take_the_release_branch(tree, monkeypatch, capsys, branch, ok):
     """the release commit can be made on the release's own test branch (the local main may hold another session's
