@@ -815,3 +815,46 @@ def test_device_done_refuses_a_pending_record(tmp_path, monkeypatch):
     assert "a real run stops here: the record is not passed (fm1: verdict 'PENDING')" in release(["--dry-run"]).device_done()
     with pytest.raises(rel.Stop, match="not passed"):
         release([]).device_done()
+
+
+def test_step3_is_reused_on_a_tools_only_descendant(tree, monkeypatch, capsys):
+    """a passed step 3 on an ancestor of HEAD is reused when only tools/*.py and tests/py/test_*.py changed since:
+    only their tests run (the changed test, every test naming a changed tool), then the builds; a firmware file,
+    tools/build.py or a non-ancestor runs everything"""
+    cdir = tree / "build" / "release-step3"
+    monkeypatch.setattr(rel, "step3_cache_dir", lambda: str(cdir))
+    (tree / "tests" / "py").mkdir(parents=True)
+    (tree / "tests" / "py" / "test_move_hil.py").write_text("import move_hil\n")
+    (tree / "tests" / "py" / "test_other.py").write_text("from move_hil import x\n")
+    (tree / "tests" / "py" / "test_unrelated.py").write_text("import gate_r\n")
+
+    def run(head, diff="", ancestor=True):
+        calls = []
+        base = fake_shell(str(tree), calls)
+
+        def sh(cmd, check=True, input=None, timeout=None, quiet=False):
+            s = cmd if isinstance(cmd, str) else " ".join(cmd)
+            calls.append(s)
+            if s == "git rev-parse HEAD":
+                return 0, head + "\n"
+            if s.startswith("git merge-base --is-ancestor"):
+                return (0 if ancestor else 1), ""
+            if s.startswith("git diff --name-only aaaa"):
+                return 0, diff
+            return base(cmd, check=check, input=input, timeout=timeout, quiet=quiet)
+        monkeypatch.setattr(rel, "sh", sh)
+        rel.main(["patch", "--dry-run", "--no-device", "--no-emulator"])
+        return calls, capsys.readouterr().out
+
+    calls, o = run("aaaa000000000000")                                  # the full step 3, recorded
+    assert "make test" in calls and (cdir / "0.9.3-aaaa000000000000.json").exists()
+    calls, o = run("bbbb000000000000", "tools/move_hil.py\ntests/py/test_move_hil.py\n")
+    py = [c for c in calls if " -m pytest " in c]
+    assert "make test" not in calls and "make pytest PY=" + rel.PY not in calls, calls
+    assert py and py[0].endswith("tests/py/test_move_hil.py tests/py/test_other.py"), py
+    assert "an ancestor of this HEAD bbbb000000" in o and (cdir / "0.9.3-bbbb000000000000.json").exists()
+    for head, diff, anc in (("cccc000000000000", "tools/move_hil.py\nfirmware/src/fx.c\n", True),
+                            ("dddd000000000000", "tools/build.py\n", True),
+                            ("eeee000000000000", "tools/move_hil.py\n", False)):
+        calls, o = run(head, diff, anc)
+        assert "make test" in calls, (head, diff)

@@ -24,7 +24,8 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
                  A passed step 3 is recorded (clean tree only) in build/release-step3/<X.Y.Z>-<HEAD>.json of the main
                  checkout; a later run of the same version on the same HEAD with a clean tree (the real run after
                  the dry run) reuses its tests and only rebuilds, and the builds' sha256 must equal the record's
-                 (--no-step3-cache: run everything)
+                 (--no-step3-cache: run everything). On a descendant whose diff is only tools/*.py and
+                 tests/py/test_*.py (not tools/build.py), it runs just the tests of those files, then rebuilds
  4 FM-1          (--no-device skips it and lists its commands) the tiers this release needs, from
                  `git diff <previous tag>..HEAD` through tools/test_map.py (printed with the reason): T1 on every
                  release, T2 when an engine / the DSP changed (or --full). The device lock, install, then
@@ -143,6 +144,27 @@ class Stop(Exception):
 
 class Handoff(Exception):
     """step 7 without --after-merge: the release commit is ready, the PR is the user's (nothing pushed)"""
+
+
+STEP3_LIGHT = r"(tools/(?!build\.py$)[A-Za-z0-9_]+\.py|tests/py/test_[A-Za-z0-9_]+\.py)"   # (not conftest, not the build)
+
+
+def step3_tests(changed):
+    """the test files to run for changed tools / tests: each changed test, and every tests/py/test_*.py that names a
+    changed tool's module"""
+    tdir = os.path.join(ROOT, "tests", "py")
+    out_ = {f for f in changed if f.startswith("tests/py/") and os.path.exists(os.path.join(ROOT, f))}
+    mods = [os.path.basename(f)[:-3] for f in changed if f.startswith("tools/")]
+    if mods:
+        pat = re.compile(r"\b(" + "|".join(map(re.escape, mods)) + r")\b")
+        for n in sorted(os.listdir(tdir)):
+            if n.startswith("test_") and n.endswith(".py"):
+                try:
+                    if pat.search(open(os.path.join(tdir, n), encoding="utf-8").read()):
+                        out_.add("tests/py/" + n)
+                except OSError:
+                    pass
+    return sorted(out_)
 
 
 def step3_cache_dir():
@@ -402,9 +424,13 @@ class Release:
         cache = self.step3_load()
         tests = [] if cache else [["make", "test"], ["make", "pytest", "PY=" + PY], [PY, "tools/gate_r.py"]]
         if cache:
-            ev.append(f"the host tests: reused, not run again: they passed on this HEAD {self.head[:10]} with a clean "
-                      f"tree at {cache['when']} ({os.path.relpath(cache['file'], ROOT) if cache['file'].startswith(ROOT) else cache['file']}; "
-                      f"--no-step3-cache runs them):\n  " + "\n  ".join(cache["tests"]))
+            on = (f"this HEAD {self.head[:10]}" if not cache.get("rerun") else
+                  f"{cache['head'][:10]}, an ancestor of this HEAD {self.head[:10]} that differs only in tools / tests "
+                  f"({', '.join(cache['changed'])})")
+            ev.append(f"the host tests: reused, not run again: they passed on {on} with a clean tree at "
+                      f"{cache['when']} ({cache['file']}; --no-step3-cache runs them):\n  " + "\n  ".join(cache["tests"]))
+            if cache.get("rerun"):          # the tests of what changed since, run here
+                tests = [[PY, "-m", "pytest", "-q", "-p", "no:cacheprovider", *cache["rerun"]]]
         for cmd in tests + [["./build.sh", "--c1", "--release", self.ver]]:
             t0 = time.time()
             _, o = sh(cmd, timeout=3600)
@@ -429,6 +455,9 @@ class Release:
                            f"{cache.get('move_sha256')}, this run built {self.sha} / {self.move_sha}: not reproducible, "
                            f"re-run with --no-step3-cache")
             ev.append("the builds' sha256 = the recorded run's")
+            if cache.get("rerun"):          # this HEAD's own record, for a later run on it
+                self.step3_save(cache["tests"] + [f"on {self.head[:10]}: pytest {' '.join(cache['rerun'])} (the "
+                                                  f"tools / tests changed since {cache['head'][:10]})"])
         else:
             self.step3_save([e for e in ev if not e.startswith("./build.sh") and not e.startswith("build/")
                              and not e.startswith("make move")])
@@ -438,18 +467,42 @@ class Release:
         return os.path.join(step3_cache_dir(), f"{self.ver}-{self.head}.json")
 
     def step3_load(self):
-        """a passed step 3 of this version on this HEAD with a clean tree, or None (then the tests run)"""
+        """a passed step 3 of this version with a clean tree, or None (then every test runs): on this HEAD, or on an
+        ancestor of it from which only tools/*.py and tests/py/*.py changed (STEP3_LIGHT); then rec["rerun"] lists
+        the test files of those changes (the changed tests, and every test that names a changed tool)"""
         if self.a.no_step3_cache or not self.clean or not self.head:
             return None
-        f = self.step3_file()
+        recs = []
+        d = step3_cache_dir()
         try:
-            rec = json.load(open(f))
-        except (OSError, ValueError):
+            names = sorted(os.listdir(d))
+        except OSError:
             return None
-        if rec.get("head") != self.head or rec.get("version") != self.ver or not rec.get("clean"):
-            return None
-        rec["file"] = f
-        return rec
+        for n in names:
+            if not (n.startswith(self.ver + "-") and n.endswith(".json")):
+                continue
+            try:
+                rec = json.load(open(os.path.join(d, n)))
+            except (OSError, ValueError):
+                continue
+            if rec.get("version") == self.ver and rec.get("clean") and rec.get("head"):
+                rec["file"] = os.path.join(d, n)
+                recs.append(rec)
+        for rec in recs:
+            if rec["head"] == self.head:
+                return rec
+        for rec in recs:
+            if sh(["git", "merge-base", "--is-ancestor", rec["head"], self.head], check=False, quiet=True)[0]:
+                continue
+            code, o = sh(["git", "diff", "--name-only", rec["head"], self.head], check=False, quiet=True)
+            changed = [l.strip() for l in o.splitlines() if l.strip()]
+            if code or not changed or not all(re.fullmatch(STEP3_LIGHT, f) for f in changed):
+                continue
+            rec["changed"], rec["rerun"] = changed, step3_tests(changed)
+            if not rec["rerun"]:
+                continue
+            return rec
+        return None
 
     def step3_save(self, tests):
         """record a passed step 3 (clean tree only), for the next run on the same HEAD (the real run after the dry run)"""
