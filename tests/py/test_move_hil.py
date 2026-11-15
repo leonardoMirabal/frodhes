@@ -792,3 +792,18 @@ def test_move_bpm10_bpm_first_then_the_saved_set():
     assert mh.move_bpm10(0.0, {"track": {}}) is None and mh.move_bpm10(0.0, None) is None
     song = '{"tempo": 82.0, "tracks": [{"midiInputMode": "auto", "devices": [], "mixer": {"volume": 0.0}}]}'
     assert mh.parse_song(song)["tempo"] == 82.0
+
+
+def test_tap_lead_after_program_change():
+    """what is sent after a program change plays after it on the tap (VIBES' motor off after F13's change: before
+    it, the change turned the motor back on and d2's usb-host DIFFERED by -11 dB, 2026-11-15)"""
+    r = object.__new__(mh.TapRig)
+    r.ch = 1
+    r.pending = [("cc", 120, 0)] + [("cc", c, 0) for c in range(100)] + [("pc", 12, 0), ("cc", 47, 0)]
+    ev = r.lead()
+    pc = [t for t, s, a, b in ev if s == 0xC0][0]
+    assert pc >= 5 and ev[0][0] == 1
+    assert all(t < pc for t, s, a, b in ev[:101])          # (the panel before the change)
+    assert ev[-1] == (pc + 1, 0xB0, 47, 0)                 # (the motor off after it)
+    r.pending = [("pc", 0, 0)]
+    assert r.lead() == [(5, 0xC0, 0, 0)]                   # (as before: a lone change at 5 ms)
