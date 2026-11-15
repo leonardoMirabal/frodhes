@@ -71,14 +71,25 @@ static __attribute__((noinline)) void rev_locut(int32_t *x, int32_t v)
     }
     rv_lc = lc;
 }
-/* the kernels' input at the full rate: the clamp and HL_IN as rev_down, its DC blocker at the same corner (>> 6 at
- * twice the rate: ~110 Hz -> 0.9.5's ~110 Hz) */
-static FX_RAM __attribute__((noinline)) void rq_in(const int32_t *in, int32_t *out)
+/* the kernels' input at the full rate: the clamp and HL_IN as rev_down (HALL: RQ_IN_HALL), its DC blocker at the same
+ * corner (>> 6 at twice the rate: ~110 Hz -> 0.9.5's ~110 Hz) */
+#ifndef RQ_IN_HALL                                      /* (a build may set it: tools/mix_law_proof.py --rev-level) */
+#define RQ_IN_HALL 12266                                /* HL_IN + 1.5 dB (0.9.13): the full-rate HALL at the half-rate
+                                                         * HALL's level in band (K-weighted, 100 Hz .. 8 kHz; its taps
+                                                         * had been matched on the Bark loudness, which counts the band
+                                                         * above 11 kHz the half rate does not have: 1.1 dB under in band
+                                                         * on noise at every MIX / DECAY, 1.4 .. 2 dB on Rhodes chords).
+                                                         * At the input, not the taps (rev_hq_hall.c RQH_OUT): the tank's
+                                                         * rounding stays where it was against the wet (tools/fx_pristine.py
+                                                         * nl at MIX 127 -75.2 dBFS; +1.5 dB on the taps read -73.3, over
+                                                         * the -74 limit) */
+#endif
+static FX_RAM __attribute__((noinline)) void rq_in(const int32_t *in, int32_t *out, int32_t hl)
 {
     int32_t hp = rv_hp, he = rv_he;
     uint32_t i;
     for (i = 0; i < RQ_NC; i++) {
-        int32_t x = mulq15(clampi(FX_HC(1, in[i], -131071, 131071), -131071, 131071), HL_IN), v;
+        int32_t x = mulq15(clampi(FX_HC(1, in[i], -131071, 131071), -131071, 131071), hl), v;
         v = x - hp + he;
         he = v & 63;
         hp += v >> 6;
@@ -239,7 +250,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
                      : zv ? zv : cur == RV_INF ? RV_INF_AUTO : rv_pz;   /* (HALL: its size from MIX / SIZE and
                                                         * DECAY, as rev_hall's; the others: SIZE or AUTO) */
             c.freeze = cur != RV_INF || tgt != RV_INF || rv_dk < 120 ? 0 : rv_dk < 127 ? 1 : 2;
-            FR_FAR(rq_in)(rv_in, rv_x);
+            FR_FAR(rq_in)(rv_in, rv_x, cur == RV_HALL ? RQ_IN_HALL : HL_IN);
             if (cur == RV_HALL) FR_FAR(rev_hqh_run)(&rev_u.h, rv_x, rv_m, rv_s, &c);
             else if (cur == RV_PLATE) rev_plate_run(&rev_u.p, rv_x, rv_m, rv_s, &c);
             else FR_FAR(rev_inf_run)(&rev_u.i, rv_x, rv_m, rv_s, &c);
