@@ -56,12 +56,13 @@
  * function core 1 reaches runs from flash (FX_RAM empty): the two cores never fetch code from RAM at once. Core 1 refuses a job it read wrong (core 0 renders it, core 1 stays on); a late job, refusals too often or
  * a fault of core 1 hold it for good: one core from then on, at FR_C1_NV1 voices (the effects from flash, the shedder
  * as the last guard). hal/fm1_core1.h (the FM-1), c1_host.h (the host's twin), app_audio below. The FM-1 firmware and
- * the host only: not the SMK-37, not the Move, not the web emulator. */
+ * the host and the web emulator (web/build.sh, since 2026-11-15: the FM-1's sound, 14 voices; c1_host.h runs core 1's
+ * job on the page's thread) only: not the SMK-37, not the Move. */
 #ifndef FR_C1
 #define FR_C1 0
 #endif
 #if FR_C1
-#if (defined(BOARD_SMK37) && BOARD_SMK37) || defined(FR_HQ) || defined(DINGHY_WEB)
+#if (defined(BOARD_SMK37) && BOARD_SMK37) || defined(FR_HQ)
 #error "FR_C1: the FM-1 firmware and its host build only"
 #endif
 #ifndef FR_VOICES

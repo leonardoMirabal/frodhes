@@ -5,8 +5,9 @@
  *
  *   app_main()      runs as ever; platform_poll() hands the browser a turn (Asyncify: emscripten_sleep), so the
  *                   page stays alive and the clock (fm1_ms) follows the real time
- *   web_audio(n)    the audio ISR: JavaScript's audio callback asks for n blocks of 256 frames, as the FM-1's
- *                   I2S interrupt does; the result is in web_out (float, L R L R), MASTER applied
+ *   web_audio(n)    the audio ISR: JavaScript's audio callback asks for n blocks of 256 frames, each played as the
+ *                   FM-1's I2S interrupts do (one of 256 frames, or two of 128 on the two-core image); the result is
+ *                   in web_out (float, L R L R), MASTER applied
  *   web_btn / web_keys / web_enc / web_midi / web_master   the panel and USB-MIDI, from the page
  *   web_fb / web_leds / web_store                          the screen (RGB565), the LEDs, the settings record
  *
@@ -158,21 +159,22 @@ static void platform_poll(void)
 }
 
 /* ---- the page's side */
-static float web_out[2u * HALF_FRAMES * 16u];
+static float web_out[2u * 256u * 16u];
 static int32_t web_master_q12 = 3500;
 
-EMSCRIPTEN_KEEPALIVE float *web_audio(uint32_t blocks)
+EMSCRIPTEN_KEEPALIVE float *web_audio(uint32_t blocks)   /* blocks of 256 frames: 256 / HALF_FRAMES interrupts each
+                                                          * (the two-core image's 128-frame halves: two) */
 {
     static int32_t blk[2u * HALF_FRAMES];
-    uint32_t b, i;
+    uint32_t b, i, o = 0;
     if (blocks > 16u) blocks = 16u;
-    for (b = 0; b < blocks; b++) {
+    for (b = 0; b < blocks * (256u / HALF_FRAMES); b++) {
         memset(blk, 0, sizeof blk);
         app_audio(blk, HALF_FRAMES);
         for (i = 0; i < 2u * HALF_FRAMES; i++) {
             int32_t v = (blk[i] * web_master_q12) >> 12;   /* MASTER, then the clip as platform.c does */
             v = v > 32767 ? 32767 : v < -32767 ? -32767 : v;
-            web_out[b * 2u * HALF_FRAMES + i] = (float)v / 32768.0f;
+            web_out[o++] = (float)v / 32768.0f;
         }
     }
     return web_out;
