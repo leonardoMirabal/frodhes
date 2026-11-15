@@ -1380,7 +1380,7 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1.8, 1.0), "RESO SWEEP": (2.3, 1.0),
                  "BELL DYNO": (-1.4, 1.5), "WARM DRIVE": (1.8, 1.5),
                  "VIBES": (-1.1, 1.0), "VIBES ECHO": (-0.9, 1.0), "MARIMBA": (-5.2, 1.0), "WOOD ECHO": (-8.1, 1.0),
-                 "TAPE ECHO": (-0.5, 1.0), "DREAM": (-2.1, 1.0), "U02": (-1.3, 1.0), "U03": (-1.6, 1.0),
+                 "TAPE ECHO": (0.0, 1.0), "DREAM": (-2.1, 1.0), "U02": (-1.3, 1.0), "U03": (-1.6, 1.0),
                  "U04": (0.5, 1.0), "U05": (-1.2, 1.0), "U06": (-1.4, 1.0), "U07": (-1.2, 1.0), "U08": (-1.9, 1.0),
                  "U09": (-1.1, 1.0)}
 # THRESHOLD (0.9.13, the chord-robust rows: presets on PR_CHORDS' mean, A3-C4-E4 alone until then): RESO SWEEP 1.2 ->
@@ -1388,6 +1388,10 @@ PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1
 # resonant filter's sweep, the bell's register, a drive): host, one core / two cores, on the six chords F11 +2.48 /
 # +2.62 (HOST_SHIFT +0.2 on top of the target), F04 -1.52 / -1.32, F19 +1.70 / +1.90; on A3-C4-E4 F11 +2.0..+2.1, F04
 # -1.1..-1.4, F19 +1.0..+1.3. Every other target holds on the six chords (both builds)
+# THRESHOLD (0.9.13, the same rows): TAPE ECHO -0.5 -> 0.0 (+-1.0 as before). Its repeats (FDBK 72) land in the
+# 1.1 s window by register, the same every take: host c1 re F01 per chord 0.00, -0.25, +0.05, +0.71, +0.66, +0.11
+# (mean +0.21, every seed; A3-C4-E4 alone 0.00); FM-1 unit 1 (two cores, 2026-11-15) +0.5, at the old target's edge.
+# Its reverb is PLATE, which the 0.9.13 reverb level does not touch: the chords moved it, not the sound
 # (2026-11-09, fx-level: 0.9.9's absolute level and balance again (742a2537: every LEVEL -19, then the presets the
 # effects had made quieter back to 0.9.9's loudness): the host reads F09 +2.0, F13 +3.1, F14 +3.2, F15 +0.2, F16 -1.8,
 # F18 +1.1, U02 +0.9, U04 +1.2 re F01 (the 0.9.10 headroom trims below are superseded: F04 -0.1, F08 +1.3, U07 -0.2

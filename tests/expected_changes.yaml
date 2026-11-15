@@ -1691,7 +1691,7 @@ changes:
 # RI_OG INFINITE + 0.6 dB; the hq and c1 builds only): a louder wet reads more reverb in the harmonic bands, off them,
 # after the key-up. tools/rev_level_proof.py re-measures on every run: the same build at 0.9.12's two gains passes the
 # full grid with no failure, so each cell below is the wet's level alone (tests/rev_level_proof.json; the ceiling
-# cells exact, as the rule asks). Coordinator sign-off: pending.
+# cells exact, as the rule asks). Signed off by the coordinator 2026-11-15, with the user's sound approval.
   - {match: 'c1/DREAM/PRESET/[AB]/chord-low', metric: imd, min: 3.1, max: 3.8, ceiling_proof: tests/rev_level_proof.json, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes this ceiling'}
   - {match: 'c1/DREAM/PRESET/[AB]/chord-mid', metric: imd, min: 3.5, max: 4.2, ceiling_proof: tests/rev_level_proof.json, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes this ceiling'}
   - {match: 'c1/DREAM/PRESET/[AB]/k28v110', metric: H3, min: 2.9, max: 3.6, ceiling_proof: tests/rev_level_proof.json, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes this ceiling'}
