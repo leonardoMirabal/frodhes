@@ -28,6 +28,7 @@ import rev_hq_ab as ab  # noqa: E402
 
 T = rs.TYPES
 BLK = rs.BLK
+FS = base.FS
 HQ = ["-DFR_REV_HQ=1"]
 # the framework's tests on fx_reverb (they take the exe fixture), less the half rate's cost gate (HALL + 200 us: the
 # full rate costs more by design; its own rows below)
@@ -79,6 +80,43 @@ def _inband_db(w):
     y = sosfilt(butter(4, [100, 8000], "band", fs=rs.FS, output="sos"), w, axis=0)
     y = lfilter(b2, a2, lfilter(b1, a1, y, axis=0), axis=0)
     return 10 * np.log10((y ** 2).sum() + 1e-9)
+
+
+def _chord_k(k, amp=8000):
+    """rev_scan.chord (5 notes, 5 harmonics, decaying) moved k semitones"""
+    t = np.arange(FS) / FS
+    x = np.zeros(FS)
+    for i, f in enumerate((130.81, 196.0, 261.63, 329.63, 392.0)):
+        for h in range(1, 6):
+            x += (amp / 5) / h * np.sin(2 * np.pi * f * 2 ** (k / 12) * h * t + i + h) * np.exp(-t * (1.5 + h))
+    return np.round(x).astype(np.int64)
+
+
+@needs_types
+@pytest.mark.parametrize("typ", base.NEW)
+def test_levels_match_hall(exe, silent, typ):
+    """the full-rate build's version of test_rev_types' row: the TYPE's wet within 2 dB of HALL's, each octave band
+    250 Hz .. 4 kHz within 6 dB, at MIX 100, DECAY 64, over the first 2 s, on the mean of the chord moved -6 .. +5
+    semitones, in band (K-weighted, 100 Hz .. 8 kHz).
+    THRESHOLD (0.9.13, A3): one chord and the broadband RMS -> twelve chords' mean in band. One chord samples a few of
+    the tank's modes: the TYPE re HALL swings -2.6 .. +2.4 dB over the twelve on the half rate (PLATE), -3.0 .. +1.6 on
+    the full rate, and rev_scan.chord itself sat at the full rate's end (PLATE -3.14 broadband, -2.99 in band, its
+    354 .. 707 Hz octave -6.6) once HALL came up 1.5 dB to the half rate's level in band (the broadband RMS counts the
+    full rate's band above 11 kHz, test_hq_level_matches_half_rate). The mean: PLATE re HALL -0.23 dB (half rate +0.30;
+    0.9.12's level +1.27), INFINITE -1.04 (half rate -0.55), every octave within 4.3 dB. HALL 3 dB down reads PLATE
+    +2.8: it still fails"""
+    sounding = base.sounding
+    sounding(silent, typ)
+    lv, oc = [], []
+    for k in range(-6, 6):
+        x = _chord_k(k)
+        w = {t: rs.render(exe, x, dict(RV_TYPE=base.T[t], RV_DEPTH=100), blocks=int(2 * FS / BLK))["wet"]
+             for t in ("HALL", typ)}
+        lv.append(_inband_db(w[typ]) - _inband_db(w["HALL"]))
+        oc.append([base.band_db(w[typ], a, b) - base.band_db(w["HALL"], a, b) for a, b in base.OCT])
+    assert abs(np.mean(lv)) <= 2.0, (typ, np.mean(lv), lv)
+    for (a, b), d in zip(base.OCT, np.mean(oc, 0)):
+        assert abs(d) <= 6.0, (typ, a, b, d)
 
 
 @needs_types

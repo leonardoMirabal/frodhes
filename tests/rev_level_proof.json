@@ -7,7 +7,7 @@
  ],
  "old_level_failures": 0,
  "verdict": "PASS",
- "failing_cells": 752,
+ "failing_cells": 705,
  "ceiling_cells": 206,
  "unproven": 0,
  "chained": [
@@ -3826,266 +3826,14 @@
    "proven": true
   },
   {
-   "cell": "c1/SUIT/FX/A/chord-high",
-   "metric": "keyup",
-   "last": -25.38,
-   "cand": -23.24,
-   "old_level": -24.78,
-   "ceiling": null,
-   "why": [
-    "moved +2.14 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/A/k69v20",
-   "metric": "keyup",
-   "last": -28.78,
-   "cand": -26.49,
-   "old_level": -27.95,
-   "ceiling": null,
-   "why": [
-    "moved +2.29 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/A/k81v110",
-   "metric": "keyup",
-   "last": -25.22,
-   "cand": -22.96,
-   "old_level": -24.64,
-   "ceiling": null,
-   "why": [
-    "moved +2.26 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/A/k81v127",
-   "metric": "keyup",
-   "last": -25.23,
-   "cand": -22.95,
-   "old_level": -24.57,
-   "ceiling": null,
-   "why": [
-    "moved +2.28 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/A/k81v20",
-   "metric": "keyup",
-   "last": -28.21,
-   "cand": -25.95,
-   "old_level": -27.54,
-   "ceiling": null,
-   "why": [
-    "moved +2.26 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/A/k81v96",
-   "metric": "keyup",
-   "last": -25.47,
-   "cand": -23.28,
-   "old_level": -24.94,
-   "ceiling": null,
-   "why": [
-    "moved +2.19 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/A/k93v110",
-   "metric": "keyup",
-   "last": -32.86,
-   "cand": -30.85,
-   "old_level": -32.31,
-   "ceiling": null,
-   "why": [
-    "moved +2.01 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/A/k93v96",
-   "metric": "keyup",
-   "last": -32.78,
-   "cand": -30.78,
-   "old_level": -32.22,
-   "ceiling": null,
-   "why": [
-    "moved +2.00 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/chord-high",
-   "metric": "keyup",
-   "last": -25.38,
-   "cand": -23.24,
-   "old_level": -24.78,
-   "ceiling": null,
-   "why": [
-    "moved +2.14 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/k69v20",
-   "metric": "keyup",
-   "last": -27.25,
-   "cand": -24.99,
-   "old_level": -26.57,
-   "ceiling": null,
-   "why": [
-    "moved +2.25 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/k69v40",
-   "metric": "keyup",
-   "last": -26.66,
-   "cand": -24.35,
-   "old_level": -25.99,
-   "ceiling": null,
-   "why": [
-    "moved +2.31 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/k69v64",
-   "metric": "keyup",
-   "last": -25.84,
-   "cand": -23.77,
-   "old_level": -25.27,
-   "ceiling": null,
-   "why": [
-    "moved +2.07 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/k69v96",
-   "metric": "keyup",
-   "last": -25.51,
-   "cand": -23.43,
-   "old_level": -24.95,
-   "ceiling": null,
-   "why": [
-    "moved +2.08 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/k81v110",
-   "metric": "keyup",
-   "last": -25.22,
-   "cand": -22.91,
-   "old_level": -24.57,
-   "ceiling": null,
-   "why": [
-    "moved +2.32 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/k81v127",
-   "metric": "keyup",
-   "last": -25.23,
-   "cand": -22.95,
-   "old_level": -24.57,
-   "ceiling": null,
-   "why": [
-    "moved +2.28 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/k81v20",
-   "metric": "keyup",
-   "last": -26.98,
-   "cand": -24.65,
-   "old_level": -26.37,
-   "ceiling": null,
-   "why": [
-    "moved +2.34 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/k81v40",
-   "metric": "keyup",
-   "last": -26.21,
-   "cand": -23.84,
-   "old_level": -25.55,
-   "ceiling": null,
-   "why": [
-    "moved +2.37 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/k81v64",
-   "metric": "keyup",
-   "last": -25.74,
-   "cand": -23.42,
-   "old_level": -25.08,
-   "ceiling": null,
-   "why": [
-    "moved +2.31 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/k81v96",
-   "metric": "keyup",
-   "last": -25.47,
-   "cand": -23.13,
-   "old_level": -24.82,
-   "ceiling": null,
-   "why": [
-    "moved +2.34 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/k93v110",
-   "metric": "keyup",
-   "last": -32.86,
-   "cand": -30.84,
-   "old_level": -32.3,
-   "ceiling": null,
-   "why": [
-    "moved +2.02 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "c1/SUIT/FX/B/k93v96",
-   "metric": "keyup",
-   "last": -32.78,
-   "cand": -30.74,
-   "old_level": -32.2,
-   "ceiling": null,
-   "why": [
-    "moved +2.03 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
    "cell": "c1/SUITCASE/PRESET/A/chord-high",
    "metric": "keyup",
    "last": -26.74,
-   "cand": -24.6,
-   "old_level": -26.14,
+   "cand": -24.51,
+   "old_level": -26.05,
    "ceiling": null,
    "why": [
-    "moved +2.13 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.22 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4093,11 +3841,11 @@
    "cell": "c1/SUITCASE/PRESET/A/k69v20",
    "metric": "keyup",
    "last": -30.68,
-   "cand": -27.67,
-   "old_level": -29.96,
+   "cand": -27.63,
+   "old_level": -29.65,
    "ceiling": null,
    "why": [
-    "moved +3.00 (tolerance 2.0): not in the expected-changes file"
+    "moved +3.05 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4117,23 +3865,23 @@
    "cell": "c1/SUITCASE/PRESET/A/k81v127",
    "metric": "keyup",
    "last": -26.75,
-   "cand": -24.43,
+   "cand": -24.42,
    "old_level": -26.04,
    "ceiling": null,
    "why": [
-    "moved +2.32 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.33 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
   {
-   "cell": "c1/SUITCASE/PRESET/A/k81v20",
+   "cell": "c1/SUITCASE/PRESET/A/k81v64",
    "metric": "keyup",
-   "last": -29.32,
-   "cand": -27.31,
-   "old_level": -28.87,
+   "last": -27.19,
+   "cand": -25.16,
+   "old_level": -26.85,
    "ceiling": null,
    "why": [
-    "moved +2.01 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.03 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4141,11 +3889,11 @@
    "cell": "c1/SUITCASE/PRESET/A/k81v96",
    "metric": "keyup",
    "last": -26.94,
-   "cand": -24.77,
-   "old_level": -26.42,
+   "cand": -24.76,
+   "old_level": -26.41,
    "ceiling": null,
    "why": [
-    "moved +2.17 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.18 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4153,11 +3901,11 @@
    "cell": "c1/SUITCASE/PRESET/A/k93v64",
    "metric": "keyup",
    "last": -33.27,
-   "cand": -30.89,
-   "old_level": -32.07,
+   "cand": -31.0,
+   "old_level": -32.18,
    "ceiling": null,
    "why": [
-    "moved +2.38 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.27 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4165,11 +3913,11 @@
    "cell": "c1/SUITCASE/PRESET/B/chord-high",
    "metric": "keyup",
    "last": -26.74,
-   "cand": -24.6,
-   "old_level": -26.14,
+   "cand": -24.51,
+   "old_level": -26.05,
    "ceiling": null,
    "why": [
-    "moved +2.13 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.22 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4177,11 +3925,11 @@
    "cell": "c1/SUITCASE/PRESET/B/k69v20",
    "metric": "keyup",
    "last": -28.82,
-   "cand": -26.44,
-   "old_level": -28.19,
+   "cand": -26.31,
+   "old_level": -28.14,
    "ceiling": null,
    "why": [
-    "moved +2.38 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.51 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4189,11 +3937,11 @@
    "cell": "c1/SUITCASE/PRESET/B/k69v40",
    "metric": "keyup",
    "last": -27.99,
-   "cand": -25.75,
-   "old_level": -27.44,
+   "cand": -25.73,
+   "old_level": -27.39,
    "ceiling": null,
    "why": [
-    "moved +2.23 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.26 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4201,11 +3949,11 @@
    "cell": "c1/SUITCASE/PRESET/B/k69v64",
    "metric": "keyup",
    "last": -27.12,
-   "cand": -25.09,
-   "old_level": -26.62,
+   "cand": -25.05,
+   "old_level": -26.57,
    "ceiling": null,
    "why": [
-    "moved +2.03 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.06 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4214,7 +3962,7 @@
    "metric": "keyup",
    "last": -26.74,
    "cand": -24.42,
-   "old_level": -26.07,
+   "old_level": -26.06,
    "ceiling": null,
    "why": [
     "moved +2.32 (tolerance 2.0): not in the expected-changes file"
@@ -4225,11 +3973,11 @@
    "cell": "c1/SUITCASE/PRESET/B/k81v127",
    "metric": "keyup",
    "last": -26.75,
-   "cand": -24.43,
+   "cand": -24.42,
    "old_level": -26.04,
    "ceiling": null,
    "why": [
-    "moved +2.32 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.33 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4237,11 +3985,11 @@
    "cell": "c1/SUITCASE/PRESET/B/k81v20",
    "metric": "keyup",
    "last": -28.28,
-   "cand": -26.09,
-   "old_level": -27.69,
+   "cand": -26.06,
+   "old_level": -27.65,
    "ceiling": null,
    "why": [
-    "moved +2.19 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.22 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4249,11 +3997,11 @@
    "cell": "c1/SUITCASE/PRESET/B/k81v40",
    "metric": "keyup",
    "last": -27.51,
-   "cand": -25.32,
-   "old_level": -26.91,
+   "cand": -25.27,
+   "old_level": -26.89,
    "ceiling": null,
    "why": [
-    "moved +2.19 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.24 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4261,11 +4009,11 @@
    "cell": "c1/SUITCASE/PRESET/B/k81v64",
    "metric": "keyup",
    "last": -27.19,
-   "cand": -24.93,
-   "old_level": -26.61,
+   "cand": -24.9,
+   "old_level": -26.58,
    "ceiling": null,
    "why": [
-    "moved +2.26 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.29 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -4273,11 +4021,11 @@
    "cell": "c1/SUITCASE/PRESET/B/k81v96",
    "metric": "keyup",
    "last": -26.94,
-   "cand": -24.64,
+   "cand": -24.63,
    "old_level": -26.29,
    "ceiling": null,
    "why": [
-    "moved +2.30 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.31 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8419,290 +8167,14 @@
    "proven": true
   },
   {
-   "cell": "hq/SUIT/FX/A/chord-high",
-   "metric": "keyup",
-   "last": -25.34,
-   "cand": -23.19,
-   "old_level": -24.73,
-   "ceiling": null,
-   "why": [
-    "moved +2.15 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/A/k69v20",
-   "metric": "keyup",
-   "last": -28.97,
-   "cand": -26.65,
-   "old_level": -28.17,
-   "ceiling": null,
-   "why": [
-    "moved +2.33 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/A/k81v110",
-   "metric": "keyup",
-   "last": -25.33,
-   "cand": -23.08,
-   "old_level": -24.74,
-   "ceiling": null,
-   "why": [
-    "moved +2.25 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/A/k81v127",
-   "metric": "keyup",
-   "last": -25.24,
-   "cand": -22.97,
-   "old_level": -24.59,
-   "ceiling": null,
-   "why": [
-    "moved +2.27 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/A/k81v20",
-   "metric": "keyup",
-   "last": -28.37,
-   "cand": -26.09,
-   "old_level": -27.71,
-   "ceiling": null,
-   "why": [
-    "moved +2.28 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/A/k81v96",
-   "metric": "keyup",
-   "last": -25.52,
-   "cand": -23.34,
-   "old_level": -24.99,
-   "ceiling": null,
-   "why": [
-    "moved +2.18 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/A/k93v110",
-   "metric": "keyup",
-   "last": -32.95,
-   "cand": -30.94,
-   "old_level": -32.4,
-   "ceiling": null,
-   "why": [
-    "moved +2.00 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/A/k93v127",
-   "metric": "keyup",
-   "last": -33.02,
-   "cand": -30.99,
-   "old_level": -32.45,
-   "ceiling": null,
-   "why": [
-    "moved +2.03 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
    "cell": "hq/SUIT/FX/A/k93v64",
    "metric": "H3",
    "last": -60.71,
-   "cand": -57.08,
-   "old_level": -57.93,
+   "cand": -57.39,
+   "old_level": -57.96,
    "ceiling": null,
    "why": [
-    "moved +3.63 (tolerance 3.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/A/k93v96",
-   "metric": "keyup",
-   "last": -32.85,
-   "cand": -30.83,
-   "old_level": -32.26,
-   "ceiling": null,
-   "why": [
-    "moved +2.02 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/chord-high",
-   "metric": "keyup",
-   "last": -25.34,
-   "cand": -23.19,
-   "old_level": -24.73,
-   "ceiling": null,
-   "why": [
-    "moved +2.15 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k69v20",
-   "metric": "keyup",
-   "last": -27.41,
-   "cand": -25.13,
-   "old_level": -26.73,
-   "ceiling": null,
-   "why": [
-    "moved +2.28 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k69v40",
-   "metric": "keyup",
-   "last": -26.63,
-   "cand": -24.32,
-   "old_level": -25.97,
-   "ceiling": null,
-   "why": [
-    "moved +2.31 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k69v64",
-   "metric": "keyup",
-   "last": -25.97,
-   "cand": -23.88,
-   "old_level": -25.39,
-   "ceiling": null,
-   "why": [
-    "moved +2.09 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k69v96",
-   "metric": "keyup",
-   "last": -25.59,
-   "cand": -23.5,
-   "old_level": -25.02,
-   "ceiling": null,
-   "why": [
-    "moved +2.08 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k81v110",
-   "metric": "keyup",
-   "last": -25.33,
-   "cand": -23.02,
-   "old_level": -24.68,
-   "ceiling": null,
-   "why": [
-    "moved +2.31 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k81v127",
-   "metric": "keyup",
-   "last": -25.24,
-   "cand": -22.97,
-   "old_level": -24.59,
-   "ceiling": null,
-   "why": [
-    "moved +2.27 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k81v20",
-   "metric": "keyup",
-   "last": -27.14,
-   "cand": -24.75,
-   "old_level": -26.5,
-   "ceiling": null,
-   "why": [
-    "moved +2.39 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k81v40",
-   "metric": "keyup",
-   "last": -26.55,
-   "cand": -24.15,
-   "old_level": -25.87,
-   "ceiling": null,
-   "why": [
-    "moved +2.40 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k81v64",
-   "metric": "keyup",
-   "last": -25.89,
-   "cand": -23.57,
-   "old_level": -25.22,
-   "ceiling": null,
-   "why": [
-    "moved +2.32 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k81v96",
-   "metric": "keyup",
-   "last": -25.52,
-   "cand": -23.18,
-   "old_level": -24.87,
-   "ceiling": null,
-   "why": [
-    "moved +2.34 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k93v110",
-   "metric": "keyup",
-   "last": -32.95,
-   "cand": -30.93,
-   "old_level": -32.39,
-   "ceiling": null,
-   "why": [
-    "moved +2.02 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k93v127",
-   "metric": "keyup",
-   "last": -33.02,
-   "cand": -30.99,
-   "old_level": -32.45,
-   "ceiling": null,
-   "why": [
-    "moved +2.03 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUIT/FX/B/k93v96",
-   "metric": "keyup",
-   "last": -32.85,
-   "cand": -30.79,
-   "old_level": -32.27,
-   "ceiling": null,
-   "why": [
-    "moved +2.06 (tolerance 2.0): not in the expected-changes file"
+    "moved +3.32 (tolerance 3.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8710,11 +8182,11 @@
    "cell": "hq/SUITCASE/PRESET/A/chord-high",
    "metric": "keyup",
    "last": -26.71,
-   "cand": -24.57,
-   "old_level": -26.11,
+   "cand": -24.49,
+   "old_level": -26.03,
    "ceiling": null,
    "why": [
-    "moved +2.15 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.23 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8722,11 +8194,11 @@
    "cell": "hq/SUITCASE/PRESET/A/k69v20",
    "metric": "keyup",
    "last": -31.0,
-   "cand": -27.94,
-   "old_level": -30.24,
+   "cand": -27.84,
+   "old_level": -29.93,
    "ceiling": null,
    "why": [
-    "moved +3.06 (tolerance 2.0): not in the expected-changes file"
+    "moved +3.16 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8734,11 +8206,11 @@
    "cell": "hq/SUITCASE/PRESET/A/k81v110",
    "metric": "keyup",
    "last": -26.87,
-   "cand": -24.61,
-   "old_level": -26.27,
+   "cand": -24.6,
+   "old_level": -26.26,
    "ceiling": null,
    "why": [
-    "moved +2.26 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.27 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8747,22 +8219,22 @@
    "metric": "keyup",
    "last": -26.78,
    "cand": -24.46,
-   "old_level": -26.08,
+   "old_level": -26.07,
    "ceiling": null,
    "why": [
-    "moved +2.31 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.32 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
   {
-   "cell": "hq/SUITCASE/PRESET/A/k81v20",
+   "cell": "hq/SUITCASE/PRESET/A/k81v64",
    "metric": "keyup",
-   "last": -29.52,
-   "cand": -27.46,
-   "old_level": -29.08,
+   "last": -27.35,
+   "cand": -25.34,
+   "old_level": -27.02,
    "ceiling": null,
    "why": [
-    "moved +2.06 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.01 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8770,23 +8242,11 @@
    "cell": "hq/SUITCASE/PRESET/A/k81v96",
    "metric": "keyup",
    "last": -27.02,
-   "cand": -24.86,
-   "old_level": -26.51,
+   "cand": -24.85,
+   "old_level": -26.49,
    "ceiling": null,
    "why": [
-    "moved +2.16 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUITCASE/PRESET/A/k93v127",
-   "metric": "keyup",
-   "last": -34.03,
-   "cand": -32.03,
-   "old_level": -33.48,
-   "ceiling": null,
-   "why": [
-    "moved +2.00 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.17 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8794,11 +8254,11 @@
    "cell": "hq/SUITCASE/PRESET/A/k93v64",
    "metric": "keyup",
    "last": -33.68,
-   "cand": -31.31,
-   "old_level": -32.47,
+   "cand": -31.47,
+   "old_level": -32.62,
    "ceiling": null,
    "why": [
-    "moved +2.37 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.21 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8806,44 +8266,8 @@
    "cell": "hq/SUITCASE/PRESET/B/chord-high",
    "metric": "keyup",
    "last": -26.71,
-   "cand": -24.57,
-   "old_level": -26.11,
-   "ceiling": null,
-   "why": [
-    "moved +2.15 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUITCASE/PRESET/B/k28v64",
-   "metric": "H4",
-   "last": -63.35,
-   "cand": -59.79,
-   "old_level": -61.5,
-   "ceiling": null,
-   "why": [
-    "moved +3.55 (tolerance 3.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUITCASE/PRESET/B/k69v20",
-   "metric": "keyup",
-   "last": -28.98,
-   "cand": -26.58,
-   "old_level": -28.37,
-   "ceiling": null,
-   "why": [
-    "moved +2.39 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUITCASE/PRESET/B/k69v40",
-   "metric": "keyup",
-   "last": -28.0,
-   "cand": -25.78,
-   "old_level": -27.45,
+   "cand": -24.49,
+   "old_level": -26.03,
    "ceiling": null,
    "why": [
     "moved +2.23 (tolerance 2.0): not in the expected-changes file"
@@ -8851,14 +8275,38 @@
    "proven": true
   },
   {
+   "cell": "hq/SUITCASE/PRESET/B/k69v20",
+   "metric": "keyup",
+   "last": -28.98,
+   "cand": -26.47,
+   "old_level": -28.31,
+   "ceiling": null,
+   "why": [
+    "moved +2.51 (tolerance 2.0): not in the expected-changes file"
+   ],
+   "proven": true
+  },
+  {
+   "cell": "hq/SUITCASE/PRESET/B/k69v40",
+   "metric": "keyup",
+   "last": -28.0,
+   "cand": -25.75,
+   "old_level": -27.38,
+   "ceiling": null,
+   "why": [
+    "moved +2.25 (tolerance 2.0): not in the expected-changes file"
+   ],
+   "proven": true
+  },
+  {
    "cell": "hq/SUITCASE/PRESET/B/k69v64",
    "metric": "keyup",
    "last": -27.23,
-   "cand": -25.19,
-   "old_level": -26.71,
+   "cand": -25.14,
+   "old_level": -26.68,
    "ceiling": null,
    "why": [
-    "moved +2.04 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.09 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8867,7 +8315,7 @@
    "metric": "keyup",
    "last": -26.87,
    "cand": -24.55,
-   "old_level": -26.2,
+   "old_level": -26.19,
    "ceiling": null,
    "why": [
     "moved +2.32 (tolerance 2.0): not in the expected-changes file"
@@ -8879,10 +8327,10 @@
    "metric": "keyup",
    "last": -26.78,
    "cand": -24.46,
-   "old_level": -26.08,
+   "old_level": -26.07,
    "ceiling": null,
    "why": [
-    "moved +2.31 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.32 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8890,11 +8338,11 @@
    "cell": "hq/SUITCASE/PRESET/B/k81v20",
    "metric": "keyup",
    "last": -28.45,
-   "cand": -26.26,
-   "old_level": -27.89,
+   "cand": -26.23,
+   "old_level": -27.81,
    "ceiling": null,
    "why": [
-    "moved +2.19 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.22 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8902,11 +8350,11 @@
    "cell": "hq/SUITCASE/PRESET/B/k81v40",
    "metric": "keyup",
    "last": -27.91,
-   "cand": -25.67,
-   "old_level": -27.3,
+   "cand": -25.63,
+   "old_level": -27.26,
    "ceiling": null,
    "why": [
-    "moved +2.23 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.27 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8914,11 +8362,11 @@
    "cell": "hq/SUITCASE/PRESET/B/k81v64",
    "metric": "keyup",
    "last": -27.35,
-   "cand": -25.09,
-   "old_level": -26.77,
+   "cand": -25.07,
+   "old_level": -26.75,
    "ceiling": null,
    "why": [
-    "moved +2.26 (tolerance 2.0): not in the expected-changes file"
+    "moved +2.29 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },
@@ -8926,23 +8374,11 @@
    "cell": "hq/SUITCASE/PRESET/B/k81v96",
    "metric": "keyup",
    "last": -27.02,
-   "cand": -24.72,
-   "old_level": -26.38,
+   "cand": -24.71,
+   "old_level": -26.36,
    "ceiling": null,
    "why": [
     "moved +2.31 (tolerance 2.0): not in the expected-changes file"
-   ],
-   "proven": true
-  },
-  {
-   "cell": "hq/SUITCASE/PRESET/B/k93v127",
-   "metric": "keyup",
-   "last": -34.03,
-   "cand": -32.03,
-   "old_level": -33.48,
-   "ceiling": null,
-   "why": [
-    "moved +2.00 (tolerance 2.0): not in the expected-changes file"
    ],
    "proven": true
   },

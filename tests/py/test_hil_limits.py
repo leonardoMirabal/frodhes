@@ -357,7 +357,7 @@ def test_c1_known_only_on_the_two_core_image(monkeypatch):
     """C1_KNOWN (user decision 2026-11-14): only for the two-core image (FRODHES_IMAGE=c1 / --c1, or the host's
     HOST_DEFS -DFR_C1=1), each within its band; the limits are the one-core ones (BYPASS_FX_LU 3.6, U04's target +0.5 +-
     1.0). 0.9.13: the two-core reverb's 'bypass' and 'presets U04' items are gone (the HALL / INFINITE level in band
-    and the chord-robust rows); 'types' stays"""
+    and the chord-robust rows); 'types' went in 0.9.12 (A2): none is left"""
     monkeypatch.delenv("FRODHES_IMAGE", raising=False)
     monkeypatch.delenv("HOST_DEFS", raising=False)
     assert not h.c1_image()

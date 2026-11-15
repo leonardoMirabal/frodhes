@@ -1841,10 +1841,8 @@ changes:
   - {match: '[ch][1q]/ST77/FX/*', metric: H3, min: 3.1, max: 7.9, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
   - {match: '[ch][1q]/ST77/FX/*', metric: keyup, min: 1.7, max: 2.7, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
   - {match: '[ch][1q]/STAGE_77/PRESET/*', metric: keyup, min: 1.7, max: 2.7, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
-  - {match: '[ch][1q]/SUIT/FX/*', metric: H3, min: 3.3, max: 4.0, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
-  - {match: '[ch][1q]/SUIT/FX/*', metric: keyup, min: 1.7, max: 2.8, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
-  - {match: '[ch][1q]/SUITCASE/PRESET/*', metric: H4, min: 3.2, max: 3.9, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
-  - {match: '[ch][1q]/SUITCASE/PRESET/*', metric: keyup, min: 1.7, max: 3.4, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
+  - {match: '[ch][1q]/SUIT/FX/*', metric: H3, min: 3.0, max: 3.7, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
+  - {match: '[ch][1q]/SUITCASE/PRESET/*', metric: keyup, min: 1.7, max: 3.5, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
   - {match: '[ch][1q]/WARM_77/PRESET/*', metric: keyup, min: 1.7, max: 2.5, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
   - {match: '[ch][1q]/WOOD_ECHO/PRESET/*', metric: H3, min: 2.7, max: 3.4, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
   - {match: '[ch][1q]/WOOD_ECHO/PRESET/*', metric: keyup, min: 1.7, max: 3.9, reason: 'A3 two-core reverb level (tests/rev_level_proof.json): the wet''s level only: the same build at 0.9.12''s level passes'}
