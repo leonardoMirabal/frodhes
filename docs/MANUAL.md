@@ -917,7 +917,7 @@ motor page: SELECT goes from VOICE 2/3 to the [velocity page](#voice-33-velocity
 | --- | --- | --- |
 | K1 | **RING** | How long a struck bar rings: from a quarter to about four times the normal time (the low notes' tube too). Above the middle (64) the notes are also turned down as RING rises, so that the hardest strike still stays just under full scale: the low ones the most (at 127 about 6 to 9 dB from C2 to G3, 3 dB at C4, under 1 dB from C6 up). So from about 72 up RING makes the low notes ring longer rather than louder; at 64 and under nothing changes |
 | K2 | **MUTE** | The player's hand when you let go of a key: **0** (MUTE 0.0) lets the note ring out as on a real marimba; up, the hand stops it sooner; at 10.0 it is 60 dB down well within a tenth of a second |
-| K3 | **NOISE** | The mallet's contact: a soft tick at the start of the note (no damper, so nothing at the key-up) |
+| K3 | **NOISE** | The mallet's contact: a soft tick at the start of the note (no damper, so nothing at the key-up). From 64 up the tick grows a little faster, so at 127 it stands out on the highest notes too |
 | K4 | **TUNE** | Fine tuning, ±50 cents (many marimbas are tuned to A = 442 Hz: +8) |
 
 **MUTE, not DAMPER.** On VIBES the second card of VOICE 2/4 is the DAMPER, the felt bar that stops the notes when you
