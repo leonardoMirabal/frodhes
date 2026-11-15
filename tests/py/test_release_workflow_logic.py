@@ -113,6 +113,21 @@ def test_jobs_not_all_green_runs_the_tests(tmp_path):
         assert o == "passed=false" and "not green" in msg, msg
 
 
+def test_a_skipped_job_that_is_not_required_passes(tmp_path):
+    # ci.yml skips its docs job on a code change (v0.9.12's release run 43756303991 ran its fallback tests for it)
+    o, msg, _ = run_gate(tmp_path, [[row(7, "completed", "success")]],
+                         jobs=GREEN + [{"name": "docs", "conclusion": "skipped"}])
+    assert o == "passed=true", msg
+
+
+def test_a_failed_or_cancelled_extra_job_runs_the_tests(tmp_path):
+    for i, c in enumerate(("failure", "cancelled")):
+        d = tmp_path / str(i)
+        d.mkdir()
+        o, msg, _ = run_gate(d, [[row(7, "completed", "success")]], jobs=GREEN + [{"name": "docs", "conclusion": c}])
+        assert o == "passed=false" and "not green" in msg, msg
+
+
 def test_timeout_and_api_error_run_the_tests(tmp_path):
     (tmp_path / "a").mkdir()
     o, msg, _ = run_gate(tmp_path / "a", [[row(8, "in_progress")]], wait_s=0)

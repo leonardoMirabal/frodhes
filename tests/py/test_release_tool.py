@@ -552,6 +552,16 @@ def test_same_tree_needs_everything_green(monkeypatch, runs, views, trees):
     assert rel.same_tree_run("ci.yml", M) is None
 
 
+def test_same_tree_a_skipped_docs_job_is_reused(monkeypatch):
+    # ci.yml skips docs on a code change: v0.9.12's step 7 waited (and stopped) on it; required jobs must still succeed
+    jobs = [{"name": "host", "conclusion": "success"}, {"name": "generators-macos", "conclusion": "success"},
+            {"name": "docs", "conclusion": "skipped"}]
+    assert rel.jobs_green([(j["name"], j["conclusion"]) for j in jobs], rel.CI_NEED)
+    assert not rel.jobs_green([("host", "success"), ("generators-macos", "skipped")], rel.CI_NEED)
+    assert not rel.jobs_green([("host", "success"), ("docs", "failure"), ("generators-macos", "success")], rel.CI_NEED)
+    assert not rel.jobs_green([("host", "success")], rel.CI_NEED)                       # a required job missing
+
+
 # ---- step 8: the emulator ----
 
 def test_release_yml_deploys_the_emulator(tmp_path):
