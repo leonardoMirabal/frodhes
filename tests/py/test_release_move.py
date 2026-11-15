@@ -112,7 +112,8 @@ def test_release_commit_records_the_move_only_when_tested(mtree, monkeypatch, tm
         commits = []
         monkeypatch.setattr(rel, "sh", move_shell(str(mtree), [], commits=commits))
         r = rel.Release(rel.parse_args(["0.9.3", "--no-device", "--device-done",
-                                        done(tmp_path / "d.json", nomove=not passed)]))
+                                        done(tmp_path / "d.json", nomove=not passed),
+                                        "--plugin-tested", " ".join(rel.PLUGIN_PLATFORMS)]))
         r.ver, r.prev, r.sha, r.move_sha = "0.9.3", "v0.9.2", FW, TAR
         r.frags = rel.changes.load(str(mtree))
         r.s_docs()
