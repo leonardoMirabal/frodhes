@@ -91,7 +91,7 @@ CC = dict(TYPE=80, DRIVE=81, TW_SW=17, TW_DEPTH=18, TW_RATE=19, TW_MODE=21, CP_S
           DL_SW=88, DL_DEPTH=89, DL_TIME=90, DL_FDBK=26, REV=91, PH_SW=12, PH_DEPTH=13, PH_SPEED=14, PH_FDBK=16,
           CMP_SW=106, CMP_AMT=107, CMP_ATK=108, CMP_REL=109, NOISE=104, SUS=64, RAW=119, CMP_RAT=112, CMP_GAIN=113,
           PH_SPEED2=14, CP_SPEED2=87, TW_SHAPE=22, DL_TONE=27, LEVEL=110, BYPASS=111, ARP=52, CHORD=56, SEQ=60, SQREC=63,
-          FL_TYPE=70, FL_FREQ=74, FL_RESO=71, FL_LFO=72)
+          FL_TYPE=70, FL_FREQ=74, FL_RESO=71, FL_LFO=72, RV_TYPE=95)
 DRY = dict(DRIVE=0, REV=0, TW_SW=0, CP_SW=0, PH_SW=0, DL_SW=0, CMP_SW=0, RAW=0, SUS=0, ARP=0, CHORD=0, SQREC=0, SEQ=0,
            FL_TYPE=0)
 # (ARP, CHORD, SEQ, SQREC: the arpeggiator, chord mode, the sequencer and its recording off)
@@ -161,7 +161,7 @@ def db(x):
 
 
 RESET_CC, RESET_LEAD = 10, 0.05   # the developer reset (fx.c fx_reset_state) and how long before a take's first note
-REPEATS = dict(types=3, presets=3, fx_all=2)   # takes per measure, their median judged (--repeats N: all of them)
+REPEATS = dict(types=3, presets=1, fx_all=2)   # (presets: per chord of PR_CHORDS, 0.9.13; 3 takes of one chord before)   # takes per measure, their median judged (--repeats N: all of them)
 
 
 def with_reset(events, lead=RESET_LEAD):
@@ -889,6 +889,27 @@ def types(r, rep):
 CH_NOTES = (57, 60, 64)                   # A3 C4 E4 (v100)
 FX_NOTES = (48, 55, 64)                   # C3 G3 E4 (v108: the FM-1's own keys)
 CHORD = [(0.05, "on", n, 100) for n in CH_NOTES] + [(1.25, "off", n, 0) for n in CH_NOTES]
+
+
+def chord_ev(notes, v=100):
+    """a chord's take events, as CHORD's"""
+    return [(0.05, "on", n, v) for n in notes] + [(1.25, "off", n, 0) for n in notes]
+
+
+# The chord-robust rows (0.9.13): a sustained note and its reverb meet at a phase fixed per frequency, so one chord's
+# loudness with the reverb on reads a draw of that interference: A3-C4-E4 + REV 50 read +1.16 LU over REV 0 on one
+# core, +0.28 on two cores, while 12 chords across the range read +0.55 / +0.28 on average (host, LUFS 0..1.1 s, the
+# bypass row's effects); the per-note spread is up to +-4 dB (release_diff k81v40 FX). bypass and the effects' reverb
+# rows judge the mean of CHORDS_13, presets (U04 too) the mean of PR_CHORDS, each chord's own reading reported. Roots
+# from E1 to C6, three voicings in turn (root position, first inversion, open: no octave between two notes, the
+# CH_NOTES rule above)
+_VOIC = ((0, 4, 7), (4, 7, 12), (0, 7, 16))
+CHORDS_13 = [CH_NOTES] + [tuple(r + d for d in _VOIC[k % 3]) for k, r in
+                          enumerate(int(round(28 + k * 56 / 11)) for k in range(12))]      # A3-C4-E4, then E1 .. C6
+# presets: six chords in the register its targets were set in (PRESET_TARGET, A3-C4-E4): a preset's TONE, filter and
+# drive move its level re F01 with the register (CHORDS_6 spread E1..C6 put 12 presets off their targets, a chord
+# span up to 21 LU); these average the reverb's draw where the targets hold
+PR_CHORDS = [CH_NOTES, (53, 57, 60), (55, 59, 62), (60, 64, 67), (62, 65, 69), (59, 62, 66)]   # A3 F3 G3 C4 D4 B3
 FX = [
     ("drive 64", dict(DRIVE=64)), ("drive 127", dict(DRIVE=127)),
     ("comp 64", dict(CMP_SW=127, CMP_AMT=64)), ("comp 127", dict(CMP_SW=127, CMP_AMT=127)),
@@ -897,6 +918,7 @@ FX = [
     ("phaser", dict(PH_SW=127, PH_DEPTH=100, PH_FDBK=64)), ("chorus", dict(CP_SW=64, CP_DEPTH=100)),
     ("delay dig", dict(DL_SW=48, DL_DEPTH=80, DL_TIME=64)), ("delay ana", dict(DL_SW=80, DL_DEPTH=80, DL_TIME=64)),
     ("reverb 64", dict(REV=64)), ("reverb 127", dict(REV=127)),
+    ("reverb INF 127", dict(REV=127, RV_TYPE=112)),     # (0.9.13: INFINITE alone, CC 95's 4th band)
     ("everything", dict(DRIVE=40, CMP_SW=127, CMP_AMT=64, TW_SW=64, TW_DEPTH=64, PH_SW=127, PH_DEPTH=64,
                         CP_SW=64, CP_DEPTH=64, DL_SW=48, DL_DEPTH=64, REV=64)),
 ]
@@ -930,7 +952,7 @@ def effects(r, rep):
     ref = r.take(1.5, CHORD)
     i0 = max(onset(ref, t=0.05), 0)
     base_direct = db(ref[i0:i0 + int(0.25 * FS)])
-    rows, bad = [], []
+    rows, bad, refs = [], [], None
     for name, kv in FX:
         r.dry(**kv)
         x = r.take(2.2, CHORD)
@@ -947,21 +969,45 @@ def effects(r, rep):
                    tail_db=db(x[i + int(1.3 * FS):i + int(1.9 * FS)]), clicks=clicks(x), window_s=w)
         rows.append(row)
         row["with_tail_db"] = db(x[i:i + int(w * FS)]) - base
+        if name.startswith("reverb"):                   # the chord-robust rows (0.9.13): delta_lu the mean of CHORDS_13
+            if refs is None:                            # (the direct sound re the dry's, each chord); the A3-C4-E4
+                r.dry()                                 # take above stays for the other columns
+                refs = []
+                for ch in CHORDS_13:
+                    y = r.take(1.5, chord_ev(ch))
+                    j = max(onset(y, t=0.05), 0)
+                    refs.append(lufs(y[j:j + int(0.25 * FS)] / 32768.0))
+                r.dry(**kv)
+            per = []
+            for ch, rf in zip(CHORDS_13, refs):
+                y = r.take(2.2, chord_ev(ch))
+                j = max(onset(y, t=0.05), 0)
+                per.append(lufs(y[j:j + int(0.25 * FS)] / 32768.0) - rf)
+            row.update(delta_lu=float(np.mean(per)), chord_lu=[float(v) for v in per], a3_lu=lu)
         lim = 99 if name.startswith(("comp", "everything")) else 3   # a compressor's level depends on the playing
         # loudness, not RMS: the wah's resonance adds +4.5 dB RMS in the mids but +0.2 LU (fx_all) to the ear
         wide = row["lr_corr"] < 0.8
         target = -2.5 if wide and name.startswith("chorus") else 0.0       # the chorus' width compensation (0.8;
         # the phaser has none: FXALL_EXPECT's note)
+        # THRESHOLD (0.9.13, chord-robust rows): the reverb rows judge the mean of CHORDS_13 (A3-C4-E4 alone until
+        # then), the targets unchanged; each chord's reading in the report (chord_lu)
         if name == "reverb 127":
             # THRESHOLD (2026-11-14, T2 0.9.12): E2's MIX law (0.9.12): 127 is the reverb alone, so the "direct
             # sound" (0..0.25 s) is the hall's early part, the dry gone (L/R correlation 0.04): target 0 -> -8.1 LU,
             # the same +-3 (FM-1 -8.07, host -8.10; the whole 1.1 s -3.3 dB; 0.9.11, the dry whole: FM-1 +0.7,
             # host +0.54)
             target = -8.1
+        if name in ("reverb 127", "reverb INF 127"):
+            # THRESHOLD (0.9.13): the reverb alone on the 13 chords' mean, +-3 -> +-1.5 LU (a tightening): the mean
+            # holds (host one core -8.0 / -14.2, two cores -8.2 / -14.5) and a reverb 3 dB quiet (the fault
+            # injection, tests/py/test_hil_limits.py: -11.1 / -17.4) must fail, which +-3 let through. INFINITE alone
+            # (new): -14.3
+            target, lim = (-8.1, 1.5) if name == "reverb 127" else (-14.3, 1.5)
         if abs(row["delta_lu"] - target) > lim or clip or row["clicks"]:
             bad.append(name)
     rep["effects"] = dict(dry_db=db(ref[i0:i0 + int(1.1 * FS)]), rows=rows)
-    summary = "; ".join(f"{q['name']} {q['delta_lu']:+.1f}" for q in rows)
+    summary = "; ".join(f"{q['name']} {q['delta_lu']:+.1f}" + (f" (the mean of {len(q['chord_lu'])} chords, "
+                         f"{min(q['chord_lu']):+.1f} .. {max(q['chord_lu']):+.1f})" if "chord_lu" in q else "") for q in rows)
     return not bad, (f"loudness vs dry (LU; delay/reverb: the direct sound; compressor: information): {summary}; "
                      f"problems: {bad or 'none'}")
 
@@ -976,17 +1022,10 @@ def c1_image():
         bool(re.search(r"-DFR_C1=1\b", os.environ.get("HOST_DEFS", "")))
 
 
-_C1_REV = ("USER DECISION 2026-11-14: two-core reverb's chord-dependent early reflections; structural fix planned for "
-           "the next release. Chord re dry, LUFS 0..1.1 s at REV 32 / 50 / 64, host: A3-C4-E4 one core +0.21 / +0.58 / "
-           "+1.06, two cores -0.10 / +0.10 / +0.50; six chords' mean one core +0.29 / +0.70 / +1.16, two cores +0.09 / "
-           "+0.35 / +0.69 (E2-B2-G3 -0.40 at 64, G4-B4-D5 +2.26); the wet's level matches (-13.8 vs -13.7 dB), its "
-           "cross term with the dry swings more (sd 1.34 vs 0.80 LU over 80-1600 Hz)")
 # the two-core image's KNOWN items (classic suites; c1_image() only, each only inside its band; the one-core limits
-# unchanged): (band, reason)
+# unchanged): (band, reason). (0.9.13: the two-core reverb's 'bypass' and 'presets U04' gone: the HALL / INFINITE
+# level in band, rev_hq_hall.c / rev_hq_inf.c, and the chord-robust rows, CHORDS_13 / CHORDS_6)
 C1_KNOWN = {
-    "bypass": (4.1, _C1_REV + "; effects on vs bypassed 3.8 LU (host; one core 3.1), limit 3.6: band <= 4.1 LU"),
-    "presets U04": (-0.9, _C1_REV + "; U04 DREAM PAD (INFINITE) -0.54 LU re F01 (host; one core +0.1), target +0.5 "
-                          "+-1.0: band >= -0.9 LU"),
 }
 
 
@@ -994,21 +1033,28 @@ C1_KNOWN = {
 def bypass(r, rep):
     """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs the compressor alone (the bypass
     keeps the compressor: FR_BYP_KEEP_CMP, the user 2026-11-08 "leave compressor aside of the efx off button")"""
+    def takes(dur):                                    # the mean of CHORDS_13 (the chord-robust rows, 0.9.13)
+        out = []
+        for ch in CHORDS_13:
+            x = r.take(dur, chord_ev(ch))
+            i = max(onset(x, t=0.05), 0)
+            out.append(lufs(x[i:i + int(1.1 * FS)] / 32768.0))
+        return np.array(out)
     r.dry()
-    a = r.take(1.5, CHORD)
+    a = takes(1.5)
     r.dry(CMP_SW=127, CMP_AMT=50, CMP_GAIN=15)
-    d = r.take(1.5, CHORD)
+    d = takes(1.5)
     r.dry(PH_SW=127, PH_DEPTH=80, CP_SW=64, CP_DEPTH=64, REV=50, DRIVE=30, CMP_SW=127, CMP_AMT=50, CMP_GAIN=15)
-    b = r.take(2.2, CHORD)
+    b = takes(2.2)
     r.cc_raw(111, 127)
     r.settle()
-    c = r.take(1.5, CHORD)
+    c = takes(1.5)
     r.cc_raw(111, 0)
-    lv = []
-    for x in (a, b, c, d):
-        i = max(onset(x, t=0.05), 0)
-        lv.append(lufs(x[i:i + int(1.1 * FS)] / 32768.0))
+    lv = [float(np.mean(x)) for x in (a, b, c, d)]
+    per = c - b                                        # effects on under the bypass, per chord
     rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2], comp_only=lv[3])
+    rep["bypass_chords"] = [dict(notes=list(ch), no_fx=float(w), fx_on=float(x), bypassed=float(y), comp_only=float(z))
+                            for ch, w, x, y, z in zip(CHORDS_13, a, b, c, d)]
     # the compressor as the panel switches it on (THRESH up: +2.8 dB makeup); before, it ran with no makeup and the
     # effects-on level sat 5 dB under the bypass by construction.
     # THRESHOLD (2026-11-09, coordinator sign-off 2026-11-09): the bypass is judged against the compressor alone (its settings as the effects-on row's),
@@ -1020,12 +1066,14 @@ def bypass(r, rep):
     # 3.2 LU under the bypass on the FM-1 with 0.9.10 and 0.9.11 (T2, 2026-11-12) and 3.07 on the host (0.9.9: 1.4,
     # without both). 3.6: the 0.4 LU the limit had over its measured 2.6 when it was set (2026-10-17), over the
     # device's +-0.3 LU spread
+    # THRESHOLD (0.9.13, chord-robust rows): the levels are the mean of CHORDS_13 (A3-C4-E4 alone until then), the
+    # limits unchanged. Host, effects on under the bypass: one core A3-C4-E4 3.07, the 13 chords' mean 2.95; two cores
+    # 0.9.12 3.80 / 3.22 (the C1_KNOWN band then). The fault injection (the HALL / INFINITE return -3 dB,
+    # tests/py/test_hil_limits.py) fails the 3.6 on the mean as it did on the one chord
     ok = abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) < BYPASS_FX_LU
     msg = (f"no effects {lv[0]:.1f}, compressor alone {lv[3]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} "
-           f"LUFS (bypassed re the compressor alone {lv[2] - lv[3]:+.2f} LU)")
-    band, why = C1_KNOWN["bypass"]
-    if not ok and c1_image() and abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) <= band:
-        ok, msg = "KNOWN", msg + f"; effects on {abs(lv[1] - lv[2]):.2f} LU under the bypass: KNOWN (two cores): {why}"
+           f"LUFS, the mean of {len(CHORDS_13)} chords (bypassed re the compressor alone {lv[2] - lv[3]:+.2f} LU; effects "
+           f"on under the bypass {lv[2] - lv[1]:.2f}, per chord {per.min():.2f} .. {per.max():.2f}, A3-C4-E4 {per[0]:.2f})")
     return ok, msg
 
 
@@ -1329,11 +1377,17 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 # is +1.2 on the FM-1 by HOST_SHIFT). The starters U01..U09 kept their LEVELs: v2's F01 sits ~1.2 LU over them)
 # (0.9.13 E2, the MIX law as Textura's, stored values kept: DREAM's REVERB MIX 76 is past the middle, its dry -1.8 dB:
 # -1.0 -> -2.1 (host -2.15), no LEVEL retune until the user's jack listening; THRESHOLD in the E2 commit)
-PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1.8, 1.0), "RESO SWEEP": (1.2, 1.0),
+PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1.8, 1.0), "RESO SWEEP": (2.3, 1.0),
+                 "BELL DYNO": (-1.4, 1.5), "WARM DRIVE": (1.8, 1.5),
                  "VIBES": (-1.1, 1.0), "VIBES ECHO": (-0.9, 1.0), "MARIMBA": (-5.2, 1.0), "WOOD ECHO": (-8.1, 1.0),
                  "TAPE ECHO": (-0.5, 1.0), "DREAM": (-2.1, 1.0), "U02": (-1.3, 1.0), "U03": (-1.6, 1.0),
                  "U04": (0.5, 1.0), "U05": (-1.2, 1.0), "U06": (-1.4, 1.0), "U07": (-1.2, 1.0), "U08": (-1.9, 1.0),
                  "U09": (-1.1, 1.0)}
+# THRESHOLD (0.9.13, the chord-robust rows: presets on PR_CHORDS' mean, A3-C4-E4 alone until then): RESO SWEEP 1.2 ->
+# 2.3, BELL DYNO 0 -> -1.4 (+-1.5 as before), WARM DRIVE 0 -> 1.8 (+-1.5). Their level re F01 moves with the notes (a
+# resonant filter's sweep, the bell's register, a drive): host, one core / two cores, on the six chords F11 +2.48 /
+# +2.62 (HOST_SHIFT +0.2 on top of the target), F04 -1.52 / -1.32, F19 +1.70 / +1.90; on A3-C4-E4 F11 +2.0..+2.1, F04
+# -1.1..-1.4, F19 +1.0..+1.3. Every other target holds on the six chords (both builds)
 # (2026-11-09, fx-level: 0.9.9's absolute level and balance again (742a2537: every LEVEL -19, then the presets the
 # effects had made quieter back to 0.9.9's loudness): the host reads F09 +2.0, F13 +3.1, F14 +3.2, F15 +0.2, F16 -1.8,
 # F18 +1.1, U02 +0.9, U04 +1.2 re F01 (the 0.9.10 headroom trims below are superseded: F04 -0.1, F08 +1.3, U07 -0.2
@@ -1412,7 +1466,8 @@ def presets(r, rep):
             r.cc_raw(120, 0)
             r.pc(preset_pc(p))
             ks, retakes = [], 0
-            for k in range(reps("presets")):
+            for k in range(reps("presets") * len(PR_CHORDS)):  # (each chord of PR_CHORDS reps("presets") times)
+                ev = chord_ev(PR_CHORDS[k // reps("presets")])
                 # a take whose recording stream had a gap (Ring.cut: a block's ADC time off its frames, the cut
                 # re-anchored there) is not the preset's sound: taken again, up to PR_GAP_RETAKES times, and flagged
                 # only if every one has a gap. 0.9.12's T2 flagged F15 for one take with a step-and-back pair while
@@ -1421,10 +1476,10 @@ def presets(r, rep):
                     quiet = r.settle()                     # (False: no exact silence in 10 s, a note still sounds)
                     r.clock_align(192)                     # bar 1 of 2: F11 swings 5 LU over its 2BAR sweep (0, 1/3, 2/3: -0.4, -5.6, -4.4 re F01); its phase 0 is the host's
                     if jk:
-                        dd = r.both(2.0, with_reset(CHORD), jack=True)
+                        dd = r.both(2.0, with_reset(ev), jack=True)
                         x, j = dd["usb"] * 32768, dd["jack"][:, 0]
                     else:
-                        x, j = r.take(2.0, CHORD), None
+                        x, j = r.take(2.0, ev), None
                     gaps = [str(g_) for g_ in getattr(r, "xruns", []) if "gap" in str(g_)]
                     if not gaps:
                         break
@@ -1443,15 +1498,21 @@ def presets(r, rep):
                 ks.append(q)
                 np.savez_compressed(os.path.join(d, f"{preset_label(p + 1)}-{k + 1}.npz"), usb=(x / 32768).astype(np.float32),
                                     jack=(j if j is not None else np.zeros(0)).astype(np.float32))
+            # the level: the mean over PR_CHORDS of each chord's median take (the chord-robust rows, 0.9.13); spread_lu
+            # the takes' own spread (repeatability), chord_lu each chord's level
+            n_ = reps("presets")
+            per = [float(np.median([q["level"] for q in ks[c * n_:(c + 1) * n_]])) for c in range(len(PR_CHORDS))]
             lv = [q["level"] for q in ks]
-            row = dict(preset=p + 1, level=float(np.median(lv)), spread_lu=float(max(lv) - min(lv)),
+            row = dict(preset=p + 1, level=float(np.mean(per)), chord_lu=per,
+                       spread_lu=float(max(max(lv[c * n_:(c + 1) * n_]) - min(lv[c * n_:(c + 1) * n_]) for c in range(len(PR_CHORDS)))),
                        rms_db=float(np.median([q["rms_db"] for q in ks])), peak_db=max(q["peak_db"] for q in ks),
                        clipped=max(q["clipped"] for q in ks), clicks=max(q["clicks"] for q in ks),
                        onset_ms=[round(q["onset_ms"], 1) for q in ks], not_quiet=sum(not q["quiet"] for q in ks),
                        gaps=sum(len(q["gaps"]) for q in ks), gap_retakes=retakes)
             if jk:
                 jl = [q["jack"] for q in ks]
-                row.update(jack=float(np.median(jl)), jack_spread_lu=float(max(jl) - min(jl)),
+                jper = [float(np.median(jl[c * n_:(c + 1) * n_])) for c in range(len(PR_CHORDS))]
+                row.update(jack=float(np.mean(jper)), jack_spread_lu=float(max(max(jl[c * n_:(c + 1) * n_]) - min(jl[c * n_:(c + 1) * n_]) for c in range(len(PR_CHORDS)))),
                            jack_onset_ms=[round(q["jack_onset_ms"], 1) for q in ks])
             rows.append(row)
     rep["presets"] = rows
@@ -1465,8 +1526,9 @@ def presets(r, rep):
     # their own targets above hold them); reason: WOOD ECHO -8.1 LU re F01 with the limiter idle (the coordinator 2026-11-10)
     sv = [q["level"] for q in rows if preset_key(q["preset"]) not in LEVEL_CUT] or lv
     ok = max(sv) - min(sv) < 8 and not bad and not loud and not gapped
-    msg = (f"F01..{preset_label(len(rows))} loudness " + ", ".join(f"{v:.1f}" for v in lv) + f" LUFS (span {max(lv) - min(lv):.2f}; median of"
-           f" {reps('presets')} takes, their own spread <= {spread:.2f} LU); clipping/clicks {bad or 'none'}")
+    msg = (f"F01..{preset_label(len(rows))} loudness " + ", ".join(f"{v:.1f}" for v in lv) + f" LUFS (span {max(lv) - min(lv):.2f}; the mean of"
+           f" {len(PR_CHORDS)} chords F3..A4, each the median of {reps('presets')} take(s), their own spread <= {spread:.2f} LU; "
+           f"a preset's chords span <= {max(max(q['chord_lu']) - min(q['chord_lu']) for q in rows):.2f} LU); clipping/clicks {bad or 'none'}")
     if loud:
         msg += f"; no exact silence before a take at {[preset_label(q) for q in loud]} (a note still sounding: those levels are not the preset)"
     if gapped:
@@ -1477,9 +1539,6 @@ def presets(r, rep):
     off = [(q["preset"], v - lv[0]) for q, v in zip(rows, lv)
            if abs(v - lv[0] - preset_target(q["preset"], host)[0]) > preset_target(q["preset"], host)[1]]
     rep["presets_off_target"] = [dict(preset=p, lu=float(d)) for p, d in off]
-    band, why = C1_KNOWN["presets U04"]
-    kn = [(p, d) for p, d in off if c1_image() and preset_label(p) == "U04" and d >= band]
-    off = [o for o in off if o not in kn]
     ok = ok and not off
     msg += ("; re F01 " + ", ".join(f"{preset_label(q['preset'])} {v - lv[0]:+.1f}" for q, v in zip(rows, lv) if q["preset"] > 1) +
             " LU; off target: " + (", ".join(f"{preset_label(p)} {d:+.1f}" for p, d in off) or "none"))
@@ -1495,10 +1554,6 @@ def presets(r, rep):
         msg += (f"; jack (re its own scale) {', '.join(f'{v - jl[0]:+.1f}' for v in jl)} LU re F01 (span"
                 f" {max(jl) - min(jl):.2f}, without LEVEL_CUT {max(sj) - min(sj):.2f}, spread <={max(q['jack_spread_lu'] for q in rows):.2f}); USB-jack"
                 f" disagreement <= {max(abs(m) for m in rel):.2f} LU{' at F' + str(mis) if mis else ''}")
-    if kn and ok:
-        ok = "KNOWN"
-    if kn:
-        msg += f"; U04 {kn[0][1]:+.2f}: KNOWN (two cores): {why}"
     return ok, msg
 
 

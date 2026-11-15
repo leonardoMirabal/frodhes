@@ -199,7 +199,8 @@ def test_held_tail_on_the_host_closes_inside_the_take():
 
 def test_bypass_on_the_host_within_the_refreshed_limit():
     """bypass: the FX button keeps the compressor, the phaser 80 reads -2.5 LU by design: effects on 3.07 LU under the
-    bypass on the host (FM-1 3.2), under BYPASS_FX_LU (3.6); bypassed re the compressor alone within 0.5"""
+    bypass on the host (the mean of CHORDS_13 since 0.9.13; A3-C4-E4 alone 2.90; FM-1 3.2), under BYPASS_FX_LU (3.6);
+    bypassed re the compressor alone within 0.5"""
     r, rep = h.HostRig(1), {}
     ok, msg = h.bypass(r, rep)
     b = rep["bypass"]
@@ -296,6 +297,7 @@ def test_presets_take_a_gapped_recording_again(monkeypatch, gapped, flagged):
     """0.9.12's T2 failed presets on one F15 take with a step-and-back gap pair (its three levels within 0.0005 LU):
     a take with a recording gap is taken again (PR_GAP_RETAKES 2), flagged only if every retake has one too"""
     monkeypatch.setitem(h.REPEATS, "presets", 1)
+    monkeypatch.setattr(h, "PR_CHORDS", [h.CH_NOTES])     # (one take a preset: the call count as before 0.9.13)
     monkeypatch.setattr(h, "PR_STARTERS", 0)
     r, rep = _GapRig(gapped), {}
     ok, msg = h.presets(r, rep)
@@ -352,9 +354,10 @@ def test_lfo_shape_square_steeper_than_sine(monkeypatch, fault):
 
 
 def test_c1_known_only_on_the_two_core_image(monkeypatch):
-    """C1_KNOWN (user decision 2026-11-14: the two-core reverb's chord-dependent early reflections): only for the
-    two-core image (FRODHES_IMAGE=c1 / --c1, or the host's HOST_DEFS -DFR_C1=1), each within its band; the one-core
-    limits are unchanged (BYPASS_FX_LU 3.6, U04's target +0.5 +- 1.0)"""
+    """C1_KNOWN (user decision 2026-11-14): only for the two-core image (FRODHES_IMAGE=c1 / --c1, or the host's
+    HOST_DEFS -DFR_C1=1), each within its band; the limits are the one-core ones (BYPASS_FX_LU 3.6, U04's target +0.5 +-
+    1.0). 0.9.13: the two-core reverb's 'bypass' and 'presets U04' items are gone (the HALL / INFINITE level in band
+    and the chord-robust rows); 'types' stays"""
     monkeypatch.delenv("FRODHES_IMAGE", raising=False)
     monkeypatch.delenv("HOST_DEFS", raising=False)
     assert not h.c1_image()
@@ -364,6 +367,62 @@ def test_c1_known_only_on_the_two_core_image(monkeypatch):
     monkeypatch.setenv("FRODHES_IMAGE", "c1")
     assert h.c1_image()
     assert h.BYPASS_FX_LU == 3.6 and h.preset_target(h.PR_COUNT + 4, host=True) == (0.5, 1.0)
-    assert h.C1_KNOWN["bypass"][0] == 4.1 and h.C1_KNOWN["presets U04"][0] == -0.9
-    assert all("USER DECISION 2026-11-14" in w for _, w in h.C1_KNOWN.values())
-    assert "types" not in h.C1_KNOWN          # (0.9.12: the TYPEs have their own character again, every pair > 1.5 dB)
+    assert h.C1_KNOWN == {}                   # (0.9.12: the TYPEs their own character again; 0.9.13: the two-core
+                                              # reverb's bypass and U04 inside the one-core limits)
+
+
+# ---- 0.9.13: the chord-robust rows (bypass and the effects' reverb rows on CHORDS_13, presets on PR_CHORDS) and the
+# reverb's fault injection
+def test_chord_sets():
+    """CHORDS_13: A3-C4-E4, then 12 roots E1..C6, voicings in turn; PR_CHORDS: six in the targets' register; no
+    octave inside a chord (CH_NOTES' rule)"""
+    assert len(h.CHORDS_13) == 13 and h.CHORDS_13[0] == h.CH_NOTES == h.PR_CHORDS[0] and len(h.PR_CHORDS) == 6
+    assert min(min(c) for c in h.CHORDS_13) == 28 and max(c[0] for c in h.CHORDS_13) == 84
+    for c in h.CHORDS_13 + h.PR_CHORDS:
+        assert len(set(c)) == 3 and all((b - a) % 12 for a in c for b in c if b > a), c
+
+
+def _fault_rig():
+    """a two-core host build with the HALL and INFINITE returns 3 dB down (RQH_OUT, RI_OG x 0.708)"""
+    import hostrun
+    src = open(os.path.join(hostrun.ROOT, "firmware", "src", "rev_hq_hall.c")).read() + \
+        open(os.path.join(hostrun.ROOT, "firmware", "src", "rev_hq_inf.c")).read()
+    import re
+    o = int(re.search(r"#define RQH_OUT (\d+)", src).group(1))
+    g = int(re.search(r"#define RI_OG (\d+)", src).group(1))
+    b = os.path.join(hostrun.HOST, "fault-rev3db", "frodhes")
+    hostrun.build(b, extra=["-DFR_C1=1", f"-DRQH_OUT={o * 708 // 1000}", f"-DRI_OG={g * 708 // 1000}"])
+
+    class R(h.HostRig):
+        def _rec(self, dur, events):
+            orig = hostrun.run
+            hostrun.run = lambda *a, **k: orig(*a, **dict(k, binary=b))
+            try:
+                return super()._rec(dur, events)
+            finally:
+                hostrun.run = orig
+    return R(1)
+
+
+def test_effects_reverb_rows_fail_a_reverb_3db_quiet():
+    """the fault injection: the reverb 3 dB quiet must fail. The reverb alone on the 13 chords' mean, +-1.5 LU, fails
+    it (host: -11.1 against -8.1, -17.4 against -14.3); the bypass row (REV 50 under the phaser and chorus: the
+    reverb adds ~0.3..0.55 LU there) and the presets (U04: INFINITE under a delay and a chorus) move under 0.3 LU with
+    it, inside their limits, on one chord as on the mean (U04 -0.55 either way): they do not see the reverb's level,
+    the effects' reverb-alone rows do"""
+    r, rep = _fault_rig(), {}
+    ok, msg = h.effects(r, rep)
+    assert not ok and "'reverb 127'" in msg and "'reverb INF 127'" in msg, msg
+    rows = {q["name"]: q for q in rep["effects"]["rows"]}
+    assert rows["reverb 127"]["delta_lu"] < -9.6 and rows["reverb INF 127"]["delta_lu"] < -15.8, rows
+
+
+def test_effects_reverb_rows_on_the_chords_mean():
+    """the reverb rows on the host: their mean of CHORDS_13 at the targets (reverb 127 -8.1, INF -14.3, +-1.5), each
+    chord reported"""
+    r, rep = h.HostRig(1), {}
+    ok, msg = h.effects(r, rep)
+    assert ok, msg
+    rows = {q["name"]: q for q in rep["effects"]["rows"]}
+    for n, t in (("reverb 127", -8.1), ("reverb INF 127", -14.3)):
+        assert len(rows[n]["chord_lu"]) == 13 and abs(rows[n]["delta_lu"] - t) <= 1.0, rows[n]
