@@ -3,6 +3,7 @@
 """One command for a whole Frodhes release (AGENTS.md section 9), stopping at the first failure.
 
     tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device [--device-done JSON]] [--full] [--no-emulator] [--yes]
+                     --plugin-tested "macos windows linux-x86_64 linux-aarch64"   (the release commit's plugin record)
     tools/release.py X.Y.Z --after-merge [--no-emulator] [--yes]   after the release PR's merge: tag and publish
     tools/release.py [X.Y.Z] --verify-only      step 9 alone, against a published release (read-only)
     tools/release.py --web-selftest [DIST [X.Y.Z]]   the emulator selftest alone (ci.yml / release.yml, job web)
@@ -38,7 +39,9 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
  5 docs          tools/doc_links.py's check (each picture's ?v= = its file's hash, no version named in README /
                  MANUAL / the device manuals), tests/py/test_docs_vs_code.py, test_doc_links.py, test_changes.py, test_manual_shots.py
                  (the screenshots = what the code draws); the fragments assembled into docs/releases/vX.Y.Z.md (shown in
-                 full), then the release commit: the notes added, the fragments removed
+                 full), then the release commit: the notes added, the fragments removed, and its line "Plugin tested:"
+                 from --plugin-tested (all four platforms, or no commit: release.yml attaches only the recorded
+                 plugin packages, and tools/release_assets.sh keeps a release without them a draft)
  6 confirm       what will be pushed, then "Publish X.Y.Z? [y/N]" (--yes skips the prompt). --dry-run stops here.
  7 publish       main is protected (enforce_admins: nobody pushes to it, an admin neither), so the release commit
                  goes in through a pull request: a normal run pushes nothing and stops here with the commands (push
@@ -97,6 +100,8 @@ def smk_versioned(name, v):
 MOVE_BUILT = os.path.join("build", "move", "frodhes-module.tar.gz")
 MOVE_VERSIONED = "frodhes-{v}-move.tar.gz"
 MOVE_STABLE = "frodhes-module.tar.gz"
+PLUGIN_PLATFORMS = ("macos", "windows", "linux-x86_64", "linux-aarch64")   # tools/plugin_asset.sh's names
+PLUGIN_RECORD = "Plugin tested:"                # the release commit's line (tools/plugin_asset.sh reads it)
 MOVE_RECORD = "Move package sha256"            # the release commit's line (tools/move_asset.sh reads it)
 # the Move's device tiers (private plan 05 section 6.6): MIN on every release, MT1 when Move-only code changed
 MOVE_ONLY = ("move/", "firmware/src/hq/")
@@ -210,6 +215,11 @@ def parse_args(argv):
                     help="with --no-device: the FM-1 tests already ran on this exact build: {\"sha256\": the tested "
                          ".fwsc's, \"tiers\": [\"T1\", ...], \"runs\": [what ran]}; refused unless the sha256 "
                          "equals the release build's and the tiers cover the ones this release needs")
+    ap.add_argument("--plugin-tested", metavar="LIST", default="",
+                    help="the desktop plugin platforms tested for this release, all of " + " ".join(PLUGIN_PLATFORMS)
+                         + " (spaces or commas): the release commit's \"Plugin tested:\" line, which release.yml's "
+                         "tools/plugin_asset.sh reads; without all of them tools/release_assets.sh keeps the release "
+                         "a draft, so step 5 refuses to commit")
     ap.add_argument("--no-emulator", action="store_true", help="skip publishing the web emulator")
     ap.add_argument("--yes", action="store_true", help="publish without the prompt")
     ap.add_argument("--after-merge", action="store_true",
@@ -472,6 +482,11 @@ class Release:
                 problems.append(str(e))
         elif not os.path.exists(os.path.join(ROOT, notes)):
             problems.append(f"no fragments in {changes.DIR}/ and no {notes}")
+        plug = self.plugin_problem() if frags else None
+        if plug and self.a.dry_run:                 # (the dry run still shows the notes)
+            ev.append("WARNING, a real run stops here: " + plug)
+        elif plug:
+            problems.append(plug)
         if problems:
             msg = "\n".join(ev + ["PROBLEM: " + p for p in problems])
             if self.a.dry_run:
@@ -504,11 +519,29 @@ class Release:
         msg = (f"Release {self.ver}: the notes {notes}, assembled from {changes.DIR}/ (the fragments removed)"
                f"\n\nTested by tools/release.py: host (make test, make pytest, gate_r, the release build sha256 "
                f"{self.sha}); {dev}.\n{body}\n")
+        msg += f"{PLUGIN_RECORD} {' '.join(self.plugin_list())}\n"
         if out(["git", "diff", "--cached", "--name-only"]):
             sh(["git", "commit", "-q", "-F", "-"], input=msg)
         self.head = out(["git", "rev-parse", "HEAD"])
         ev.append(f"commit {self.head[:10]} {out(['git', 'log', '-1', '--format=%s'])}")
         return "\n".join(ev)
+
+    def plugin_list(self):
+        return [p for p in re.split(r"[\s,]+", self.a.plugin_tested.strip()) if p]
+
+    def plugin_problem(self):
+        """the release commit must record every plugin platform (release.yml attaches only the recorded ones and
+        tools/release_assets.sh requires all five packages); None when it does"""
+        got = self.plugin_list()
+        bad = [p for p in got if p not in PLUGIN_PLATFORMS]
+        missing = [p for p in PLUGIN_PLATFORMS if p not in got]
+        if bad:
+            return f"--plugin-tested: unknown platform(s) {', '.join(bad)} (known: {' '.join(PLUGIN_PLATFORMS)})"
+        if missing:
+            return (f"--plugin-tested lacks {' '.join(missing)}: the release commit's \"{PLUGIN_RECORD}\" line would "
+                    f"miss them, release.yml would attach no package for them and tools/release_assets.sh would keep "
+                    f"the release a draft (pass --plugin-tested \"{' '.join(PLUGIN_PLATFORMS)}\" once they are tested)")
+        return None
 
     # 6
     def s_confirm(self):

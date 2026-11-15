@@ -184,7 +184,8 @@ def test_no_fragments_stops(tree, monkeypatch, capsys):
 
 def release_at_docs(tree, monkeypatch, calls, dry=False):
     monkeypatch.setattr(rel, "sh", fake_shell(str(tree), calls))
-    r = rel.Release(rel.parse_args(["patch", "--no-device"] + (["--dry-run"] if dry else [])))
+    r = rel.Release(rel.parse_args(["patch", "--no-device", "--plugin-tested", " ".join(rel.PLUGIN_PLATFORMS)]
+                                   + (["--dry-run"] if dry else [])))
     r.ver, r.prev, r.sha = "0.9.3", "v0.9.2", "f" * 64
     r.frags = rel.changes.load(str(tree))
     return r
@@ -663,7 +664,8 @@ def test_main_web_selftest(monkeypatch, capsys):
 def test_real_run_hands_off_the_pr_and_pushes_nothing(tree, monkeypatch, capsys):
     calls = []
     monkeypatch.setattr(rel, "sh", fake_shell(str(tree), calls))
-    assert rel.main(["patch", "--no-device", "--no-emulator", "--yes"]) == 3          # 3: handed off
+    assert rel.main(["patch", "--no-device", "--no-emulator", "--yes",
+                     "--plugin-tested", "macos windows linux-x86_64 linux-aarch64"]) == 3   # 3: handed off
     o = capsys.readouterr().out
     assert any(c.startswith("git commit") for c in calls)                           # the release commit, local
     assert not [c for c in calls if " push" in c or "tag -a" in c or "gh pr" in c or "gh release" in c], calls
@@ -733,3 +735,27 @@ def test_after_merge_needs_a_version():
         rel.parse_args(["patch", "--after-merge"])
     with pytest.raises(SystemExit):
         rel.parse_args(["0.9.3", "--after-merge", "--dry-run"])
+
+
+def test_release_commit_records_the_plugin_platforms(tree, monkeypatch, capsys):
+    """release.yml attaches only the plugin packages the release commit's "Plugin tested:" line names and
+    tools/release_assets.sh requires all of them: step 5 refuses to commit without all four platforms"""
+    msgs = []
+    for plug, ok in (("", False), ("macos windows", False), ("macos,windows,linux-x86_64,linux-arm", False),
+                     ("macos windows linux-x86_64 linux-aarch64", True)):
+        calls = []
+        base = fake_shell(str(tree), calls)
+
+        def sh(cmd, check=True, input=None, timeout=None, quiet=False, base=base):
+            if isinstance(cmd, list) and cmd[:2] == ["git", "commit"]:
+                msgs.append(input)
+            return base(cmd, check=check, input=input, timeout=timeout, quiet=quiet)
+        monkeypatch.setattr(rel, "sh", sh)
+        code = rel.main(["patch", "--no-device", "--no-emulator", "--yes", "--plugin-tested", plug])
+        o = capsys.readouterr().out
+        assert (code == 3) == ok, o
+        assert ("--plugin-tested" in o and "FAIL" in o) != ok, o
+    rel.main(["patch", "--dry-run", "--no-device", "--no-emulator"])           # a dry run warns, still shows the notes
+    o = capsys.readouterr().out
+    assert "WARNING, a real run stops here: --plugin-tested lacks" in o and "docs/releases/v0.9.3.md -----" in o, o
+    assert len(msgs) == 1 and "\nPlugin tested: macos windows linux-x86_64 linux-aarch64\n" in msgs[0], msgs

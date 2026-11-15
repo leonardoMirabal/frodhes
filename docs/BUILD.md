@@ -115,13 +115,14 @@ Releases are one command:
 
 ```sh
 tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device [--device-done FILE]] [--full] [--no-emulator] [--yes]
+                 --plugin-tested "macos windows linux-x86_64 linux-aarch64"
 ```
 
 It stops at the first failure and ends with a table of every step (done, skipped and why, failed). In order, it:
 
 1. picks the next version from the latest tag;
-2. checks the tree: on `main`, clean, not behind `origin/main`, the release-note fragments in `docs/changes/` well
-   formed (`tools/changes.py`);
+2. checks the tree: on `main` or the release branch (`rel-X.Y.Z`, `release-X.Y.Z`, or without the dots), clean,
+   not behind `origin/main`, the release-note fragments in `docs/changes/` well formed (`tools/changes.py`);
 3. runs the host tests and the release build;
 4. installs the build on the FM-1 and runs the tiers the change needs (`tools/test_map.py` maps every file to them):
    - on every release, the must-pass scenarios (`tools/hil_scan.py --tier must`): six real-use scenarios judged by
@@ -130,7 +131,9 @@ It stops at the first failure and ends with a table of every step (done, skipped
      on the Rhodes, VIBES and MARIMBA (and the MARIMBA sample-back);
    - `--device-done FILE` records FM-1 runs already made on the same build, checked by its sha256;
 5. checks the docs' links (no version in them: they link `releases/latest`), assembles the fragments into
-   `docs/releases/vX.Y.Z.md` and commits it with the fragments removed;
+   `docs/releases/vX.Y.Z.md` and commits it with the fragments removed; the commit's `Plugin tested:` line comes from
+   `--plugin-tested` and must name all four plugin platforms (the release workflow attaches only those packages, and
+   a release missing one stays a draft);
 6. asks before publishing, then stops with the commands for the release pull request (`main` is protected: the tool
    pushes nothing to it).
 
