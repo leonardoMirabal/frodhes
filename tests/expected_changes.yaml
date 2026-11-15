@@ -31,7 +31,7 @@ changes:
   - {match: "*/SUIT/*/*/k81v*", metric: H2, min: -13.8, max: -4.5, reason: "upper register (SND2, 42846aed): the pickup's 2 f0 held under the upper register's ceiling at every velocity (RH_TOP_S); level within 0.3 dB; user-approved by ear 2026-11-14"}
   - {match: "*/SUIT/*/*/k81v*", metric: H3, min: -27.1, max: -20.0, reason: "upper register (SND2, 42846aed): the swing cut takes the pickup's overdrive down with H2 (the ceiling, RH_TOP_S); user-approved by ear 2026-11-14"}
 # ---- 2. The MIX law (E2): DELAY / DRIVE / REVERB MIX; the presets keep their values, so their wet / dry
-# balance moves (coordinator sign-off pending)
+# balance moves (signed off by the coordinator 2026-11-15, with the user's approval)
   - match: '*/BALLAD/*'
     metric: H3
     min: 2.7
@@ -1101,7 +1101,7 @@ changes:
 # MIX law on the presets, and the floor effects of quieter notes (key-up / decay windows into exact zeros, clk ratios
 # with a zero median, centroid and off-harmonic ratios against the fixed int16 floor). The electric piano's TYPE cells:
 # */[SFD][TUEY]??/[!P]*/ (ST77, SUIT, FELT, DYNO, every config but the presets); its presets: */[!VM]*/PRESET/ (WOOD ECHO
-# in it too). Coordinator sign-off pending.
+# in it too). Signed off by the coordinator 2026-11-15, with the user's approval.
   - {match: hq/DREAM/PRESET/A/k45v110, metric: H6, min: 2.7, max: 3.4, reason: 'E2 (8cbe160f9): the MIX law: up to MIX 64 the dry whole and the effect fading in, past 64 the dry fading out; the presets keep their MIX values, so their wet / dry balance moves: the wet / dry balance moves the harmonic bands; user-approved by ear 2026-11-14'}
   - {match: '*/[!VM]*/PRESET/A/k*v110', metric: level, min: -4.2, max: -3.1, reason: 'E2 (8cbe160f9): the MIX law: up to MIX 64 the dry whole and the effect fading in, past 64 the dry fading out; the presets keep their MIX values, so their wet / dry balance moves; together with SND3''s level change in the same cells: the level follows; user-approved by ear 2026-11-14'}
   - {match: '*/[!VM]*/PRESET/A/k*v110', metric: lu, min: -4.1, max: -3.1, reason: 'E2 (8cbe160f9): the MIX law: up to MIX 64 the dry whole and the effect fading in, past 64 the dry fading out; the presets keep their MIX values, so their wet / dry balance moves; together with SND3''s level change in the same cells: the loudness follows; user-approved by ear 2026-11-14'}
@@ -1483,7 +1483,7 @@ changes:
 # ---- 6. The two-core FM-1 (c1, 2026-11-14: the FM-1's one package): tools/release_diff.py --grid full judges
 #      c1 against 0.9.11's own c1 build. The cells the one-core entries above do not cover: each the one-core
 #      twin's change read on c1 (its reason), or the rule named. HQ: the full-rate hall's REVERB TONE (a70ddd2e0).
-#      Coordinator sign-off pending (T2 0.9.12).
+#      Signed off by the coordinator 2026-11-15, with the user's approval (T2 0.9.12).
   - {match: 'c1/70S_PHASER/PRESET/A/k57v96', metric: 'H5', min: -6.7, max: -6.1, reason: 'c1 (the two-core FM-1 package, FR_C1 + FR_C1_LAT, against 0.9.11''s own c1 build): the one-core build''s change, read on c1: SND3 (b82bb24e5): RESPONSE FULL''s curve D, an output gain on the electric piano after the engine (-3.4 dB at v96; v64 -19.0, v88 -13.0, v104 -7.7 dB re v127), the tone the same; LIGHT untouched (F13..F16, the bars'' presets, the bars 3.0 dB down into the mix (bars.c BAR_MIX_G), back to the old v100 balance; both methods): a harmonic re H1 moves where the fundamental moved: H2 / H3 down at the upper keys (SND2), or a preset''s compressor / drive / reverb at the new input level (the absolute harmonic power the same or lower, or the last release''s value at the velocity that plays the candidate''s level, build/rdiff/leveq.py); user-approved by ear 2026-11-14'}
   - {match: 'c1/70S_PHASER/PRESET/A/k93v127', metric: 'H5', min: -23.0, max: -22.4, reason: 'c1 (the two-core FM-1 package, FR_C1 + FR_C1_LAT, against 0.9.11''s own c1 build): the one-core build''s change, read on c1: SND2 (3e106427f): the upper register cleaner: above key 72 the pickup''s H2 held under its ceiling at every velocity (RH_TOP_S), H3 down with it; less H2 is less loudness and a lower attack peak at keys 81 / 93: a harmonic re H1 moves where the fundamental moved: H2 / H3 down at the upper keys (SND2), or a preset''s compressor / drive / reverb at the new input level (the absolute harmonic power the same or lower, or the last release''s value at the velocity that plays the candidate''s level, build/rdiff/leveq.py); user-approved by ear 2026-11-14'}
   - {match: 'c1/70S_PHASER/PRESET/A/k93v127', metric: 'H6', min: -18.1, max: -17.5, reason: 'c1 (the two-core FM-1 package, FR_C1 + FR_C1_LAT, against 0.9.11''s own c1 build): the one-core build''s change, read on c1: SND2 (3e106427f): the upper register cleaner: above key 72 the pickup''s H2 held under its ceiling at every velocity (RH_TOP_S), H3 down with it; less H2 is less loudness and a lower attack peak at keys 81 / 93: a harmonic re H1 moves where the fundamental moved: H2 / H3 down at the upper keys (SND2), or a preset''s compressor / drive / reverb at the new input level (the absolute harmonic power the same or lower, or the last release''s value at the velocity that plays the candidate''s level, build/rdiff/leveq.py); user-approved by ear 2026-11-14'}
