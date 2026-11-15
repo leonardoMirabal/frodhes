@@ -34,6 +34,8 @@ ENG = {"VIBE": ((79, 0), (47, 0)), "MRMB": ((79, 127),)}   # (the engine's CC 79
 # 2026-11-15). So the device's prep ends with the compressor on, as the host has it
 COMP_ON = (106, 127)
 EQ_H1_DB = 0.5                       # the device's H1 against the host's, per cell (the same code: the tap is exact)
+H1_FLOOR_DB = dd.LSB_DB              # ... judged where the host's H1 is over one 16-bit step: MARIMBA's key 93 (over
+                                     # its bars' range) reads H1 -134 .. -180 dB, rounding, and differed by 2.1 dB there
 
 
 class _Sent(hs.RigBase):
@@ -93,9 +95,9 @@ def events(tag):
 
 
 def h1_diffs(dev, host):
-    """[(label, device H1 - host H1)] over the cells both have"""
+    """[(label, device H1 - host H1)] over the cells both have where the host's H1 is over H1_FLOOR_DB"""
     return [(lab, dev[lab]["h1"] - host[lab]["h1"]) for lab in dev if "h1" in dev[lab] and lab in host
-            and "h1" in host[lab]]
+            and "h1" in host[lab] and host[lab]["h1"] > H1_FLOOR_DB]
 
 
 def run(a, out=print):

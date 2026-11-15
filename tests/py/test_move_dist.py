@@ -37,3 +37,12 @@ def test_prep_is_the_host_boot_state_with_fx_off(tmp_path):
 def test_prep_ends_with_the_compressor_on():
     p = md.prep_ccs()
     assert p[-1] == ("cc",) + md.COMP_ON and md.COMP_ON == (106, 127)
+
+
+def test_h1_is_judged_over_the_16_bit_floor_only():
+    """MARIMBA's key 93 is over its bars' range: H1 -134 .. -180 dB on both, rounding; a 2.1 dB difference there
+    failed the run (2026-11-15)"""
+    dev = {"93/64": {"h1": -178.18}, "81/64": {"h1": -86.53}, "69/64": {"h1": -56.0}}
+    host = {"93/64": {"h1": -180.28}, "81/64": {"h1": -86.58}, "69/64": {"h1": -56.0}}
+    d = dict(md.h1_diffs(dev, host))
+    assert "93/64" not in d and abs(d["81/64"] - 0.05) < 1e-9 and d["69/64"] == 0.0
