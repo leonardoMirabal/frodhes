@@ -2474,6 +2474,25 @@ def floor_sub(p, f, most_db=FLOOR_SUB_MAX_DB):
     return float(max(p - f, p * 10 ** (-most_db / 10)))
 
 
+def band_re(t, r, q, lo, hi, a=0.05, b=1.05, sub=False):
+    """a band's level (dB) of take t re the reference take r, the same window from each onset; and whether t's
+    band is within 6 dB of its floor (then it reads the floor: an upper bound). sub: each take's floor (its
+    pre-roll, the same band) taken off first (floor_sub)"""
+    x, y = cut(t.m(q), t.on(q)[0], a, b), cut(r.m(q), r.on(q)[0], a, b)
+    n = min(len(x), len(y))
+    X, fr = welch(x[:n])
+    Y, _ = welch(y[:n])
+    m_ = (fr >= lo) & (fr < hi)
+    F, _ = welch(t.pre(q)) if np.any(t.pre(q)) else (None, None)
+    lim = F is not None and X[m_].sum() < 4 * F[m_].sum()
+    xp, yp = X[m_].sum(), Y[m_].sum()
+    if sub:
+        G, _ = welch(r.pre(q)) if np.any(r.pre(q)) else (None, None)
+        xp = floor_sub(xp, None if F is None else F[m_].sum())
+        yp = floor_sub(yp, None if G is None else G[m_].sum())
+    return float(10 * np.log10(xp / (yp + 1e-30) + 1e-30)), bool(lim)
+
+
 NOISE_FLOOR_MARGIN_DB = 6.0  # marimba NOISE contact: NOISE de's excess within this of the hiss read the same way is
                              # the floor (the jack)
 NOISE_FLOOR_XSRC_DB = 6.0    # ... and so is a jack reading this far over USB's (the same strike recorded at once:
@@ -3171,6 +3190,7 @@ def vibes_fx(V, S, stim=None, extra=()):
     PH0 = st.get("PH0", ST_PH0)            # PHASER / CHORUS SPEED 0's takes (and DEPTH 0 refs): ST_LONG is too short
     jfloor = st.get("JFLOOR", False)       # the DRIVE rows: the jack judged against its own distortion floor
     v3line = st.get("V3LINE", False)       # DRIVE TONE's V3 as a line (m_line_db), clear of the resampler's image
+    wah_w = st.get("WAH_W", (0.02, 0.3))  # WAH DEPTH's window from the first onset (s): VIBES' strike
     dl_wow = st.get("DL_WOW", False)       # DELAY DIG vs ANA judged by the tape's wow / flutter (the spectrum: info)
 
     def run(label, settings, stim, motor=False):
@@ -3190,24 +3210,6 @@ def vibes_fx(V, S, stim=None, extra=()):
     def FD(t1, t2, q, a=0.2, b=5.3):
         """frame_dist of two takes, the same window from each onset"""
         return frame_dist(cut(t1.m(q), t1.on(q)[0], a, b), cut(t2.m(q), t2.on(q)[0], a, b), FDN)
-
-    def band_re(t, r, q, lo, hi, a=0.05, b=1.05, sub=False):
-        """a band's level (dB) of take t re the reference take r, the same window from each onset; and whether t's
-        band is within 6 dB of its floor (then it reads the floor: an upper bound). sub: each take's floor (its
-        pre-roll, the same band) taken off first (floor_sub)"""
-        x, y = cut(t.m(q), t.on(q)[0], a, b), cut(r.m(q), r.on(q)[0], a, b)
-        n = min(len(x), len(y))
-        X, fr = welch(x[:n])
-        Y, _ = welch(y[:n])
-        m_ = (fr >= lo) & (fr < hi)
-        F, _ = welch(t.pre(q)) if np.any(t.pre(q)) else (None, None)
-        lim = F is not None and X[m_].sum() < 4 * F[m_].sum()
-        xp, yp = X[m_].sum(), Y[m_].sum()
-        if sub:
-            G, _ = welch(r.pre(q)) if np.any(r.pre(q)) else (None, None)
-            xp = floor_sub(xp, None if F is None else F[m_].sum())
-            yp = floor_sub(yp, None if G is None else G[m_].sum())
-        return float(10 * np.log10(xp / (yp + 1e-30) + 1e-30)), bool(lim)
 
     def nm(n):
         return f"{n} (CC {P[n]['cc']})"
@@ -3471,9 +3473,10 @@ def vibes_fx(V, S, stim=None, extra=()):
     # a touch wah: DEPTH is how far the strike opens it (host TREM-WAH). Round 1 compared the spectral distances to
     # dry, which the wah's static filter dominates at any DEPTH (14.1 / 14.2 dB at 127 / 64)
     # (each take's hiss taken off first, floor_sub: the jack's DEPTH 0 rode its floor, +5.9 dB once on MARIMBA)
-    wr = S.per(lambda q: [band_re(T[x], dry["ch"], q, 1000, 4000, 0.02, 0.3, sub=True) for x in (0, 64, 127)])
+    wr = S.per(lambda q: [band_re(T[x], dry["ch"], q, 1000, 4000, *wah_w, sub=True) for x in (0, 64, 127)])
     wo = {s_: v and [c for c, _ in v] for s_, v in wr.items()}
-    S.check("WAH DEPTH 0 / 64 / 127: the strike opens it", "1-4 kHz re no effect, 20..300 ms, less the floor", wo,
+    S.check("WAH DEPTH 0 / 64 / 127: the strike opens it",
+            f"1-4 kHz re no effect, {round(1000 * wah_w[0])}..{round(1000 * wah_w[1])} ms, less the floor", wo,
             lambda v: v[0] < v[1] < v[2] and v[2] - v[0] >= 6, "in order, 127 >= 6 dB over 0",
             fmt=lambda v: " / ".join(f"{c:+.1f}" for c in v) + " dB", floor={s_: bool(v and v[0][1]) for s_, v in wr.items()})
     S.check("WAH DEPTH 64", "vs no effect", S.per(lambda q: sdist(B(T[64], q), B(dry['ch'], q))), lambda v: v >= 1.5,
@@ -4657,6 +4660,11 @@ def marimba_fx(V, S):
                 NOTE=(ST_NOTE[0], m_fx_roll((69,), v, 0.1, 1.6)),
                 ATK=ST_CH,               # COMP ATTACK: a strike out of silence (on a roll the compressor never lets go)
                 BW=(0.05, 2.05),         # the spectra over the whole roll: two takes of one roll 0.2-0.8 dB apart at 1 s
+                WAH_W=(0.05, 2.05),      # WAH DEPTH over the whole roll, not its first 300 ms: there the roll is still
+                #                          building up (one v80 note, then two, three: the touch wah's envelope with
+                #                          them) and DEPTH 127's 1-4 kHz rise read 8.4..14.5 dB over 20 host seeds (FM-1
+                #                          rc-0.9.12 T2: USB 8.3, the jack 5.9 against the 6 dB bar); over the whole
+                #                          roll 16.4..18.0 (tests/py/test_marimba_hil_measures.py)
                 CS_PERIOD=True,          # CHORUS SYNC by the period: the harmonic sum took the 1/4's 3rd harmonic
                 CS_BAND=True,            # CHORUS SPEED 50 / 127 by the band re DEPTH 0: the centroid read 1.31 for 0.87
                 SPREAD=True,             # FILTER OFF judged against two dry takes of the roll (one more take)
