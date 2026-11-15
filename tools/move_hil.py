@@ -1507,22 +1507,26 @@ def host_binary(hq=None):
     return hostrun.build(MOVE_HOST % h, extra=MOVE_HOST_DEFS + ["-DHQ_DEFAULT=%d" % h])
 
 
-def host_phrase(ev, dur, program=0, hq=None, lead=(), after=(), tune=0):
+def host_phrase(ev, dur, program=0, hq=None, lead=(), after=(), tune=0, bpm10=None):
     """the host build (tests/host.c) playing the events after program change program (F01 = 0): (n, 2) LSB at 44.1;
     hq: 0 Classic, else (1, None: as the plugin loads) the HQ Rhodes' build (host_binary); lead: [(cc, value)] at 1 ms, before the program change, as the take
     has them (a pedal let up at boot is not nothing: CC 64 0 moves a later note by a few LSB); after: [(cc, value)] at
     6 ms, after the program change (the values Schwung's scene locks hold on the Move: held_reader); tune: the
-    slot's TUNE in cents (s_tune, no CC: tests/host.c "T tune" at 2 ms)"""
+    slot's TUNE in cents (s_tune, no CC: tests/host.c "T tune" at 2 ms); bpm10: the Move's tempo in 0.1 BPM (tests/host.c
+    "T tempo" at 3 ms: the synced effects, DELAY SYNC, follow the Move's tempo on the device, mb_inert; None: the
+    host's own)"""
     sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
     import hostrun
     pre = 500
     lines = (["1 midi 0xB0 %d %d" % cv for cv in lead] + (["2 tune %d" % int(tune)] if tune else []) +
+             (["3 tempo %d" % int(bpm10)] if bpm10 else []) +
              ["5 midi 0xC0 %d" % program] +
              ["6 midi 0xB0 %d %d" % cv for cv in after])
     for t, k, a, b in ev:
         ms = pre + int(round(1000 * t))
         lines.append("%d midi 0x%02X %d %d" % (ms, {"on": 0x90, "off": 0x80, "cc": 0xB0}[k], a, b))
-    run = hostrun.run("move-same-as-host" + ("" if hq == 0 else "-hq") + ("-t%+d" % tune if tune else ""), lines, pre + int(1000 * dur) + 20,
+    run = hostrun.run("move-same-as-host" + ("" if hq == 0 else "-hq") + ("-t%+d" % tune if tune else "") +
+                      ("-b%d" % int(bpm10) if bpm10 else ""), lines, pre + int(1000 * dur) + 20,
                       binary=host_binary(hq))
     i0 = int(pre * hostrun.FS / 1000)
     return np.stack([np.asarray(run.L[i0:], float), np.asarray(run.R[i0:], float)], 1)
@@ -1542,13 +1546,13 @@ TIMING_SHIFTS_MS = (6, 12)
 TIMING_MARGIN_DB = 3.0
 
 
-def timing_floor(ev, dur, program, hq, lead, after, tune, h, marks, sr):
+def timing_floor(ev, dur, program, hq, lead, after, tune, h, marks, sr, bpm10=None):
     """{note: dB} the host's residual against itself with the notes TIMING_SHIFTS_MS later (the larger), on the
     rows' window (the held note's last 0.5 s, re the note, each aligned on its own, gain 1)"""
     nt, maxlag, fl = int(0.5 * sr), int(0.08 * sr), {}
     for sh in TIMING_SHIFTS_MS:
         es = [(t + (sh / 1000.0 if k != "cc" else 0.0), k, a, b) for t, k, a, b in ev]
-        hs = _HOST_PHRASE(es, dur + 0.05, program, hq, lead, after, tune)
+        hs = _HOST_PHRASE(es, dur + 0.05, program, hq, lead, after, tune, bpm10=bpm10)
         for name, t, n in marks:
             a, b = int(t * sr), int((t + NOTE_S) * sr)
             _, lag = _align(hs, h, a, b, a + int(0.5 * sr), b, -int(0.01 * sr), maxlag)
@@ -1790,10 +1794,14 @@ def usb_host(r, d, program=0, out=print, motor_off=False):
     # (the slot's TUNE (s_tune: no CC, saved with the slot) moves every note: the host gets the same. r.tune: as read
     # over Schwung's WebSocket (d2, usb-* with --ws); unknown, the take's own offset against TUNE 0 decides)
     known = getattr(r, "tune", None)
-    h = host_phrase(ev, dur, program, hq, GLOBAL_CCS, after, tune=0 if known is None else tune_for(known, None)[0])
+    # (the Move's tempo, r.bpm10: the synced effects (DELAY SYNC) follow it on the device, so the host gets it too;
+    # F12's echoes at the host's own 120 against the set's 82 BPM DIFFERED on every note, 2026-11-15)
+    bpm10 = getattr(r, "bpm10", None)
+    h = host_phrase(ev, dur, program, hq, GLOBAL_CCS, after, tune=0 if known is None else tune_for(known, None)[0],
+                    bpm10=bpm10)
     tune, tune_src = tune_for(known, None if known is not None else pitch_offset_c(mv, h, marks, sr))
     if known is None and tune:
-        h = host_phrase(ev, dur, program, hq, GLOBAL_CCS, after, tune=tune)
+        h = host_phrase(ev, dur, program, hq, GLOBAL_CCS, after, tune=tune, bpm10=bpm10)
     left_c = pitch_offset_c(mv, h, marks, sr)
     _save(d, "host-phrase", {"x": h, "sr": 44100})
     tape = take_tape(program, after)
@@ -1858,7 +1866,7 @@ def usb_host(r, d, program=0, out=print, motor_off=False):
             rows[-1].update(tape=True, level_db=round(lv, 2), cb_max_db=round(cbd, 2))
     classic_db, classic_res_db = None, None
     if hq != 0:                                  # (HQ, the load's or asked: the take must not be Classic where only HQ
-        c = host_phrase(ev, dur, program, 0, GLOBAL_CCS, after, tune=tune)    # differs)
+        c = host_phrase(ev, dur, program, 0, GLOBAL_CCS, after, tune=tune, bpm10=bpm10)    # differs)
         for name, t, n in marks:
             if name == HQ_PROBE:
                 a, b = int(t * sr), int((t + NOTE_S) * sr)
@@ -1889,12 +1897,12 @@ def usb_host(r, d, program=0, out=print, motor_off=False):
                                            np.sqrt(np.mean(dc ** 2)) / (np.sqrt(np.mean(mc ** 2)) + 1e-9))) + 1e-12)
                 probe = {"hq_classic_db": round(float(hc_db), 1), "floor_db": round(float(fl_db), 1),
                          "resolved": bool(fl_db < hc_db - HQ_RESOLVE_DB)}
-    tf = timing_floor(ev, dur, program, hq, GLOBAL_CCS, after, tune, h, marks, sr)
+    tf = timing_floor(ev, dur, program, hq, GLOBAL_CCS, after, tune, h, marks, sr, bpm10=bpm10)
     for w in rows:
         w["timing_db"] = round(tf.get(w["note"], -240.0), 1)
     rep = {"program": program, "hq": hq, "motor_off": bool(motor_off), "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
            "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max()),
-           "tune": tune, "tune_source": tune_src, "pitch_left_c": left_c}
+           "tune": tune, "tune_source": tune_src, "pitch_left_c": left_c, "bpm10": bpm10}
     if locked:
         rep["held"] = {k: v for k, (_, v) in locked.items()}
     bad = [w["note"] for w in rows if w["residual_net_db"] > -40 and w["judged"] and not w.get("tape")
@@ -1992,12 +2000,13 @@ def usb_host_file(d, out=print, tune=None, program=None):
             return kept
     rig = Saved()
     rig.tune = tune
+    rig.bpm10 = saved.get("bpm10")
     global host_phrase
     keep = host_phrase
     # (the saved host is the one the take was compared with, at its TUNE; the HQ probe's Classic host and a host at
     # another TUNE are rendered again)
-    host_phrase = lambda ev, dur, program=0, hq=None, lead=(), after=(), tune=0: (   # noqa: E731
-        keep(ev, dur, program, hq, lead, after, tune) if hq == 0 or tune != saved_tune else h)
+    host_phrase = lambda ev, dur, program=0, hq=None, lead=(), after=(), tune=0, bpm10=None: (   # noqa: E731
+        keep(ev, dur, program, hq, lead, after, tune, bpm10) if hq == 0 or tune != saved_tune else h)
     try:
         return usb_host(rig, os.path.join(d, "reanalysis"), program=saved.get("program", 0) if program is None
                         else program, out=out)
@@ -2113,7 +2122,8 @@ def parse_song(text, track=0):
     last saved: the live state can differ"""
     import json
     try:
-        t = json.loads(text)["tracks"][track]
+        doc = json.loads(text)
+        t = doc["tracks"][track]
     except (ValueError, KeyError, IndexError, TypeError):
         return {}
     devs = []
@@ -2132,7 +2142,8 @@ def parse_song(text, track=0):
     walk(t.get("devices"))
     mode = t.get("midiInputMode")
     return {"midi_in": mode if isinstance(mode, str) else [int(c) + 1 for c in (mode or [])],
-            "devices": devs, "volume_db": (t.get("mixer") or {}).get("volume")}
+            "devices": devs, "volume_db": (t.get("mixer") or {}).get("volume"),
+            "tempo": doc.get("tempo") if isinstance(doc.get("tempo"), (int, float)) else None}
 
 
 def scene_locks(text, slot=0):
@@ -2548,6 +2559,16 @@ def clock_rig(a, r, d, chan):
     return TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), chan["plugin"])
 
 
+def move_bpm10(bpm, srep):
+    """usb-host's tempo for the host build, 0.1 BPM: --bpm when given (> 0), else the Move's saved set's tempo
+    (Song.abl "tempo", slot_report's track: the set as last saved, the live tempo can differ), else None (the
+    host's own, 120)"""
+    if bpm and bpm > 0:
+        return int(round(bpm * 10))
+    t = ((srep or {}).get("track") or {}).get("tempo")
+    return int(round(t * 10)) if t else None
+
+
 def rig_ws(a, r, srep):
     """what the rig takes from Schwung's WebSocket (--ws): the scene locks' live values (r.held: usb-host gives the
     host them, held.json) and, over USB-C, the setter for the CCs that do not reach the slot (r.ws_set)"""
@@ -2603,6 +2624,11 @@ def usb_main(a):
             if not ok:
                 return None, {"verdict": "STOP: the preflight failed", "preflight": pre}
         return fn[a.cmd]()
+    if a.cmd == "usb-host":
+        r.bpm10 = move_bpm10(a.bpm, srep)
+        if r.bpm10:
+            print("usb-host: the host at the Move's tempo %.1f BPM (%s)" % (
+                r.bpm10 / 10, "--bpm" if a.bpm else "the saved set's"), flush=True)
     ks = KeptState(a.ws, 0) if not r.fake and a.ws != "none" else None
     if ks is None:
         ok, rep = run()
@@ -2784,7 +2810,8 @@ class FakeEchoRig(FakeRig):
             i = max((j for j, (k, _, _) in enumerate(self.log) if k == "pc"), default=-1)
             prog = self.log[i][1] if i >= 0 else 0
             after = [(a, b) for k, a, b in self.log[i + 1:] if k == "cc" and a == 47]   # (usb-host's motor off)
-            h = host_phrase(events, dur, prog, after=after, tune=getattr(self, "tune", None) or 0)
+            h = host_phrase(events, dur, prog, after=after, tune=getattr(self, "tune", None) or 0,
+                            bpm10=getattr(self, "bpm10", None))
             x = np.zeros_like(h)
             x[300:] = 0.5 * h[:-300]
             return {"x": np.round(x), "sr": self.sr, "xruns": []}
@@ -3218,7 +3245,8 @@ def main(argv=None):
     ap.add_argument("--tune", type=int, default=None, help="usb-host --analyze: the slot's TUNE in cents (default: "
                     "the saved report's, else the take's measured offset)")
     ap.add_argument("--vel", type=int, default=100)
-    ap.add_argument("--bpm", type=float, default=0.0, help="usb-clock (default 100), usb-stress (0: no clock)")
+    ap.add_argument("--bpm", type=float, default=0.0, help="usb-clock (default 100), usb-stress (0: no clock), usb-host "
+                    "(the Move's tempo for the host run: the synced effects; default the saved set's)")
     ap.add_argument("--secs", type=float, default=60.0, help="usb-stress: the take's length")
     ap.add_argument("--nv", type=int, default=MOVE_VOICES, help="usb-stress: voices per chord")
     ap.add_argument("--out", help="usb-*: the folder for the takes and report.json")
