@@ -127,7 +127,7 @@ def test_release_commit_records_the_move_only_when_tested(mtree, monkeypatch, tm
 def test_verify_expects_the_move_only_when_recorded(monkeypatch):
     good = f"[`frodhes.fwsc`]({rel.LATEST_DL})"
     base = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *rel.SMK_ASSETS, *[rel.smk_versioned(n, "0.9.3") for n in rel.SMK_ASSETS],
-            rel.LICENCE_ASSET]
+            rel.LICENCE_ASSET, *rel.PLUGIN_ASSETS, *(n.format(v="0.9.3") for n in rel.MPC_ASSETS)]
     mv = ["frodhes-0.9.3-move.tar.gz", rel.MOVE_STABLE]
     tagged = "https://github.com/leonardoMirabal/frodhes/releases/download/v0.9.3/frodhes.fwsc"
     monkeypatch.setattr(rel, "resolve", lambda url: (tagged, "a" * 64))
