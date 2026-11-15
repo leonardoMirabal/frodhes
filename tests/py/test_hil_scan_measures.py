@@ -87,3 +87,24 @@ def test_noise_floor_flags():
     assert h.noise_floor_flags(near, de) == {"usb": False, "jack": False}
     hiss = {"jack": {"c": {de: -52.0}, "cfl": -55.0}, "usb": None}
     assert h.noise_floor_flags(hiss, de) == {"jack": True, "usb": False}
+
+
+def test_phaser_fdbk_row_judges_without_motion_and_says_why():
+    """PHASER FDBK 0 vs 127: motion_f is NaN when no band stands 10 dB over the source's floor (the jack's hiss under a
+    notched take); the rc-0.9.12 T2 read the jack 'no value' with USB -0.3 / 4.1 dB: one NaN voided the row. Each
+    branch now judges on its own (the rule unchanged: the frame-by-frame branch must still pass), and a measure that
+    raised says what it raised"""
+    import hil_scan as hs
+    V = hs.VRig("both", dry_run=True)
+    S = hs.VSuite("vibes_fx", V)
+    ok = lambda v: (hs.finite(v[0]) and v[0] >= 1.5) or hs.apart_of_spread(v[1], v[2])   # noqa: E731
+    fmt = lambda v: (f"{v[0]:+.1f}" if hs.finite(v[0]) else "motion n/a") + f" / {v[1]:.1f} dB (spread {v[2]:.1f})"  # noqa: E731
+    valid = lambda v: hs.finite(v[1:])                    # noqa: E731
+    S.check("PHASER FDBK", "", {"usb": (-0.3, 4.1, 0.2), "jack": (float("nan"), 4.0, 0.9)}, ok, "", fmt=fmt, valid=valid)
+    S.check("PHASER FDBK", "", {"usb": (-0.3, 4.1, 0.2), "jack": (float("nan"), 1.0, 0.9)}, ok, "", fmt=fmt, valid=valid)
+    r1, r2 = S.rows
+    assert r1["ok"] and r1["jack"].startswith("motion n/a / 4.0")
+    assert not r2["ok"] and r2["src_ok"]["jack"] is False      # (the frame branch alone short of 2 dB: still a FAIL)
+    vals = S.per(lambda q: 1 / 0 if q == "jack" else 1.0)
+    S.check("raised", "", vals, lambda v: True, "")
+    assert S.rows[-1]["jack"] == "no value (ZeroDivisionError: division by zero)"

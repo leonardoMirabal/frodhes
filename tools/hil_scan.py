@@ -1742,7 +1742,7 @@ class Take:
         return self.m(src)[:max(0, self.at(src, min(on)) - FS // 200)]
 
 
-def jack_by_usb(u, ou, j, oj, pre=0.005, post=0.05, search=0.02, min_r=0.5):
+def jack_by_usb(u, ou, j, oj, pre=0.005, post=0.05, search=0.02, min_r=0.5, fine=0.02, fine_search=0.001):
     """the jack's onsets from USB's, recorded at once (the MARIMBA suites; VIBES too since 2026-11-15: vibes_decay's
     NOISE contact read the jack +4.54 dB against USB's +23.25 on a jack onset a few ms off): each USB strike (pre .. post s around its
     onset; USB is exact zero before an isolated strike, so its onset is exact) found in the jack by cross-correlation
@@ -1750,20 +1750,46 @@ def jack_by_usb(u, ou, j, oj, pre=0.005, post=0.05, search=0.02, min_r=0.5):
     jack's onsets 2-15 ms late (the hiss under the 6 dB / 1 ms rise; the low notes' slow attack): the FM-1's keys
     C2..C7 take of 2026-10-19 read on the jack a level span 12.1 dB, a neighbour step 4.34 dB and C7 -46 c, where the
     jack is USB x -12.65 dB +-0.05 on every key (span 8.6 / step 0.48 dB, as USB). The interface's polarity (the M6
-    reads the jack inverted) does not matter: |r|"""
+    reads the jack inverted) does not matter: one polarity for the whole take, the sign whose best r summed over the
+    strikes is the larger (the low notes decide it), then each strike at its best r of that sign. Each strike's own |r|
+    took a high note half a period off: F6's 0..50 ms strike is near a sine, r +0.998 half a period from the true lag's
+    -0.997, and the jack's window 0.35 ms off left a tonal residue in vibes_decay's NOISE contact (the host with a
+    fractional lag: USB-jack up to -8.4 dB on key 89, tests/py/test_vibes_noise_contact.py). The polarity fixed, a
+    whole period stays as ambiguous (7 of 108 host strikes a period off), so each pick is refined within
+    +-fine_search s on a short window (pre .. fine s: the strike's rise decides it; 0 of 108)"""
     a0, a1, w = int(pre * FS), int(post * FS), int(search * FS)
-    out = []
+    rs = []
     for a, b in zip(ou, oj):
         x = np.asarray(u[max(0, a - a0):a + a1], float)
         lo = max(0, b - a0 - w)
         seg = np.asarray(j[lo:b - a0 + len(x) + w], float)
         if len(x) < a1 or not np.any(x) or len(seg) <= len(x):
-            out.append(b)
+            rs.append(None)
             continue
         c = np.correlate(seg, x, "valid")
         e = np.sqrt(np.convolve(seg * seg, np.ones(len(x)), "valid") * np.dot(x, x)) + 1e-30
-        k = int(np.argmax(np.abs(c) / e))
-        out.append(lo + k + (a - max(0, a - a0)) if abs(c[k]) / e[k] >= min_r else b)
+        rs.append((lo + (a - max(0, a - a0)), c / e, a))
+    sg = 1.0 if sum(z[1].max() for z in filter(None, rs)) >= sum((-z[1]).max() for z in filter(None, rs)) else -1.0
+    out, a2, fw = [], int(fine * FS), int(fine_search * FS)
+    for b, z in zip(oj, rs):
+        if z is None:
+            out.append(b)
+            continue
+        k = int(np.argmax(sg * z[1]))
+        if sg * z[1][k] < min_r:
+            out.append(b)
+            continue
+        o, a = z[0] + k, z[2]
+        x = np.asarray(u[max(0, a - a0):a + a2], float)          # (the fine pick: the onset at x's index a - start)
+        lo = max(0, o - (a - max(0, a - a0)) - fw)
+        seg = np.asarray(j[lo:lo + len(x) + 2 * fw], float)
+        if len(seg) > len(x) and np.any(x):
+            c = np.correlate(seg, x, "valid")
+            e = np.sqrt(np.convolve(seg * seg, np.ones(len(x)), "valid") * np.dot(x, x)) + 1e-30
+            kf = int(np.argmax(sg * c / e))
+            if sg * c[kf] / e[kf] >= min_r:
+                o = lo + kf + (a - max(0, a - a0))
+        out.append(o)
     return out
 
 
@@ -2698,13 +2724,24 @@ class VSuite:
         self.name, self.V, self.rows, self.t0 = name, V, [], time.time()
 
     def per(self, fn, srcs=None):
-        """fn(src) on every recorded source (USB: its left channel, as the jack's cable)"""
-        return {s: _safe(fn, s) for s in (srcs or self.V.sources())}
+        """fn(src) on every recorded source (USB: its left channel, as the jack's cable). A source whose fn raised:
+        None, and the exception kept for the next check's cell ('no value (ValueError: ...)'), which said only 'no
+        value' (rc-0.9.12 T2: PHASER FDBK's jack, the cause unknown)"""
+        out, self.err = {}, {}
+        for s in (srcs or self.V.sources()):
+            try:
+                out[s] = fn(s)
+            except Exception as e:
+                out[s], self.err[s] = None, f"{type(e).__name__}: {e}"[:80]
+                if VDEBUG:
+                    import traceback
+                    traceback.print_exc()
+        return out
 
     def usb(self, fn):
         return {"usb": _safe(fn, "usb")} if self.V.want_usb else {}
 
-    def check(self, check, setting, vals, ok, crit, level=False, fmt=None, info=False, floor=None):
+    def check(self, check, setting, vals, ok, crit, level=False, fmt=None, info=False, floor=None, valid=None):
         """one row: vals {src: value}; ok(value) -> bool on each source; level: a level change in dB / LU, compared
         between USB and the jack; floor {src: True}: that source's value stands on its floor (the jack's hiss), so the
         two are not compared (no MISMATCH) and its cell says so"""
@@ -2715,8 +2752,9 @@ class VSuite:
                 txt[s] = "n/a" if s in self.V.sources() else "-"
                 continue
             v = vals[s]
-            if v is None or not finite(v):
-                res[s], txt[s] = False, "no value"
+            if v is None or not (valid or finite)(v):
+                why = getattr(self, "err", {}).get(s) if v is None else None
+                res[s], txt[s] = False, "no value" + (f" ({why})" if why else "")
                 continue
             try:
                 res[s] = bool(ok(v))
@@ -2969,6 +3007,13 @@ def vibes_decay(V, S):
             m = {x: T[x].m(q) for x in T}
             ring = ms_db(cut(m[0], o[0], 0, 0.06))
             c = {x: excess_db(cut(m[x], o[x], 0, 0.06), cut(m[0], o[0], 0, 0.06)) - ring for x in (de, 127)}
+            # 48 -> 127 as the aligned difference re NOISE 0 (m_contact_db), each with the two takes' hiss taken off:
+            # the spectral excess (c) had the jack's hiss in NOISE 48's ~10 dB over it (its excess 1.26 x Q's: no
+            # expectation of 0), and the rc-0.9.12 T2 read the jack 1.4-3.0 dB under USB on F3 / A4 / F6 (MISMATCH);
+            # the host with the jack's -92.5 dBFS hiss -0.3..-2.1 dB, the aligned difference +-0.4
+            # (tests/py/test_vibes_noise_contact.py). c stays for the floor flag and the 127 row
+            cf = {x: m_contact_db(m[x], o[x], m[0], o[0], coarse=0.02, px=T[x].pre(q), pr=T[0].pre(q))[0]
+                  for x in (de, 127)}
             kn = {x: knock_db(m[x], o[x], m[0], o[0]) for x in (de, 127)}
             # the floor: two takes of hiss alone leave an excess 3.5 dB under the hiss (E[max(P - 1.26 Q, 0)] =
             # P / 2.26 for exponential bins); a value within 6 dB of it is the jack's hiss, not NOISE (round 1:
@@ -2976,11 +3021,12 @@ def vibes_decay(V, S):
             pr = [T[x].pre(q) for x in T]
             fx = max((10 * np.log10(np.mean(np.asarray(p_, float) ** 2) + 1e-24) for p_ in pr if len(p_) > 2000 and np.any(p_)),
                      default=-240.0) - 3.5 + 6.0
-            return dict(c=c, k=kn, strike=rdb(cut(m[0], o[0], 0.05, 0.3)), note=rdb(cut(m[0], o[0], 1.4, 1.5)),
+            return dict(c=c, cf=cf, k=kn, strike=rdb(cut(m[0], o[0], 0.05, 0.3)), note=rdb(cut(m[0], o[0], 1.4, 1.5)),
                         cfl=c[de] + ring < fx, kfl=kn[de] < fx)
         vals = S.per(nz)
         CC = P["NOISE"]["cc"]
-        S.check(f"NOISE (CC {CC}) contact {de} -> 127", f"key {n}, 0..60 ms", {s: v and v["c"][127] - v["c"][de] for s, v in vals.items()},
+        S.check(f"NOISE (CC {CC}) contact {de} -> 127", f"key {n}, 0..60 ms, aligned re NOISE 0, less the floor",
+                {s: v and v["cf"][127] - v["cf"][de] for s, v in vals.items()},
                 lambda v: v >= 6, ">= +6 dB", level=True, floor={s: bool(v and v["cfl"]) for s, v in vals.items()})
         S.check("NOISE 127 contact re the note", f"key {n}", {s: v and v["c"][127] for s, v in vals.items()},
                 lambda v: v > -35, "> -35 dB (a clear tick)", fmt=lambda v: f"{v:.1f} dB")
@@ -3539,11 +3585,15 @@ def vibes_fx(V, S, stim=None, extra=()):
     # fed back, as Felucca's; host response at DEPTH 80: the peak +2.9 -> +9.3 dB, the notches -62 .. -79 -> -11 ..
     # -17 dB), so the motion stays (vibes: -0.5 dB) and the whole window's spectrum averages the moving peak away
     # (the FM-1's jack: 1.8 dB). Frame by frame, the sweeps in step, the timbre is 3.9 dB apart (2026-10-18)
+    # (the two branches each on its own: motion_f is NaN when no band stands 10 dB over the source's floor 90 % of the
+    # time, which the jack's hiss can do to a notched take; the frame-by-frame branch still judges. The rc-0.9.12 T2
+    # read the jack 'no value' with USB -0.3 / 4.1: a NaN in any of the three voided the whole row)
     S.check(f"PHASER FDBK {nm('PH_FDBK')} 0 vs 127", "DEPTH 80; frame by frame",
             S.per(lambda q: (mot(T[127], q) - mot(T[0], q), FD(T[127], T[0], q), FD(p80, T[P["PH_FDBK"]["de"]], q))),
-            lambda v: v[0] >= 1.5 or apart_of_spread(v[1], v[2]),
+            lambda v: (finite(v[0]) and v[0] >= 1.5) or apart_of_spread(v[1], v[2]),
             "motion >= +1.5 dB or, frame by frame, sqrt(d^2 - spread^2) >= 2 dB and >= the spread (two takes of one "
-            "setting)", fmt=lambda v: f"{v[0]:+.1f} / {v[1]:.1f} dB (spread {v[2]:.1f})")
+            "setting)", fmt=lambda v: (f"{v[0]:+.1f}" if finite(v[0]) else "motion n/a") + f" / {v[1]:.1f} dB (spread {v[2]:.1f})",
+            valid=lambda v: finite(v[1:]))
     T = {k: run(f"phaser-sync-{k.replace('/', '')}", with_(pb127, ("PH_SYNC", sync_idx(k))), ST_LONG) for k in ("1/4", "1/8")}
     S.check(f"PHASER SYNC {nm('PH_SYNC')} 1/8 vs 1/4", "300-3000 Hz re DEPTH 0",
             S.per(lambda q: (phrate(T['1/8'], q, 2, 0.125, 5), phrate(T['1/4'], q, 2, 0.125, 5))),   # 0.25-10 Hz: any BPM
@@ -4154,7 +4204,7 @@ def frac_delay(x, d):
     return np.fft.irfft(X * np.exp(-2j * np.pi * np.arange(len(X)) * d / N), N)[:n]
 
 
-def m_contact_db(mx, ox, mr, orf, a=0.0, b=0.06, fit=(0.1, 0.3), lag_ms=6.0):
+def m_contact_db(mx, ox, mr, orf, a=0.0, b=0.06, fit=(0.1, 0.3), lag_ms=6.0, coarse=0.3, px=None, pr=None):
     """NOISE's contact as the gate measures it (tests/py/test_marimba_controls_audible.py, marimba_scan's P4 host
     numbers): the RMS of take x minus the NOISE 0 take r over a..b s from the strike, re r's own RMS there, both
     rectangular windows. The engine is deterministic apart from NOISE, so once x is aligned on r to a fraction of a
@@ -4162,14 +4212,17 @@ def m_contact_db(mx, ox, mr, orf, a=0.0, b=0.06, fit=(0.1, 0.3), lag_ms=6.0):
     ambiguity, which a lone C6 partial has), then the fraction (+-1 sample, 0.01 steps) where it is least over fit
     (after the contact, the ring alone). The spectral excess before (m_excess_db: a flat-start window, the bins under
     the ring's partials dropped, 1.26 x the ring subtracted) read C6 1.2-1.6 dB low (-35.4 dB on the FM-1, USB and
-    jack, and on the host, where the gate's sample-exact difference is -33.8; C4 -29.7 for -31.9). Returns (dB, lag)"""
+    jack, and on the host, where the gate's sample-exact difference is -33.8; C4 -29.7 for -31.9). coarse: the whole
+    lag's window, -5 ms .. coarse s (a high bar note is near a sine: over 0.3 s F6 took a lag a period off, the
+    strike's rise decides it in 20 ms). px / pr: the takes' pre-rolls, their mean squares (the difference's hiss, in
+    expectation exactly their sum) taken off (floor_sub). Returns (dB, lag)"""
     pad = int(0.02 * FS)
     x = np.asarray(cut(mx, ox, -0.02, 0.4), float)
     y = np.asarray(cut(mr, orf, -0.02, 0.4), float)
     n = min(len(x), len(y))
     x, y = x[:n], y[:n]
     L = int(lag_ms * FS / 1000)
-    a0, a1 = max(L, pad - int(0.005 * FS)), min(n - L, pad + int(0.3 * FS))
+    a0, a1 = max(L, pad - int(0.005 * FS)), min(n - L, pad + int(coarse * FS))
     rr = [np.sum((x[a0 + k:a1 + k] - y[a0:a1]) ** 2) for k in range(-L, L + 1)]
     d0 = -(int(np.argmin(rr)) - L)
     f0, f1_ = pad + int(fit[0] * FS), min(n, pad + int(fit[1] * FS))
@@ -4178,6 +4231,8 @@ def m_contact_db(mx, ox, mr, orf, a=0.0, b=0.06, fit=(0.1, 0.3), lag_ms=6.0):
     xs = frac_delay(x, d)
     w0, w1 = pad + int(a * FS), pad + int(b * FS)
     e = np.mean((xs[w0:w1] - y[w0:w1]) ** 2)
+    if px is not None and pr is not None and len(px) > FS // 50 and len(pr) > FS // 50 and np.any(px) and np.any(pr):
+        e = floor_sub(e, float(np.mean(np.asarray(px, float) ** 2) + np.mean(np.asarray(pr, float) ** 2)))
     return float(10 * np.log10(e + 1e-30) - 10 * np.log10(np.mean(y[w0:w1] ** 2) + 1e-30)), float(d)
 
 
