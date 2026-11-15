@@ -72,6 +72,7 @@ firmware:
 | [The Firmware Hub](https://thefirmwarehub.com/#fw-frodhes) | The FM-1's firmware catalogue: install and update from one place |
 | [mutant.cloud](https://mutant.cloud/#/p/frodhes) | Install over USB-MIDI in the browser, no account needed |
 | [fm1-editor.com](https://fm1-editor.com/firmware/#frodhes) | The community's firmware list with pictures |
+| altstrument: [FM-1 and SMK-37](https://altstrument.org/firmware/m-vave-fm-1/frodhes), [Move](https://altstrument.org/firmware/ableton-move/frodhes) | The community catalogue of alternative firmware and modules, with every Frodhes version |
 | [Web emulator](https://leonardomirabal.github.io/frodhes/) | Play Frodhes in the browser before you install it |
 
 Questions, bugs or ideas: [issues](https://github.com/leonardoMirabal/frodhes/issues). The community's own place is
