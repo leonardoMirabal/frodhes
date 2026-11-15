@@ -273,13 +273,16 @@ def test_empty_slot_and_errors():
         f.close()
 
 
-def test_cli(fake):
+def test_cli(fake, tmp_path):
     tool = os.path.join(ROOT, "tools", "move_ws.py")
-    p = subprocess.run([sys.executable, tool, "preset", "14", "--url", fake.url], capture_output=True, text=True)
+    env = dict(os.environ, FRODHES_LOCK_ROOT=str(tmp_path))   # (its MOVE lock: not the real one a device run holds)
+    env.pop("FRODHES_LOCK_MOVE", None)
+    p = subprocess.run([sys.executable, tool, "preset", "14", "--url", fake.url], capture_output=True, text=True,
+                       env=env)
     assert p.returncode == 0, p.stdout + p.stderr
     assert json.loads(p.stdout)["preset_name"] == "F15"
     p = subprocess.run([sys.executable, tool, "info", "--url", "ws://127.0.0.1:9/ws/remote-ui", "--timeout", "1"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, env=env)
     assert p.returncode == 2 and "schwung" in p.stdout
 
 

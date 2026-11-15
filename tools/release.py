@@ -851,8 +851,6 @@ class Release:
         d = rec.get("fm1", rec)                        # (a section per target; the old flat form is the FM-1's)
         pending = [f"{k}: verdict {sec.get('verdict')!r}" for k, sec in (("fm1", d), ("move", rec.get("move") or {}))
                    if "verdict" in sec and sec.get("verdict") != "PASS"]
-        if pending and not self.a.dry_run:             # a draft record (written before the runs end) never releases
-            raise Stop(f"--device-done {self.a.device_done}: not passed ({'; '.join(pending)})")
         if self.has_move():
             self.move_device_done(rec.get("move"))
         if d.get("sha256") != self.sha:
@@ -863,6 +861,8 @@ class Release:
         if missing:
             raise Stop(f"--device-done {self.a.device_done}: tiers {done or '(none recorded)'} do not cover the needed "
                        f"{need} (missing {', '.join(missing)}); " + self.tiers()["lines"][0])
+        if pending and not self.a.dry_run:             # a draft record (written before the runs end) never releases
+            raise Stop(f"--device-done {self.a.device_done}: not passed ({'; '.join(pending)})")
         return ((f"DRY-RUN, a real run stops here: the record is not passed ({'; '.join(pending)}). " if pending else "")
                 + f"FM-1: tested before the release on this exact build (sha256 equal), tiers {'+'.join(done)} "
                 f"(needed {'+'.join(need)}): " + "; ".join(d.get("runs", [])))
