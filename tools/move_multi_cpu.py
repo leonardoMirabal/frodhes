@@ -131,11 +131,8 @@ def slot_modules(w):
     return m
 
 
-RING_BACKOFF_S = (0.3, 0.6, 1.2, 2.4, 4.8)     # the pauses before each new try after "ring full"
-
-
-def ring_full(e):
-    return isinstance(e, move_ws.SchwungError) and "ring full" in str(e)
+RING_BACKOFF_S = mh.RING_BACKOFF_S             # the pauses before each new try after "ring full" (move_hil's)
+ring_full = mh.ring_full
 
 
 def paced(fn, sleep=time.sleep, backoff=RING_BACKOFF_S, log=None):

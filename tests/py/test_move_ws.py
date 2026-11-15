@@ -66,6 +66,8 @@ class FakeSchwung:
                                                          # a build before)
         self.cut_sets = []                               # ([n, ...]: after n more set_params, the socket cut without a
         #                                                  close frame, once per entry: a drop in the middle of a restore)
+        self.ring = set()                                # (set_param numbers (from 1) refused "ring full" and lost,
+        self.nset = 0                                    #  as the manager's web set ring does when it is full)
         self.hist, self.conns = [], []                                   # (the order of preset switches and takes: host_fetch's state)
         self.server = serve(self.handle, "127.0.0.1", 0)
         self.url = "ws://127.0.0.1:%d/ws/remote-ui" % self.server.socket.getsockname()[1]
@@ -107,6 +109,10 @@ class FakeSchwung:
                         return
                 if self.refuse:
                     ws.send(json.dumps({"type": "error", "message": "set_param failed: busy"}))
+                    continue
+                self.nset += 1
+                if self.nset in self.ring:
+                    ws.send(json.dumps({"type": "error", "message": "set_param failed: web param set ring full"}))
                     continue
                 if m["key"] == "synth:dev_play":         # (the plugin's player, as move_bridge.h parses it)
                     v = m["value"].split()
@@ -654,5 +660,29 @@ def test_state_restore_after_a_dropped_socket(monkeypatch, drops):
             assert len(ks.report["dropped"]) == 1 and not f.cut_sets
         else:
             assert ks.report["verdict"].startswith("FAIL: the state was not restored"), ks.report
+    finally:
+        f.close()
+
+
+@pytest.mark.parametrize("refused", [1, 3, 99])
+def test_state_restore_paced_on_ring_full(monkeypatch, refused):
+    """the Move, 2026-11-15 (after move_jack): Schwung's web set ring refused a restore write, "web param set ring
+    full", and the restore FAILED. Each ring full now pauses (RING_BACKOFF_S) and what still differs is written
+    again: PASS, the pauses in the report. A ring that stays full past the last pause still fails, named"""
+    import move_hil as mh
+    monkeypatch.setattr(mh, "RING_BACKOFF_S", (0.0,) * 5)
+    f = FakeSchwung(full=True)
+    try:
+        before = dict(f.settings)
+        with mh.KeptState(f.url, 0, out=lambda s: None) as ks:
+            f.settings.update(p_dl_fdbk="127", p_ph_fdbk="127", p_rv_decay="127")
+            f.nset = 0
+            f.ring = set(range(6, 6 + refused))          # (after the 4 dev / HQ keys and 1 of the 3 params)
+        if refused < 99:
+            assert ks.report["verdict"] == "PASS" and f.settings == before, ks.report
+            assert ks.report["ring"] and len(ks.report["ring"]) <= len(mh.RING_BACKOFF_S), ks.report
+        else:
+            assert ks.report["verdict"].startswith("FAIL: the state was not restored") and \
+                "ring full" in ks.report["verdict"], ks.report
     finally:
         f.close()
