@@ -736,7 +736,12 @@ def det_step(x, fs, ons, offs, lag=0.0, widen=0.0, step_db=12.0, win_ms=1000 * S
     same moment (same sign, within STEP_AGREE dB, its louder window over STEP_JACK_FLOOR) is the music's own and goes
     to own, anywhere in the take (rc3 rhodes-worst1, 2026-11-09: the jack +15 dB at 2.780 s, USB +13 dB there, a delay
     echo under the tremolo; USB's own detector judges that step on USB); a jack-path step (the codec, the DAC, the
-    output stage) is on the jack alone and stays an event.
+    output stage) is on the jack alone and stays an event. The jack carries USB's left channel only: in the first
+    period the jack's step is also held against USB's left channel (same sign as the stereo step, the jack within
+    STEP_AGREE of the left's): a stereo modulation (TREM PAN, the delay's sides) can move the right channel more, and
+    the jack then agrees with the left, not with the pair's mean (the 0.9.12 final crackle, rhodes-worst2 0.680 s:
+    USB +13 dB, the left +8, the right +13.5, the jack +7.9; a lost or repeated USB packet takes both channels, so
+    the left matching the jack proves the stream there).
     ons / offs on the recording's clock (map_clock), or the event clock and lag"""
     x = np.asarray(x, float)
     p = (x ** 2).mean(axis=1) if x.ndim == 2 else x ** 2
@@ -745,6 +750,8 @@ def det_step(x, fs, ons, offs, lag=0.0, widen=0.0, step_db=12.0, win_ms=1000 * S
     if n < 8:
         return []
     r = 10 * np.log10(p[:n * w].reshape(n, w).mean(axis=1) + 1e-3) - 20 * np.log10(32767)
+    rl = (10 * np.log10((x[:n * w, 0] ** 2).reshape(n, w).mean(axis=1) + 1e-3) - 20 * np.log10(32767)
+          if x.ndim == 2 else r)
     if periods:                                            # (the same 20 ms level every 5 ms: one period back)
         h = max(1, int(0.005 * fs))
         cs = np.concatenate([[0.0], np.cumsum(p)])
@@ -770,11 +777,12 @@ def det_step(x, fs, ons, offs, lag=0.0, widen=0.0, step_db=12.0, win_ms=1000 * S
         if periods and ref is not None and len(ons) and any(i * w / fs - P < ons.min() for P in periods):
             lv = ref(b * w / fs, i * w / fs, w / fs)       # (a modulation's first period: the jack decides)
             if lv is not None:
-                dj = lv[1] - lv[0]
-                if dj * d > 0 and abs(dj - d) <= STEP_AGREE and max(lv) > STEP_JACK_FLOOR:
+                dj, dl = lv[1] - lv[0], rl[i] - rl[b]
+                if max(lv) > STEP_JACK_FLOOR and dj * d > 0 and (abs(dj - d) <= STEP_AGREE or
+                                                                 (dl * d > 0 and abs(dj - dl) <= STEP_AGREE)):
                     if own is not None:
-                        own.append(((b + 1) * w, f"level {d:+.0f} dB, the jack {dj:+.0f} dB (a modulation's first "
-                                                 f"period)"))
+                        own.append(((b + 1) * w, f"level {d:+.0f} dB (the left {dl:+.0f}), the jack {dj:+.0f} dB (a "
+                                                 f"modulation's first period)"))
                     continue
         if agree is not None:
             lv = agree(b * w / fs, i * w / fs, w / fs)     # (USB at the same moment)
