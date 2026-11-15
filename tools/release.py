@@ -102,6 +102,11 @@ MOVE_RECORD = "Move package sha256"            # the release commit's line (tool
 MOVE_ONLY = ("move/", "firmware/src/hq/")
 # and the Apache-2.0 text that goes with the 3 JieLi SDK files inside every .fwsc (Apache-2.0 section 4)
 LICENCE_ASSET = "Apache-2.0.txt"
+# the desktop plugin's packages (release.yml, tools/plugin_asset.sh) and the Akai MPC plugin, versioned and fixed
+# (release.yml's job mpc): every release carries them (tools/release_assets.sh checks the draft, step 9 the release)
+PLUGIN_ASSETS = ("frodhes-plugin-macos.pkg", "frodhes-plugin-macos.zip", "frodhes-plugin-windows.zip",
+                 "frodhes-plugin-linux-x86_64.zip", "frodhes-plugin-linux-aarch64.zip")
+MPC_ASSETS = ("frodhes-mpc.zip", "frodhes-{v}-mpc.zip")
 LATEST_DL = f"https://github.com/{REPO}/releases/latest/download/{STABLE}"
 PY = os.path.join(".local", "venv", "bin", "python")
 CPU_LIMIT_US = 4500
@@ -457,7 +462,9 @@ class Release:
         if frags:
             try:
                 # the Move's install route only when the release ships its package (step 4 decided; None: not yet)
-                text = changes.assemble(self.ver, frags, ROOT, move=self.has_move() and self.move_ok is not False)
+                # the plugin's routes always: release.yml fails without the plugin packages (tools/plugin_asset.sh)
+                text = changes.assemble(self.ver, frags, ROOT, move=self.has_move() and self.move_ok is not False,
+                                        plugin=True)
             except changes.Bad as e:
                 problems.append(str(e))
         elif not os.path.exists(os.path.join(ROOT, notes)):
@@ -619,7 +626,8 @@ class Release:
         want_move = bool(self.move_recorded or self.move_ok or (self.a.verify_only and set(move_names) & set(names)))
         missing = [n for n in (versioned, STABLE,
                                *SMK_ASSETS, *(smk_versioned(n, self.ver) for n in SMK_ASSETS),
-                               LICENCE_ASSET, *(move_names if want_move else ()))
+                               LICENCE_ASSET, *PLUGIN_ASSETS, *(n.format(v=self.ver) for n in MPC_ASSETS),
+                               *(move_names if want_move else ()))
                    if n not in names]
         if missing or r.get("isDraft"):
             raise Stop(f"{r['url']}: assets {names} (missing {missing}), draft {r.get('isDraft')}")

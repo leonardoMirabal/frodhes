@@ -34,6 +34,19 @@ def test_any_missing_asset_fails(tmp_path):
         assert r.returncode == 1 and n in r.stderr, n
 
 
+def test_a_retired_c1_asset_fails(tmp_path):
+    for n in ("frodhes-c1.fwsc", "frodhes-%s-c1.fwsc" % V):   # since 0.9.12 the FM-1 has one package, frodhes.fwsc
+        r = check(tmp_path, FULL + [n])
+        assert r.returncode == 1 and n in r.stderr, n
+
+
+def test_release_yml_ships_no_c1_asset():
+    run = "\n".join(s.get("run", "") for s in yaml.safe_load(open(os.path.join(
+        ROOT, ".github", "workflows", "release.yml")))["jobs"]["release"]["steps"])
+    assert "build/publish/frodhes-c1" not in run and "-c1.fwsc build/publish" not in run
+    assert 'cp "build/frodhes-$V-c1.fwsc" "build/frodhes-$V.fwsc"' in run     # the two-core build as frodhes.fwsc
+
+
 def test_release_yml_checks_before_publishing():
     st = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "release.yml")))["jobs"]["release"]["steps"]
     names = [s.get("name", "") for s in st]

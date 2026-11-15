@@ -5,6 +5,7 @@
 # its plugin packages). NAMES is a file with one asset name per line; without it, the assets of the draft vX.Y.Z
 # (gh release view). Required: the firmware packages (versioned and fixed names), the Move package, the 5 plugin
 # packages, the MPC plugin (versioned and fixed names), the licence, and every releases/latest/download/<name> that README.md, docs/*.md or web/ links.
+# Refused: the retired two-core asset names frodhes-c1.fwsc and frodhes-X.Y.Z-c1.fwsc.
 set -eu
 V=$1
 NAMES=${2:-}
@@ -24,6 +25,14 @@ miss=""
 # shellcheck disable=SC2086  # split the name lists into words on purpose
 for n in $(printf '%s\n' $REQ $LINKED | sort -u); do
     grep -qxF "$n" "$NAMES" || miss="$miss $n"
+done
+# 0.9.10-0.9.11's second FM-1 package: since 0.9.12 frodhes.fwsc is the two-core build and the only FM-1 package
+# (tools/release.py RETIRED)
+for n in "frodhes-c1.fwsc" "frodhes-$V-c1.fwsc"; do
+    if grep -qxF "$n" "$NAMES"; then
+        echo "release_assets: v$V carries the retired asset $n (the FM-1 has one package, frodhes.fwsc); not published" >&2
+        exit 1
+    fi
 done
 if [ -n "$miss" ]; then
     echo "release_assets: v$V is missing:$miss; not published" >&2
