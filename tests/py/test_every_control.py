@@ -1144,7 +1144,7 @@ def arp_steps(lines, end=4000):
 @case("TEMPO-BPM")
 def _bpm():
     """BPM (TEMPO K1): the beat. The arpeggiator's 1/8 steps: 250 ms at 120 BPM, 375 ms at 80; within 2 %"""
-    w, s = arp_steps(goto("TEMPO", 50) + ["150 turn 2 -40"])
+    w, s = arp_steps(goto("TEMPO", 50) + ["150 turn 2 -80"])
     assert w.state(2000)["bpm"] == "80.0", w.state(2000)["bpm"]
     return -abs(s - 375) / 375, -0.02, f"{s:.0f} ms a step"
 

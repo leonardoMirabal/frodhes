@@ -83,7 +83,7 @@ def test_external_clock_writes_nothing_and_the_hand_tempo_comes_back():
     write. A tempo set by hand before (TEMPO page BPM 108) is saved; after the clock and a power cycle the tempo is
     that 108, not the clock's 140"""
     fl = tp.flash_file("as-clock")
-    lines = ["50 btn 7", "100 turn 2 -12", "200 dump"]               # TEMPO: BPM 108, saved ~2 s later
+    lines = ["50 btn 7", "100 turn 2 -24", "200 dump"]               # TEMPO: BPM 108, saved ~2 s later
     lines += ["4000 midi 0xFA 0 0"] + clock(4000, 34000, 100) + clock(34000, 64000, 140) + ["64000 midi 0xFC 0 0"]
     lines += ["63000 dump", "66000 dump"]
     r = run("as-clock", lines, 68000, flash=fl)
@@ -99,7 +99,7 @@ def test_external_clock_writes_nothing_and_the_hand_tempo_comes_back():
 def test_tap_tempo_is_kept():
     """TAP (PLAY, three taps 500 ms apart: 120 BPM from 108): a tempo set by hand, saved and back after a power cycle"""
     fl = tp.flash_file("as-tap")
-    run("as-tap-1", ["50 btn 7", "100 turn 2 -12", "3000 btn 12", "3500 btn 12", "4000 btn 12", "4100 dump"], 7000,
+    run("as-tap-1", ["50 btn 7", "100 turn 2 -24", "3000 btn 12", "3500 btn 12", "4000 btn 12", "4100 dump"], 7000,
         flash=fl)
     s = tp.boot("as-tap-2", fl, end=300).state(100)
     assert s["bpm"] == "120.0", s["bpm"]

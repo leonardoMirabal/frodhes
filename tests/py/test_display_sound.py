@@ -241,7 +241,7 @@ def test_delay_time(eng):
     for v, sync in cases:
         p = [cc(30, 88, 48), cc(31, 89, 100), cc(32, 26, 50), cc(33, 90, v)]
         if sync is not None:
-            p += [cc(34, 25, -(-sync * 128 // 14)), "40 btn 7", "60 turn 2 -20"]   # TEMPO page, BPM 120 -> 100
+            p += [cc(34, 25, -(-sync * 128 // 14)), "40 btn 7", "60 turn 2 -40"]   # TEMPO page, BPM 120 -> 100
         w = run(f"ds-dly{v}-{sync}-{eng}", ENGINES[eng] + CLEAN + SHORT + p + ["150 dump"] + note(200, 72, 110, 30), 5500)
         st = w.state(150)
         txt = st[f"card.{PG['DELAY']}.2"]
@@ -363,7 +363,7 @@ def test_tempo_and_sync(eng):
     pre = ENGINES[eng] + CLEAN + PEDAL
     ref = run(f"ds-sync-ref-{eng}", pre + restruck(CHORD, t0=2600, n=4), 10500)
     clock = [f"{300 + i * 25} midi 0xF8 0 0" for i in range(24 * 8)]   # 25 ms a pulse: 100 BPM (smoothed in)
-    cases = [("knob", ["40 btn 7", "50 turn 2 -20"], 3), ("tap", ["40 btn 7"] + [f"{60 + 600 * i} btn 12" for i in range(4)], 6),
+    cases = [("knob", ["40 btn 7", "50 turn 2 -40"], 3), ("tap", ["40 btn 7"] + [f"{60 + 600 * i} btn 12" for i in range(4)], 6),
              ("clock", ["40 btn 7"] + clock, 9)]
     for how, lines, si in cases:
         mode = 120 if eng == "vibes" and how == "clock" else 80            # VIBES: the MOTOR once, synced
@@ -400,7 +400,7 @@ def test_arp_rate(eng):
     """ARPEGGIO RATE: at BPM 100 the notes come every note value (1/8 = 300 ms ...): the sound repeats at that rate,
     and MIDI out sends a note each step"""
     for r in (1, 3, 4):
-        w = run(f"ds-arp{r}-{eng}", ENGINES[eng] + CLEAN + SHORT + ["40 btn 7", "50 turn 2 -20", cc(60, 52, 1), cc(61, 53, r),
+        w = run(f"ds-arp{r}-{eng}", ENGINES[eng] + CLEAN + SHORT + ["40 btn 7", "50 turn 2 -40", cc(60, 52, 1), cc(61, 53, r),
                                                                   cc(62, 55, 50), "70 btn 10", "80 dump"]
                 + note(300, 60, 100, 6000), 6500)
         st = w.state(80)
@@ -419,7 +419,7 @@ def test_swing(eng):
     notes), played with QUANT 1/8 at BPM 100: the off-beat notes come at SWING % of the beat (50 % = straight), in
     the sound (its level folded on the beat: the off-beat attack's phase after the on-beat's) and on MIDI out"""
     for s in (50, 62, 70):
-        lines = ["10 btn 7", "20 turn 2 -20", "30 btn 11",                          # BPM 100; SEQ = SEQUENCER
+        lines = ["10 btn 7", "20 turn 2 -40", "30 btn 11",                          # BPM 100; SEQ = SEQUENCER
                  cc(40, 61, 1), cc(41, 62, 3), cc(42, 63, 127)]                     # BARS 1, QUANT 1/16, step REC
         for i in range(8):
             lines += note(100 + 40 * i, 72, 100, 15) + [f"{100 + 40 * i + 25} turn 1 1"]   # ALGORITHM: skip a 16th
