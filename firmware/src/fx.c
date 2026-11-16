@@ -743,7 +743,7 @@ FR_RAM2 __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n,
         if (dr_gl >= 0 && d != dr_dl) d = dr_dl + clampi(d - dr_dl, -DR_DSTEP, DR_DSTEP);
         dr_dl = d;
         g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
-        if (d > 16) g = 4096 + (int32_t)((((int64_t)(g - 4096)) * (95 + d)) / 111);
+        if (d > 16) g = 4096 + ((g - 4096) * (95 + d)) / 111;   /* (32 bits: g - 4096 <= 48387, x 222 < 2^24) */
         k = 32000 - d * 95;
         mk = ((30000 - d * 120) * DR_MU[row]) >> 12;
         mk = (mk * (int32_t)FX_DRV_LVL[d]) >> 15;
@@ -823,7 +823,8 @@ FR_RAM2 __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n,
     if (dr_gl >= 0 && d != dr_dl) d = dr_dl + clampi(d - dr_dl, -DR_DSTEP, DR_DSTEP);
     dr_dl = d;
     g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
-    if (d > 16) g = 4096 + (int32_t)((((int64_t)(g - 4096)) * (95 + d)) / 111);   /* above 16 the gain rises to ~18x
+    if (d > 16) g = 4096 + ((g - 4096) * (95 + d)) / 111;   /* above 16 the gain rises to ~18x (32 bits: g - 4096 <=
+                                                       * 127^2 x 2 x 24 / 16 = 48387, x 222 < 2^24; 0.9.13, the review D7)
                                                        * at the top (was ~9x: a single note never reached the knee, TODO #4;
                                                        * ~36x was a distortion, the user wants an overdrive); <= 16 (the
                                                        * presets' low drive) exactly as before */
