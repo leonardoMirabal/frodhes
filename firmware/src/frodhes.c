@@ -1961,6 +1961,16 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "wavn")) snprintf(v, n, "%u", wav_n);                   /* (host.c: the frames rendered) */
     else if (!strcmp(key, "bend")) snprintf(v, n, "%d", (int)eng_bend14 - 8192);   /* the pitch bend (-8192 .. 8191) */
     else if (!strcmp(key, "rtpend")) snprintf(v, n, "%u", (unsigned)rh_rt_pend);   /* voices still to retune (rhodes.c) */
+    else if (!strcmp(key, "rtbend")) {                 /* the bend each voice slot is tuned to (Q30 2^(c/1200) - 1,
+                                                         * rhodes.c rh_voice_t tb), "-" for a silent one, comma-separated */
+        uint32_t q, o = 0;
+        v[0] = 0;
+        for (q = 0; q < RH_NV && o + 14u < n; q++) {
+            const char *sep = q ? "," : "";
+            if (rv[q].alive) o += (uint32_t)snprintf(v + o, n - o, "%s%d", sep, (int)rv[q].tb);
+            else o += (uint32_t)snprintf(v + o, n - o, "%s-", sep);
+        }
+    }
     else if (!strcmp(key, "rtbusy")) snprintf(v, n, "%d", rh_rt_pend != 0u);        /* a retune still under way */
     else if (!strcmp(key, "page")) snprintf(v, n, "%s", PAGE_TITLE[ui_page]);
     else if (!strcmp(key, "hint")) snprintf(v, n, "%s", page_hint(ui_page));

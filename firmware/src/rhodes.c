@@ -181,6 +181,9 @@ typedef struct {
 #ifdef DINGHY_PLUGIN
     uint16_t pdly;                             /* the plugin: samples before the pulse starts (fr_ofs_apply) */
 #endif
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    int32_t tb;                                /* (host: the bend the voice is tuned to; frodhes.c "rtbend") */
+#endif
 } rh_voice_t;
 #ifdef RH_VMAP
 #define RH_IS_MAP(v) ((v)->vm)
@@ -385,7 +388,9 @@ static int32_t rh_bend_used RH_OWN_SECTION(".bss.rh_bend_u");         /* ISR: th
 /* the retune spread (rh_retune): the voices still to retune to rh_bend_used, and the round-robin cursor */
 static uint32_t rh_rt_pend RH_OWN_SECTION(".bss.rh_rt_pend");
 static uint32_t rh_rt_cur RH_OWN_SECTION(".bss.rh_rt_cur");
-#define RH_RT_PER ((RH_NV + 3u) / 4u)                                     /* voices retuned per block: a quarter */
+#define RH_RT_PER RH_NV                  /* voices retuned per block: every one (0.9.13, the audio review C3: a quarter a
+                                         * block left each voice up to 4 blocks behind the bend, so a fast bend over a
+                                         * chord came in ~23-cent steps with ~20 cents between its notes) */
 
 /* ISR-written summaries (one writer each) */
 static volatile uint32_t rh_active_bits, rh_held_bits, rh_quiet_blocks;
@@ -1394,6 +1399,9 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
     if (v->vm) { vx = rh_vm(0u, n - RH_KEY_LO, vel); vg = rh_vm_g(n - RH_KEY_LO, vel); }   /* MAP: X, G x rh_dyn (Q11) */
 #endif
     v->k = k; v->tn = rh_tune_t;
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    v->tb = rh_bend_t;
+#endif
     for (m = 0; m < RH_NM; m++) {
         rh_ms_t *s = &v->m[m];
         const rh_mode_t *km = &k->m[m];
@@ -2033,10 +2041,10 @@ static void rh_shed(void)                                 /* overload: fade the 
 
 /* the bend moved: new resonator frequencies for the sounding voices (genkigenki's rh_retune, PR #3, for the SMK-37's
  * pitch wheel; here for MIDI pitch bend, engine.c eng_bend_set). The decay is kept (eps depends on the decay only); a
- * damper crossfade under way goes on from the new frequency. Spread: a block retunes at most RH_RT_PER sounding voices
- * (a quarter), round-robin, so every voice reaches the bend within 4 blocks of its last change and the worst block
- * pays a quarter of the whole retune (a voice born meanwhile starts at the bend in rh_init). Runs only in a block
- * where the bend changed or voices are still pending. */
+ * damper crossfade under way goes on from the new frequency. Every sounding voice in the block the bend moved (RH_RT_PER,
+ * 0.9.13; 0.9.5 - 0.9.12 spread it, a quarter of the voices a block round-robin: with more than 4 voices sounding they
+ * lagged the bend and each other by up to 4 blocks). A voice born meanwhile starts at the bend in rh_init. Runs only
+ * in a block where the bend changed (or voices still pending: RH_RT_PER under RH_NV, an experiment's) */
 /* TUNE and DECAY / RELEASE are the note-on's (0.9.13, the audio review C2): TUNE, DECAY and RELEASE act on new notes,
  * so a bend retunes from the TUNE the voice started with (v->tn) and keeps its pair (E, eps) on the note-on's decays
  * (s->eps0 / eps1, the eps it runs with; E from a DECAY turned since was a pair that did not match) */
@@ -2053,6 +2061,9 @@ static void __attribute__((noinline)) rh_retune(void)
         if (!v->alive) continue;
         done++;
         int32_t t = v->tn + b + (int32_t)(((int64_t)v->tn * b) >> 30);   /* rh_tune_now: its TUNE, the latched bend */
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+        v->tb = b;
+#endif
         for (m = 0; m < RH_NM; m++) {
             rh_ms_t *s = &v->m[m];
             const rh_mode_t *km = &v->k->m[m];

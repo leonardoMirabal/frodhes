@@ -86,13 +86,14 @@ def test_known_over_is_current():
 
 def test_predictions():
     """the numbers the release plan quotes (tools/cpu_budget.py prints the whole table)"""
-    want = {("rhodes", 8, False): 3408, ("rhodes", 8, True): 3438, ("rhodes", 9, False): 3631,
-            ("rhodes", 9, True): 3661, ("rhodes", 10, False): 3854, ("rhodes", 10, True): 3884,
-            ("vibes", 9, False): 4026, ("vibes", 9, True): 4056, ("vibes", 10, False): 4293, ("vibes", 10, True): 4323,
-            ("marimba", 9, False): 3990, ("marimba", 9, True): 4020, ("marimba", 10, False): 4253,
-            ("marimba", 10, True): 4283}
+    want = {("rhodes", 8, False): 3408, ("rhodes", 8, True): 3532, ("rhodes", 9, False): 3631,
+            ("rhodes", 9, True): 3755, ("rhodes", 10, False): 3854, ("rhodes", 10, True): 3978,
+            ("vibes", 9, False): 4026, ("vibes", 9, True): 4150, ("vibes", 10, False): 4293, ("vibes", 10, True): 4417,
+            ("marimba", 9, False): 3990, ("marimba", 9, True): 4114, ("marimba", 10, False): 4253,
+            ("marimba", 10, True): 4377}
     got = {k: cb.predict(T, k[0], k[1], bend=k[2])["whole"] for k in want}
-    # (a device run that updates tools/cpu_costs.json moves these: update them with it; bending: the spread retune;
+    # (a device run that updates tools/cpu_costs.json moves these: update them with it; bending: the retune of every
+    # voice, 0.9.13's bend_us 124 (the spread one's 30 before);
     # est_costs_us: + 51, the reverb's half-bands, rev-upsample; + 12, the 48 kHz knee, uac_knee; + 5, the jack's 24 bits, master24;
     # + 18, the dither at the cut to Q15, dither)
     assert got == want, got
