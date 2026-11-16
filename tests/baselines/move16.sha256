@@ -1,6 +1,6 @@
 # Gate M (tools/gate_m.py --save): the MIDI-driven renders the Move's 16 voices change against
 # renders.sha256 (the host build at the Move's voice count), then the entries that stay host-only.
-b63925743d2212147a81a6246ca1ab5b7c177c2d3ab81ae27af40304894aab96  fx/cho
+85b1abcd88b21cd0e6b2425e17281295f33f2f32efd264e1ec41e3c874b12532  fx/cho
 5bbf8e6de4a927669a4d13f66a87dec531d12a7e013b50b40b479ac6f73c2d04  fx/comp
 e98a7c9351c6a626c651169169824e24ee3120619bc236154cbd70d45075da2b  fx/dl_ana
 5d9c8e1dbe53ef6495f39d9dce8bf70eb0196da07b8d99edbb3f44d3f8309bbe  fx/filt110
@@ -12,7 +12,7 @@ e98a7c9351c6a626c651169169824e24ee3120619bc236154cbd70d45075da2b  fx/dl_ana
 dffecf36fc206188033505456f532222cea89fb72e0e8cdf8181b6b151e266ce  fx/filt90
 e1fa0ce43c80dd241ba5df90c51182dbde4e19a90ef347405329f4ce3324bb2c  fx/heavy
 654de25dfbad1605c8428a4c89fa111a6ce0cdac1764f9a26b25d17c3ffb8a32  fx/heavy_cho
-378abe58be92ce13d806e654f77c61888fd6452468d08b03694eef6d20cc1adc  fx/m_cho
+03603c8df9b939b9d84c35b9c30c97497265dd015fe07be0aaf072a14656342a  fx/m_cho
 7258e3f2877c2f550794870fbd9cd74bbd3a407a2b1e8dae9101444ce04b4765  fx/m_comp
 fb95e01ea164e38992cff0ca79a0a5052aa6ea5e6ac43f1efacb791f40f4a357  fx/m_dl_ana
 9526d38c1e37ffe95413164ab45b5a7492898a7a51bc56a30a6a94bd9c2eb627  fx/m_filt110
@@ -36,7 +36,7 @@ e4047bf059163b6dbc2c898cc7f37750a7356e9aa4a61c8cbfa119e97ffeff47  fx/ph_fb
 ff941778034a91a9f3c07105e0c97624530ba244b598e5cf04eeeb7d2042519e  fx/rev32
 65c2a1cf0ded967d13a11a7033e8170d6cb9dcd244c6c88ed7d9dfeab31f99a4  fx/trem_am
 a8d2d888296a9e5617287dfd373a6084f334ecc7f0189084d9ac20efb0f58ea8  fx/trem_pan
-1ed7b97e877ee1a6ca0a1eee766488d7c3eb5012a7750656ca3848545ef10d8e  fx/v_cho
+b05585c84f578a2b59e52ce2b1a480a5cce30d1238d868e43281c2c2aa9235ed  fx/v_cho
 f51f1de570944689cfccbc0fbc8425a9308d22a371467465065b6939e72ef301  fx/v_comp
 224339f22bda2fc5fbade3483ddcba077fb7cd3677d9bb4584f613d1dcf1462c  fx/v_dl_ana
 759710f3e310b9b42f86cf0206f4cab9c8c292b7a7bbb5808273cd6bafedd005  fx/v_filt110
@@ -59,12 +59,12 @@ b89683c98d99b1a97638cc2543f942b7bdcf8c44388ff87346a0a4575cc7b135  scripts/bar_cc
 1560adfcab97afc1bc82d463db2444c7d41ae873f4bd56bdb5526b1902abd484  scripts/demo
 768ef3d8d9b4c827d12bf9eea2876e28e536ec872d7987e94c88e3389a624a1d  scripts/drive_kernels
 2c40be57c8d5de4c9fcb7dff442e06e901fe15de97e865b7d94ab0b53c61a9a3  scripts/drive_ohcd
-611e22bc99901106a4bc3a2b1f7401d8a1a2867b1c3abeb136c8918ce8cc218a  scripts/drive_silence
+2ec4a1ab6e6adb89cb92ebfc34d808a90acc8c4bd348047bc984a6fcc787318f  scripts/drive_silence
 2ba0c85c02a07811fd9c1b14ef67bd356fef7adf598063116bae259a77ef0d00  scripts/fx_slow_paths
 6abd0025df61693b37de280329c03bfebe0488ded6caf154dc9038a9fb7dede7  scripts/marimba
 c5f8da81713d4f5d0ef2fa6d7beea61c346359230deff87f00265143506e39c8  scripts/rev_cc95
 35a7756bea12c1f9c7b7bff63fc512f6abb1d30846ce82e141da37cff4efb5d8  scripts/rev_types
-d4a937343714306f369a9ad0b63ed51b230152477aa22787b9914b02cf50fe62  scripts/rhodes_paths
+072a253fa7fde07ea4634e5012f38ff539470c7f2599970c21734f77e0cec4ad  scripts/rhodes_paths
 d5f292946ce9130fe2a805ca554f1f7bcf295b93cb90f96f1bdfda4c9cd71da6  scripts/rhodes_steal_release
 f7da7972c61de71ed893c1990fb51cfce8c53938ff4248335b94f594cf6b6094  scripts/vibes
 ac0e75b4830af347a1f72a1fa8ac379f0c7c3222db45d03bb67ed705e4a2d157  scripts/vibes_motor
@@ -76,8 +76,8 @@ aa8af4a32a5bf1e426cd4c18623b319472960d3cda589cf78c25ad2031c8644d  scripts/vibes_
 # host-only scripts/arp_gate_snap: FM-1 input lines: btn, turn
 # host-only scripts/autosave_setup: FM-1 input lines: btn, turn
 # host-only scripts/battery: FM-1 input lines: btn
-# host-only scripts/bpm_snap: FM-1 input lines: btn, tempo, turn
 # host-only scripts/bend: FM-1 input lines: btn, turn, usblink
+# host-only scripts/bpm_snap: FM-1 input lines: btn, tempo, turn
 # host-only scripts/burst: FM-1 input lines: keys
 # host-only scripts/buttons: FM-1 input lines: btn, turn
 # host-only scripts/clock: the FM-1 sequencer / arpeggiator / chords (CC 43, 60, 61, 63): not on the Move, which has its own (the user, 2026-10-28; move/move_bridge.h MB_CC_DROP)
