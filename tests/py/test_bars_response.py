@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""RESPONSE (CC 40) on the bar engines (bars.c bar_lt_g, 0.9.10): the electric piano's level map. FULL (A) leaves VIBES
-and MARIMBA as they were; LIGHT (B) lifts the soft end by the electric piano's LIGHT-over-FULL ratio (rhodes.c
-RH_DYN_VB, the electric piano's FULL soft end until 2026-11-09: +9.0 dB at v20 and below, 0 from v60), on the strike's pulse and its contact noise only, so the tone is the
-same:
-- B / A level per velocity: 20 log10(32768 / RH_DYN_V[v]) within 0.25 dB below v60, byte-identical from v60;
+"""RESPONSE (CC 40) on the bar engines (bars.c bar_lt_g, 0.9.10; the law 0.9.13): a level map. FULL (A) leaves VIBES
+and MARIMBA as they were; LIGHT (B) lifts every strike under v127 by 0.07 dB a velocity step (7 and below as 7: +8.4
+dB at v7, 0 at v127; until 0.9.12 the electric piano's old FULL soft end, +9 dB at v20, 0 from v60, which made VIBES
+softer from v24 to v40: test_response_monotonic.py), on the strike's pulse and its contact noise only, so the tone is
+the same:
+- B / A level per velocity: bar_lt_g's integers in dB, within 0.25 dB under v127, byte-identical at v127;
 - the same tone: every 1/3-octave band within 30 dB of the loudest and above -80 dBFS in A moves with the level, within
   0.25 dB. (The bar engine leaves out a mode while its strike level is under 1 LSB, bars.c's budget: B's louder soft
   strike lights the partials A's left under the 16-bit floor, as any louder strike does; at MARIMBA's v1 that is
@@ -25,9 +26,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import dry_dist  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
-_t = re.search(r"RH_DYN_VB\[RH_DYN_VB_HI\] = \{[^}]*\}", open(os.path.join(ROOT, "firmware", "src", "rhodes.c")).read())
-RH_DYN_V = [int(x) for x in re.findall(r"\d+", re.sub(r"/\*.*?\*/", "", _t.group(0).split("=", 1)[1], flags=re.S))]
-assert len(RH_DYN_V) == 60
+_src = open(os.path.join(ROOT, "firmware", "src", "bars.c")).read()
+LT_UP = int(re.search(r"#define BAR_LT_UP (\d+)u", _src).group(1))
+LT_VLO = int(re.search(r"#define BAR_LT_VLO (\d+)u", _src).group(1))
+
+
+def lt_db(v):
+    """bar_lt_g's lift at velocity v, dB"""
+    g = 32768
+    for _ in range(127 - max(v, LT_VLO) if v < 127 else 0):
+        g = (g * LT_UP + 16384) >> 15
+    return 20 * np.log10(g / 32768)
 BARS = {"VIBES": 0, "MARIMBA": 100}                      # CC 79 (frodhes.c: VIBES 0..95, MARIMBA 96..127)
 HQBIN = os.path.join(ROOT, "build", "host-hq", "frodhes")
 FS_DB = 20 * np.log10(32768 * FS / 4)                    # bands(): a full-scale sine's band (the Hann window, 1 s)
@@ -64,13 +73,13 @@ def builds():
 @pytest.mark.parametrize("key", [48, 72])
 def test_light_is_the_level_map(typ, key):
     for b in builds():
-        for v in (1, 20, 30, 40, 50, 59, 60, 96, 127):
+        for v in (1, 20, 30, 40, 50, 59, 60, 96, 120, 127):
             a, l = render(b, typ, 0, key, v), render(b, typ, 127, key, v)
-            if v >= 60:
-                assert np.array_equal(a, l), f"{typ} k{key} v{v} ({b}): LIGHT differs from FULL from v60"
+            if v >= 127:
+                assert np.array_equal(a, l), f"{typ} k{key} v{v} ({b}): LIGHT differs from FULL at v127"
                 continue
             note = slice(int(0.4 * FS), int(1.4 * FS))
-            want = 20 * np.log10(32768 / RH_DYN_V[v])
+            want = lt_db(v)
             got = db(l[note]) - db(a[note])
             assert abs(got - want) <= 0.25, f"{typ} k{key} v{v} ({b}): LIGHT {got:+.2f} dB over FULL, the map {want:+.2f}"
             ba, bl = bands(a[note]), bands(l[note])

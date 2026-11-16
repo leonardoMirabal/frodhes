@@ -227,14 +227,21 @@ static int32_t bar_fam_nz(void)
 #include "hq/bars_hq.c"                            /* the HQ bars (the Move only) */
 #endif
 
-/* RESPONSE on the bars (0.9.10, the coordinator: no knob that does nothing): the electric piano's level map. A (FULL,
- * rh_touch_mode 0) leaves the strike as it was, byte-identical; B (LIGHT) lifts the soft end by the same ratio the
- * electric piano's LIGHT had over its FULL until 2026-11-09 (rhodes.c RH_DYN_VB: 1 / it, up to +9.0 dB at v20 and
- * below, 0 dB from v60). The strike's force pulse and its contact noise only: the modes are linear, so the note is the same note at
- * another level (the same tone); read at each strike, as the electric piano's */
-static uint32_t bar_lt_g(uint32_t vel)              /* Q15, >= 32768 */
+/* RESPONSE on the bars (0.9.10, the coordinator: no knob that does nothing): a level map. A (FULL, rh_touch_mode 0)
+ * leaves the strike as it was, byte-identical; B (LIGHT) lifts every strike under v127 by BAR_LT_DB a velocity step
+ * (0.07 dB; 7 and below as 7): +8.4 dB at v7, 0 at v127, so the span is 8.4 dB less and the level still rises with the
+ * velocity. 0.9.10 to 0.9.12 lifted the soft end by the electric piano's old FULL soft end instead (+9 dB at v20,
+ * 0 from v60), which fell faster than the bars' own level rises (A: 0.08..0.2 dB a step, every key, MALLET, WEIGHT,
+ * TUBE, NOISE): VIBES came out up to 1.3 dB softer from v24 to v40. The strike's force pulse and its contact noise
+ * only: the modes are linear, so the note is the same note at another level (the same tone); read at each strike */
+#define BAR_LT_UP 33033u                            /* Q15: 10^(0.07 / 20), one velocity step's lift (BAR_LT_DB) */
+#define BAR_LT_VLO 7u                               /* (the lift stops rising under this velocity) */
+static uint32_t bar_lt_g(uint32_t vel)              /* Q15, >= 32768 (<= 86k, at v7) */
 {
-    return rh_touch_mode && vel < RH_DYN_VB_HI ? (32768u << 15) / RH_DYN_VB[vel] : 32768u;
+    uint32_t g = 32768u, n;
+    if (!rh_touch_mode || vel >= 127u) return g;
+    for (n = 127u - (vel > BAR_LT_VLO ? vel : BAR_LT_VLO); n; n--) g = (g * BAR_LT_UP + 16384u) >> 15;
+    return g;
 }
 static void bar_lt_pulse(bar_voice_t *v, uint32_t vel)
 {
