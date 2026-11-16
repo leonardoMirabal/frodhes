@@ -1,0 +1,29 @@
+# ANA's TIME snap after a note (0.9.13, the audio review C1). Over a silent line ANA takes a new TIME at once
+# (fx.c DLY_SNAP, 2026-11-08), but after one note the loop never came back to rest (its fixed point kept dly_lp /
+# dly_hp non-zero), so a far TIME turn seconds later glided at 1/16 sample a sample: 39 ms -> 1.17 s took ~18 s, and a
+# chord played meanwhile had bent, bunched echoes. Now the tail rests (tests/scripts/dly_rest.txt) and the TIME snaps
+# as with no note before: "dlyd" (the delay time as it runs, samples) is 51484 at once, as without the first note.
+0 midi 0xB0 91 0
+0 midi 0xB0 106 0
+0 midi 0xB0 84 0
+0 midi 0xB0 70 0
+0 midi 0xB0 88 70
+0 midi 0xB0 89 64
+0 midi 0xB0 26 90
+0 midi 0xB0 90 20
+500 midi 0x90 48 100
+1000 midi 0x80 48 0
+1500 expect state dlyring 1
+3990 expect state dlyrest 0/0/0/0
+3990 expect state dlyd 1737
+4000 midi 0xB0 90 120
+4010 expect state dlyd 51484
+4300 expect state dlyd 51484
+4500 midi 0x90 60 110
+4500 midi 0x90 64 110
+4500 midi 0x90 67 110
+6000 midi 0x80 60 0
+6000 midi 0x80 64 0
+6000 midi 0x80 67 0
+6000 expect state dlyd 51484
+6010 end

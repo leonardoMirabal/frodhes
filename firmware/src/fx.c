@@ -2161,23 +2161,75 @@ __attribute__((noinline)) static void dly_clear_step(void)   /* one block's shar
  * clears it (dly_lc, through dly_rst: the reads behind the cleared span return 0 at once). 0.9.5: the test was |lp| < 2
  * at a block's end, which a ringing tail crossing 0 there passed: the tail stopped there, its line was left as it was
  * and read again by the next switch on, a ring old: a step of up to ~10000 LSB (OFF -> DIG / ANA under chords) */
+/* 0.9.13 (the audio review, C1): "~0" is the rows within a band of 2 x DLY_REST around a level within +-DLY_DC, over the
+ * span of the delay itself (the target or where the time still is, whichever is longer) plus 1/16 for TAPE's wow and
+ * flutter. The loop's truncating arithmetic has fixed points that are not 0: with the send silent the line settles on
+ * a constant (DIG -6, ANA +2 .. -10: lp stops up to 32768 / col under its input, hp anywhere in its +-64 dead band) or
+ * a small limit cycle (TAPE +-5); the old test (every row within +-1) never passed, so the tail never ended and
+ * dly_lp / dly_hp never went back to 0 (ANA's TIME glided for ever after one note). A ringing echo passes only once
+ * its swing is under +-DLY_REST (the line holds half level: 16 LSB out, -66 dBFS); the level is DC (dly_rest_chk
+ * fades it out) */
+#define DLY_REST 8
+#define DLY_DC 64
+static int32_t dly_qlo, dly_qhi;                /* the band the rows kept since dly_qz started counting */
 __attribute__((noinline)) static int dly_tail_over(uint32_t n, int32_t target)
 {
-    uint32_t j, w = dly_w;
+    uint32_t j, w = dly_w, s = (uint32_t)((target > dly_d ? target : dly_d) >> 8);
+    int32_t lo = DLY_DC, hi = -DLY_DC;
     for (j = 1u; j <= n; j++) {
         int32_t v = dly_buf[(w - j) & (DLY_LEN - 1u)];
-        if (v > 1 || v < -1) { dly_qz = 0; return 0; }
+        if (v > DLY_DC || v < -DLY_DC) { dly_qz = 0; return 0; }
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
     }
+    if (hi - lo > 2 * DLY_REST) { dly_qz = 0; return 0; }
+    if (dly_qz && (lo < dly_qlo ? dly_qhi - lo : hi > dly_qhi ? hi - dly_qlo : 0) > 2 * DLY_REST) dly_qz = 0;
+    if (!dly_qz) { dly_qlo = lo; dly_qhi = hi; }
+    else { if (lo < dly_qlo) dly_qlo = lo; if (hi > dly_qhi) dly_qhi = hi; }
     dly_qz += n;
-    return dly_qz >= (uint32_t)(target >> 8) + 2u * n;
+    return dly_qz >= s + (s >> 4) + 2u * n;
 }
+/* the line's activity (0.9.13, D4): 1 from a block whose send carried sound until the loop is at rest. The one measure
+ * the routing reads (dly_type, DLY_SNAP, dly_routed, TAPE's switches, the quiet path, fx_cost_us); it was dly_lp ||
+ * dly_hp, which the fixed points above kept non-zero for ever after the first note */
+static uint8_t dly_ring;
+static uint8_t dly_rf;                          /* the rest's fade runs: 1 DIG / ANA's (dly_xg), 2 TAPE's (tp_g) */
 #include "dly_tape.c"                              /* EFFECT = TAPE (its own loop; DIG / ANA as they were) */
+/* the rest (0.9.13, C1): at a block's end (one core; FR_C1 once its rows are in, dly_flush_c). snd: the block's send
+ * carried sound; sw: the EFFECT that ran. With the send silent and the line in its rest band over the delay
+ * (dly_tail_over), the loop sits on one of its fixed points (on or OFF): the echo fades out over 46 ms (dly_rf: DIG /
+ * ANA's dly_xg, TAPE's tp_g, the fades the switches use, through tp_route), then the states go to 0 and the line is
+ * cleared as at the tail's end (dly_rst: the reads behind the cleared span 0); 0 is silence's own fixed point, so it
+ * stays there until the next sound. (Cleared at once, the echo's DC stepped to 0: a -73 dBFS edge above 1 kHz; faded,
+ * what is left of the difference is the old tail's own residue, -79 dBFS.) Sound in the send during
+ * the fade: it fades back in (the switches' fade-in). Not during a crossfade (DIG <-> ANA, a DIG time change, the
+ * fades around TAPE); a change of the line's owner (TAPE <-> DIG / ANA) drops the fade and the count starts again */
+__attribute__((noinline)) static void dly_rest_chk(uint32_t n, int32_t target, int32_t sw, int snd)
+{
+    if (snd) { dly_ring = 1; dly_qz = 0; dly_rf = 0; return; }
+    if (!dly_ring) return;
+    if (dly_rf && dly_rf != 1u + (dly_cur == 3)) dly_rf = 0;
+    if (dly_rf) {
+        if (dly_cur == 3 ? tp_g : dly_xg) return;     /* (still fading) */
+        dly_lp = dly_hp = 0; dly_ring = 0; dly_qz = 0; dly_rf = 0;
+        if (dly_cur != 3) dly_xg = 32768;               /* (the line is cleared: nothing to fade in) */
+        else {                                          /* TAPE's playback head; after OFF its tail ends (as it did); on,
+                                                         * it fades in again (tp_block) over the cleared line */
+            tp_b1 = tp_b2 = tp_h1 = tp_h2 = 0;
+            if (!sw) { tp_zero(); dly_cur = 0; dly_last = 0; }
+        }
+        if (!dly_lc) { dly_rb = dly_w; dly_rst = 1; dly_clrn = DLY_CLR / 4u; dly_lc = 1; }
+        return;
+    }
+    if (dly_xo || dly_tx || dly_xg != 32768 || (dly_cur == 3 && (sw ? tp_g != 32768 : !tp_g))) { dly_qz = 0; return; }
+    if (dly_tail_over(n, target)) { dly_rf = (uint8_t)(1u + (dly_cur == 3)); dly_qz = 0; }
+}
 /* fx_delay_t's per-block bookkeeping of 0.9.6, out of line (inlined, it moved the DIG / ANA loops' registers: ANA
  * 110 -> 118 instructions a sample). dly_type: DIG / ANA asked for (sw 1 / 2); a change with echoes ringing starts
  * #17's crossfade (dly_xo) */
 __attribute__((noinline)) static void dly_type(int32_t sw)
 {
-    if (dly_ana != (sw == 2) && (dly_lp || dly_hp) && dly_cur != 3 && dly_xg == 32768) {
+    if (dly_ana != (sw == 2) && dly_ring && dly_cur != 3 && dly_xg == 32768) {
         if (!dly_xo) dly_xm = dly_ana ? 32768 : 0;      /* (from the type that ran; a turn back mid-way: from where it is) */
         dly_xo = 1;
     }
@@ -2191,7 +2243,7 @@ __attribute__((noinline)) static void dly_type(int32_t sw)
  * moved: its repeats bunched up, the second echo +5 dB over DIG's, a v127 chord's peak +3.1 dB on the limiter
  * (tools/fx_pristine.py). With nothing in the line (no sound sent for a whole line, the loop's filters at rest) there is
  * nothing to bend: the time jumps (with sound in it, the glide as before) */
-#define DLY_SNAP(sw, target) do { if ((sw) == 2 && dly_sil >= DLY_LEN && !dly_lp && !dly_hp && dly_cur != 3 && !dly_xo) \
+#define DLY_SNAP(sw, target) do { if ((sw) == 2 && dly_sil >= DLY_LEN && !dly_ring && dly_cur != 3 && !dly_xo) \
                                       dly_d = (target); } while (0)
 #if FR_CHUNK
 /* fx_delay_t for a chunk (dly_tape.c's FR_C1 part: the rows written by the last chunk). Once a block, at the first chunk:
@@ -2212,14 +2264,13 @@ static void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
         int32_t wet = FX_DLY_WET[depth], fb = FX_DLY_FB[fx_p[FXP_DL_FDBK] & 127], col = 2000 + fx_p[FXP_DL_TONE] * 240;
         if (last) sw = dly_son;
         dly_son = (uint8_t)fx_p[FXP_DL_SW];
-        if (sw) dly_qz = 0;
         if (sw == 1 || sw == 2) dly_type(sw);
         if (sw == 2 || (!sw && dly_ana)) col = (col * 19661) >> 15;
         while (target >= (int32_t)DLY_LEN - 2) target >>= 1;
         target <<= 8;
         if (sw != 2 && fb > 13926) fb = 13926;
         DLY_SNAP(sw, target);
-        dly_c.quiet = !sw && !dly_lp && !dly_hp && dly_cur != 3;
+        dly_c.quiet = !sw && !dly_ring && dly_cur != 3;
         if (dly_c.quiet) {
             dly_wk = wet; dly_fbk = fb;
             if (!dly_lc) { dly_rb = dly_w; dly_rst = 1; dly_clrn = DLY_CLR / 4u; dly_lc = 1; }
@@ -2301,8 +2352,8 @@ static void dly_flush_c(void)
 {
     if (!dly_pd.on) return;
     if (dly_wm) dly_wr_c(dly_c.w0, dly_pd.n, dly_pd.sg16);
-    if (dly_c.routed) tp_route_end(dly_pd.n, dly_c.target);
-    else if (!dly_c.sw && dly_tail_over(dly_pd.n, dly_c.target)) dly_lp = dly_hp = 0;
+    if (dly_c.routed) tp_route_end();
+    dly_rest_chk(dly_pd.n, dly_c.target, dly_c.sw, dly_c.m > 0);
     dly_pd.on = 0;
 }
 /* the block's start, before its first chunk (frodhes.c c1_pre_job: core 1 while core 0 renders chunk 0's voices; or
@@ -2316,14 +2367,13 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
 {
     int32_t sw = fx_p[FXP_DL_SW], depth = fx_p[FXP_DL_DEPTH], last = !sw && dly_son;   /* last: the send's last block */
     uint32_t sync = fx_dly_sync_samples, j;
-    int32_t target = (int32_t)(sync ? sync : FX_DLY_T[fx_p[FXP_DL_TIME]]);
+    int32_t target = (int32_t)(sync ? sync : FX_DLY_T[fx_p[FXP_DL_TIME]]), snd = 0;
     /* MIX (0.9.13, as Textura's): 0 the dry alone; to 64 the dry whole and the echo rising to whole (FX_DLY_WET); 64
      * both whole (the first echo as loud as the dry); past 64 the echo whole and the dry falling (DLY_DRY); 127 the
      * echoes alone */
     int32_t wet = FX_DLY_WET[depth], fb = FX_DLY_FB[fx_p[FXP_DL_FDBK] & 127], col = 2000 + fx_p[FXP_DL_TONE] * 240, sg16;
     if (last) sw = dly_son;                                 /* the old EFFECT once more, its send ramped to 0 (sg16) */
     dly_son = (uint8_t)fx_p[FXP_DL_SW];
-    if (sw) dly_qz = 0;
     if (sw == 1 || sw == 2) dly_type(sw);
     if (sw == 2 || (!sw && dly_ana)) col = (col * 19661) >> 15;   /* tape: darker (ANA's tail too) */
     while (target >= (int32_t)DLY_LEN - 2) target >>= 1;
@@ -2335,7 +2385,7 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
      * do, held by its softclip (where tanh's slope times the loop gain is 1); TAPE's own law: dly_tape.c tp_block */
     if (sw != 2 && fb > 13926) fb = 13926;
     DLY_SNAP(sw, target);
-    if (!sw && !dly_lp && !dly_hp && dly_cur != 3) {        /* fully quiet and off: only keep time */
+    if (!sw && !dly_ring && dly_cur != 3) {                 /* fully quiet and off: only keep time */
         dly_wk = wet; dly_fbk = fb;                         /* (nothing heard: no ramp to keep) */
         if (!dly_lc) { dly_rb = dly_w; dly_rst = 1; dly_clrn = DLY_CLR / 4u; dly_lc = 1; }   /* (the tail's line: cleared) */
         if (dly_rst)                                        /* (the skipped span is clean too: what the reset left) */
@@ -2365,6 +2415,7 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
                                                      * the target switched 0 <-> +3 dB from block to block) */
         }
         if (m > 0) dly_sil = 0; else if (dly_sil < DLY_LEN) dly_sil += n;   /* (the line's newest sound: #3's ANA) */
+        snd = m > 0;
         dly_sg += (tg - dly_sg) >> 2;
         if (tg == 0 && dly_sg < 4) dly_sg = 0;
 #ifdef FX_DLY_SG_LOG
@@ -2373,7 +2424,7 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
     }
     sg16 = last ? 0 : exp2_q16(dly_sg);
     if (dly_routed(sw, target)) {                           /* TAPE, a switch to / from it, DIG <-> ANA, a time change */
-        if (tp_route(L, R, n, sw, target, sg16, fb, wet, depth)) { dly_wk = wet; dly_fbk = fb; return; }
+        if (tp_route(L, R, n, sw, target, sg16, fb, wet, depth)) { dly_wk = wet; dly_fbk = fb; dly_rest_chk(n, target, sw, snd); return; }
     } else dly_last = (uint8_t)sw;                          /* (what a switch to TAPE fades out) */
     if (sw) FR_FAR(dly_ramp)(dly_m, n, sg16);                       /* (dly_loop sets dly_sgk to sg16) */
     /* the dry: whole to MIX 64, then falling to nothing at 127 (DLY_DRY) */
@@ -2384,7 +2435,7 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
     else dly_fade(L, R, n, dly_ana, 0, sg16, target, col, fb, wet, 32768, 0);   /* the tail (OFF): DIG's or ANA's,
                                                              * dly_fade's loop at g 1 (the same integers as dly_loop's) */
     dly_wk = wet; dly_fbk = fb;                             /* (the tail's and TAPE's loops: FDBK as it is) */
-    if (!sw && dly_tail_over(n, target)) dly_lp = dly_hp = 0;
+    dly_rest_chk(n, target, sw, snd);
 }
 #endif
 /* the chorus, then the delay, in their own function (0.9.5: the delay since e9eb294, so its loops do not move the
@@ -2745,7 +2796,7 @@ static void fx_reset_state(void)
 {
     lfo_ph = 0; lfo_rnd = 0x9E3779B9u; tw_ph = 0; ph_ph = 0; cp_ph = 0; dly_wow = 0; dly_flt = 0;
     ph_cq = -1; memset(&ph_st, 0, sizeof ph_st); ph_apv = 0; fx_lv_dith = 0x2545F491u;
-    dly_rb = dly_w; dly_rst = 1; dly_lp = dly_hp = 0;   /* the delay line: dly_clear_step(), the next blocks */
+    dly_rb = dly_w; dly_rst = 1; dly_lp = dly_hp = 0; dly_ring = 0; dly_qz = 0; dly_rf = 0;   /* the delay line: dly_clear_step(), the next blocks */
     dly_clrn = DLY_CLR; dly_lc = 1;
     tp_reset();                                         /* TAPE's filters, noise and transport */
     memset(cho_buf, 0, sizeof cho_buf); cho_el = -1; cho_hl[0] = cho_hl[1] = cho_ly[0] = cho_ly[1] = 0;   /* (the taps restart with cp_ph) */
@@ -3362,7 +3413,7 @@ static uint32_t fx_cost_us(void)
     else if (fx_p[FXP_TW_SW] == 2) us += FX_US_WAH;
     if (fx_p[FXP_PH_SW]) us += FX_US_PHASER;
     if (fx_p[FXP_CP_SW]) us += FX_US_CHORUS;
-    if (fx_p[FXP_DL_SW] || dly_lp || dly_hp || dly_cur == 3) us += FX_US_DELAY;
+    if (fx_p[FXP_DL_SW] || dly_ring || dly_cur == 3) us += FX_US_DELAY;   /* (a resting tail: none, C1) */
     us += rev_cost_us();                               /* (rev_types.c: HALL FX_US_REVERB, as before) */
     return us;
 }

@@ -1944,6 +1944,15 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
                                                          * the reverb's dry and send, the drive's dry and wet
                                                          * (tests/py/test_mix_law.py) */
         snprintf(v, n, "%d/%d/%d/%d/%d/%d", (int)dly_dg, (int)dly_wk, (int)rv_dg, (int)rv_sk, (int)dr_d, (int)dr_w);
+    else if (!strcmp(key, "dlyrest")) {                /* the delay loop's rest (fx.c dly_rest_chk): its activity, its
+                                                         * filters' states and the line's largest |row| (all 0 at rest) */
+        uint32_t q, mx = 0;
+        for (q = 0; q < DLY_LEN; q++) { int32_t x = dly_buf[q]; uint32_t ax = (uint32_t)(x < 0 ? -x : x); if (ax > mx) mx = ax; }
+        snprintf(v, n, "%u/%d/%d/%u", (unsigned)dly_ring, (int)dly_lp, (int)dly_hp, (unsigned)mx);
+    }
+    else if (!strcmp(key, "dlyring")) snprintf(v, n, "%u", (unsigned)dly_ring);   /* the line's activity (fx.c dly_ring) */
+    else if (!strcmp(key, "dlyd")) snprintf(v, n, "%d", (int)(dly_d >> 8));     /* the delay time as it runs (samples) */
+    else if (!strcmp(key, "fxcost")) snprintf(v, n, "%u", (unsigned)fx_cost_us());   /* the effects' cost (us a block) */
     else if (!strcmp(key, "twph")) snprintf(v, n, "%u", tw_ph);                   /* the tremolo's LFO phase (Q32) */
     else if (!strcmp(key, "cpph")) snprintf(v, n, "%u", cp_ph);                   /* the chorus' */
     else if (!strcmp(key, "phph")) snprintf(v, n, "%u", ph_ph);                   /* the phaser's */
