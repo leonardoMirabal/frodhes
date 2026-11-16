@@ -17,8 +17,8 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import mpc_catalog_zip as M  # noqa: E402
 
 PJ = {"name": "Frodhes", "manufacturer": "Frodhes", "version": "1.2.3", "format": "vst2", "kind": "instrument",
-      "uid": "Frd1", "numInputs": 0, "numOutputs": 2, "category": "Synth", "file32": "VST/frodhes-arm32.so",
-      "file64": "VST/frodhes-arm64.so", "description": "An electric piano.", "license": "GPL-3.0-only"}
+      "uid": "Frd1", "numInputs": 0, "numOutputs": 2, "category": "Synth", "file32": "frodhes-arm32.so",
+      "file64": "frodhes-arm64.so", "description": "An electric piano.", "license": "GPL-3.0-only"}
 
 
 def fake_elf(bits64, machine):
@@ -32,14 +32,13 @@ def fake_elf(bits64, machine):
 @pytest.fixture
 def folder(tmp_path, monkeypatch):
     f = tmp_path / "Frodhes - VST - Frodhes"
-    (f / "VST").mkdir(parents=True)
-    (f / "Plugin Skins").mkdir()
+    (f / "Plugin Skins").mkdir(parents=True)
     (f / "plugin.json").write_text(json.dumps(PJ, indent=2) + "\n")
     (f / "version.xml").write_text("<plugincontent/>\n")
     (f / "Plugin Skins" / "TUI.json").write_text("{}\n")
     (f / "Plugin Skins" / "knob.png").write_bytes(b"png")
-    (f / "VST" / "frodhes-arm32.so").write_bytes(fake_elf(False, 40))
-    (f / "VST" / "frodhes-arm64.so").write_bytes(fake_elf(True, 183))
+    (f / "frodhes-arm32.so").write_bytes(fake_elf(False, 40))   # (the folder's root: Plugin Manager <= 1.2.0 names
+    (f / "frodhes-arm64.so").write_bytes(fake_elf(True, 183))    # file32 / file64 bare, open-mpc/plugin-manager#12)
     t = tmp_path / "tpl"
     t.mkdir()
     texts = {"install.sh": "#!/bin/sh\n# @NAME@ @VERSION@\nSO='@SO_NAME@'; SKIN='@SKIN@'; UID_HEX='@UID@'; LEGACY_SO='@LEGACY_SO@'; ID='@ID@'\n",
@@ -55,8 +54,8 @@ def test_layout_manifest_and_sums(folder, tmp_path):
     made = M.build(str(f), "1.2.3", str(tmp_path / "out"), M.templates(str(t)))
     assert sorted(os.path.basename(z) for z in made.values()) == ["Frodhes-1.2.3-mpc-aarch64.zip",
                                                                   "Frodhes-1.2.3-mpc-armv7.zip"]
-    for arch, so, key, other in (("armv7", "VST/frodhes-arm32.so", "file32", "VST/frodhes-arm64.so"),
-                                 ("aarch64", "VST/frodhes-arm64.so", "file64", "VST/frodhes-arm32.so")):
+    for arch, so, key, other in (("armv7", "frodhes-arm32.so", "file32", "frodhes-arm64.so"),
+                                 ("aarch64", "frodhes-arm64.so", "file64", "frodhes-arm32.so")):
         z = zipfile.ZipFile(made[arch])
         names = z.namelist()
         top, pdir = "Frodhes-1.2.3/", "Frodhes-1.2.3/portable/Frodhes - VST - Frodhes/"
@@ -104,7 +103,7 @@ def test_a_changed_template_is_refused(folder, tmp_path):
 
 def test_wrong_binary_refused(folder, tmp_path):
     f, t = folder
-    (f / "VST" / "frodhes-arm64.so").write_bytes(fake_elf(False, 40))       # a 32-bit binary named as file64
+    (f / "frodhes-arm64.so").write_bytes(fake_elf(False, 40))       # a 32-bit binary named as file64
     with pytest.raises(SystemExit):
         M.build(str(f), "1.2.3", str(tmp_path / "out"), M.templates(str(t)))
 

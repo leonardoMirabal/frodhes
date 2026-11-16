@@ -145,8 +145,8 @@ framework headers compiled into the plugin are vendored in `mpc/sdk/` (MIT, with
 `--version X.Y.Z`, `--voices N`, `--tools` (the ARM test hosts, for Docker), `-j N`.
 The skin in `mpc/skins/` is made separately (above) and committed.
 
-Outputs in `build/mpc/`: `Frodhes - VST - Frodhes/` (`plugin.json`, `version.xml`, `VST/frodhes-arm32.so`,
-`VST/frodhes-arm64.so`, `Plugin Skins/`), `frodhes-mpc.zip` (the folder, `INSTALL.txt`, `LICENSE.txt`,
+Outputs in `build/mpc/`: `Frodhes - VST - Frodhes/` (`plugin.json`, `version.xml`, `frodhes-arm32.so`,
+`frodhes-arm64.so`, `Plugin Skins/`), `frodhes-mpc.zip` (the folder, `INSTALL.txt`, `LICENSE.txt`,
 `SOURCE.txt`, `THIRD-PARTY-NOTICES.txt`; the same inputs give the same zip, byte for byte), `native/` (this
 machine's build and test hosts) and `params.json`.
 

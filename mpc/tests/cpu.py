@@ -62,7 +62,7 @@ def main():
         tool, lib, pre = ROOT / "build/mpc/native/vst2_render", ROOT / f"build/mpc/native/frodhes.{ext}", []
     else:
         tool = ROOT / "build/mpc/stage/arm64/vst2_render"
-        lib = ROOT / "build/mpc/Frodhes - VST - Frodhes/VST/frodhes-arm64.so"
+        lib = ROOT / "build/mpc/Frodhes - VST - Frodhes/frodhes-arm64.so"
         pre = ["sh", str(ROOT / "mpc/tests/arm_run.sh"), "arm64"]
     if not tool.exists() or not lib.exists():
         print(f"cpu: missing {tool if not tool.exists() else lib} (make mpc; python3 mpc/build.py --tools)")

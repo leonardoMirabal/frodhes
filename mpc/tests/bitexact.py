@@ -48,8 +48,8 @@ NATIVE_EXT = "dylib" if sys.platform == "darwin" else "so"
 MPC16 = ROOT / "build" / "mpc" / "native" / f"frodhes.{NATIVE_EXT}"
 MPC24 = ROOT / "build" / "mpc24" / "native" / f"frodhes.{NATIVE_EXT}"
 VST2_RENDER = ROOT / "build" / "mpc" / "native" / "vst2_render"
-SO = {"arm64": ROOT / "build" / "mpc" / "Frodhes - VST - Frodhes" / "VST" / "frodhes-arm64.so",
-      "arm32": ROOT / "build" / "mpc" / "Frodhes - VST - Frodhes" / "VST" / "frodhes-arm32.so"}
+SO = {"arm64": ROOT / "build" / "mpc" / "Frodhes - VST - Frodhes" / "frodhes-arm64.so",
+      "arm32": ROOT / "build" / "mpc" / "Frodhes - VST - Frodhes" / "frodhes-arm32.so"}
 
 
 def run(cmd, env=None):

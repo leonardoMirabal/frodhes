@@ -6,7 +6,7 @@
     tools/mpc_catalog_zip.py --compare A.zip B.zip      the names and contents of two zips, a line per difference
 
 FOLDER is the plugin folder mpc/build.py makes (default build/mpc/"Frodhes - VST - Frodhes": plugin.json naming
-VST/frodhes-arm32.so as file32 and VST/frodhes-arm64.so as file64, version.xml, Plugin Skins/). Writes
+frodhes-arm32.so as file32 and frodhes-arm64.so as file64, both at its root, version.xml, Plugin Skins/). Writes
 Frodhes-X.Y.Z-mpc-armv7.zip and Frodhes-X.Y.Z-mpc-aarch64.zip in the layout of the catalogue's spec (open-mpc
 docs/CATALOG_SPEC.md "Release zip", docs/RELEASING.md "From an Akai SDK build"), the zips the catalogue, its Plugin
 Manager and its installers install: one top folder Frodhes-X.Y.Z/ holding
@@ -18,7 +18,7 @@ Manager and its installers install: one top folder Frodhes-X.Y.Z/ holding
     MODES              the plugin folder's executable files and symlinks (none: an empty file)
     SHA256SUMS         every other file's sha256
     portable/Frodhes - VST - Frodhes/
-                       the plugin folder with this build's binary only, still at VST/, its plugin.json rewritten for the
+                       the plugin folder with this build's binary only, where plugin.json names it, rewritten for the
                        build (file32 or file64), plugin-meta.xml (the MPC OS 3.9.1 plugin-list entry, file= with the
                        installer's %payload-path%), a copy of mpc-plugin.json
 The zips are reproducible: sorted names, a fixed date (2026-01-01), unix modes, deflate. os_compat is ["3.x"]: the
