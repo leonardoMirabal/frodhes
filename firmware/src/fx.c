@@ -381,10 +381,16 @@ static int32_t fl_kq;                              /* RESO's damping k as it gli
                                                     * FREQ step, ~7280 an octave): a jump of FREQ or of an S&H / square
                                                     * LFO swept 9 octaves in ~3 ms, a click and a resonant burst on BP
                                                     * (#13); the knob's detents and the LFO's sines move far less */
+#if FR_CHUNK
+static int32_t lfo_shp;                                   /* LFO SHAPE, latched at the block's first chunk (fx_filter) */
+#define LFO_SHP lfo_shp
+#else
+#define LFO_SHP fx_p[FXP_LFO_SHAPE]
+#endif
 static int32_t lfo_value(void)                            /* +-32767 */
 {
     uint32_t ph = lfo_ph;
-    switch (fx_p[FXP_LFO_SHAPE]) {
+    switch (LFO_SHP) {
     case 1: return ph < 0x80000000u ? (int32_t)(ph >> 15) - 32768 : 98303 - (int32_t)(ph >> 15);   /* triangle */
     case 2: return (int32_t)(ph >> 16) - 32768;                                                     /* saw up */
     case 3: return 32767 - (int32_t)(ph >> 16);                                                     /* saw down */
@@ -497,11 +503,14 @@ static __attribute__((noinline)) void fx_filter(int32_t *m, uint32_t n)
 {
     static const uint8_t POLES[7] = {0, 2, 3, 2, 3, 2, 2};   /* TYPE -> poles; the mode (LP HP BP NOTCH) is in the switch below */
 #if FR_CHUNK
-    static uint32_t type, poles, want;                   /* (the block's, from its first chunk) */
-    static int open, rest;
-    uint32_t inc = fx_lfo_sync_inc ? fx_lfo_sync_inc : FX_LFO_INC[fx_p[FXP_LFO_RATE]], sb, j;
-    int32_t k = (int32_t)FX_FL_K[fx_p[FXP_FL_RESO]], base = fx_p[FXP_FL_FREQ] * 516, depth = fx_p[FXP_FL_LFO];
+    static uint32_t type, poles, want, inc;              /* (the block's, from its first chunk: the parameters too, */
+    static int open, rest;                               /* fx_set may change fx_p between chunks; 0.9.13, the */
+    static int32_t k, base, depth;                       /* audio review D6) */
+    uint32_t sb, j;
     if (FXC_1) {
+        inc = fx_lfo_sync_inc ? fx_lfo_sync_inc : FX_LFO_INC[fx_p[FXP_LFO_RATE]];
+        k = (int32_t)FX_FL_K[fx_p[FXP_FL_RESO]]; base = fx_p[FXP_FL_FREQ] * 516; depth = fx_p[FXP_FL_LFO];
+        lfo_shp = fx_p[FXP_LFO_SHAPE];
         type = fx_p[FXP_FL_TYPE]; rest = 0;
         if (fx_lfo_retrig) { fx_lfo_retrig = 0; lfo_ph = 0; }
         if (type > 6u) type = 0;
@@ -1008,6 +1017,18 @@ FR_RAM2 static void fx_wah_unity(const int32_t *mp, const int32_t *me, int32_t *
  * loop and its gain ramp are as before), so nothing in it can alias; SHAPE 0..64 is bit for bit as before. */
 static int32_t tw_lv, tw_amp, tw_dpt, tw_shp;
 static uint32_t tw_fq, tw_r1, tw_r2;
+/* TWP(id): a TREM/WAH parameter (FXP_TW_SW .. FXP_TW_SHAPE) and TW_SYNC the synced rate as the block uses them: FR_CHUNK
+ * latches them at the block's first chunk (fx_trem; fx_set may change fx_p between chunks: 0.9.13, the audio review
+ * D6), the one-block build reads them as before */
+#if FR_CHUNK
+static int32_t tw_lk[FXP_TW_SHAPE - FXP_TW_SW + 1];
+static uint32_t tw_lsync;
+#define TWP(id) tw_lk[(id) - FXP_TW_SW]
+#define TW_SYNC tw_lsync
+#else
+#define TWP(id) fx_p[id]
+#define TW_SYNC fx_tw_sync_inc
+#endif
 static int32_t tw_exp2n(int32_t y)                       /* 2^(-y / 4096) in Q15, y in 0 .. 5 x 4096 */
 {
     int32_t k = y >> 12, e = 4096 - (y & 4095);          /* 2^(-k - fr) = 2^(1 - fr) / 2^(k + 1) */
@@ -1032,7 +1053,7 @@ static int32_t tw_amp_sub(uint32_t ph, int32_t *tr)   /* a sub-block's gains (AM
     ph = u < tw_fq ? (1u << 30) + (u >> 15) * tw_r1 : 0xC0000000u + ((u - tw_fq) >> 15) * tw_r2;
     lfo = osc_sine(ph);
     lfo = clampi((int32_t)(((int64_t)lfo * (32768 + 7 * 258 * tw_shp)) >> 15), -32767, 32767);
-    if (fx_p[FXP_TW_MODE] == 0) {                    /* PAN: as in fx_trem, with the warp and the depth */
+    if (TWP(FXP_TW_MODE) == 0) {                     /* PAN: as in fx_trem, with the warp and the depth */
         uint32_t th = (1u << 29) + (uint32_t)((d * lfo) * 129);
         int32_t gl = (osc_sine(th + (1u << 30)) * 46341) >> 15;
         *tr = (osc_sine(th) * 46341) >> 15;
@@ -1050,7 +1071,7 @@ __attribute__((noinline)) static void fx_trem_amp(const int32_t *m, int32_t *L, 
 {
     uint32_t sb;
 #if FR_CHUNK
-    if (FXC_1) tw_amp_block(fx_p[FXP_TW_SHAPE], fx_p[FXP_TW_DEPTH]);
+    if (FXC_1) tw_amp_block(TWP(FXP_TW_SHAPE), TWP(FXP_TW_DEPTH));
     for (sb = fxc_o; sb < fxc_e; sb += 32u) {
 #else
     tw_amp_block(fx_p[FXP_TW_SHAPE], fx_p[FXP_TW_DEPTH]);
@@ -1078,11 +1099,11 @@ static int32_t wah_xw;                                   /* (below: the wah's bl
 static int32_t wah_q RH_SP_SEC(".data.fx_wahq") = -1;
 FR_RAM2 static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, int32_t *R, uint32_t n, int32_t sw)
 {
-    int32_t depth = fx_p[FXP_TW_DEPTH], rate = fx_p[FXP_TW_RATE], qt = 9830 - rate * 58, wt[32];
-    uint32_t inc = fx_tw_sync_inc ? fx_tw_sync_inc : FX_LFO_INC[rate], sb, j;
+    int32_t depth = TWP(FXP_TW_DEPTH), rate = TWP(FXP_TW_RATE), qt = 9830 - rate * 58, wt[32];
+    uint32_t inc = TW_SYNC ? TW_SYNC : FX_LFO_INC[rate], sb, j;
 #if FR_CHUNK
     if (FXC_1 && sw == 2 && (wah_q < 0 || !wah_xw || fx_quiet_blocks >= 2u)) wah_q = qt;
-    if (sw == 1 && fx_p[FXP_TW_SHAPE] > 64) { FR_FAR2(fx_trem_amp)(m, L, R, n, inc); return; }
+    if (sw == 1 && TWP(FXP_TW_SHAPE) > 64) { FR_FAR2(fx_trem_amp)(m, L, R, n, inc); return; }
     for (sb = fxc_o; sb < fxc_e; sb += 32u) {
 #else
     if (sw == 2 && (wah_q < 0 || !wah_xw || fx_quiet_blocks >= 2u)) wah_q = qt;
@@ -1091,10 +1112,10 @@ FR_RAM2 static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_
 #endif
         int32_t tl = 32768, tr = 32768, dl, dr, gl = tw_gl, gr = tw_gr, wgq = wah_g << 5, wgs = 0, wq = wah_q;
         if (sw == 1) {                                  /* tremolo: the LFO this sub-block */
-            int32_t lfo = osc_sine(tw_ph), shp = fx_p[FXP_TW_SHAPE];
+            int32_t lfo = osc_sine(tw_ph), shp = TWP(FXP_TW_SHAPE);
             lfo = clampi((int32_t)(((int64_t)lfo * (32768 + 7 * 258 * shp)) >> 15), -32767, 32767);
             /* sine -> rounded square (x up to 8: 64-bit, 0.9.3: in 32 bits it overflowed above SHAPE 18) */
-            if (fx_p[FXP_TW_MODE] == 0) {               /* autopan: equal power around the centre */
+            if (TWP(FXP_TW_MODE) == 0) {                /* autopan: equal power around the centre */
                 uint32_t th = (1u << 29) + (uint32_t)((depth * lfo) * 129);
                 tl = (osc_sine(th + (1u << 30)) * 46341) >> 15;   /* sqrt2 cos(theta): unity at the centre */
                 tr = (osc_sine(th) * 46341) >> 15;
@@ -1207,7 +1228,15 @@ __attribute__((noinline)) static void fx_trem_x(const int32_t *m, int32_t *L, in
 }
 static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
 {
-    int32_t sw = fx_p[FXP_TW_SW];
+    int32_t sw;
+#if FR_CHUNK
+    if (FXC_1) {
+        uint32_t i;
+        for (i = 0; i < sizeof tw_lk / sizeof tw_lk[0]; i++) tw_lk[i] = fx_p[FXP_TW_SW + i];
+        tw_lsync = fx_tw_sync_inc;
+    }
+#endif
+    sw = TWP(FXP_TW_SW);
     if (sw != 2) tw_o = (uint8_t)(sw == 1);
     if (sw == 2 ? wah_xw == 32768 : !wah_xw) FR_FAR2(fx_trem_k)(m, L, R, n, sw);   /* at rest: as before */
     else fx_trem_x(m, L, R, n, sw);                     /* (the blend: out of app_audio) */
