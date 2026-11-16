@@ -146,7 +146,9 @@ typedef struct {
                                                 * strike (the key-up thump's cap: rh_left) */
     uint16_t felt_g;                           /* Q15: the key-up felt noise's gain (the same cap: RH_FELT_K) */
     uint16_t atk;                              /* Q15: the strike's output lift still to decay (RH_ATK_A, rh_voice_sub) */
-    int32_t kd, kr;                            /* DECAY's and RELEASE's k at the note-on: eps0 / eps1's (rh_retune) */
+    int32_t tn;                                /* TUNE (rh_tune_t) at the note-on: the bend retunes from it (rh_retune;
+                                                * 0.9.13: it took TUNE's value of the moment, so a TUNE turned under a held
+                                                * note jumped in at the next bend message) */
     int32_t hd_off0, hd_g0, hd_gc, hd_d, hd_y1, hd_y2; /* the harmonic decay glide (rh_hd_init): the strike's offset and
                                                 * gain there, the gain it set last, the glide's end (Q25 gap), its two
                                                 * lag states */
@@ -1391,7 +1393,7 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
     v->vm = (uint8_t)(rh_touch_mode != 0);
     if (v->vm) { vx = rh_vm(0u, n - RH_KEY_LO, vel); vg = rh_vm_g(n - RH_KEY_LO, vel); }   /* MAP: X, G x rh_dyn (Q11) */
 #endif
-    v->k = k; v->kd = rh_k_decay; v->kr = rh_k_rel;
+    v->k = k; v->tn = rh_tune_t;
     for (m = 0; m < RH_NM; m++) {
         rh_ms_t *s = &v->m[m];
         const rh_mode_t *km = &k->m[m];
@@ -2035,13 +2037,14 @@ static void rh_shed(void)                                 /* overload: fade the 
  * (a quarter), round-robin, so every voice reaches the bend within 4 blocks of its last change and the worst block
  * pays a quarter of the whole retune (a voice born meanwhile starts at the bend in rh_init). Runs only in a block
  * where the bend changed or voices are still pending. */
+/* TUNE and DECAY / RELEASE are the note-on's (0.9.13, the audio review C2): TUNE, DECAY and RELEASE act on new notes,
+ * so a bend retunes from the TUNE the voice started with (v->tn) and keeps its pair (E, eps) on the note-on's decays
+ * (s->eps0 / eps1, the eps it runs with; E from a DECAY turned since was a pair that did not match) */
 static void __attribute__((noinline)) rh_retune(void)
 {
     uint32_t i, m, k, done = 0, pend;
-    int32_t t, b = rh_bend_t, kd = rh_k_decay, kr = rh_k_rel;
+    int32_t b = rh_bend_t;
     if (b != rh_bend_used) { rh_bend_used = b; rh_rt_pend = (1u << RH_NV) - 1u; }
-    t = rh_tune_t;
-    t = t + b + (int32_t)(((int64_t)t * b) >> 30);                 /* rh_tune_now at the latched bend */
     pend = rh_rt_pend; i = rh_rt_cur;
     for (k = 0; k < RH_NV && pend && done < RH_RT_PER; k++, i = i + 1u == RH_NV ? 0u : i + 1u) {
         rh_voice_t *v = &rv[i];
@@ -2049,6 +2052,7 @@ static void __attribute__((noinline)) rh_retune(void)
         pend &= ~(1u << i);
         if (!v->alive) continue;
         done++;
+        int32_t t = v->tn + b + (int32_t)(((int64_t)v->tn * b) >> 30);   /* rh_tune_now: its TUNE, the latched bend */
         for (m = 0; m < RH_NM; m++) {
             rh_ms_t *s = &v->m[m];
             const rh_mode_t *km = &v->k->m[m];
@@ -2056,9 +2060,9 @@ static void __attribute__((noinline)) rh_retune(void)
             int64_t cr;
             if (!rh_mode_runs(v->k, m)) continue;
             cr = rh_coef_tune(km, t, &sp);                 /* rh_coef's integers: the tuning part once for both decays,
-                                                            * eps the note-on's while DECAY / RELEASE stay put */
-            s->e0 = rh_coef_e(v->kd == kd ? s->eps0 : rh_coef_eps(km->d, kd), sp, cr);
-            s->e1 = rh_coef_e(v->kr == kr ? s->eps1 : rh_coef_eps(km->drel, kr), sp, cr);
+                                                            * eps the note-on's */
+            s->e0 = rh_coef_e(s->eps0, sp, cr);
+            s->e1 = rh_coef_e(s->eps1, sp, cr);
             s->e = s->e0 + (int32_t)(((int64_t)(s->e1 - s->e0) * v->w_tgt) >> 15);
             s->es = s->e;
         }
