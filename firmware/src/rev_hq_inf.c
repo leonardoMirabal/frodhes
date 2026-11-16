@@ -96,6 +96,12 @@
                                      * shape upwards, at 10..11 kHz for ever: +30 dB there in a FREEZE */
 #define RI_CMINF 1966                 /* (rev_hq_inf.c: the least damping at 44.1 kHz, c 0.12: -0.8 dB a pass at 8 kHz, the
                                      * half rate's 7.7 dB a second there) */
+#define RI_CKFMAX 16256              /* (rev_hq_inf.c, 0.9.13: the damping pole's bound, 1 - 2^-7. The half rate's
+                                     * largest c (14000) as its square root plus RI_CMINF came to 17111, a pole over 1:
+                                     * a dark TONE at a low DECAY (a short line gain, so c reached its clamp) grew the
+                                     * tail to full scale and held it there, OFF too. With 0 <= c < 1 and b0 = g (1 - c)
+                                     * rounded down, each line end's taps are all >= 0 and sum to b0 / (1 - c) <= g < 1:
+                                     * every pass loses, so every tail decays; c below the bound is unchanged) */
 #define RI_KMAX 16384   /* the input one-pole's brightest (TONE 127): 0.75 at 22.05 kHz
                                      * (-4.5 dB at 10.5 kHz, ~HALL's top), open on the quarter tank */
 #define RI_HOT 2u                   /* the tank runs 4x hotter than its input (12 dB less rounding in a quiet freeze) */
@@ -471,6 +477,7 @@ static inline __attribute__((always_inline)) void ri_tank(rev_inf_t *s, int32_t 
                                                          * at 8 kHz) */
             s->ckh[k] = ck;
             s->ckf[k] = (rq_sqrt15(ck << 1) >> 1) + RI_CMINF;
+            s->ckf[k] = s->ckf[k] < RI_CKFMAX ? s->ckf[k] : RI_CKFMAX;
         }
         ck = s->ckf[k];
         if (!((k ^ s->rr) & RI_RRS) || !s->mI[k]) {       /* the read: every 4th block (LITE: 8th; 2.9 / 5.8 ms) */

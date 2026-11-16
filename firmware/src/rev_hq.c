@@ -226,6 +226,12 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
             if (quiet || !rv_cur) rev_begin((uint32_t)tgt);
             else rv_fade = RV_FADE;
         }
+        else if (quiet && rv_cur == RV_INF && tgt == RV_INF) {   /* (0.9.13: INFINITE again after its tail ended (OFF,
+                                                        * MIX 0): its whole state to rest, as from another TYPE; it
+                                                        * kept its held level, its glides, its lines' read phases) */
+            rev_begin(RV_INF);
+            quiet = 0;
+        }
         if (rv_cur == RV_INF) send = sendo, sk = sko, rk = rko;   /* (the TYPE that runs now: its law) */
         else send = sendn, sk = skn, rk = RV_RK;
         if (sk != send)
