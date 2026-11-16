@@ -462,7 +462,7 @@ FR_COLD static void seq_save_poll(void)
         if (rc < 0) sq_sv_failed();
         return;
     }
-    if (!sq_dirty || seq_play || fm1_ms - sq_change_t < 1500u || !eng_idle() || !fx_quiet() || !tempo_flash_ok() ||
+    if (!sq_dirty || seq_play || fm1_ms - sq_change_t < 1500u || !eng_idle() || !fx_quiet() ||
         set_save_busy()) return;                        /* (one auto save at a time: they share the flash's one
                                                          * operation, and neither waits for the other in the loop) */
     sq_sv_begin();

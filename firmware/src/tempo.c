@@ -280,8 +280,6 @@ FR_COLD static uint32_t clk_frac16(void)
     f = (uint32_t)(((uint64_t)(uint32_t)d * 24u * (0xFFFFFFFFu / clk_b8)) >> 16);
     return f > 0xFFFFu ? 0xFFFFu : f;
 }
-FR_COLD static int tempo_flash_ok(void) { return !clk_live(); }   /* (the automatic saves: not while a clock runs, whose
-                                                           * pulses an erase would hold back) */
 
 /* the phase lock: called every main-loop pass; works on each new audio block's snapshot (app_audio: blk_n, blk_ms
  * and the five LFO phases at the block's end), at the time that block's end is heard (TEMPO_OUT8: the device's DMA

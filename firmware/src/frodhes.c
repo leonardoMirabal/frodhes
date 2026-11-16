@@ -1568,9 +1568,9 @@ FR_COLD static void settings_poll(void)
         if (memcmp(&r, &set_pend, sizeof r)) { set_pend = r; set_pend_t = fm1_ms; }
         set_pend_new = memcmp(&set_pend, &set_saved, sizeof r) != 0;
     }
-    if (!set_saving && set_pend_new && fm1_ms - set_pend_t > 2000u && eng_idle() && fx_quiet() && tempo_flash_ok() &&
+    if (!set_saving && set_pend_new && fm1_ms - set_pend_t > 2000u && eng_idle() && fx_quiet() &&
         !seq_save_busy()) {                     /* (the pattern's save runs: next pass; neither busy-finishes the other) */
-        set_saved = set_pend;                   /* (written from set_saved: set_pend may move on meanwhile; not while a clock runs) */
+        set_saved = set_pend;                   /* (written from set_saved: set_pend may move on meanwhile; a running MIDI clock does not hold it back: its pulses are stamped and counted on arrival, tempo.c) */
         set_saving = settings_save_start(&set_saved, sizeof set_saved) == 1;
         set_pend_new = 0;
     }
@@ -2033,6 +2033,7 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "savepend")) snprintf(v, n, "%u", pr_save_pending);   /* a preset save waiting for silence */
     else if (!strcmp(key, "undo")) snprintf(v, n, "%u", set.undo_valid);
     else if (!strcmp(key, "dirty")) snprintf(v, n, "%u", set_pend_new);   /* a setup change waits to be saved */
+    else if (!strcmp(key, "sqdirty")) snprintf(v, n, "%u", (unsigned)(sq_dirty || sq_sv_step));   /* a pattern change waits to be saved (or its save runs) */
     else if (!strcmp(key, "saving")) snprintf(v, n, "%u", set_saving);   /* the settings' save runs (settings_poll) */
     else if (!strcmp(key, "ledduty")) snprintf(v, n, "%u %u", fm1_led_duty[0], fm1_led_duty[1]);   /* DISPLAY BRIGHTNESS: the keys', the buttons' lit duty /16 */
     else if (!strcmp(key, "bars")) snprintf(v, n, "%d", eng_is_bars());
@@ -2071,7 +2072,7 @@ FR_COLD static void host_dump(void)
     static const char *const K[] = {"header", "preset", "page", "vpage", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
                                     "arpn", "arpv", "arpends", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "fxdrv", "label0", "card0", "label1", "card1", "label2", "card2",
-                                    "label3", "card3", "bpm10", "setbpm", "vresp", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
+                                    "label3", "card3", "bpm10", "setbpm", "vresp", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "sqdirty", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
     char key[24], v[128];                 /* (v: rowbox writes up to 72 + NUL: gcc -Wformat-truncation) */
     uint32_t i, k;
     for (i = 0; i < sizeof K / sizeof K[0]; i++) { host_state(K[i], v, sizeof v); printf("@ %u %s %s\n", fm1_ms, K[i], v); }

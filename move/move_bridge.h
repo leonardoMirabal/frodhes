@@ -1528,7 +1528,7 @@ static int mb_get(const char *key, char *buf, int n)
         if (!strcmp(k, "seqplay")) return snprintf(buf, (size_t)n, "%u", (unsigned)seq_play);
         if (!strcmp(k, "seq")) return snprintf(buf, (size_t)n, "rec=%u n=%u dirty=%u step=%u quiet=%d/%d/%d",
                                                (unsigned)seq_rec, (unsigned)sq_n, (unsigned)sq_dirty, (unsigned)sq_sv_step,
-                                               eng_idle(), fx_quiet(), tempo_flash_ok());
+                                               eng_idle(), fx_quiet(), !clk_live());
         if (!strcmp(k, "fm1_ms")) return snprintf(buf, (size_t)n, "%u", fm1_ms);
         if (!strncmp(k, "pv", 2)) { int id = atoi(k + 2); return id >= 0 && id < (int)P_COUNT ? snprintf(buf, (size_t)n, "%u", PV(id)) : -1; }
     }
