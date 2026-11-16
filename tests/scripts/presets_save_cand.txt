@@ -1,0 +1,26 @@
+# A PRESETS browse candidate (it loads 0.4 s after the last detent) must not survive the save mode or a Program
+# Change: turn PRESETS to F02, press SAVE within 0.4 s, SAVE again: the sound is stored in U01 and stays (the pending
+# F02 used to load over it one pass later). Then a cancel (HOME), then a PC inside the browse window.
+100 turn 6 1
+150 expect state msg F02_SUITCASE
+200 btn 9
+250 expect state savemode 1
+300 btn 9
+350 expect state savemode 0
+350 expect state preset 19
+350 expect state msg SAVING...
+700 expect state preset 19
+700 expect state header U01_ST77
+# browse to the next sound, open the save mode, cancel with HOME: the browse does not load either
+1000 turn 6 1
+1050 btn 9
+1100 expect state savemode 1
+1150 btn 8
+1200 expect state savemode 0
+1700 expect state preset 19
+# browse, then a Program Change (F03) inside the 0.4 s window: F03 stays
+2000 turn 6 1
+2100 midi 0xC0 2 0
+2200 expect state preset 2
+2800 expect state preset 2
+3000 end

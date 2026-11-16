@@ -431,6 +431,7 @@ FR_COLD static void preset_load(uint32_t idx)
     uint8_t p[P_COUNT];
     uint32_t i;
     if (preset_values(idx, p)) return;
+    pr_cand = 255;                                      /* (a browse still pending would load over this one: a PC) */
     for (i = 0; i < P_COUNT; i++) UV(i) = PV(i);
     set.undo_valid = 1;
     set.undo_preset = (uint8_t)(set.preset < PR_NF + PR_NU ? set.preset + 1u : 0u);   /* what the undo copy was */
@@ -525,6 +526,7 @@ FR_COLD static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, ui
         save_t = 0;
         if (!pr_save_mode) {
             pr_save_mode = 1;
+            pr_cand = 255;                              /* (a pending browse must not load after the save or a cancel) */
             pr_save_slot = set.preset >= PR_NF && set.preset < PR_NF + PR_NU ? (uint8_t)(set.preset - PR_NF) : 0;
             return;
         }
