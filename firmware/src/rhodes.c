@@ -104,7 +104,7 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 _Static_assert(RH_NV >= 1u && RH_NV <= 32u, "summaries are 32-bit masks");
 #define SUB 32u
 #define RAMP_SUB 5u                            /* the damper settle (rh_settle) on C3..B4, sub-blocks */
-#define FADE_SAMPLES 64u
+#define FADE_SAMPLES 64u                       /* the steal fade (rh_fade_g: a smoothstep over it, 0.9.13) */
 #define RH_OFF_LIFE 1378u                      /* blocks (8 s) a voice may still ring after an all-off */
 #define Q30 (1 << 30)
 #define RH_S_MAX_HI 2048u                      /* s >> 44 at 32 gap^2 */
@@ -1882,6 +1882,15 @@ static FR_RAM int32_t __attribute__((noinline)) rh_mode_p(rh_ms_t *s) { return r
 
 /* the pickup loop with the steal fade (the plain one's arithmetic, then the fade per sample); its own function like
  * rh_pickup, so neither moves rh_voice_sub's mode-loop registers (the felt noise is a pass of its own, O6) */
+/* the steal fade's gain at fade f (Q15, 32767 .. 0 in FADE_SAMPLES): a smoothstep, 3 f^2 - 2 f^3 (0.9.13, the audio
+ * review D2: the straight ramp's corners put the cut of a loud low note into the highs, -54.7 dBFS above 2 kHz for C3
+ * v127 under a v30 note, -64.0 with the smoothstep, the same 1.45 ms: no later start for the note that steals; a
+ * 4-8 ms ramp would have delayed it by 3-6.5 ms) */
+static inline __attribute__((always_inline)) int32_t rh_fade_g(int32_t f)
+{
+    int32_t g = (f * f) >> 15;                  /* (f <= 32767: f^2 < 2^30) */
+    return (int32_t)(((int64_t)g * (98304 - 2 * f)) >> 15);
+}
 static FR_RAM __attribute__((noinline)) int32_t rh_pickup_fx(rh_voice_t *v, const int32_t *T, int32_t *mix, int32_t off,
                                                       int32_t Hp, int32_t gain)
 {
@@ -1891,7 +1900,7 @@ static FR_RAM __attribute__((noinline)) int32_t rh_pickup_fx(rh_voice_t *v, cons
         int32_t o = (int32_t)(((int64_t)(Hp - H) * gain) >> 24);
         Hp = H;
         if (v->fade != 32768) {
-            o = (int32_t)(((int64_t)o * v->fade) >> 15);
+            o = (int32_t)(((int64_t)o * rh_fade_g(v->fade)) >> 15);
             v->fade -= (int32_t)(32768 / FADE_SAMPLES);
             if (v->fade < 0) v->fade = 0;
         }
