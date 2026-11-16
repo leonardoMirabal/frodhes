@@ -434,6 +434,8 @@ static inline int32_t svf_tick(const svf_t *c, int32_t *ic, int32_t x, uint32_t 
 #ifndef FL_RCA
 #define FL_RCA 819                                         /* (Q12: 0.2; over FREQ 30..100 LP keeps its RMS within -0.8 .. +0.8 dB of RESO 0, the peaks +1.0 .. +1.6 dB on average re RESO 0 (0.25: the peaks +0.2 .. +0.6, the RMS down to -3 dB)) */
 #endif
+#define FL_NEAR 4096                                       /* (0.9.13: a state within this of 0 (512 LSB out) may be a
+                                                            * stuck one, fx_filter) */
 static int32_t fl_rc = 4096, fl_ri = 4096;              /* (fl_ri: 1 / fl_rc, Q12: BP / NOTCH restored at the output) */
 static inline __attribute__((always_inline)) void fl_run(int32_t *m, uint32_t n, const svf_t *c, const uint32_t mode,
                                                          const int p18, int32_t gp)
@@ -562,7 +564,11 @@ static __attribute__((noinline)) void fx_filter(int32_t *m, uint32_t n)
         fl_pos += clampi((tgt - fl_pos) >> 2, -FL_JMP, FL_JMP);
         if (fl_kq != k) fl_kq += clampi(k - fl_kq, -(fl_kq >> 7), fl_kq >> 7);
         j = sb + 32u < n ? sb + 32u : n;
-        int32_t s0i = fl_ic[0], s1i = fl_ic[1], sop = fl_op, sx = m[sb] | m[j - 1u];   /* (the stuck state's check) */
+        int32_t s0i = fl_ic[0], s1i = fl_ic[1], sop = fl_op, sx = m[sb] | m[j - 1u];   /* (the stuck state's check:
+                                                         * a state near 0 and the ends of the input 0, then all of it) */
+        int near = !sx && (uint32_t)(s0i + FL_NEAR) < 2u * FL_NEAR && (uint32_t)(s1i + FL_NEAR) < 2u * FL_NEAR
+                   && (uint32_t)(sop + FL_NEAR) < 2u * FL_NEAR;
+        if (near) for (q = sb; q < j; q++) sx |= m[q];
         if (fl_ow != 32768 || open) memcpy(fl_dry, m + sb, (j - sb) * sizeof *m);
         /* the coefficients every 8 samples (0.9.8 fxq-mod; they stepped every 32: a swept cutoff put images of a tone
          * at +-1378 Hz, -31 dB re a 2 kHz tone through LP12 under the fastest sine LFO, tools/fxq_metrics.py): the
@@ -592,8 +598,8 @@ static __attribute__((noinline)) void fx_filter(int32_t *m, uint32_t n)
             if (fl_xw) fl_xrun(m + s0, s1 - s0, &fl_cc, type, fl_xt, gp, fl_xw - 1 + 16 * (int32_t)(s0 - sb));
             else FR_FAR2(fl_pass)(m + s0, s1 - s0, &fl_cc, type, gp);
         }
-        if (!sx && !fl_xw && fl_ic[0] == s0i && fl_ic[1] == s1i && fl_op == sop && (s0i | s1i | sop)) {
-            /* 0.9.13: silence in and the state held still, not at 0: the rounding's dead band (a low cutoff: a3 v3
+        if (near && !sx && !fl_xw && fl_ic[0] == s0i && fl_ic[1] == s1i && fl_op == sop && (s0i | s1i | sop)) {
+            /* 0.9.13: exact silence in (the whole sub-block) and the state held still, near 0 but not at 0: the rounding's dead band (a low cutoff: a3 v3
              * rounds to 0, so ic[1] never moves; up to +-19 LSB of DC out, which TREM then moved at its rate, and
              * fx_quiet never came: no save). Each state 1 step toward 0 a sub-block (1/8 LSB out): out of the band
              * in at most ~0.1 s, then the filter's own decay. Any moving state or any input: untouched */
