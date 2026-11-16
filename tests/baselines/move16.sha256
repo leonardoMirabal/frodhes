@@ -75,6 +75,7 @@ aa8af4a32a5bf1e426cd4c18623b319472960d3cda589cf78c25ad2031c8644d  scripts/vibes_
 # host-only scripts/arp_full: FM-1 input lines: btn
 # host-only scripts/autosave_setup: FM-1 input lines: btn, turn
 # host-only scripts/battery: FM-1 input lines: btn
+# host-only scripts/bpm_snap: FM-1 input lines: btn, tempo, turn
 # host-only scripts/bend: FM-1 input lines: btn, turn, usblink
 # host-only scripts/burst: FM-1 input lines: keys
 # host-only scripts/buttons: FM-1 input lines: btn, turn

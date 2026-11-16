@@ -63,6 +63,8 @@ struct frp_gui {
 /* ---- values */
 static int hi_of(int id) { return frui_value_hi(id); }
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+/* n whole-BPM steps (bpm10); from tenths (a host or tap tempo) the first step lands on a whole BPM */
+static int bpm_step(int b, int n) { return (n > 0 ? b / 10 : (b + 9) / 10) * 10 + n * 10; }
 
 static int setting_get(frp_gui_t *g, int key, int def_local)
 {
@@ -515,7 +517,7 @@ static void button(frp_gui_t *g, int id)
         m->fx_bypass = !m->fx_bypass;
         break;
     case FRB_BPM_DOWN: case FRB_BPM_UP:
-        if (m->tempo_src == 1) setting_set(g, FRS_BPM, clampi(m->bpm10 + (id == FRB_BPM_UP ? 10 : -10), 400, 2400));
+        if (m->tempo_src == 1) setting_set(g, FRS_BPM, clampi(bpm_step(m->bpm10, id == FRB_BPM_UP ? 1 : -1), 400, 2400));
         break;
     case FRB_LEARN_RESET: learn(g, FRP_UI_LEARN_FORGET_ALL, -1); break;
     case FRB_UPDATE: case FRB_UPDATE_RAIL:           /* (the package: the browser's download, or the downloaded one) */
@@ -530,7 +532,7 @@ static int focusable(const frui_widget *w)
 static void step_value(frp_gui_t *g, int id, int dir, int mods)
 {
     int hi = hi_of(id), st = hi >= 100 && (mods & FRG_SHIFT) ? 10 : 1;
-    if (id == FRS_BPM) { if (g->m.tempo_src == 1) setting_set(g, FRS_BPM, clampi(g->m.bpm10 + dir * st * 10, 200, 3000)); return; }
+    if (id == FRS_BPM) { if (g->m.tempo_src == 1) setting_set(g, FRS_BPM, clampi(bpm_step(g->m.bpm10, dir * st), 200, 3000)); return; }
     set_once(g, id, clampi(frui_value(&g->m, id) + dir * st, 0, hi));
 }
 
