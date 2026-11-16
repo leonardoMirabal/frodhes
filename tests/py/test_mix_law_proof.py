@@ -86,6 +86,10 @@ def test_the_record_passes_and_each_outside_cell_holds_on_the_committed_proofs()
     doc = json.load(open(os.path.join(ROOT, "tests", "mix_law_proof.json")))
     assert doc["verdict"] == "PASS" and doc["unproven"] == 0 and doc["cells"]
     expected, lp, rp = rd.load_expected(rd.EXPECTED), mp.record(mp.LEVEL_PROOF), mp.record(mp.REV_PROOF)
+    # the outside cells hold on the entries naming the proofs; none since the rebase on v0.9.12 at 0.9.13 (the record
+    # proves 0.9.12's MIX-law moves against v0.9.11, kept as that release's evidence)
+    if not [e for e in expected if e.get("ceiling_proof") in (mp.LEVEL_PROOF, mp.REV_PROOF)]:
+        return
     outside = [c for c in doc["cells"] if str(c["proven"]).startswith(("level proof", "reverb-level proof"))]
     assert doc.get("outside_the_law") == len(outside)
     for c in outside:

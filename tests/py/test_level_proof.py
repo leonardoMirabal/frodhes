@@ -14,7 +14,17 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import release_diff as rd  # noqa: E402
 
 
+def named(proof):
+    """the expected-changes entries that name this proof (none since the rebase on v0.9.12 at 0.9.13: the record
+    tests/level_proof.json proves 0.9.12's moves against v0.9.11, kept as that release's evidence; an entry naming it
+    again brings back the whole check below, and the record must then be measured against the new LAST)"""
+    return [e for e in rd.load_expected(rd.EXPECTED) if e.get("ceiling_proof") == proof]
+
+
 def test_every_level_proof_entry_is_proven_now():
+    if not named("tests/level_proof.json"):
+        assert json.load(open(os.path.join(ROOT, "tests", "level_proof.json")))["against"] != rd.LAST
+        return
     out = os.path.join("build", "release_diff", "level_proof-" + os.environ.get("PYTEST_XDIST_WORKER", "w") + ".json")
     p = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "level_proof.py"), "--out", out], cwd=ROOT,
                        capture_output=True, text=True, env=dict(os.environ, PYTEST_N="2"))
@@ -53,7 +63,7 @@ def test_the_two_named_cell_rules_fail_past_their_bounds():
     assert lp.twin_ok(15.61, 15.56, 15.60)
     assert not lp.twin_ok(15.62, 15.56, 15.62)                  # over the released one-core + 0.05
     assert not lp.twin_ok(15.56, 15.56, 15.40)                  # the candidate's one-core reads otherwise
-    # each named cell has its exact entry naming this proof (test_every_level_proof_entry_is_proven_now proves it)
-    ents = {(e["match"], str(e["metric"])) for e in rd.load_expected(rd.EXPECTED)
-            if e.get("ceiling_proof") == "tests/level_proof.json"}
-    assert set(lp.CELL_RULES) <= ents
+    # each named cell has its exact entry naming this proof (test_every_level_proof_entry_is_proven_now proves it),
+    # while any entry names the proof (none since the rebase on v0.9.12: named())
+    ents = {(e["match"], str(e["metric"])) for e in named("tests/level_proof.json")}
+    assert not ents or set(lp.CELL_RULES) <= ents

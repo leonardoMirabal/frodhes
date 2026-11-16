@@ -27,6 +27,10 @@ def test_the_old_level_is_0912s():
 
 
 def test_every_rev_level_entry_is_proven_now():
+    # none since the rebase on v0.9.12 at 0.9.13: the record tests/rev_level_proof.json proves 0.9.12's reverb-level
+    # moves against v0.9.11, kept as that release's evidence; an entry owning it again brings back the whole check
+    if not [e for e in rd.load_expected(rd.EXPECTED) if rl.own(e) or rl.chained(e)]:
+        return
     out = os.path.join("build", "release_diff", "rev_level_proof-" + os.environ.get("PYTEST_XDIST_WORKER", "w") + ".json")
     p = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "rev_level_proof.py"), "--out", out], cwd=ROOT,
                        capture_output=True, text=True, env=dict(os.environ, PYTEST_N="2"))
