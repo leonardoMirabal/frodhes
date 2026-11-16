@@ -521,10 +521,10 @@ def click_ratio(a, b, t, ref_d=None, no_diff=False):
     heard over the sound). Everything the event does not touch (the reverb and delay tails, the other notes, the
     modulations) is equal in a and b and cancels in a - b, so a busy patch no longer masks a click (0.9.5's FILTER
     TYPE, BUGHUNT #4: 7x plain, 15x diff in seed 14's stream at 12227 ms). ratio: the larger.
-    The two windows of click_one (0.9.13): ref_d, the settled reference of the diff taken from elsewhere (a bypass
-    crossfade ending: click_one's re-render without the FX press); no_diff, the diff's ratio not judged (a pending
-    preset browse landing). In both the diff's absolute step still counts: a second difference of STEP_ABS reads 10x
-    (in the browse window STEP_ABS or the render without the event's own largest step there, the load's, if larger)"""
+    The two windows of click_one (0.9.13): ref_d, a second settled reference of the diff (a bypass crossfade ending:
+    click_one's re-render without the FX press; the larger of it and the diff's own counts); no_diff, the diff's ratio
+    not judged (a pending preset browse landing). In both the diff's absolute step still counts: a second difference
+    of STEP_ABS, or of the render without the event's own largest one there if larger, reads 10x"""
     i0, i1 = ms(t - 6), ms(t + 30)
     s0, s1 = ms(t + 60), ms(t + 93)
     ref = max(_d2(b[i0:i1]).max(), _d2(a[s0:s1]).max(), _d2(b[s0:s1]).max(), 1.0)
@@ -534,9 +534,9 @@ def click_ratio(a, b, t, ref_d=None, no_diff=False):
     if ref_d is None and not no_diff:
         diff = float(dw / max(_d2(d[s0:s1]).max(), 0.05 * ref, 1.0))
     else:
-        rel = 0.0 if no_diff else float(dw / max(ref_d, 0.05 * ref, 1.0))
-        floor = max(STEP_ABS, _d2(b[i0:i1]).max()) if no_diff else STEP_ABS   # (a browse: the load's own step,
-        diff = max(rel, float(10.0 * dw / floor))                              # in b too, is #1's, not the event's)
+        rel = 0.0 if no_diff else float(dw / max(_d2(d[s0:s1]).max(), ref_d, 0.05 * ref, 1.0))
+        floor = max(STEP_ABS, _d2(b[i0:i1]).max())      # (a step the render without the event has there too, a
+        diff = max(rel, float(10.0 * dw / floor))       # browse's load or the sound itself, is not the event's)
     return max(plain, diff), plain, diff
 
 
@@ -558,15 +558,16 @@ def click_one(events, i, binary=BIN, detail=False, inject=None):
     browse can land in between and undo the event's change). inject: a function applied to the render with the
     event (the self-tests' faults).
     Two windows (0.9.13, seeds 23615257 and 23615202) where the diff's own settled reference says nothing:
-      bypass end  an FX press (bypass on) up to XF_MS before the event: the crossfade takes the wet away by the
-                  settled window, both renders are dry there and the diff's reference falls to its floor (a LFO SHAPE
-                  turn 11 ms after FX read 12x, 1.6x without the press). The reference comes from the same two
-                  streams rendered without that press, where the change stays
+      bypass end  an FX press (bypass on) up to XF_MS before the event, not itself an FX event, bypassed at +31 ms in
+                  both renders: the crossfade takes the wet away by the settled window, both renders are dry there and
+                  the diff's own reference falls to its floor (a LFO SHAPE turn 11 ms after FX read 12x, 1.6x without
+                  the press). The same two streams rendered without that press, where the change stays, give a second
+                  reference; the larger counts
       browse      a preset load from a pending browse (preset changes between 1 ms before and 31 ms after, in the
                   render without the event too) lands in the window: the diff carries the load's own change (#1).
                   The diff's ratio is not judged
-    In both, plain (the render with the event against its surroundings) and the diff's absolute step (STEP_ABS;
-    in the browse window at least the load's own step in the render without the event) still judge"""
+    In both, plain (the render with the event against its surroundings) and the diff's absolute step (STEP_ABS, or
+    the render without the event's own largest step in the window if larger) still judge"""
     t, line = events[i]
     pre = click_stream(events, i)
     without = [e for e in pre if e is not events[i]]
@@ -583,7 +584,7 @@ def click_one(events, i, binary=BIN, detail=False, inject=None):
     browse = pb is not None and any(b.dumps.get(at, {}).get("preset", pb) != pb for at in (t + 8, t + 31))
     presses = [e for e in pre if e is not events[i] and t - XF_MS <= e[0] < t and fx_event(e[1])]
     ref_d = None
-    if presses and not browse and b.dumps.get(t + 31, {}).get("byp") == "1":
+    if presses and not browse and not fx_event(line) and all(r.dumps.get(t + 31, {}).get("byp") == "1" for r in (a, b)):
         a2 = run(script_text([e for e in pre if e not in presses], (), t + 150), binary)
         b2 = run(script_text([e for e in without if e not in presses], (), t + 150), binary)
         if a2.code or b2.code or not len(a2.x) or not len(b2.x):

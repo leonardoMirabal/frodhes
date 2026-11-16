@@ -236,6 +236,17 @@ def test_the_bypass_end_window_needs_the_press_and_the_old_reference_read_the_ar
     assert mk.XF_MS >= 46 + 6 and mk.STEP_ABS <= 200
 
 
+@pytest.mark.parametrize("seed,t,line", [(906792336, 1496, "midi 0xB0 111 0"), (906792829, 5099, "btn 2"),
+                                         (906791411, 6944, "turn 3 1")])
+def test_the_bypass_end_window_keeps_to_its_case(binary, seed, t, line):
+    """the window opens only when both renders are bypassed at +31 ms and the event is no FX event itself (an FX on
+    after an FX press brings the wet back: its own settled diff is the reference), and its second reference never
+    lowers the first (an ARPEGGIO knob's notes do not fade with the wet): a first draft read these 18x, 15x, 32x"""
+    ev = mk.gen(seed)
+    ratio, changed, ring, plain, diff = mk.click_one(ev, ev.index((t, line)), binary, detail=True)
+    assert ratio <= 10, (seed, ratio, plain, diff)
+
+
 # (#22 and #26, the int32 overflows: tests/py/test_overflows.py)
 
 
