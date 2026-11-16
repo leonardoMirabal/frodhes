@@ -204,6 +204,38 @@ def test_docs_step_writes_the_notes_and_removes_the_fragments(tree, monkeypatch)
     assert "docs/PLUGIN.md" in rel.doc_links.DOCS
 
 
+def test_scrub_paths():
+    root = "/Users/someone/dev/frodhes"
+    t = (f"build {root}/build/frodhes-0.9.3-c1.fwsc sha 12; log /Users/someone/.cache/x/run.log, "
+         "tmp /private/var/folders/ab/T/tmpq1/out.json and (/tmp/a b) ok; url https://x.org/Users/no stays; ~/a stays")
+    got = rel.scrub_paths(t, root)
+    assert "/Users/" not in got.replace("https://x.org/Users/no", "") and "/private/" not in got and "/tmp/" not in got
+    assert "build build/frodhes-0.9.3-c1.fwsc sha 12" in got and "log run.log," in got and "tmp out.json and" in got
+    assert "(a b) ok" in got and "https://x.org/Users/no stays" in got and "~/a stays" in got
+
+
+def test_release_commit_body_has_no_local_paths(tree, monkeypatch):
+    """the release commit is public: an evidence line with an absolute path (the build, a log) goes in relative to the
+    checkout, or as its file name"""
+    calls, inputs = [], []
+    r = release_at_docs(tree, monkeypatch, calls)
+    sh0 = rel.sh
+
+    def sh(cmd, check=True, input=None, timeout=None, quiet=False):
+        if input is not None:
+            inputs.append(input)
+        if cmd[:2] == ["git", "diff"]:
+            return 0, "docs/releases/v0.9.3.md\n"
+        return sh0(cmd, check=check, input=input, timeout=timeout, quiet=quiet)
+    monkeypatch.setattr(rel, "sh", sh)
+    r.results = {"3 host": ("done", f"build {tree}/build/frodhes-0.9.3-c1.fwsc sha256 ff\nmore"),
+                 "4 device": ("skipped", "no device; report /Users/someone/Desktop/x/build/hil/report.txt")}
+    r.s_docs()
+    body = next(i for i in inputs if i.startswith("Release 0.9.3"))
+    assert "/Users/" not in body and str(tree) not in body, body
+    assert "build build/frodhes-0.9.3-c1.fwsc sha256 ff" in body and "report report.txt" in body, body
+
+
 def test_docs_step_refuses_stale_links_and_the_next_version(tree, monkeypatch):
     (tree / "docs" / "img" / "a.png").write_bytes(b"a new picture")          # its link's ?v= is now stale
     calls = []

@@ -218,6 +218,17 @@ def out(cmd, **kw):
     return sh(cmd, quiet=True, **kw)[1].strip()
 
 
+LOCAL_PATH = re.compile(r"(?<![\w.~-])/(?:Users|home|private|tmp|var|Volumes)/[^\s'\"`)\],;]*")
+
+
+def scrub_paths(text, root=None):
+    """a public text (the release commit's body) without this computer's absolute paths: one under the checkout
+    becomes relative to it, any other (a home, /private, /tmp ...) its file name"""
+    root = (root or ROOT).rstrip("/") + "/"
+    text = text.replace(root, "")
+    return LOCAL_PATH.sub(lambda m: os.path.basename(m.group(0).rstrip("/")) or "(a local path)", text)
+
+
 def tail(text, n=25):
     return "\n".join(text.rstrip().splitlines()[-n:])
 
@@ -670,6 +681,7 @@ class Release:
                f"\n\nTested by tools/release.py: host (make test, make pytest, gate_r, the release build sha256 "
                f"{self.sha}); {dev}.\n{body}\n")
         msg += f"{PLUGIN_RECORD} {' '.join(self.plugin_list())}\n"
+        msg = scrub_paths(msg)                          # (public: no /Users/... from the evidence lines)
         if out(["git", "diff", "--cached", "--name-only"]):
             sh(["git", "commit", "-q", "-F", "-"], input=msg)
         self.head = out(["git", "rev-parse", "HEAD"])
