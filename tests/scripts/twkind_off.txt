@@ -1,0 +1,34 @@
+# TREM/WAH switched off with its EFFECT card (K1) keeps the kind in use: the way down WAH -> TREM -> PAN -> OFF passes
+# PAN, and OFF keeps the kind the run of turns started from; the LFO button brings it back (0.9.6 #8: "the type last
+# on"). A pause (over 1 s) starts a new run: the kind it starts from is the one kept. LFO = button 5, K1 = encoder 2.
+100 btn 5
+200 expect state page TREM/WAH
+300 turn 2 1
+400 turn 2 1
+500 turn 2 1
+600 expect state card0 WAH
+700 turn 2 -1
+800 turn 2 -1
+900 turn 2 -1
+1000 expect state card0 OFF
+1100 btn 5
+1200 expect state card0 WAH
+# off with the button, up to TREM, play it for 2 s, then down to OFF: TREM comes back
+1300 btn 5
+1400 expect state card0 OFF
+1500 turn 2 1
+1600 turn 2 1
+1700 expect state card0 TREM
+3700 turn 2 -1
+3800 turn 2 -1
+3900 expect state card0 OFF
+4000 btn 5
+4100 expect state card0 TREM
+# down from TREM to PAN, a pause, then OFF: PAN was in use
+4200 turn 2 -1
+4300 expect state card0 PAN
+5500 turn 2 -1
+5600 expect state card0 OFF
+5700 btn 5
+5800 expect state card0 PAN
+6000 end

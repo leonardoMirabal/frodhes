@@ -819,9 +819,18 @@ FR_COLD static void slot_turn(uint32_t s, int32_t d)
     case S_ROOT: set.sc_root = (uint8_t)((set.sc_root + (d > 0 ? 1u : 11u)) % 12u); break;
     case S_TRANS: set.sc_trans = (int8_t)clampi(set.sc_trans + d, -24, 24); break;
     case S_TWKIND: {                                    /* OFF PAN TREM WAH */
-        int32_t k = clampi((int32_t)tw_kind() + sgn(d), 0, 3);
+        /* the way down to OFF passes PAN (and TREM): OFF keeps the kind the run of down turns started from (sw in
+         * set.last_on[0] as the LFO button does, the mode back in P_TW_MODE), so LFO / PERFORM bring that kind back */
+        static uint32_t run_t;
+        static uint8_t run_sw, run_mode;
+        static int8_t run_dir;
+        uint32_t k0 = tw_kind();
+        int32_t k = clampi((int32_t)k0 + sgn(d), 0, 3);
+        if (d < 0 && (run_dir >= 0 || fm1_ms - run_t > 1000u)) { run_sw = (uint8_t)PV(P_TW_SW); run_mode = (uint8_t)PV(P_TW_MODE); }
+        run_dir = (int8_t)sgn(d); run_t = fm1_ms;
         param_set(P_TW_SW, k == 0 ? 0 : k == 3 ? 2 : 1);
         if (k == 1 || k == 2) param_set(P_TW_MODE, k - 1);
+        if (k == 0 && k0 && run_sw) { set.last_on[0] = run_sw; param_set(P_TW_MODE, run_mode); }
         fx_wake(P_TW_SW);
         break;
     }
