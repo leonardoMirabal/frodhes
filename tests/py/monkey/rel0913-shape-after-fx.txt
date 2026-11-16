@@ -1,0 +1,97 @@
+# 0.9.13 host monkey seed 23615257 (shrunk): LFO SHAPE turned (SINE -> TRI, filter LP18 RESO 104 LFO 68) 11 ms after
+# an FX press (bypass on, 7026). The bypass crossfade (46 ms) leaves both renders dry in the click check's settled
+# window, so the diff's own reference fell to its floor: 12.0x, plain 1.38x; the same turn without the press 1.6x;
+# 0.9.12 on the same state 11.2x. Not an audio click: tools/monkey.py click_one's bypass-end window.
+2462 btn 2
+2474 turn 0 1
+2494 btn 5
+3065 btn 8
+3088 btn 2
+3100 turn 3 -1
+3609 turn 5 1
+4137 midi 0xC1 34 0
+4152 turn 1 5
+4256 keys 80910281
+4256 midi 0xB7 74 79
+4260 turn 5 -3
+4500 vkey 13 933
+4740 turn 1 -1
+4754 turn 4 -2
+4802 btn 2
+4811 turn 2 -1
+4830 btn 0
+4845 btn 9
+4870 btn 4
+4979 midi 0x91 66 71
+4979 midi 0x91 60 79
+5006 midi 0x91 38 6
+5006 midi 0x91 34 4
+5247 midi 0xB1 72 68
+5280 btn 11
+5303 midi 0xB1 56 0
+5319 midi 0xB1 59 57
+5333 turn 2 -1
+5359 midi 0xB1 71 104
+5369 btn 4
+5377 midi 0xB1 123 117
+5384 midi 0xB4 18 25
+5420 turn 5 -2
+6285 vkey 5 826
+6286 keys 109297236
+6287 btn 9
+6303 turn 6 -5
+6305 turn 4 1
+6312 midi 0x91 27 109
+6317 btn 2
+6320 turn 2 3
+6328 turn 3 2
+6337 btn 0
+6342 btn 2
+6353 turn 3 -1
+6356 btn 6
+6369 btn 5
+6542 keys 109166164
+6572 turn 5 2
+6595 btn 9
+6614 btn 6
+6686 btn 4
+6691 turn 0 1
+6716 btn 10
+6740 btn 8
+6748 btn 12
+6754 btn 6
+6777 btn 6
+6792 vkey 18 433
+6793 keys 111524948
+6797 midi 0xB1 64 127
+6798 midi 0x91 49 120
+6798 midi 0x91 55 121
+6798 midi 0x91 57 113
+6798 midi 0x91 64 64
+6800 btn 11
+6814 turn 2 -2
+6821 btn 5
+6824 btn 7
+6827 btn 7
+6846 btn 2
+6851 midi 0xB1 64 127
+6852 midi 0x91 48 79
+6852 midi 0x91 55 100
+6852 midi 0x91 63 60
+6852 midi 0x91 66 94
+6882 midi 0xB1 1 121
+6885 turn 0 -1
+6898 midi 0xB1 20 127
+6952 turn 5 -2
+6955 midi 0xB1 28 106
+6966 btn 5
+6969 btn 0
+6992 btn 11
+7001 midi 0xB1 109 86
+7007 midi 0xB1 19 0
+7012 turn 0 -1
+7012 vkey 17 363
+7013 keys 111524944
+7026 btn 2
+7037 midi 0xF8 0 0
+7037 turn 2 2

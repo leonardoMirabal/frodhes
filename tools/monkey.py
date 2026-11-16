@@ -513,31 +513,64 @@ def _d2(x):
     return np.abs(np.diff(np.asarray(x, float), 2, axis=0)).max(1)
 
 
-def click_ratio(a, b, t):
+def click_ratio(a, b, t, ref_d=None, no_diff=False):
     """the click ratio of one event at t ms, from the renders with it (a) and without it (b), stereo int arrays:
     (ratio, plain, diff). plain: the largest second difference of a from 6 ms before (the event lands at the start of
     its 5.8 ms block) to 30 ms after it, against the larger of b there and both once settled (60-93 ms after). diff:
     the same on a - b, the change itself, against its settled self (and 5 % of plain's reference: a click must be
     heard over the sound). Everything the event does not touch (the reverb and delay tails, the other notes, the
     modulations) is equal in a and b and cancels in a - b, so a busy patch no longer masks a click (0.9.5's FILTER
-    TYPE, BUGHUNT #4: 7x plain, 15x diff in seed 14's stream at 12227 ms). ratio: the larger"""
+    TYPE, BUGHUNT #4: 7x plain, 15x diff in seed 14's stream at 12227 ms). ratio: the larger.
+    The two windows of click_one (0.9.13): ref_d, the settled reference of the diff taken from elsewhere (a bypass
+    crossfade ending: click_one's re-render without the FX press); no_diff, the diff's ratio not judged (a pending
+    preset browse landing). In both the diff's absolute step still counts: a second difference of STEP_ABS reads 10x
+    (in the browse window STEP_ABS or the render without the event's own largest step there, the load's, if larger)"""
     i0, i1 = ms(t - 6), ms(t + 30)
     s0, s1 = ms(t + 60), ms(t + 93)
     ref = max(_d2(b[i0:i1]).max(), _d2(a[s0:s1]).max(), _d2(b[s0:s1]).max(), 1.0)
     plain = float(_d2(a[i0:i1]).max() / ref)
     d = np.asarray(a, float) - b
-    diff = float(_d2(d[i0:i1]).max() / max(_d2(d[s0:s1]).max(), 0.05 * ref, 1.0))
+    dw = _d2(d[i0:i1]).max()
+    if ref_d is None and not no_diff:
+        diff = float(dw / max(_d2(d[s0:s1]).max(), 0.05 * ref, 1.0))
+    else:
+        rel = 0.0 if no_diff else float(dw / max(ref_d, 0.05 * ref, 1.0))
+        floor = max(STEP_ABS, _d2(b[i0:i1]).max()) if no_diff else STEP_ABS   # (a browse: the load's own step,
+        diff = max(rel, float(10.0 * dw / floor))                              # in b too, is #1's, not the event's)
     return max(plain, diff), plain, diff
 
 
-def click_one(events, i, binary=BIN, detail=False):
+FX_LINES = ("btn 2",)                           # the FX button; CC 111 on channel 1 too (fx_event)
+XF_MS = 52                                      # the bypass crossfade (fx.c FX_XF_STEP: 46 ms) + its first block
+STEP_ABS = 200.0                                # LSB: the diff's second difference that is a step in the windows
+                                                # (the two artefacts' smooth changes: 48 and 22; an injected 400 step
+                                                # is caught: tests/py/test_monkey.py)
+
+
+def fx_event(line):
+    w = line.split()
+    return line in FX_LINES or (w[0] == "midi" and int(w[1], 16) == 0xB0 and int(w[2]) == 111)
+
+
+def click_one(events, i, binary=BIN, detail=False, inject=None):
     """(ratio, changed parameters, ringing dB) for event i: the stream up to it + 150 ms with and without it (detail:
     the plain and diff ratios too). The changed parameters: at 8 and 31 ms (a preset load still pending from a
-    browse can land in between and undo the event's change)"""
+    browse can land in between and undo the event's change). inject: a function applied to the render with the
+    event (the self-tests' faults).
+    Two windows (0.9.13, seeds 23615257 and 23615202) where the diff's own settled reference says nothing:
+      bypass end  an FX press (bypass on) up to XF_MS before the event: the crossfade takes the wet away by the
+                  settled window, both renders are dry there and the diff's reference falls to its floor (a LFO SHAPE
+                  turn 11 ms after FX read 12x, 1.6x without the press). The reference comes from the same two
+                  streams rendered without that press, where the change stays
+      browse      a preset load from a pending browse (preset changes between 1 ms before and 31 ms after, in the
+                  render without the event too) lands in the window: the diff carries the load's own change (#1).
+                  The diff's ratio is not judged
+    In both, plain (the render with the event against its surroundings) and the diff's absolute step (STEP_ABS;
+    in the browse window at least the load's own step in the render without the event) still judge"""
     t, line = events[i]
     pre = click_stream(events, i)
     without = [e for e in pre if e is not events[i]]
-    extra = [(t + 8, "dump"), (t + 31, "dump")]
+    extra = [(t - 1, "dump"), (t + 8, "dump"), (t + 31, "dump")]
     a = run(script_text(pre, extra, t + 150), binary)
     b = run(script_text(without, extra, t + 150), binary)
     if a.code or b.code or not len(a.x) or not len(b.x):
@@ -545,7 +578,19 @@ def click_one(events, i, binary=BIN, detail=False):
     if int(a.dumps.get(t + 8, {}).get("voices", 0)) > int(b.dumps.get(t + 8, {}).get("voices", 0)):
         return None                             # (it started a note: a knob on the ARPEGGIO page moving the next
     ring = rms_db(b.x[ms(t - 50):ms(t)])        # step, as the arp's CCs and ARP button do; its onset is no click)
-    ratio, plain, diff = click_ratio(a.x, b.x, t)
+    ax = inject(a.x.copy()) if inject else a.x
+    pb = b.dumps.get(t - 1, {}).get("preset")
+    browse = pb is not None and any(b.dumps.get(at, {}).get("preset", pb) != pb for at in (t + 8, t + 31))
+    presses = [e for e in pre if e is not events[i] and t - XF_MS <= e[0] < t and fx_event(e[1])]
+    ref_d = None
+    if presses and not browse and b.dumps.get(t + 31, {}).get("byp") == "1":
+        a2 = run(script_text([e for e in pre if e not in presses], (), t + 150), binary)
+        b2 = run(script_text([e for e in without if e not in presses], (), t + 150), binary)
+        if a2.code or b2.code or not len(a2.x) or not len(b2.x):
+            return None
+        d2 = np.asarray(a2.x, float) - b2.x
+        ref_d = float(_d2(d2[ms(t + 60):ms(t + 93)]).max())
+    ratio, plain, diff = click_ratio(ax, b.x, t, ref_d=ref_d, no_diff=browse)
     changed = []
     for at in (t + 8, t + 31):
         da, db = a.dumps.get(at, {}), b.dumps.get(at, {})

@@ -1,0 +1,40 @@
+# 0.9.13 host monkey seed 23615202 (shrunk): FX pressed while a PRESETS browse (17810) is pending; it loads F13
+# VIBES 6 ms after the press, in both renders. The diff carried the load's change (#1): 11.0x, plain 0.95x; the press
+# without the browse 0.8x; 0.9.12 on the same state 10.0x. Not an audio click: click_one's browse window.
+9891 btn 10
+15269 keys 129778015
+15288 midi 0xC0 11 0
+15322 midi 0x90 48 102
+15436 btn 10
+15501 midi 0x90 68 102
+15566 midi 0x90 87 24
+15901 btn 3
+15954 midi 0xB0 123 42
+15960 midi 0xB0 86 76
+16124 midi 0x90 85 104
+16124 midi 0x90 80 100
+16124 midi 0x90 69 101
+16124 midi 0x90 90 116
+16177 press 3
+16201 midi 0x90 30 107
+16201 midi 0x90 27 101
+16261 midi 0x90 83 19
+16261 midi 0x90 89 19
+16312 midi 0xB0 64 127
+16313 midi 0x90 52 93
+16917 midi 0xB0 91 111
+16949 btn 3
+16989 midi 0x90 22 43
+16989 midi 0x90 15 37
+16989 midi 0x90 19 41
+17011 midi 0xB0 120 58
+17058 midi 0xB0 64 127
+17704 midi 0x90 58 61
+17704 midi 0x90 66 70
+17806 midi 0xE0 0 0
+17810 turn 6 3
+17887 midi 0xBE 68 0
+18118 midi 0xF8 0 0
+18146 midi 0xF8 0 0
+18177 btn 10
+18204 btn 2
