@@ -65,6 +65,13 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
                  (SMK_ASSETS, both names), and the Move package (MOVE_ASSETS) when it was tested;
                  releases/latest/download/frodhes.fwsc redirects to vX.Y.Z and is byte for byte the build (with
                  --verify-only: the versioned asset); README on GitHub at the tag names no version and links it
+10 release.json  Schwung Manager's update check (tools/move_catalog.py): when the release carries the Move package,
+                 main's release.json must name X.Y.Z. release.yml's job release-json writes it to main when it has a
+                 deploy key; otherwise (main is protected) this step does it through a pull request: release.json
+                 written by tools/move_catalog.py release-json X.Y.Z on origin/main in a temporary worktree, its
+                 download_url checked (it downloads), committed on the branch release-json-X.Y.Z and pushed, the PR
+                 opened, ci.yml green on it, merged (a merge commit), then main's release.json read back. Nothing to
+                 do when main already names X.Y.Z (or a newer version), or when the release has no Move package
 
 --dry-run runs every local check and test (2-5 report, but write and commit nothing) and never pushes, tags or
 publishes. Each step prints PASS / FAIL with its evidence; the summary lists every step: done, skipped (why), failed.
@@ -84,6 +91,7 @@ import urllib.request
 import changes
 import doc_links
 import lock
+import move_catalog
 import test_map
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -123,7 +131,8 @@ LATEST_DL = f"https://github.com/{REPO}/releases/latest/download/{STABLE}"
 PY = os.path.join(".local", "venv", "bin", "python")
 CPU_LIMIT_US = 4500
 JACK_PEAK_MIN_DB = -27.0          # the loud chord peaks near -15 dBFS on the jack; far below = not connected
-STEPS = ["version", "preconditions", "host", "FM-1", "docs", "confirm", "publish", "emulator", "verify"]
+STEPS = ["version", "preconditions", "host", "FM-1", "docs", "confirm", "publish", "emulator", "verify", "release.json"]
+RELEASE_JSON = "release.json"                  # Schwung Manager reads it from main (tools/move_catalog.py)
 SCAN_SET = "silence,latency,keyboard,velocity,sustain,held_tail,stress,presets"
 ENGINES = ("rhodes", "vibes", "marimba")
 # hil_scan --marimba (every MARIMBA suite, USB and the jack) exits 1 on any FAIL row, so its report is judged here.
@@ -859,6 +868,60 @@ class Release:
         ev.append(f"README at {tag} names no version and links {LATEST_DL}")
         return "\n".join(ev)
 
+    # 10
+    def s_release_json(self):
+        """main's release.json names this version (Schwung Manager's update check), through a PR when needed"""
+        tag, branch = "v" + self.ver, f"release-json-{self.ver}"
+        r = json.loads(out(["gh", "release", "view", tag, "-R", REPO, "--json", "assets"]))
+        names = [x["name"] for x in r["assets"]]
+        if MOVE_STABLE not in names:
+            return (f"{tag} carries no Move package ({MOVE_STABLE}): {RELEASE_JSON} left as it is (Schwung Manager "
+                    f"keeps offering the last release that had one)")
+        want = move_catalog.release_json(self.ver, REPO, MOVE_STABLE)
+        sh(["git", "fetch", "-q", "origin", "main"])
+
+        def on_main():
+            code, txt = sh(["git", "show", f"origin/main:{RELEASE_JSON}"], check=False, quiet=True)
+            try:
+                return json.loads(txt) if not code else None
+            except ValueError:
+                return None
+        cur = on_main()
+        if cur and cur.get("version") and move_catalog.vtuple(cur["version"]) > move_catalog.vtuple(self.ver):
+            return f"main's {RELEASE_JSON} names {cur['version']}, newer than {self.ver}: left alone"
+        if cur == want:
+            return f"main's {RELEASE_JSON} already names {self.ver} ({want['download_url']}): nothing to do"
+        if resolve(want["download_url"])[1] is None:
+            raise Stop(f"{want['download_url']} does not download: {RELEASE_JSON} not written")
+        ev = [f"main's {RELEASE_JSON}: {cur.get('version') if cur else '(none)'}; {want['download_url']} downloads"]
+        wt = tempfile.mkdtemp(prefix="frodhes-relj-", dir=os.path.join(ROOT, "build"))
+        os.rmdir(wt)                                   # (git worktree add makes it)
+        sh(["git", "worktree", "add", "-q", "--detach", wt, "origin/main"])
+        try:
+            changed, msg = move_catalog.write_release_json(self.ver, REPO, os.path.join(wt, RELEASE_JSON), MOVE_STABLE)
+            ev.append(msg)
+            sh(["git", "-C", wt, "add", RELEASE_JSON])
+            sh(["git", "-C", wt, "commit", "-q", "-m", f"release.json: Frodhes {self.ver} on the Move (Schwung Manager's "
+                "update check)"])
+            head = out(["git", "-C", wt, "rev-parse", "HEAD"])
+            sh(["git", "-C", wt, "push", "origin", f"HEAD:refs/heads/{branch}"])
+        finally:
+            sh(["git", "worktree", "remove", wt], check=False)
+        url = out(["gh", "pr", "create", "-R", REPO, "--base", "main", "--head", branch, "--title",
+                   f"release.json: Frodhes {self.ver}", "--body",
+                   f"Schwung Manager's update check: {RELEASE_JSON} names {self.ver} "
+                   f"({want['download_url']}). Written by tools/release.py (step 10) after the release was published "
+                   f"and verified."]).splitlines()[-1]
+        ev.append(f"PR {url} (branch {branch}, {head[:10]})")
+        ev.append(wait_run("ci.yml", head, ok=("success", "skipped"), need=CI_NEED))
+        sh(["gh", "pr", "merge", url, "-R", REPO, "--merge", "--delete-branch"])
+        sh(["git", "fetch", "-q", "origin", "main"])
+        got = on_main()
+        if got != want:
+            raise Stop(f"after the merge, main's {RELEASE_JSON} is {got}, not {want}")
+        ev.append(f"merged: main's {RELEASE_JSON} names {self.ver}")
+        return "\n".join(ev)
+
     def tiers(self):
         """the tiers this release needs: tools/test_map.py over `git diff --name-only <previous tag>..HEAD`, T1 on
         every release, T2 also with --full; {'need', 'map', 'lines' (the tiers and why), 'why_t2'}"""
@@ -959,7 +1022,7 @@ class Release:
     # ---- the driver ----
     def run(self):
         plan = [self.s_version, self.s_preconditions, self.s_host, self.s_device, self.s_docs, self.s_confirm,
-                self.s_publish, self.s_emulator, self.s_verify]
+                self.s_publish, self.s_emulator, self.s_verify, self.s_release_json]
         if self.a.no_device and not self.a.verify_only:
             print("\n" + "!" * 78 + "\n!!  --no-device: the FM-1 is NOT tested in this run (step 4 skipped)\n"
                   + "!" * 78, flush=True)
@@ -983,7 +1046,7 @@ class Release:
                 continue
             if skip:
                 self.results[i] = ("skipped", skip)
-                print(f"\n[{i}/9] {name}: SKIPPED ({skip})", flush=True)
+                print(f"\n[{i}/{len(STEPS)}] {name}: SKIPPED ({skip})", flush=True)
                 if i == 4:
                     try:
                         tm = self.tiers()
@@ -998,22 +1061,22 @@ class Release:
                             "the Move's record: tools/release_devices.py (M7-04), then --no-device --device-done "
                             "JSON with a \"move\" section {sha256, tiers, runs}"]))
                 continue
-            print(f"\n[{i}/9] {name}", flush=True)
+            print(f"\n[{i}/{len(STEPS)}] {name}", flush=True)
             try:
                 r = self.s_device_done() if i == 4 and self.a.no_device else fn()
                 ev, st = r if isinstance(r, tuple) else (r, "done")
                 self.results[i] = (st, ev)
                 self.log(ev)
-                print(f"[{i}/9] {name}: {'PASS' if st == 'done' else 'WARN (dry-run)'}", flush=True)
+                print(f"[{i}/{len(STEPS)}] {name}: {'PASS' if st == 'done' else 'WARN (dry-run)'}", flush=True)
             except Handoff as e:
                 self.results[i] = ("handoff", str(e))
                 self.log(str(e))
-                print(f"[{i}/9] {name}: HANDED OFF (the release PR)", flush=True)
+                print(f"[{i}/{len(STEPS)}] {name}: HANDED OFF (the release PR)", flush=True)
                 handed = True
             except (Stop, subprocess.TimeoutExpired, OSError, ValueError, KeyError) as e:
                 self.results[i] = ("FAILED", str(e))
                 self.log(str(e))
-                print(f"[{i}/9] {name}: FAIL", flush=True)
+                print(f"[{i}/{len(STEPS)}] {name}: FAIL", flush=True)
                 failed = True
         self.summary()
         return 1 if failed else 3 if handed else 0

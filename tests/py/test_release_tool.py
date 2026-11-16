@@ -958,3 +958,90 @@ def test_step3_keeps_what_passed_and_a_gate_r_baseline_reruns_gate_r(tree, monke
     assert rec["passed"] == ["make test", "make pytest", "gate_r"] and rec["sha256"], rec
     calls, o = run("aaaa000000000000")                  # the same HEAD again: Gate R still to run there
     assert "make test" not in calls and any(c.endswith("tools/gate_r.py") for c in calls), calls
+
+
+# ---- step 10: main's release.json (Schwung Manager's update check) through a PR ----
+def relj_shell(calls, assets, main_versions, written):
+    """git / gh for step 10: main's release.json answers main_versions in turn (None: no file), the temporary worktree
+    is made for real (the step writes into it), what was committed is kept in written"""
+    seq = list(main_versions)
+
+    def sh(cmd, check=True, input=None, timeout=None, quiet=False):
+        s = cmd if isinstance(cmd, str) else " ".join(cmd)
+        calls.append(s)
+        if s.startswith("gh release view"):
+            return 0, json.dumps({"assets": [{"name": a} for a in assets]})
+        if s.startswith("git show origin/main:release.json"):
+            v = seq.pop(0) if len(seq) > 1 else seq[0]
+            return (1, "fatal: no such path") if v is None else (0, json.dumps(rel.move_catalog.release_json(
+                v, rel.REPO, rel.MOVE_STABLE)))
+        if s.startswith("git worktree add"):
+            os.makedirs(cmd[-2])
+            return 0, ""
+        if s.startswith("git -C") and " commit " in s:
+            written.append(open(os.path.join(cmd[2], "release.json")).read())
+            return 0, ""
+        if s.startswith("git -C") and s.endswith("rev-parse HEAD"):
+            return 0, "abc1234567890\n"
+        if s.startswith("gh pr create"):
+            return 0, "https://github.com/leonardoMirabal/frodhes/pull/99\n"
+        return 0, ""
+    return sh
+
+
+def relj_release(monkeypatch, tmp_path, calls, assets, main_versions, written, downloads=True):
+    monkeypatch.setattr(rel, "ROOT", str(tmp_path))
+    os.makedirs(tmp_path / "build", exist_ok=True)
+    monkeypatch.setattr(rel, "sh", relj_shell(calls, assets, main_versions, written))
+    monkeypatch.setattr(rel, "resolve", lambda url: (None, "a" * 64 if downloads else None))
+    waited = []
+    monkeypatch.setattr(rel, "wait_run", lambda wf, sha, **kw: waited.append((wf, sha, kw)) or f"{wf} green")
+    r = rel.Release(rel.parse_args(["0.9.3", "--after-merge"]))
+    r.ver = "0.9.3"
+    return r, waited
+
+
+def test_release_json_goes_in_through_a_pr(monkeypatch, tmp_path):
+    calls, written = [], []
+    r, waited = relj_release(monkeypatch, tmp_path, calls, [rel.MOVE_STABLE, "frodhes.fwsc"], ["0.9.2", "0.9.3"],
+                             written)
+    ev = r.s_release_json()
+    assert json.loads(written[0]) == {"version": "0.9.3", "download_url":
+                                      f"https://github.com/{rel.REPO}/releases/download/v0.9.3/{rel.MOVE_STABLE}"}
+    order = [next(i for i, c in enumerate(calls) if c.startswith(p)) for p in
+             ("git worktree add", "git -C", "gh pr create", "gh pr merge")]
+    assert order == sorted(order)
+    assert any(c.endswith("push origin HEAD:refs/heads/release-json-0.9.3") for c in calls)
+    assert not [c for c in calls if "HEAD:main" in c or c.endswith("push origin main")]   # main only through the PR
+    assert any(c.startswith("git worktree remove") and "--force" not in c for c in calls)
+    assert waited == [("ci.yml", "abc1234567890", dict(ok=("success", "skipped"), need=rel.CI_NEED))]
+    assert "gh pr merge https://github.com/leonardoMirabal/frodhes/pull/99 -R leonardoMirabal/frodhes --merge " \
+           "--delete-branch" in calls
+    assert "merged: main's release.json names 0.9.3" in ev
+
+
+@pytest.mark.parametrize("assets, main_versions, says", [
+    (["frodhes.fwsc"], ["0.9.2"], "carries no Move package"),
+    ([rel.MOVE_STABLE], ["0.9.3"], "already names 0.9.3"),
+    ([rel.MOVE_STABLE], ["0.9.4"], "newer than 0.9.3: left alone")])
+def test_release_json_nothing_to_do(monkeypatch, tmp_path, assets, main_versions, says):
+    calls, written = [], []
+    r, waited = relj_release(monkeypatch, tmp_path, calls, assets, main_versions, written)
+    assert says in r.s_release_json()
+    assert not written and not waited and not [c for c in calls if " push" in c or c.startswith("gh pr")]
+
+
+def test_release_json_stops(monkeypatch, tmp_path):
+    calls, written = [], []
+    r, _ = relj_release(monkeypatch, tmp_path, calls, [rel.MOVE_STABLE], [None], written, downloads=False)
+    with pytest.raises(rel.Stop, match="does not download"):
+        r.s_release_json()
+    assert not [c for c in calls if " push" in c or c.startswith("gh pr")]
+    calls.clear()
+    r, _ = relj_release(monkeypatch, tmp_path, calls, [rel.MOVE_STABLE], ["0.9.2"], written)   # main never changes
+    with pytest.raises(rel.Stop, match="after the merge, main's release.json"):
+        r.s_release_json()
+
+
+def test_release_json_is_step_10_after_verify():
+    assert rel.STEPS[-2:] == ["verify", "release.json"]
