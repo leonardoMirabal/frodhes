@@ -97,7 +97,8 @@ def predict(t, engine, voices, usb="48000", fx="every", bend=False, reverb="hall
     if fx == "every" or "reverb" in fx:
         app += rev_delta(t, reverb) + est_costs(t, engine)
     tail = hi(t["tail_us"][usb])
-    b = hi(t["bend_us"]) if bend else 0
+    b = hi(t["bend_us"]) if bend and engine == "rhodes" else 0   # (the retune is the Rhodes' alone: VIBES and MARIMBA
+                                                                 # ignore the bend, engine.c eng_bend_set)
     return dict(engine=engine, voices=voices, usb=usb, fx=fx if isinstance(fx, str) else "+".join(fx), bend=bend, reverb=reverb, app=round(app), tail=tail, bend_us=b,
                 whole=round(app + tail + b))
 

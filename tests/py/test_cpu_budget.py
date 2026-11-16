@@ -57,7 +57,9 @@ def test_the_model_is_monotonic():
     for e in cb.ENGINES:
         a, b = cb.predict(T, e, 8), cb.predict(T, e, 9)
         assert a["whole"] < b["whole"], e
-        assert cb.predict(T, e, 9, "44100")["whole"] < b["whole"] < cb.predict(T, e, 9, bend=True)["whole"]
+        assert cb.predict(T, e, 9, "44100")["whole"] < b["whole"]
+        bent = cb.predict(T, e, 9, bend=True)["whole"]
+        assert b["whole"] < bent if e == "rhodes" else b["whole"] == bent, e   # (VIBES and MARIMBA ignore the bend)
         assert cb.predict(T, e, 9, fx="none")["whole"] < cb.predict(T, e, 9, fx=["reverb"])["whole"] < b["whole"]
 
 
@@ -88,12 +90,12 @@ def test_predictions():
     """the numbers the release plan quotes (tools/cpu_budget.py prints the whole table)"""
     want = {("rhodes", 8, False): 3408, ("rhodes", 8, True): 3532, ("rhodes", 9, False): 3631,
             ("rhodes", 9, True): 3755, ("rhodes", 10, False): 3854, ("rhodes", 10, True): 3978,
-            ("vibes", 9, False): 4026, ("vibes", 9, True): 4150, ("vibes", 10, False): 4293, ("vibes", 10, True): 4417,
-            ("marimba", 9, False): 3990, ("marimba", 9, True): 4114, ("marimba", 10, False): 4253,
-            ("marimba", 10, True): 4377}
+            ("vibes", 9, False): 4026, ("vibes", 9, True): 4026, ("vibes", 10, False): 4293, ("vibes", 10, True): 4293,
+            ("marimba", 9, False): 3990, ("marimba", 9, True): 3990, ("marimba", 10, False): 4253,
+            ("marimba", 10, True): 4253}
     got = {k: cb.predict(T, k[0], k[1], bend=k[2])["whole"] for k in want}
     # (a device run that updates tools/cpu_costs.json moves these: update them with it; bending: the retune of every
-    # voice, 0.9.13's bend_us 124 (the spread one's 30 before);
+    # voice, 0.9.13's bend_us 124 (the spread one's 30 before), on the Rhodes only (the bars ignore the bend);
     # est_costs_us: + 51, the reverb's half-bands, rev-upsample; + 12, the 48 kHz knee, uac_knee; + 5, the jack's 24 bits, master24;
     # + 18, the dither at the cut to Q15, dither)
     assert got == want, got
