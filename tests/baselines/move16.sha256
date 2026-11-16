@@ -73,6 +73,7 @@ aa8af4a32a5bf1e426cd4c18623b319472960d3cda589cf78c25ad2031c8644d  scripts/vibes_
 # host-only scripts/arp: FM-1 input lines: btn, keys
 # host-only scripts/arp_buttons: FM-1 input lines: btn, keys
 # host-only scripts/arp_full: FM-1 input lines: btn
+# host-only scripts/arp_gate_snap: FM-1 input lines: btn, turn
 # host-only scripts/autosave_setup: FM-1 input lines: btn, turn
 # host-only scripts/battery: FM-1 input lines: btn
 # host-only scripts/bpm_snap: FM-1 input lines: btn, tempo, turn
@@ -80,6 +81,7 @@ aa8af4a32a5bf1e426cd4c18623b319472960d3cda589cf78c25ad2031c8644d  scripts/vibes_
 # host-only scripts/burst: FM-1 input lines: keys
 # host-only scripts/buttons: FM-1 input lines: btn, turn
 # host-only scripts/clock: the FM-1 sequencer / arpeggiator / chords (CC 43, 60, 61, 63): not on the Move, which has its own (the user, 2026-10-28; move/move_bridge.h MB_CC_DROP)
+# host-only scripts/clock_save: FM-1 input lines: btn, keys, turn
 # host-only scripts/cmp_mkup_engine: FM-1 input lines: btn, turn
 # host-only scripts/display: FM-1 input lines: btn, keys, turn
 # host-only scripts/drive_select: FM-1 input lines: turn
@@ -97,6 +99,7 @@ aa8af4a32a5bf1e426cd4c18623b319472960d3cda589cf78c25ad2031c8644d  scripts/vibes_
 # host-only scripts/perform: FM-1 input lines: btn, keys, turn
 # host-only scripts/perform_wake: FM-1 input lines: btn, turn
 # host-only scripts/play_led: FM-1 input lines: btn, keys, turn
+# host-only scripts/presets_save_cand: FM-1 input lines: btn, turn
 # host-only scripts/quiet_gated: FM-1 input lines: btn, turn
 # host-only scripts/release_vel: FM-1 input lines: keys
 # host-only scripts/rev_freeze_save: FM-1 input lines: btn
@@ -112,6 +115,7 @@ aa8af4a32a5bf1e426cd4c18623b319472960d3cda589cf78c25ad2031c8644d  scripts/vibes_
 # host-only scripts/sustain: FM-1 input lines: btn, keys, press, release
 # host-only scripts/touch: FM-1 input lines: btn, keys, turn
 # host-only scripts/trs: FM-1 input lines: btn, trs, turn
+# host-only scripts/twkind_off: FM-1 input lines: btn, turn
 # host-only scripts/type_held_repress: FM-1 input lines: keys, turn
 # host-only scripts/ui_panel: FM-1 input lines: btn, turn
 # host-only scripts/ui_presets: FM-1 input lines: btn, press, release, turn
