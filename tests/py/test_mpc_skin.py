@@ -151,6 +151,14 @@ def walk(v, path=""):
             yield from walk(x, "%s[%d]" % (path, i))
 
 
+def test_pictures_under_the_texture_limit():
+    """no picture over 16384 px on a side: the MPC does not load a larger one (the knob film strips were 19812 px
+    high up to 0.9.12; 0.9.13 draws 105 frames, 16380 px)"""
+    for n in sorted(os.listdir(SKINS)):
+        if n.endswith(".png"):
+            assert max(png_size(os.path.join(SKINS, n))) <= 16384, n
+
+
 def test_blocks_of_four(tui, qlinks):
     """each page: two focus rectangles, each wrapping one row of four cards (one wide card counts two); the Q-Link
     map puts the top row on Q-Links 13-16 and the lower one on 9-12, left to right, banked top row first; the cards
