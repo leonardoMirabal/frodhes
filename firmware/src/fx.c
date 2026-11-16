@@ -172,7 +172,7 @@ static volatile uint8_t eng_cur;   /* (a tentative definition, engine.c's type: 
 /* FX_HC(k, v, lo, hi): v, and on the host a count when a clamp to [lo, hi] would cut it (engine.c fx_h_clip: the
  * effects' headroom gate, tests/py/test_fx_pristine.py); the firmware: v (nothing) */
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
-static uint32_t fx_h_clip[4];   /* (a tentative definition: engine.c's own when it is in the unit, else the C harnesses') */
+static uint32_t fx_h_clip[5];   /* (a tentative definition: engine.c's own when it is in the unit, else the C harnesses') */
 static inline int32_t fx_hc(int k, int32_t v, int32_t lo, int32_t hi) { if (v < lo || v > hi) fx_h_clip[k]++; return v; }
 #define FX_HC(k, v, lo, hi) fx_hc(k, v, lo, hi)
 #else
@@ -910,6 +910,11 @@ static int32_t wah_pki, wah_pko;                /* peak envelopes of the input a
  * (q x bp, f x hi) fit 32 bits up to here; a hot input (COMP's +24 dB make-up, the pedal: 0.9.5 overflowed at ~12x full
  * scale) is clipped to it, 2x full scale (every render below it: the gates' heaviest ~14000) */
 #define WAH_XM 65535
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+#define WAH_HC() (fx_h_clip[4]++)                       /* (the host: the input clip counted, engine.c fx_h_clip) */
+#else
+#define WAH_HC() ((void)0)
+#endif
 #define WAH_PEN 4                                       /* the envelopes' pre-emphasis, x - WAH_PEN / 8 x[-1] (below) */
 static inline __attribute__((always_inline)) int32_t div10(int32_t v) { return (int32_t)(((int64_t)v * 1717986919) >> 34) + (int32_t)((uint32_t)v >> 31); }
 /* the wah's filter (0.9.8 fxq-mod): the same state-variable (Chamberlin) filter, the same response, computed 64 times
@@ -943,7 +948,7 @@ FX_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t
      * and x and feed nothing back into (1) */
     for (j = 0; j < k; j++) {
         int32_t xin = mp[j], x, xf, a = xin < 0 ? -xin : xin;
-        if (a > WAH_XM) { a = WAH_XM; xin = xin < 0 ? -WAH_XM : WAH_XM; }   /* (BUGHUNT #26: the stage's range) */
+        if (a > WAH_XM) { a = WAH_XM; xin = xin < 0 ? -WAH_XM : WAH_XM; WAH_HC(); }   /* (BUGHUNT #26: the stage's range) */
         if (a > env) env += (a - env) >> 3; else env -= (env >> 11) + 1;
         if (env < 0) env = 0;
         {                                       /* the cutoff's row, 0 .. 63: up at once, down a row late */
@@ -2510,7 +2515,17 @@ static void hall_gains(int32_t s)                       /* s: the size in Q4 (rv
     }
     hl.sz = (int16_t)(s + 1);
 }
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+/* (the host: every int16 ring write a clamp cuts counts as the reverb's, fx_h_clip[1]: HALL, PLATE, INFINITE, classic
+ * and full-rate; 0.9.13, the audio review D5: only the send and the kernel inputs were counted) */
+static inline __attribute__((always_inline)) int32_t hl_c16(int32_t v)
+{
+    if (v < -32768 || v > 32767) fx_h_clip[1]++;
+    v = v > -32768 ? v : -32768; return v < 32767 ? v : 32767;
+}
+#else
 static inline __attribute__((always_inline)) int32_t hl_c16(int32_t v) { v = v > -32768 ? v : -32768; return v < 32767 ? v : 32767; }   /* smax + smin */
+#endif
 static inline void hall_ap(int16_t *q, int32_t g, int32_t *x, uint32_t n, int ld)
 {
     int16_t *e = q + n;
