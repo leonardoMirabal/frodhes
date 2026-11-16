@@ -119,6 +119,9 @@ Changes you make are not kept when you switch off. To keep a sound, save it to a
 2. Turn **PRESETS** or **K1** to choose a slot, U01-U16.
 3. Press **SAVE** again. Press **HOME** to cancel.
 
+A preset you had just turned to when you pressed SAVE the first time does not load afterwards: the sound you
+saved (or, after HOME, the sound you had) keeps playing.
+
 The bottom line shows **SAVING...** until the sound has died away, then **SAVED**. Settings such as the MIDI
 channel, the tempo and the display are kept by themselves: let the FM-1 rest silent for two seconds before you
 switch it off.
@@ -457,7 +460,7 @@ sound the FM-1 was left on. Over MIDI: CC 70 TYPE, 74 cutoff, 71 resonance, 72 L
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **EFFECT** | **OFF**, **PAN** (the suitcase piano's stereo vibrato: the sound moves between the sides at constant power), **TREM** (volume tremolo), **WAH** (touch wah: harder playing opens it; it keeps the sound's level at every DEPTH and RATE, so a closed wah on a high chord or a soft high note is not quieter and a low one not louder, and its level make-up keeps a note's attack within 2 dB of its dry peak; MARIMBA's top octave, whose notes are very short, still comes out a little quieter) |
+| K1 | **EFFECT** | **OFF** (it remembers the effect that was on: LFO pressed twice, or turning DEPTH up on PERFORM, brings that one back), **PAN** (the suitcase piano's stereo vibrato: the sound moves between the sides at constant power), **TREM** (volume tremolo), **WAH** (touch wah: harder playing opens it; it keeps the sound's level at every DEPTH and RATE, so a closed wah on a high chord or a soft high note is not quieter and a low one not louder, and its level make-up keeps a note's attack within 2 dB of its dry peak; MARIMBA's top octave, whose notes are very short, still comes out a little quieter) |
 | K2 | **DEPTH** | How deep |
 | K3 | **RATE** | How fast; on WAH, the resonance (it glides as you turn it, without a click). When synced it shows a note value |
 | K4 | **SHAPE** | Two halves. Up to the middle (0–64): from a smooth sine to a square, choppy pulse. Above it (65–127): an amp's tremolo, the square easing back into a sine: the level falls more slowly than it comes back (at the top the dip takes about two thirds of each cycle), it moves evenly in loudness so a deep setting breathes rather than chopping to silence (the deepest dip stays at −30 dB), and loud playing makes it a little shallower (up to a quarter less depth at full level). On PAN the upper half gives the same slower swing. On WAH the card shows **-**: SHAPE does nothing there and keeps its value for TREM and PAN |
@@ -625,7 +628,7 @@ too). Press **ARP** to come here, and **ARP** again to switch it on / off (the A
 | K1 | **MODE** | **OFF**, **UP**, **DOWN**, **UP-DN** (up and back down), **ORDER** (the order you played the notes), **RANDOM** |
 | K2 | **RATE** | The note value: 1/4 (one note per beat), 1/8, 1/8T, 1/16, 1/16T, 1/32 |
 | K3 | **OCTAVES** | 1 to 4: the pattern repeated octaves up |
-| K4 | **GATE** | How long each note sounds: 10 % short and plucked, 100 % legato |
+| K4 | **GATE** | How long each note sounds: 10 % short and plucked, 100 % legato, in 5 % steps (a value between steps, set over MIDI, moves to the next step in the direction you turn) |
 
 Up to 16 notes; every note of the arpeggio plays at the velocity of the first note you held.
 
@@ -1043,7 +1046,9 @@ always there to start again from.
 exactly as it is stored: what you turned since (knobs, effects, MIDI CCs) is gone, on purpose, so after a
 performance you always start from the original sound. To keep a sound, SAVE it to a user preset. Turning knobs
 never writes to the flash. The tempo comes back as you last set it by hand (TAP, or BPM on the TEMPO page), never as
-an external MIDI clock left it (a clock causes no save at all).
+an external MIDI clock left it (the clock's tempo is never saved). A setup change made while a MIDI clock runs is
+saved the same way, about 2 s later once the sound has died away, and so is the pattern while the sequencer is
+stopped: the clock keeps its tempo and its beat through the save.
 
 So after a setup change, let the sound die away for a couple of seconds before you switch off.
 
@@ -1344,7 +1349,8 @@ the desktop plugin's engine in the higher-quality version, 16 voices on every in
 F01-F57 as its programs. Everything in this manual applies to the sound. Its pages on the MPC's screen show the
 plugin's look: eight pages of large knobs in panels of four, each panel one Q-Link group; touching a panel brings it
 under the Q-Links. The MPC's tempo drives the synced effects; the FM-1's sequencer, arpeggiator and chord mode are not
-in the plugin. The download, the install and the page list: [docs/MPC.md](MPC.md).
+in the plugin. The download, the install (by hand, or from the Open MPC catalogue with its Plugin Manager) and the page list:
+[docs/MPC.md](MPC.md).
 
 ![Frodhes on the Akai MPC: the VOICE page](manual/img/mpc/mpc-voice.png?v=ab028bbc)
 

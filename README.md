@@ -11,16 +11,12 @@ Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/le
 
 <table align="center">
   <tr>
-    <td align="center"><img src="docs/manual/img/piano.png?v=d41944c5" width="260" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"></td>
-    <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ba262a7f" width="300" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
-    <td align="center"><img src="docs/manual/img/plugin/plugin-main.png?v=a6729600" width="300" alt="The desktop plugin's window: the VOICE knobs, two effect sections and a keyboard"></td>
-    <td align="center"><img src="docs/manual/img/mpc/mpc-voice.png?v=ab028bbc" width="300" alt="Frodhes on the Akai MPC: the VOICE page, two panels of four knobs"></td>
+    <td align="center" width="50%"><img src="docs/manual/img/piano.png?v=d41944c5" width="100%" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"><br><b>On the M-VAVE FM-1</b>: colour screen, four knobs</td>
+    <td align="center" width="50%"><img src="docs/manual/img/move/move-frodhes.png?v=ba262a7f" width="100%" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"><br><b>On the Ableton Move</b>: its own screen, eight knobs</td>
   </tr>
   <tr>
-    <td align="center"><b>On the M-VAVE FM-1</b>: colour screen, four knobs</td>
-    <td align="center"><b>On the Ableton Move</b>: its own screen, eight knobs</td>
-    <td align="center"><b>On your computer</b>: a plugin with its own window</td>
-    <td align="center"><b>On the Akai MPC</b>: its own pages, the Q-Links</td>
+    <td align="center" width="50%"><img src="docs/manual/img/plugin/plugin-main.png?v=a6729600" width="100%" alt="The desktop plugin's window: the VOICE knobs, two effect sections and a keyboard"><br><b>On your computer</b>: a plugin with its own window</td>
+    <td align="center" width="50%"><img src="docs/manual/img/mpc/mpc-voice.png?v=ab028bbc" width="100%" alt="Frodhes on the Akai MPC: the VOICE page, two panels of four knobs"><br><b>On the Akai MPC</b>: its own pages, the Q-Links</td>
   </tr>
 </table>
 
@@ -73,6 +69,7 @@ firmware:
 | [mutant.cloud](https://mutant.cloud/#/p/frodhes) | Install over USB-MIDI in the browser, no account needed |
 | [fm1-editor.com](https://fm1-editor.com/firmware/#frodhes) | The community's firmware list with pictures |
 | altstrument: [FM-1 and SMK-37](https://altstrument.org/firmware/m-vave-fm-1/frodhes), [Move](https://altstrument.org/firmware/ableton-move/frodhes) | The community catalogue of alternative firmware and modules, with every Frodhes version |
+| [Open MPC](https://open-mpc.github.io) | The community's Akai MPC plugin catalogue: install and update Frodhes on the MPC with its Plugin Manager |
 | [Web emulator](https://leonardomirabal.github.io/frodhes/) | Play Frodhes in the browser before you install it |
 
 Questions, bugs or ideas: [issues](https://github.com/leonardoMirabal/frodhes/issues). The community's own place is
@@ -161,7 +158,8 @@ To remove it, delete the `Frodhes.*` files again. More:
 Frodhes runs on Akai MPC standalone hardware as a plugin (checked by a tester on an MPC): the desktop plugin's engine,
 16 voices on every instrument, the factory presets as programs, and the plugin's look on the MPC's screen: eight
 pages of large knobs in panels of four, one Q-Link group each. It needs MPC OS 3.10.1 or later with External Plugin
-Support on. Download [`frodhes-mpc.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-mpc.zip) (or build it with `make mpc`); how to install it and what to report:
+Support on. Download [`frodhes-mpc.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-mpc.zip) (or build it with `make mpc`), or install it from the [Open MPC catalogue](https://open-mpc.github.io) with its Plugin
+Manager; how to install it and what to report:
 [docs/MPC.md](docs/MPC.md).
 
 <p align="center">
