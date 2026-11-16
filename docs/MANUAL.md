@@ -521,6 +521,9 @@ regeneration is turned up. With the PHASER's feedback and a long REVERB on as we
 output limiter, which then holds its peaks. DIG's echoes always die away. Turn FEEDBK down (the drone then dies away) or switch the
 delay off (its tail always ends) to stop it.
 
+Once the last echo has died away, the delay comes fully to rest: nothing is left in it, and TIME then jumps straight
+to its new value (on ANA too), so the next notes' echoes come evenly spaced at once.
+
 Switching the delay off or on while echoes ring does not click: the echoes already on their way ring out in their own sound. Switching to or from TAPE while echoes ring fades the old type out, then the new one in. **SEL** switches the delay off and
 back on to the type it last used (TAPE too). Over MIDI, CC 88 picks the type in the card's order: 0–31 OFF, 32–63 DIG,
 64–95 ANA, 96–127 TAPE.
@@ -1131,7 +1134,8 @@ keynote.
 ## 10. Sustain and polyphony
 
 **REC** is the sustain pedal. **Hold** it like a pedal, or **tap** it to latch the sustain on, and tap again to
-release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with half-pedalling. Letting a MIDI pedal
+release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with half-pedalling: with the dampers
+only touching, the key-up knock and the felt's sound are softer too, in step with how lightly they damp. Letting a MIDI pedal
 up (CC 64 below 64) also releases a latched REC, so a real pedal always works as a pedal; with no CC 64 coming in,
 the latch stays on until you tap REC again.
 
@@ -1168,8 +1172,10 @@ makes from them is, so switch MIDI thru off in your computer's software. No cloc
 The TRS jack is MIDI in only. **Program Change** 0–15 loads F01–F16, 16–31 loads U01–U16, and 32–34 loads F17–F19.
 
 **Pitch bend** (the pitch wheel, USB or TRS, on CHANNEL) bends the electric piano types ±2 semitones: every note that sounds
-glides with the wheel and a note struck while the wheel is moved starts at the bent pitch. The bend stays across a
-preset change and adds to TUNE. CC 121 (reset all controllers) and pulling the USB cable put it back to 0. VIBES and
+glides with the wheel and a note struck while the wheel is moved starts at the bent pitch; every sounding note moves
+together, so a full chord stays in tune with itself while you bend. The bend stays across a preset change and adds to
+TUNE. A note keeps the TUNE it was struck with: turning TUNE retunes the next notes, and the wheel never changes the
+notes already sounding by more than the bend. CC 121 (reset all controllers) and pulling the USB cable put it back to 0. VIBES and
 MARIMBA ignore pitch bend: their bars always play at their own pitch.
 
 **Release velocity** (the note-off velocity, from a keyboard that sends it) shapes how the electric piano's damper lands: a
