@@ -218,8 +218,9 @@ def test_the_click_windows_pass_the_artefact_and_catch_a_step(binary, name, wind
     i, t = len(ev) - 1, ev[-1][0]
     ratio, changed, ring, plain, diff = mk.click_one(ev, i, binary, detail=True)
     assert ring > -55 and plain < 2 and ratio <= 10, (window, ratio, plain, diff)
-    r = mk.click_one(ev, i, binary, detail=True, inject=_step(t))
-    assert r[0] > 10, (window, r)
+    for size in (400, 250):
+        r = mk.click_one(ev, i, binary, detail=True, inject=_step(t, size))
+        assert r[0] > 10, (window, size, r)
 
 
 def test_the_bypass_end_window_needs_the_press_and_the_old_reference_read_the_artefact(binary):
@@ -237,14 +238,20 @@ def test_the_bypass_end_window_needs_the_press_and_the_old_reference_read_the_ar
 
 
 @pytest.mark.parametrize("seed,t,line", [(906792336, 1496, "midi 0xB0 111 0"), (906792829, 5099, "btn 2"),
-                                         (906791411, 6944, "turn 3 1")])
+                                         (906791411, 6944, "turn 3 1"), (23615107, 16826, "btn 3")])
 def test_the_bypass_end_window_keeps_to_its_case(binary, seed, t, line):
     """the window opens only when both renders are bypassed at +31 ms and the event is no FX event itself (an FX on
     after an FX press brings the wet back: its own settled diff is the reference), and its second reference never
-    lowers the first (an ARPEGGIO knob's notes do not fade with the wet): a first draft read these 18x, 15x, 32x"""
+    lowers the first (an ARPEGGIO knob's notes do not fade with the wet): a first draft read these 18x, 15x, 32x.
+    Seed 23615107 (HOLD OFF 17 ms after FX: the arpeggio's 16th note starts only without the event, a smooth onset):
+    13.7x with the absolute step on the second difference; a 250 or 400 LSB step injected there is still caught"""
     ev = mk.gen(seed)
-    ratio, changed, ring, plain, diff = mk.click_one(ev, ev.index((t, line)), binary, detail=True)
+    i = ev.index((t, line))
+    ratio, changed, ring, plain, diff = mk.click_one(ev, i, binary, detail=True)
     assert ratio <= 10, (seed, ratio, plain, diff)
+    if seed == 23615107:
+        for size in (250, 400):
+            assert mk.click_one(ev, i, binary, detail=True, inject=_step(t, size))[0] > 10, size
 
 
 # (#22 and #26, the int32 overflows: tests/py/test_overflows.py)

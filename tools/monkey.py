@@ -513,6 +513,10 @@ def _d2(x):
     return np.abs(np.diff(np.asarray(x, float), 2, axis=0)).max(1)
 
 
+def _d3(x):
+    return np.abs(np.diff(np.asarray(x, float), 3, axis=0)).max(1)
+
+
 def click_ratio(a, b, t, ref_d=None, no_diff=False):
     """the click ratio of one event at t ms, from the renders with it (a) and without it (b), stereo int arrays:
     (ratio, plain, diff). plain: the largest second difference of a from 6 ms before (the event lands at the start of
@@ -523,8 +527,9 @@ def click_ratio(a, b, t, ref_d=None, no_diff=False):
     TYPE, BUGHUNT #4: 7x plain, 15x diff in seed 14's stream at 12227 ms). ratio: the larger.
     The two windows of click_one (0.9.13): ref_d, a second settled reference of the diff (a bypass crossfade ending:
     click_one's re-render without the FX press; the larger of it and the diff's own counts); no_diff, the diff's ratio
-    not judged (a pending preset browse landing). In both the diff's absolute step still counts: a second difference
-    of STEP_ABS, or of the render without the event's own largest one there if larger, reads 10x"""
+    not judged (a pending preset browse landing). In both the diff's absolute step still counts: a step of STEP_ABS
+    (on the third difference: a one-sample step, not a smooth change), or the render without the event's own
+    largest one there if larger, reads 10x"""
     i0, i1 = ms(t - 6), ms(t + 30)
     s0, s1 = ms(t + 60), ms(t + 93)
     ref = max(_d2(b[i0:i1]).max(), _d2(a[s0:s1]).max(), _d2(b[s0:s1]).max(), 1.0)
@@ -535,14 +540,17 @@ def click_ratio(a, b, t, ref_d=None, no_diff=False):
         diff = float(dw / max(_d2(d[s0:s1]).max(), 0.05 * ref, 1.0))
     else:
         rel = 0.0 if no_diff else float(dw / max(_d2(d[s0:s1]).max(), ref_d, 0.05 * ref, 1.0))
-        floor = max(STEP_ABS, _d2(b[i0:i1]).max())      # (a step the render without the event has there too, a
-        diff = max(rel, float(10.0 * dw / floor))       # browse's load or the sound itself, is not the event's)
+        # the absolute step on the third difference: a step of S LSB reads 2 S there (as S on the second), a smooth
+        # change far less (seed 23615107's HOLD OFF 17 ms after FX: the arpeggio's next note, which only the render
+        # without the event starts, read 273 on the second difference, 13.7x; 214 on the third, 5.4x)
+        floor = max(2.0 * STEP_ABS, _d3(b[i0:i1]).max())   # (a step the render without the event has there too, a
+        diff = max(rel, float(10.0 * _d3(d[i0:i1]).max() / floor))   # browse's load or the sound, is not the event's)
     return max(plain, diff), plain, diff
 
 
 FX_LINES = ("btn 2",)                           # the FX button; CC 111 on channel 1 too (fx_event)
 XF_MS = 52                                      # the bypass crossfade (fx.c FX_XF_STEP: 46 ms) + its first block
-STEP_ABS = 200.0                                # LSB: the diff's second difference that is a step in the windows
+STEP_ABS = 200.0                                # LSB: a step of the diff in the windows (judged on its third difference)
                                                 # (the two artefacts' smooth changes: 48 and 22; an injected 400 step
                                                 # is caught: tests/py/test_monkey.py)
 
