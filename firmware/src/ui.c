@@ -808,7 +808,11 @@ FR_COLD static void slot_turn(uint32_t s, int32_t d)
     switch (s) {
     case S_KVEL: set.key_vel = (uint8_t)clampi(set.key_vel + d * (d > 1 || d < -1 ? 4 : 1), 1, 127); break;
     case S_TUNE: set.tune = (int8_t)clampi(set.tune + d, -50, 50); rh_tune_t = TUNE_T[set.tune + 50]; break;
-    case S_BPM: tempo_set10((uint32_t)clampi((int32_t)tempo_bpm10() + d * 10, 400, 2400)); bpm_hand = set.bpm10; break;   /* (by hand: kept, params.c) */
+    case S_BPM: {                                       /* whole BPM steps; from tenths (tap, clock) the first lands on one */
+        int32_t b = (int32_t)tempo_bpm10();
+        b = (d > 0 ? b / 10 : (b + 9) / 10) * 10 + d * 10;
+        tempo_set10((uint32_t)clampi(b, 400, 2400)); bpm_hand = set.bpm10; break;   /* (by hand: kept, params.c) */
+    }
     case S_CLOCK: set.clock = (uint8_t)clampi(set.clock + sgn(d), 0, 1); if (!set.clock) tempo_clock_int(); break;
     case S_SCMODE: set.sc_mode = (uint8_t)clampi(set.sc_mode + sgn(d), 0, 2); break;
     case S_SCALE: set.sc_scale = (uint8_t)clampi(set.sc_scale + sgn(d), 0, 10); break;
