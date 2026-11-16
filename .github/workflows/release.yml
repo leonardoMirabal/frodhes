@@ -142,10 +142,15 @@ jobs:
         run: |
           python3 mpc/build.py --target all --version "${GITHUB_REF_NAME#v}" -j4
           shasum -a 256 build/mpc/frodhes-mpc.zip
+      - name: the open-mpc catalogue's per-build zips (armv7, aarch64) from the same folder
+        run: python3 tools/mpc_catalog_zip.py --version "${GITHUB_REF_NAME#v}" --fetch
       - uses: actions/upload-artifact@v4
         with:
           name: mpc-package
-          path: build/mpc/frodhes-mpc.zip
+          path: |
+            build/mpc/frodhes-mpc.zip
+            build/mpc/Frodhes-*-mpc-armv7.zip
+            build/mpc/Frodhes-*-mpc-aarch64.zip
           if-no-files-found: error
   release:
     needs: [ci-gate, generators-macos, host, web, move, plugin, mpc]
@@ -274,7 +279,9 @@ jobs:
           mkdir -p build/publish/mpc
           cp build/mpc-ci/frodhes-mpc.zip build/publish/mpc/frodhes-mpc.zip
           cp build/mpc-ci/frodhes-mpc.zip "build/publish/mpc/frodhes-$V-mpc.zip"
-          gh release upload "$GITHUB_REF_NAME" build/publish/mpc/frodhes-mpc.zip "build/publish/mpc/frodhes-$V-mpc.zip" --clobber
+          cp "build/mpc-ci/Frodhes-$V-mpc-armv7.zip" "build/mpc-ci/Frodhes-$V-mpc-aarch64.zip" build/publish/mpc/
+          gh release upload "$GITHUB_REF_NAME" build/publish/mpc/frodhes-mpc.zip "build/publish/mpc/frodhes-$V-mpc.zip" \
+            "build/publish/mpc/Frodhes-$V-mpc-armv7.zip" "build/publish/mpc/Frodhes-$V-mpc-aarch64.zip" --clobber
       - name: the plugin packages built by the job plugin
         uses: actions/download-artifact@v4
         with:

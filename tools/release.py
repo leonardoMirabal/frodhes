@@ -117,7 +117,8 @@ LICENCE_ASSET = "Apache-2.0.txt"
 # (release.yml's job mpc): every release carries them (tools/release_assets.sh checks the draft, step 9 the release)
 PLUGIN_ASSETS = ("frodhes-plugin-macos.pkg", "frodhes-plugin-macos.zip", "frodhes-plugin-windows.zip",
                  "frodhes-plugin-linux-x86_64.zip", "frodhes-plugin-linux-aarch64.zip")
-MPC_ASSETS = ("frodhes-mpc.zip", "frodhes-{v}-mpc.zip")
+MPC_ASSETS = ("frodhes-mpc.zip", "frodhes-{v}-mpc.zip",   # the folder zip (by hand / the Plugin Manager 1.0 on 3.10.1)
+              "Frodhes-{v}-mpc-armv7.zip", "Frodhes-{v}-mpc-aarch64.zip")   # the open-mpc catalogue's per-build zips (tools/mpc_catalog_zip.py)
 LATEST_DL = f"https://github.com/{REPO}/releases/latest/download/{STABLE}"
 PY = os.path.join(".local", "venv", "bin", "python")
 CPU_LIMIT_US = 4500

@@ -267,7 +267,8 @@ def test_verify(monkeypatch, capsys):
     good = f"[`frodhes.fwsc`]({rel.LATEST_DL}) settings saved by 0.9.2 are read as they are"
     both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *rel.SMK_ASSETS, rel.LICENCE_ASSET,
             *[rel.smk_versioned(n, "0.9.3") for n in rel.SMK_ASSETS],
-            *rel.PLUGIN_ASSETS, "frodhes-mpc.zip", "frodhes-0.9.3-mpc.zip"]
+            *rel.PLUGIN_ASSETS, "Frodhes-0.9.3-mpc-armv7.zip", "Frodhes-0.9.3-mpc-aarch64.zip", "frodhes-mpc.zip",
+            "frodhes-0.9.3-mpc.zip"]
     tagged = "https://github.com/leonardoMirabal/frodhes/releases/download/v0.9.3/frodhes.fwsc"
     hits = []
 
@@ -284,6 +285,8 @@ def test_verify(monkeypatch, capsys):
                                      (both + ["frodhes-c1.fwsc"], good, "a" * 64, "retired assets"),
                                      (both[:8] + both[9:], good, "a" * 64, r"missing \['frodhes-0.9.3-mke-p37.fwsc'\]"),
                                      (both[:-1], good, "a" * 64, r"missing \['frodhes-0.9.3-mpc.zip'\]"),
+                                     ([n for n in both if n != "Frodhes-0.9.3-mpc-aarch64.zip"], good, "a" * 64,
+                                      r"missing \['Frodhes-0.9.3-mpc-aarch64.zip'\]"),
                                      ([n for n in both if n != "frodhes-plugin-windows.zip"], good, "a" * 64,
                                       r"missing \['frodhes-plugin-windows.zip'\]"),
                                      (both + ["frodhes-0.9.3-c1.fwsc"], good, "a" * 64, "retired assets"),
