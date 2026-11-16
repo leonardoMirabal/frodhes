@@ -246,3 +246,15 @@ def test_no_triage_without_an_audio_failure(take):
 def test_host_load_is_a_number():
     v = hm.host_load()
     assert v is None or v >= 0
+
+
+def test_restore_puts_response_a_back_on_every_channel():
+    """the run's end restores the saved settings the stream reaches (0.9.13: it left RESPONSE on B before a T2)"""
+    import mido
+    ms = hm.restore_msgs()
+    for m in ms:
+        mido.Message.from_bytes(m)                       # every message valid
+    for c in range(16):
+        for n, v in ((40, 0), (52, 0), (56, 0), (60, 0), (63, 0), (111, 0)):
+            assert [0xB0 | c, n, v] in ms, f"channel {c + 1}: CC {n} {v} not restored"
+    assert ms[-1] == [0xC0, 0], "F01 last"
