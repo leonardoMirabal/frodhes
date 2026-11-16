@@ -1,19 +1,22 @@
-# the BPM knob (TEMPO K1) steps whole BPM; from a tempo with tenths (tap, clock) the first step lands on the
-# whole BPM: 120.1 down -> 120.0 (was 119.1, 120.0 never reachable by hand), 120.1 up -> 121.0
+# the BPM knob (TEMPO K1) steps 0.1 BPM a slow click, so a tempo with tenths (tap, clock) reaches the whole BPM:
+# 120.1 down -> 120.0 (0.9.12 stepped whole BPM and kept the tenth: 119.1, 120.0 never reachable by hand)
 100 tempo 1201
 200 btn 7
 300 expect led 7 1
 400 turn 2 -1
 500 expect state bpm 120.0
 600 turn 2 -1
-700 expect state bpm 119.0
+700 expect state bpm 119.9
 800 tempo 1201
 900 turn 2 1
-1000 expect state bpm 121.0
+1000 expect state bpm 120.2
 1100 tempo 1209
-1200 turn 2 -1
-1300 expect state bpm 120.0
-1400 tempo 2401
+1200 turn 2 1
+1300 expect state bpm 121.0
+1400 tempo 2400
 1500 turn 2 1
 1600 expect state bpm 240.0
-1700 end
+1700 tempo 400
+1800 turn 2 -1
+1900 expect state bpm 40.0
+2000 end

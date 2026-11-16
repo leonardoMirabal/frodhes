@@ -582,7 +582,7 @@ Over MIDI: CC 94 PRE-DELAY, 73 SIZE (0 = AUTO), 68 MOD,
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **BPM** | Tempo, 40–240, in whole BPM steps (from a tapped 120.4: down 120, up 121). **PLAY** taps it (from the third tap) |
+| K1 | **BPM** | Tempo, 40–240: a slow turn steps 0.1 BPM (a tapped 120.1 turns down to 120.0), a fast turn 1 to 4 BPM a click. **PLAY** taps it (from the third tap) |
 | K2 | **TREM SYNC** | The tremolo locked to the tempo (FREE = its own RATE) |
 | K3 | **PHA SYNC** | The phaser locked to the tempo |
 | K4 | **DLY SYNC** | The delay locked to the tempo |

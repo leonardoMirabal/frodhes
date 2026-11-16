@@ -243,10 +243,10 @@ int main(void)
     ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
     CHECK(frp_gui_model(ctl)->settings == 1, "the gear opens the settings");
     paint();
-    /* BPM - / +: whole BPM steps; from tenths (a tap or a host tempo) the first lands on the whole BPM */
+    /* BPM - / +: 0.1 BPM steps, so a tempo with tenths (a tap or a host tempo) reaches the whole BPM */
     {
-        static const int from[4] = {1201, 1201, 1209, 1200}, key[4] = {FRB_BPM_DOWN, FRB_BPM_UP, FRB_BPM_DOWN, FRB_BPM_DOWN},
-                         want[4] = {1200, 1210, 1200, 1190};
+        static const int from[4] = {1201, 1201, 1209, 1200}, key[4] = {FRB_BPM_DOWN, FRB_BPM_UP, FRB_BPM_UP, FRB_BPM_DOWN},
+                         want[4] = {1200, 1202, 1210, 1199};
         int t, tsrc = h.v[FRS_TEMPO], bpm = h.v[FRS_BPM];
         for (t = 0; t < 4; t++) {
             h.v[FRS_TEMPO] = 1; h.v[FRS_BPM] = from[t];
