@@ -834,7 +834,11 @@ FR_COLD static void slot_turn(uint32_t s, int32_t d)
         break;
     case S_ARPRATE: ARP_RATE = (uint8_t)clampi(ARP_RATE + sgn(d), 0, 5); break;
     case S_ARPOCT: ARP_OCT = (uint8_t)clampi(ARP_OCT + sgn(d), 0, 3); break;
-    case S_ARPGATE: ARP_GATE = (uint8_t)clampi(ARP_GATE + 5 * sgn(d), 10, 100); break;
+    case S_ARPGATE: {                                   /* the 5 % grid; off it (CC 55) the first step lands on it */
+        int32_t g = ARP_GATE;
+        g = (d > 0 ? g / 5 : (g + 4) / 5) * 5 + 5 * sgn(d);
+        ARP_GATE = (uint8_t)clampi(g, 10, 100); break;
+    }
     case S_USBVOL: set.usb_fixed = d > 0; usb_pre_master = set.usb_fixed; break;
     case S_MCH: set.midi_ch = (uint8_t)clampi(set.midi_ch + sgn(d), 0, 16); break;
     case S_TRS: set.trs_off = d < 0; uart_midi_on = !set.trs_off; break;

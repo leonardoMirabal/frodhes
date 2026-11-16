@@ -1,0 +1,25 @@
+# ARP GATE set off the 5 % grid by CC 55 (any 10..100): the ARPEGGIO page's K4 steps onto the grid
+# (73 -> 75 going up, 73 -> 70 going down), then in 5 % steps; the ends clamp at 10 and 100.
+100 midi 0xB0 55 73
+200 btn 10
+300 expect state page ARPEGGIO
+300 expect state card3 73%
+400 turn 5 1
+500 expect state card3 75%
+600 turn 5 1
+700 expect state card3 80%
+800 midi 0xB0 55 73
+900 expect state card3 73%
+1000 turn 5 -1
+1100 expect state card3 70%
+1200 turn 5 -1
+1300 expect state card3 65%
+1400 midi 0xB0 55 98
+1500 turn 5 1
+1600 expect state card3 100%
+1700 turn 5 1
+1800 expect state card3 100%
+1900 midi 0xB0 55 12
+2000 turn 5 -1
+2100 expect state card3 10%
+2200 end
