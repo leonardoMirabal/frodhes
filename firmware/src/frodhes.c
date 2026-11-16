@@ -1950,6 +1950,8 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
         for (q = 0; q < DLY_LEN; q++) { int32_t x = dly_buf[q]; uint32_t ax = (uint32_t)(x < 0 ? -x : x); if (ax > mx) mx = ax; }
         snprintf(v, n, "%u/%d/%d/%u", (unsigned)dly_ring, (int)dly_lp, (int)dly_hp, (unsigned)mx);
     }
+    else if (!strcmp(key, "keyup")) snprintf(v, n, "%d/%d", (int)rh_h_kth, (int)rh_h_kfelt);   /* the last key-up's
+                                                         * knock force / felt gain (rhodes.c, bars.c; -1: none yet) */
     else if (!strcmp(key, "dlyring")) snprintf(v, n, "%u", (unsigned)dly_ring);   /* the line's activity (fx.c dly_ring) */
     else if (!strcmp(key, "dlyd")) snprintf(v, n, "%d", (int)(dly_d >> 8));     /* the delay time as it runs (samples) */
     else if (!strcmp(key, "fxcost")) snprintf(v, n, "%u", (unsigned)fx_cost_us());   /* the effects' cost (us a block) */

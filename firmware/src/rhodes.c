@@ -228,6 +228,8 @@ static int32_t rh_mono[256] __attribute__((section(".bss.rh_buf"))), rh_xF[2u * 
 static uint32_t rh_ages;
 #ifdef DINGHY_HOST
 static uint32_t rh_h_steals;                   /* host: the steals (engine.c eng_host_report, tools/engine_ab.py) */
+static int32_t rh_h_kth = -1, rh_h_kfelt = -1;  /* host: the last key-up's knock force and felt noise gain (bars.c
+                                                 * too; frodhes.c host_state "keyup", tests/py/test_half_pedal.py) */
 #endif
 static int32_t rh_pedal_w = 32768;             /* ISR copy: damper weight for keys that are up */
 static int32_t rh_st[3][5];                    /* the pickup RLC's and the TYPE's body biquads' states (m1 m2 o1 o2 e) */
@@ -1665,6 +1667,7 @@ static void rh_events(void)                     /* the block's start (rh_render,
             for (i = 0; i < RH_NV; i++)
                 if (rv[i].alive && rv[i].note == note && rv[i].held) {
                     rh_voice_t *v = &rv[i];
+                    int kn = 0;                                 /* (the knock below set the force rh_left reads) */
                     v->held = 0;
                     v->rgain = (uint16_t)rh_rel_gain(val);    /* val: the release velocity */
                     rh_set_damper_n(v, rh_rel_w(v), rh_rel_len(rh_settle(note), val));
@@ -1673,6 +1676,12 @@ static void rh_events(void)                     /* the block's start (rh_render,
                         int32_t th = rh_thump > 32767 ? 32767 : rh_thump;
                         int32_t cap = (int32_t)(((uint32_t)rh_left(v) * RH_THUMP_CAP) >> 15);
                         th = mul15(th > cap ? cap : th, v->rgain);   /* the cap, then the release velocity's x0.6..1.4 */
+                        if (rh_pedal_w < 32768) th = mul15(th, rh_pedal_w);   /* a half pedal: the felt lands as
+                                                         * lightly as it damps (0.9.13, x0.6 .. 0.9; up: as before) */
+#ifdef DINGHY_HOST
+                        rh_h_kth = th;
+#endif
+                        kn = 1;
                         v->ptab = FR_FAR2(rh_pz)(v->pbuf, &RH_PZB, RH_PZI(key, 0));
 #ifdef RH_DRIVE
                         {   /* th is a physical force: the modes get it at the strike's drive ratio (pamp / pphys) */
@@ -1704,7 +1713,13 @@ static void rh_events(void)                     /* the block's start (rh_render,
                             g = rh_dyn_gain(g, rh_dyn(v->note, v->vel, v->lt));   /* x the dynamics stage (MAP: in vn) */
                         }
 #endif
-                        v->felt_n = 353; v->felt_g = (uint16_t)(g > 32768 ? 32768 : g);
+                        if (g > 32768) g = 32768;
+                        if (rh_pedal_w < 32768 && !kn) g = (g * rh_pedal_w) >> 15;   /* a half pedal: lighter, as the
+                                                         * knock (after one, rh_left reads its force: scaled once) */
+#ifdef DINGHY_HOST
+                        rh_h_kfelt = g;
+#endif
+                        v->felt_n = 353; v->felt_g = (uint16_t)g;
                     }
                 }
             for (i = 0; i < RH_NV; i++)                 /* a note let go while it waits for a steal's fade: it

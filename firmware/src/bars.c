@@ -580,6 +580,7 @@ static void bar_note_off(uint32_t note)
     for (i = 0; i < BAR_NV; i++)
         if (bv[i].alive && bv[i].note == note && bv[i].held) {
             bar_voice_t *v = &bv[i];
+            int kn = 0;                                     /* (the knock below set the pamp bar_left reads) */
             v->held = 0;
             bar_set_damper(v, bar_mute_w(bar_pedal_w));
             if (!bar_has_damper()) continue;                 /* no felt: no knock, no felt noise (C6) */
@@ -589,6 +590,12 @@ static void bar_note_off(uint32_t note)
                 v->ptab = v->pthump;
                 v->pamp = bar_thump > 32767 ? 32767 : bar_thump;
                 if (v->pamp > cap) v->pamp = cap;
+                if (bar_pedal_w < 32768) v->pamp = (v->pamp * bar_pedal_w) >> 15;   /* a half pedal: the felt lands as
+                                                     * lightly as it damps (0.9.13, x0.6 .. 0.9; up: as before) */
+#ifdef DINGHY_HOST
+                rh_h_kth = v->pamp;
+#endif
+                kn = 1;
                 v->prate = v->prate_thump;
                 v->ppos = 0;
 #ifdef DINGHY_PLUGIN
@@ -597,7 +604,13 @@ static void bar_note_off(uint32_t note)
             }
             if (bar_pedal_w && bar_felt) {                   /* 8 ms of felt noise */
                 int32_t g = bar_left(v) * (int32_t)(32768u / BAR_FELT_FULL);
-                v->felt_n = 353; v->felt_g = (uint16_t)(g > 32768 ? 32768 : g);
+                if (g > 32768) g = 32768;
+                if (bar_pedal_w < 32768 && !kn) g = (g * bar_pedal_w) >> 15;   /* a half pedal: lighter, as the
+                                                     * knock (after one, bar_left reads its pamp: scaled once) */
+#ifdef DINGHY_HOST
+                rh_h_kfelt = g;
+#endif
+                v->felt_n = 353; v->felt_g = (uint16_t)g;
             }
         }
     for (i = 0; i < BAR_NV; i++)                    /* a note let go while it waits for a steal's fade: it starts let go
