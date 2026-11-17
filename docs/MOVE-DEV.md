@@ -95,7 +95,9 @@ names the Move (default `ableton@move.local`).
   Move package (`tools/move_catalog.py release-json X.Y.Z`: the tag's `frodhes-module.tar.gz`, the repository from
   the origin remote; an older tag never moves it back), checks that the URL downloads, and pushes it to main. main's
   protection refuses that push from the workflow's own token: the job needs the secret `RELEASE_JSON_DEPLOY_KEY` (a
-  deploy key with write access that may bypass main's rules), or the file is committed by hand from the job's log.
+  deploy key with write access that may bypass main's rules). Without it, `tools/release.py`'s step 10 (after
+  `--after-merge` has published and verified the release) writes it through a pull request: the branch
+  `release-json-X.Y.Z` from origin/main, ci.yml green, merged, main's file read back. Nothing is committed by hand.
   No `release.json` is committed before the first release with the Move package: without it the manager's catalog
   install falls back to `releases/latest/download/frodhes-module.tar.gz` and the GitHub URL install refuses the
   repository, and a placeholder would point at a file that does not exist. The catalog entry

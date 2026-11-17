@@ -325,9 +325,13 @@ plugin-hosts: plugin       ## macOS: the VST3 / AU in Apple's AU host and a JUCE
 # ---- the Akai MPC port (docs/MPC.md): the desktop plugin's engine as an MPC plugin (VST 2.4, arm32 + arm64), built
 # with the MPC Plugin SDK's toolchain (zig; the SDK fetched into .local/mpc-sdk on first use). Nothing is installed.
 MPC_J ?= 2
-.PHONY: mpc test-mpc
+.PHONY: mpc mpc-catalog test-mpc
 mpc:                       ## build/mpc: the plugin folder (both ARM builds, validated), frodhes-mpc.zip, the native test build
 	nice -n 15 $(PY) mpc/build.py --target all --tools -j$(MPC_J)
+
+mpc-catalog: mpc           ## build/mpc/Frodhes-<MPC_VER>-mpc-{armv7,aarch64}.zip: the open-mpc catalogue's per-build zips from the
+                           ## plugin folder (tools/mpc_catalog_zip.py; its installer templates fetched once, pinned by sha256)
+	$(PY) tools/mpc_catalog_zip.py --version $(or $(MPC_VER),0.0.0) --fetch
 
 test-mpc: mpc plugin       ## the MPC port's tests: the 24-voice build for the comparisons, then tests/py/test_mpc.py (the host
                            ## simulator, engines, programs, state, tempo, bit-exactness, a soak segment, ARM in Docker)

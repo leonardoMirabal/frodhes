@@ -564,7 +564,7 @@ static void host_ms(void)
             break;
         }
         case EV_EXP_STATE: {
-            char v[128];   /* (rowbox reads up to 72 + NUL) */
+            char v[256];   /* (rowbox reads up to 72 + NUL; rtbend 16 voices x 11) */
             const char *want = e->val;
 #if BOARD_SMK37
             if (!strcmp(e->key, "hint")) want = host_xlat(want);   /* (the hints name the SMK's buttons) */

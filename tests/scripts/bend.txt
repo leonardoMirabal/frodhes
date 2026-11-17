@@ -52,9 +52,9 @@
 3400 turn 2 -1
 3500 midi 0xB0 121 0
 3510 expect state bend 0
-# the retune spread (rhodes.c rh_retune): 8 voices sounding, a bend retunes a quarter of them per block (5.8 ms):
-# a block after the bend some are still pending, 4 blocks after it none (any voice count: a quarter per block;
-# tests/py/test_pitch_bend.py checks the voices per block)
+# the retune (rhodes.c rh_retune): 8 voices sounding, the block the bend moved in retunes every one (0.9.13; it was a
+# quarter of them a block, some still pending a block after the bend): none pending at any time
+# (tests/py/test_pitch_bend.py checks it every ms, and the chord following a fast bend)
 3600 midi 0x90 48 100
 3601 midi 0x90 52 100
 3602 midi 0x90 55 100
@@ -65,7 +65,7 @@
 3607 midi 0x90 72 100
 3700 expect state rtbusy 0
 3701 midi 0xE0 0 96
-3708 expect state rtbusy 1
+3708 expect state rtbusy 0
 3724 expect state rtbusy 0
 3800 midi 0xB0 123 0
 4000 end

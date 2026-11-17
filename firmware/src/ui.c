@@ -808,16 +808,28 @@ FR_COLD static void slot_turn(uint32_t s, int32_t d)
     switch (s) {
     case S_KVEL: set.key_vel = (uint8_t)clampi(set.key_vel + d * (d > 1 || d < -1 ? 4 : 1), 1, 127); break;
     case S_TUNE: set.tune = (int8_t)clampi(set.tune + d, -50, 50); rh_tune_t = TUNE_T[set.tune + 50]; break;
-    case S_BPM: tempo_set10((uint32_t)clampi((int32_t)tempo_bpm10() + d * 10, 400, 2400)); bpm_hand = set.bpm10; break;   /* (by hand: kept, params.c) */
+    case S_BPM:                                         /* a slow click 0.1 BPM (120.1 -> 120.0); a fast turn (ui_accel
+                                                         * 2 / 4 / 8) 1 / 2 / 4 BPM a click, so the range is one turn */
+        tempo_set10((uint32_t)clampi((int32_t)tempo_bpm10() + (d == 1 || d == -1 ? d : d * 5), 400, 2400));
+        bpm_hand = set.bpm10; break;                    /* (by hand: kept, params.c) */
     case S_CLOCK: set.clock = (uint8_t)clampi(set.clock + sgn(d), 0, 1); if (!set.clock) tempo_clock_int(); break;
     case S_SCMODE: set.sc_mode = (uint8_t)clampi(set.sc_mode + sgn(d), 0, 2); break;
     case S_SCALE: set.sc_scale = (uint8_t)clampi(set.sc_scale + sgn(d), 0, 10); break;
     case S_ROOT: set.sc_root = (uint8_t)((set.sc_root + (d > 0 ? 1u : 11u)) % 12u); break;
     case S_TRANS: set.sc_trans = (int8_t)clampi(set.sc_trans + d, -24, 24); break;
     case S_TWKIND: {                                    /* OFF PAN TREM WAH */
-        int32_t k = clampi((int32_t)tw_kind() + sgn(d), 0, 3);
+        /* the way down to OFF passes PAN (and TREM): OFF keeps the kind the run of down turns started from (sw in
+         * set.last_on[0] as the LFO button does, the mode back in P_TW_MODE), so LFO / PERFORM bring that kind back */
+        static uint32_t run_t;
+        static uint8_t run_sw, run_mode;
+        static int8_t run_dir;
+        uint32_t k0 = tw_kind();
+        int32_t k = clampi((int32_t)k0 + sgn(d), 0, 3);
+        if (d < 0 && (run_dir >= 0 || fm1_ms - run_t > 1000u)) { run_sw = (uint8_t)PV(P_TW_SW); run_mode = (uint8_t)PV(P_TW_MODE); }
+        run_dir = (int8_t)sgn(d); run_t = fm1_ms;
         param_set(P_TW_SW, k == 0 ? 0 : k == 3 ? 2 : 1);
         if (k == 1 || k == 2) param_set(P_TW_MODE, k - 1);
+        if (k == 0 && k0 && run_sw) { set.last_on[0] = run_sw; param_set(P_TW_MODE, run_mode); }
         fx_wake(P_TW_SW);
         break;
     }
@@ -830,7 +842,11 @@ FR_COLD static void slot_turn(uint32_t s, int32_t d)
         break;
     case S_ARPRATE: ARP_RATE = (uint8_t)clampi(ARP_RATE + sgn(d), 0, 5); break;
     case S_ARPOCT: ARP_OCT = (uint8_t)clampi(ARP_OCT + sgn(d), 0, 3); break;
-    case S_ARPGATE: ARP_GATE = (uint8_t)clampi(ARP_GATE + 5 * sgn(d), 10, 100); break;
+    case S_ARPGATE: {                                   /* the 5 % grid; off it (CC 55) the first step lands on it */
+        int32_t g = ARP_GATE;
+        g = (d > 0 ? g / 5 : (g + 4) / 5) * 5 + 5 * sgn(d);
+        ARP_GATE = (uint8_t)clampi(g, 10, 100); break;
+    }
     case S_USBVOL: set.usb_fixed = d > 0; usb_pre_master = set.usb_fixed; break;
     case S_MCH: set.midi_ch = (uint8_t)clampi(set.midi_ch + sgn(d), 0, 16); break;
     case S_TRS: set.trs_off = d < 0; uart_midi_on = !set.trs_off; break;

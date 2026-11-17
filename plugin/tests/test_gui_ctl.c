@@ -243,6 +243,50 @@ int main(void)
     ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
     CHECK(frp_gui_model(ctl)->settings == 1, "the gear opens the settings");
     paint();
+    /* BPM - / +: 0.1 BPM steps, so a tempo with tenths (a tap or a host tempo) reaches the whole BPM */
+    {
+        static const int from[4] = {1201, 1201, 1209, 1200}, key[4] = {FRB_BPM_DOWN, FRB_BPM_UP, FRB_BPM_UP, FRB_BPM_DOWN},
+                         want[4] = {1200, 1202, 1210, 1199};
+        int t, tsrc = h.v[FRS_TEMPO], bpm = h.v[FRS_BPM];
+        for (t = 0; t < 4; t++) {
+            h.v[FRS_TEMPO] = 1; h.v[FRS_BPM] = from[t];
+            cl->tick(cl->ctx); paint();
+            fh_find(frp_gui_frui(ctl), FRW_BUTTON, key[t], &x, &y);
+            ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+            CHECK(h.v[FRS_BPM] == want[t], "BPM %s from %d: %d (want %d)", key[t] == FRB_BPM_UP ? "+" : "-", from[t],
+                  h.v[FRS_BPM], want[t]);
+        }
+        /* the ends: + at 240 and - at 40 stay in the setting's range (40..240) */
+        {
+            static const int end[2] = {2400, 400}, ekey[2] = {FRB_BPM_UP, FRB_BPM_DOWN};
+            for (t = 0; t < 2; t++) {
+                h.v[FRS_TEMPO] = 1; h.v[FRS_BPM] = end[t];
+                cl->tick(cl->ctx); paint();
+                fh_find(frp_gui_frui(ctl), FRW_BUTTON, ekey[t], &x, &y);
+                ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+                CHECK(h.v[FRS_BPM] == end[t], "BPM %s at %d stays (is %d)", t ? "-" : "+", end[t], h.v[FRS_BPM]);
+            }
+        }
+        /* the drag: past 240 it stops at 240 and moves back at once (no dead travel); past 40 the same */
+        {
+            float fx, fy;
+            h.v[FRS_TEMPO] = 1; h.v[FRS_BPM] = 2300;
+            cl->tick(cl->ctx); paint();
+            CHECK(fh_find(frp_gui_frui(ctl), FRW_FADER, FRS_BPM, &fx, &fy) >= 0, "the BPM control is drawn");
+            ev(FRG_DOWN, FRG_LEFT, 0, fx, fy, 0, 0);
+            ev(FRG_MOVE, 0, 0, fx, fy - 400.f, 0, 0);
+            CHECK(h.v[FRS_BPM] == 2400, "BPM dragged far up: %d (want 2400)", h.v[FRS_BPM]);
+            ev(FRG_MOVE, 0, 0, fx, fy - 399.f, 0, 0);
+            CHECK(h.v[FRS_BPM] == 2390, "BPM 1 px back down from the top: %d (want 2390)", h.v[FRS_BPM]);
+            ev(FRG_MOVE, 0, 0, fx, fy + 400.f, 0, 0);
+            CHECK(h.v[FRS_BPM] == 400, "BPM dragged far down: %d (want 400)", h.v[FRS_BPM]);
+            ev(FRG_MOVE, 0, 0, fx, fy + 399.f, 0, 0);
+            CHECK(h.v[FRS_BPM] == 410, "BPM 1 px back up from the bottom: %d (want 410)", h.v[FRS_BPM]);
+            ev(FRG_UP, FRG_LEFT, 0, fx, fy + 399.f, 0, 0);
+        }
+        h.v[FRS_TEMPO] = tsrc; h.v[FRS_BPM] = bpm;
+        cl->tick(cl->ctx); paint();
+    }
     ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_ESCAPE);
     CHECK(frp_gui_model(ctl)->settings == 0, "ESC closes them");
     paint();

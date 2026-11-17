@@ -1568,9 +1568,9 @@ FR_COLD static void settings_poll(void)
         if (memcmp(&r, &set_pend, sizeof r)) { set_pend = r; set_pend_t = fm1_ms; }
         set_pend_new = memcmp(&set_pend, &set_saved, sizeof r) != 0;
     }
-    if (!set_saving && set_pend_new && fm1_ms - set_pend_t > 2000u && eng_idle() && fx_quiet() && tempo_flash_ok() &&
+    if (!set_saving && set_pend_new && fm1_ms - set_pend_t > 2000u && eng_idle() && fx_quiet() &&
         !seq_save_busy()) {                     /* (the pattern's save runs: next pass; neither busy-finishes the other) */
-        set_saved = set_pend;                   /* (written from set_saved: set_pend may move on meanwhile; not while a clock runs) */
+        set_saved = set_pend;                   /* (written from set_saved: set_pend may move on meanwhile; a running MIDI clock does not hold it back: its pulses are stamped and counted on arrival, tempo.c) */
         set_saving = settings_save_start(&set_saved, sizeof set_saved) == 1;
         set_pend_new = 0;
     }
@@ -1944,6 +1944,17 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
                                                          * the reverb's dry and send, the drive's dry and wet
                                                          * (tests/py/test_mix_law.py) */
         snprintf(v, n, "%d/%d/%d/%d/%d/%d", (int)dly_dg, (int)dly_wk, (int)rv_dg, (int)rv_sk, (int)dr_d, (int)dr_w);
+    else if (!strcmp(key, "dlyrest")) {                /* the delay loop's rest (fx.c dly_rest_chk): its activity, its
+                                                         * filters' states and the line's largest |row| (all 0 at rest) */
+        uint32_t q, mx = 0;
+        for (q = 0; q < DLY_LEN; q++) { int32_t x = dly_buf[q]; uint32_t ax = (uint32_t)(x < 0 ? -x : x); if (ax > mx) mx = ax; }
+        snprintf(v, n, "%u/%d/%d/%u", (unsigned)dly_ring, (int)dly_lp, (int)dly_hp, (unsigned)mx);
+    }
+    else if (!strcmp(key, "keyup")) snprintf(v, n, "%d/%d", (int)rh_h_kth, (int)rh_h_kfelt);   /* the last key-up's
+                                                         * knock force / felt gain (rhodes.c, bars.c; -1: none yet) */
+    else if (!strcmp(key, "dlyring")) snprintf(v, n, "%u", (unsigned)dly_ring);   /* the line's activity (fx.c dly_ring) */
+    else if (!strcmp(key, "dlyd")) snprintf(v, n, "%d", (int)(dly_d >> 8));     /* the delay time as it runs (samples) */
+    else if (!strcmp(key, "fxcost")) snprintf(v, n, "%u", (unsigned)fx_cost_us());   /* the effects' cost (us a block) */
     else if (!strcmp(key, "twph")) snprintf(v, n, "%u", tw_ph);                   /* the tremolo's LFO phase (Q32) */
     else if (!strcmp(key, "cpph")) snprintf(v, n, "%u", cp_ph);                   /* the chorus' */
     else if (!strcmp(key, "phph")) snprintf(v, n, "%u", ph_ph);                   /* the phaser's */
@@ -1952,6 +1963,16 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "wavn")) snprintf(v, n, "%u", wav_n);                   /* (host.c: the frames rendered) */
     else if (!strcmp(key, "bend")) snprintf(v, n, "%d", (int)eng_bend14 - 8192);   /* the pitch bend (-8192 .. 8191) */
     else if (!strcmp(key, "rtpend")) snprintf(v, n, "%u", (unsigned)rh_rt_pend);   /* voices still to retune (rhodes.c) */
+    else if (!strcmp(key, "rtbend")) {                 /* the bend each voice slot is tuned to (Q30 2^(c/1200) - 1,
+                                                         * rhodes.c rh_voice_t tb), "-" for a silent one, comma-separated */
+        uint32_t q, o = 0;
+        v[0] = 0;
+        for (q = 0; q < RH_NV && o + 14u < n; q++) {
+            const char *sep = q ? "," : "";
+            if (rv[q].alive) o += (uint32_t)snprintf(v + o, n - o, "%s%d", sep, (int)rv[q].tb);
+            else o += (uint32_t)snprintf(v + o, n - o, "%s-", sep);
+        }
+    }
     else if (!strcmp(key, "rtbusy")) snprintf(v, n, "%d", rh_rt_pend != 0u);        /* a retune still under way */
     else if (!strcmp(key, "page")) snprintf(v, n, "%s", PAGE_TITLE[ui_page]);
     else if (!strcmp(key, "hint")) snprintf(v, n, "%s", page_hint(ui_page));
@@ -2033,6 +2054,7 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "savepend")) snprintf(v, n, "%u", pr_save_pending);   /* a preset save waiting for silence */
     else if (!strcmp(key, "undo")) snprintf(v, n, "%u", set.undo_valid);
     else if (!strcmp(key, "dirty")) snprintf(v, n, "%u", set_pend_new);   /* a setup change waits to be saved */
+    else if (!strcmp(key, "sqdirty")) snprintf(v, n, "%u", (unsigned)(sq_dirty || sq_sv_step));   /* a pattern change waits to be saved (or its save runs) */
     else if (!strcmp(key, "saving")) snprintf(v, n, "%u", set_saving);   /* the settings' save runs (settings_poll) */
     else if (!strcmp(key, "ledduty")) snprintf(v, n, "%u %u", fm1_led_duty[0], fm1_led_duty[1]);   /* DISPLAY BRIGHTNESS: the keys', the buttons' lit duty /16 */
     else if (!strcmp(key, "bars")) snprintf(v, n, "%d", eng_is_bars());
@@ -2071,7 +2093,7 @@ FR_COLD static void host_dump(void)
     static const char *const K[] = {"header", "preset", "page", "vpage", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
                                     "arpn", "arpv", "arpends", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "fxdrv", "label0", "card0", "label1", "card1", "label2", "card2",
-                                    "label3", "card3", "bpm10", "setbpm", "vresp", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
+                                    "label3", "card3", "bpm10", "setbpm", "vresp", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "sqdirty", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
     char key[24], v[128];                 /* (v: rowbox writes up to 72 + NUL: gcc -Wformat-truncation) */
     uint32_t i, k;
     for (i = 0; i < sizeof K / sizeof K[0]; i++) { host_state(K[i], v, sizeof v); printf("@ %u %s %s\n", fm1_ms, K[i], v); }

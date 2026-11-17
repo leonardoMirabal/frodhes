@@ -306,7 +306,7 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
 __attribute__((noinline)) static int dly_routed(int32_t sw, int32_t target)
 {
     return dly_xo || sw == 3 || dly_cur == 3 || dly_xg != 32768 || dly_tx || (sw == 1 && dly_d != target) ||
-           (sw == 2 && (dly_lp || dly_hp || dly_sil < DLY_LEN) && iabs(target - dly_d) > 65536);
+           (sw == 2 && (dly_ring || dly_sil < DLY_LEN) && iabs(target - dly_d) > 65536) || dly_rf;
 }
 /* fx_delay_t's router: 1 = this block is done here, 0 = the old loops run it as always. dly_cur: 3 while TAPE owns
  * the line (TAPE, its fade-out, its tail after OFF), else the old loops (DIG / ANA / their tail; dly_last the EFFECT
@@ -324,11 +324,8 @@ __attribute__((noinline)) static int tp_route(int32_t *L, int32_t *R, uint32_t n
     if (osw == 2) col = (col * 19661) >> 15;
     if (dly_cur == 3) {
         if (sw == 3 || (sw == 0 && tp_g)) {             /* TAPE (fading in), or its tail after OFF (send off) */
-            tp_block(L, R, n, target, sw ? -1 : 0, sg16, fb, wet, sw ? dgt : 32768, sw ? 32768 : tp_g);
-            if (!sw && dly_tail_over(n, target) && iabs(tp_h2) < 2 && iabs(tp_b1) < 32 && iabs(tp_b2) < 32) {
-                tp_zero(); dly_cur = 0; dly_last = 0;   /* (fx.c dly_tail_over: the line ~0 over the delay first) */
-            }
-            return 1;
+            tp_block(L, R, n, target, sw ? -1 : 0, sg16, fb, wet, sw ? dgt : 32768, dly_rf ? 0 : sw ? 32768 : tp_g);
+            return 1;                                   /* (its rest, the tail's end: fx.c dly_rest_chk) */
         }
         if (tp_g) {                                     /* DIG / ANA asked for: TAPE fades out first */
             tp_block(L, R, n, target, -1, sg16, fb, wet, dgt, 0);
@@ -339,7 +336,7 @@ __attribute__((noinline)) static int tp_route(int32_t *L, int32_t *R, uint32_t n
         dly_last = (uint8_t)sw;
     }
     if (sw == 3) {
-        if ((dly_lp || dly_hp) && dly_xg) {             /* a DIG / ANA line rings: it fades out first */
+        if (dly_ring && dly_xg) {                       /* a DIG / ANA line rings: it fades out first */
             dly_fade(L, R, n, dly_last == 2, dly_last ? -1 : 0, sg16, target, col, fb, wet,
                      dly_last ? dgt : 32768, -TP_FADE);
             return 1;
@@ -349,6 +346,10 @@ __attribute__((noinline)) static int tp_route(int32_t *L, int32_t *R, uint32_t n
         return 1;
     }
     dly_last = (uint8_t)sw;
+    if (dly_rf) {                                       /* the rest's fade-out (fx.c dly_rest_chk): the type that runs */
+        dly_fade(L, R, n, sw ? sw == 2 : dly_ana, sw ? -1 : 0, sg16, target, col, fb, wet, sw ? dgt : 32768, -TP_FADE);
+        return 1;
+    }
     if (dly_xg == 32768) {
         if (!sw) return 0;
         dly_fade(L, R, n, sw == 2, -1, sg16, target, col, fb, wet, dgt, 0);   /* (a time change: DIG's crossfade, ANA's
@@ -634,7 +635,7 @@ __attribute__((noinline)) static void tp_block_c(int32_t *L, int32_t *R, uint32_
 /* tp_route for a chunk: what this block runs, decided at the first chunk (and the switches before it); after the last
  * chunk's rows, the switches after it (tp_route_end) */
 static struct { uint8_t kind, tape, post; int32_t msk, dgt, gs, gt, col; } tp_rc;   /* kind: 0 the old loops, 1 fade,
-                                                        * 2 TAPE; post: 1 the DIG <-> ANA fade's end, 2 TAPE's tail */
+                                                        * 2 TAPE; post: 1 the DIG <-> ANA fade's end */
 static void tp_route_plan(int32_t sw, int32_t target, int32_t depth)
 {
     int32_t dgt = DLY_DRY(depth), osw = dly_cur == 3 ? sw : dly_last;
@@ -649,8 +650,7 @@ static void tp_route_plan(int32_t sw, int32_t target, int32_t depth)
     tp_rc.col = col;
     if (dly_cur == 3) {
         if (sw == 3 || (sw == 0 && tp_g)) {
-            tp_rc.kind = 2; tp_rc.msk = sw ? -1 : 0; tp_rc.dgt = sw ? dgt : 32768; tp_rc.gt = sw ? 32768 : tp_g;
-            tp_rc.post = sw ? 0 : 2;
+            tp_rc.kind = 2; tp_rc.msk = sw ? -1 : 0; tp_rc.dgt = sw ? dgt : 32768; tp_rc.gt = dly_rf ? 0 : sw ? 32768 : tp_g;
             return;
         }
         if (tp_g) { tp_rc.kind = 2; tp_rc.msk = -1; tp_rc.dgt = dgt; tp_rc.gt = 0; return; }
@@ -659,7 +659,7 @@ static void tp_route_plan(int32_t sw, int32_t target, int32_t depth)
         dly_last = (uint8_t)sw;
     }
     if (sw == 3) {
-        if ((dly_lp || dly_hp) && dly_xg) {
+        if (dly_ring && dly_xg) {
             tp_rc.kind = 1; tp_rc.tape = dly_last == 2; tp_rc.msk = dly_last ? -1 : 0;
             tp_rc.dgt = dly_last ? dgt : 32768; tp_rc.gs = -TP_FADE;
             return;
@@ -669,6 +669,11 @@ static void tp_route_plan(int32_t sw, int32_t target, int32_t depth)
         return;
     }
     dly_last = (uint8_t)sw;
+    if (dly_rf) {                                       /* (tp_route's rest fade) */
+        tp_rc.kind = 1; tp_rc.tape = (uint8_t)(sw ? sw == 2 : dly_ana); tp_rc.msk = sw ? -1 : 0;
+        tp_rc.dgt = sw ? dgt : 32768; tp_rc.gs = -TP_FADE;
+        return;
+    }
     if (dly_xg == 32768) {
         if (!sw) { tp_rc.kind = 0; return; }
         tp_rc.kind = 1; tp_rc.tape = sw == 2; tp_rc.msk = -1; tp_rc.dgt = dgt; tp_rc.gs = 0;
@@ -681,13 +686,8 @@ static void tp_route_run(int32_t *L, int32_t *R, uint32_t n, int32_t target, int
     if (tp_rc.kind == 1) dly_fade_c(L, R, n, tp_rc.tape, tp_rc.msk, target, tp_rc.col, fb, wet, tp_rc.dgt, tp_rc.gs);
     else tp_block_c(L, R, n, target, tp_rc.msk, wet, tp_rc.dgt, tp_rc.gt);
 }
-static void tp_route_end(uint32_t n, int32_t target)   /* after dly_wr_c */
+static void tp_route_end(void)                         /* after dly_wr_c (TAPE's tail's end: fx.c dly_rest_chk) */
 {
     if (tp_rc.post == 1) { if (dly_xm == (dly_ana ? 32768 : 0)) dly_xo = 0; }
-    else if (tp_rc.post == 2) {
-        if (dly_tail_over(n, target) && iabs(tp_h2) < 2 && iabs(tp_b1) < 32 && iabs(tp_b2) < 32) {
-            tp_zero(); dly_cur = 0; dly_last = 0;
-        }
-    }
 }
 #endif

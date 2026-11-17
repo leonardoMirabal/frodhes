@@ -77,7 +77,7 @@ def test_folder_validates():
     assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-1000:]
     assert "0 errors, 0 warnings" in r.stdout, r.stdout[-3000:]
     for so in ("frodhes-arm32.so", "frodhes-arm64.so"):
-        assert os.path.getsize(os.path.join(FOLDER, "VST", so)) > 1 << 20
+        assert os.path.getsize(os.path.join(FOLDER, so)) > 1 << 20   # (the root: Plugin Manager <= 1.2.0)
 
 
 @built

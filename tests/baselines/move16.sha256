@@ -1,29 +1,29 @@
 # Gate M (tools/gate_m.py --save): the MIDI-driven renders the Move's 16 voices change against
 # renders.sha256 (the host build at the Move's voice count), then the entries that stay host-only.
-b63925743d2212147a81a6246ca1ab5b7c177c2d3ab81ae27af40304894aab96  fx/cho
+85b1abcd88b21cd0e6b2425e17281295f33f2f32efd264e1ec41e3c874b12532  fx/cho
 5bbf8e6de4a927669a4d13f66a87dec531d12a7e013b50b40b479ac6f73c2d04  fx/comp
 e98a7c9351c6a626c651169169824e24ee3120619bc236154cbd70d45075da2b  fx/dl_ana
-5d9c8e1dbe53ef6495f39d9dce8bf70eb0196da07b8d99edbb3f44d3f8309bbe  fx/filt110
+4a904db3eae5dd16197d30ba0b59214aa43b5928009404686436c67e84e91098  fx/filt110
 7bee59e2578c0e86f89ba7530c8954191461bc3d7ea6e7fdb593b456ffc273a1  fx/filt14
-8643720d5b99f051eb8760b3f3e98bd3505c18320f977c94c774e8fc48260b41  fx/filt30
-06d48de49beecefffa6307ecc53a916707459a6e5f06e3cd4aad7107204419b4  fx/filt45
-940a2df980329e0ab7b89f8152b16d34bbba769f302ea8f5d803a732e2e770e5  fx/filt60
-4dabe38c98a18bf49deeac221dbe26b8d9b98ad5de73b21d64d514fb638e34f3  fx/filt75
-dffecf36fc206188033505456f532222cea89fb72e0e8cdf8181b6b151e266ce  fx/filt90
-e1fa0ce43c80dd241ba5df90c51182dbde4e19a90ef347405329f4ce3324bb2c  fx/heavy
-654de25dfbad1605c8428a4c89fa111a6ce0cdac1764f9a26b25d17c3ffb8a32  fx/heavy_cho
-378abe58be92ce13d806e654f77c61888fd6452468d08b03694eef6d20cc1adc  fx/m_cho
+b989a30f272cd77d4174c3dd9066dc7f809c6140016dd6b7483986e247e3ea4e  fx/filt30
+87d0062b80cd8bf4d58c95ebfdeef5106a944cc385b037feab004be081df0807  fx/filt45
+8f06809943c03c4b14761846230008b43b8be5035ef56404baa16db749e959f0  fx/filt60
+4de6a38beb4cc201875e3c00edaa5406c75bd01993f124b7c45d64cc0575b0f9  fx/filt75
+1c4a979b3a5dcc68644435ba9984c320d4f969f1df3919a3657f0a8a97f3b24f  fx/filt90
+3f04f030584553ddcd4751ebd4f4ff0ff86d9f13c382261239637c12bbb39327  fx/heavy
+f5c237bf7b2b5c9cb294dd753bc77d102d27f85930e7f94305d07c693af6a175  fx/heavy_cho
+03603c8df9b939b9d84c35b9c30c97497265dd015fe07be0aaf072a14656342a  fx/m_cho
 7258e3f2877c2f550794870fbd9cd74bbd3a407a2b1e8dae9101444ce04b4765  fx/m_comp
 fb95e01ea164e38992cff0ca79a0a5052aa6ea5e6ac43f1efacb791f40f4a357  fx/m_dl_ana
-9526d38c1e37ffe95413164ab45b5a7492898a7a51bc56a30a6a94bd9c2eb627  fx/m_filt110
+973e6002f3469b2dedc88938dc8242ec09bea7f28cebc27f98f9c7afaefbdd47  fx/m_filt110
 42ff54d083ad0b8f9cb609a7b3c603661421bc88a1a8e4f6a01c108d9288e3cb  fx/m_filt14
-0243bbe626b11e84042f276037dce2a2ab316484c09a63915052615f5995f556  fx/m_filt30
-6516936f00c04d99c284ec8ec9af20b9d761c06ed536bda5e88eeaad48f92d5d  fx/m_filt45
-2cda302ea8b8b69b9a5f57a34ee55bfedee2e03ee6461fe8b7b9f4148f8af625  fx/m_filt60
-b2a01869275b35abebe841a4237d52398957fb13ba450fadd13b1a9042b2a04b  fx/m_filt75
-be1a7b317de54fb829f94e7b6491bf37e06a3b974b3493e10dc66b7205ff6164  fx/m_filt90
-ab18ed9296549d92cba17869419bb32e5d06c460751f6e0e6f8e8b7c6f11b3eb  fx/m_heavy
-3cc8e3594fb279252568448246db4f0b7353a80cbcfa1e98a6d554272702e6ed  fx/m_heavy_cho
+b825f16116cf7855db658d8055ba40e668e10d56e867a49d11653cbae35b663b  fx/m_filt30
+26f5f8aee93f6f6734304d7e300e66e5bb332c0824a9306b9419d3aa26fcce8c  fx/m_filt45
+0b6adab1e826111b04728d45e59273df30d5d2f58d991e826d81b3cbfa6fa023  fx/m_filt60
+c050f02bbd737f71ebcfa9f355838cd85c37eb86c79615b3267583b2c6f7b150  fx/m_filt75
+487fa12823dfcbea2e45d6029cf114fd5462c241d1d60ff6bd94f98bf30a2293  fx/m_filt90
+2210068b3c86da6f081bc4d4752cf7c00dad73bec9571c81e188a468196f1605  fx/m_heavy
+18accfafb0d899ddc1f76fee23e1bebf14499757f01b40a17d2f4e7cb7b4f01a  fx/m_heavy_cho
 c9ff0ac31b914d8e3159845e7eb90725aefc755fa983eb68729108f523a8ec2f  fx/m_ph_32
 faadf9f1b166038b2668289b65ff12f8f539fb749279bf8386138e3bbbab125f  fx/m_ph_fb
 489bd4034f03742d6cf0a5a0adaede86f8215dd5883fb8715b3efc53cbeafd08  fx/m_rev127
@@ -36,7 +36,7 @@ e4047bf059163b6dbc2c898cc7f37750a7356e9aa4a61c8cbfa119e97ffeff47  fx/ph_fb
 ff941778034a91a9f3c07105e0c97624530ba244b598e5cf04eeeb7d2042519e  fx/rev32
 65c2a1cf0ded967d13a11a7033e8170d6cb9dcd244c6c88ed7d9dfeab31f99a4  fx/trem_am
 a8d2d888296a9e5617287dfd373a6084f334ecc7f0189084d9ac20efb0f58ea8  fx/trem_pan
-1ed7b97e877ee1a6ca0a1eee766488d7c3eb5012a7750656ca3848545ef10d8e  fx/v_cho
+b05585c84f578a2b59e52ce2b1a480a5cce30d1238d868e43281c2c2aa9235ed  fx/v_cho
 f51f1de570944689cfccbc0fbc8425a9308d22a371467465065b6939e72ef301  fx/v_comp
 224339f22bda2fc5fbade3483ddcba077fb7cd3677d9bb4584f613d1dcf1462c  fx/v_dl_ana
 759710f3e310b9b42f86cf0206f4cab9c8c292b7a7bbb5808273cd6bafedd005  fx/v_filt110
@@ -59,12 +59,12 @@ b89683c98d99b1a97638cc2543f942b7bdcf8c44388ff87346a0a4575cc7b135  scripts/bar_cc
 1560adfcab97afc1bc82d463db2444c7d41ae873f4bd56bdb5526b1902abd484  scripts/demo
 768ef3d8d9b4c827d12bf9eea2876e28e536ec872d7987e94c88e3389a624a1d  scripts/drive_kernels
 2c40be57c8d5de4c9fcb7dff442e06e901fe15de97e865b7d94ab0b53c61a9a3  scripts/drive_ohcd
-611e22bc99901106a4bc3a2b1f7401d8a1a2867b1c3abeb136c8918ce8cc218a  scripts/drive_silence
+2ec4a1ab6e6adb89cb92ebfc34d808a90acc8c4bd348047bc984a6fcc787318f  scripts/drive_silence
 2ba0c85c02a07811fd9c1b14ef67bd356fef7adf598063116bae259a77ef0d00  scripts/fx_slow_paths
 6abd0025df61693b37de280329c03bfebe0488ded6caf154dc9038a9fb7dede7  scripts/marimba
 c5f8da81713d4f5d0ef2fa6d7beea61c346359230deff87f00265143506e39c8  scripts/rev_cc95
 35a7756bea12c1f9c7b7bff63fc512f6abb1d30846ce82e141da37cff4efb5d8  scripts/rev_types
-d4a937343714306f369a9ad0b63ed51b230152477aa22787b9914b02cf50fe62  scripts/rhodes_paths
+072a253fa7fde07ea4634e5012f38ff539470c7f2599970c21734f77e0cec4ad  scripts/rhodes_paths
 d5f292946ce9130fe2a805ca554f1f7bcf295b93cb90f96f1bdfda4c9cd71da6  scripts/rhodes_steal_release
 f7da7972c61de71ed893c1990fb51cfce8c53938ff4248335b94f594cf6b6094  scripts/vibes
 ac0e75b4830af347a1f72a1fa8ac379f0c7c3222db45d03bb67ed705e4a2d157  scripts/vibes_motor
@@ -73,12 +73,15 @@ aa8af4a32a5bf1e426cd4c18623b319472960d3cda589cf78c25ad2031c8644d  scripts/vibes_
 # host-only scripts/arp: FM-1 input lines: btn, keys
 # host-only scripts/arp_buttons: FM-1 input lines: btn, keys
 # host-only scripts/arp_full: FM-1 input lines: btn
+# host-only scripts/arp_gate_snap: FM-1 input lines: btn, turn
 # host-only scripts/autosave_setup: FM-1 input lines: btn, turn
 # host-only scripts/battery: FM-1 input lines: btn
 # host-only scripts/bend: FM-1 input lines: btn, turn, usblink
+# host-only scripts/bpm_snap: FM-1 input lines: btn, tempo, turn
 # host-only scripts/burst: FM-1 input lines: keys
 # host-only scripts/buttons: FM-1 input lines: btn, turn
 # host-only scripts/clock: the FM-1 sequencer / arpeggiator / chords (CC 43, 60, 61, 63): not on the Move, which has its own (the user, 2026-10-28; move/move_bridge.h MB_CC_DROP)
+# host-only scripts/clock_save: FM-1 input lines: btn, keys, turn
 # host-only scripts/cmp_mkup_engine: FM-1 input lines: btn, turn
 # host-only scripts/display: FM-1 input lines: btn, keys, turn
 # host-only scripts/drive_select: FM-1 input lines: turn
@@ -96,6 +99,7 @@ aa8af4a32a5bf1e426cd4c18623b319472960d3cda589cf78c25ad2031c8644d  scripts/vibes_
 # host-only scripts/perform: FM-1 input lines: btn, keys, turn
 # host-only scripts/perform_wake: FM-1 input lines: btn, turn
 # host-only scripts/play_led: FM-1 input lines: btn, keys, turn
+# host-only scripts/presets_save_cand: FM-1 input lines: btn, turn
 # host-only scripts/quiet_gated: FM-1 input lines: btn, turn
 # host-only scripts/release_vel: FM-1 input lines: keys
 # host-only scripts/rev_freeze_save: FM-1 input lines: btn
@@ -111,6 +115,7 @@ aa8af4a32a5bf1e426cd4c18623b319472960d3cda589cf78c25ad2031c8644d  scripts/vibes_
 # host-only scripts/sustain: FM-1 input lines: btn, keys, press, release
 # host-only scripts/touch: FM-1 input lines: btn, keys, turn
 # host-only scripts/trs: FM-1 input lines: btn, trs, turn
+# host-only scripts/twkind_off: FM-1 input lines: btn, turn
 # host-only scripts/type_held_repress: FM-1 input lines: keys, turn
 # host-only scripts/ui_panel: FM-1 input lines: btn, turn
 # host-only scripts/ui_presets: FM-1 input lines: btn, press, release, turn

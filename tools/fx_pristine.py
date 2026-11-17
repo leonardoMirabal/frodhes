@@ -5,8 +5,8 @@ pristine and clean result for each efx beside overdrive"). From F01 with every e
 
   lim     the look-ahead limiter idle (fx.c: sub-blocks with a gain under 1, the host's fx-clip line) on single notes
           (v64, v127) and a v127 4-note chord (C3 G3 C4 E4)
-  clip    no clamp cut anywhere in the delay line (send, feedback, the write), the reverb's send and kernel inputs, the
-          chorus line (fx.c FX_HC)
+  clip    no clamp cut anywhere in the delay line (send, feedback, the write), the reverb's send and kernel inputs and
+          its int16 rings (fx.c hl_c16, 0.9.13), the chorus line (fx.c FX_HC), the touch wah's input (WAH_XM)
   lvl0    at MIX / DEPTH 0: the level of FX on within 0.5 dB of the bypass (FX off)
   peak    the effect adds no peak: its highest sample over every signal at most PK_TOL (2 dB: the touch wah's onset,
           +1.6) over the bypass' (2026-11-08: the phaser's comb, a resonant LP / HP, the wah's make-up
@@ -106,9 +106,10 @@ def render(job):
     with open(out + ".txt", "w") as f:
         f.write("\n".join(lines) + "\n")
     p = subprocess.run([os.path.join(OUT, build), out, out + ".txt"], capture_output=True, text=True)
-    m = re.search(r"fx-clip delay (\d+) reverb (\d+) chorus (\d+) limiter (\d+)", p.stdout)
+    m = re.search(r"fx-clip delay (\d+) reverb (\d+) chorus (\d+) limiter (\d+)(?: wah (\d+))?", p.stdout)
     assert p.returncode == 0, f"{build} {tag}: rc {p.returncode}\n{p.stdout[-600:]}{p.stderr[-600:]}"
-    cnt = tuple(int(v) for v in m.groups()) if m else (0, 0, 0, -1)   # (-1: a build without the counters)
+    cnt = tuple(int(v or 0) for v in m.groups()) if m else (0, 0, 0, -1, 0)   # (-1: a build without the counters;
+                                                                         # wah 0: one before 0.9.13's)
     w = wave.open(out + ".wav")
     x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float).reshape(-1, 2)
     for e in (".wav", ".txt"):
@@ -143,7 +144,7 @@ def analyse(res, build, name, byp=False):
     k = f"{'-byp' if byp else ''}"
     g = {s: res[(build, f"{name}-{s}{k}")] for s in signals()}
     lim = {s: g[s][2][3] for s in ("s64", "s127", "c127")}
-    clip = tuple(sum(g[s][2][i] for s in g) for i in range(3))
+    clip = tuple(sum(g[s][2][i] for s in g) for i in (0, 1, 2, 4))
     nl = resid_db(*((g[s][0], g[s][1]) for s in ("AB", "A", "B")))
     lvl = rms_db(g["c127"][0], g["c127"][1])
     pk = max(max(np.abs(g[s][0]).max(), np.abs(g[s][1]).max()) for s in g) / 32768
@@ -190,7 +191,7 @@ def gate(builds, quick=False, presets=False, n=None, verbose=False):
             rows.append(f"== {b}: no fx-clip counters in this build (older than 523d8fa7): lim / clip not measured")
         rows.append(f"== {b}: dry (bypass) chord {dry['lvl']:.2f} dBFS, peak {dry['pk']:.1f} dBFS, nl {dry['nl']:.1f} dBFS, "
                     f"limiter {dry['lim']}")
-        rows.append(f"   {'effect':16s} {'d':>3s}  {'lim s64/s127/chord':>18s}  {'clip d/r/c':>10s}  {'nl':>6s}  "
+        rows.append(f"   {'effect':16s} {'d':>3s}  {'lim s64/s127/chord':>18s}  {'clip d/r/c/w':>12s}  {'nl':>6s}  "
                     f"{'lvl-byp':>7s}  {'peak':>5s}")
         for name, (ccs, exempt, mix0) in effects.items():
             for d in DEPTHS:
@@ -213,12 +214,12 @@ def gate(builds, quick=False, presets=False, n=None, verbose=False):
                     bad = [x for x in bad if x not in ("limiter", "peak")]   # (+15 dB on every band / RESO 127: a level
                     # the user set)
                 rows.append(f"   {name:16s} {d:3d}  {r['lim']['s64']:5d}/{r['lim']['s127']:5d}/{r['lim']['c127']:5d}  "
-                            f"{'%d/%d/%d' % r['clip']:>10s}  {r['nl']:6.1f}{'*' if exempt else ' '} {dl:+7.2f}  "
+                            f"{'%d/%d/%d/%d' % r['clip']:>12s}  {r['nl']:6.1f}{'*' if exempt else ' '} {dl:+7.2f}  "
                             f"{r['pk']:5.1f}  {'FAIL ' + ','.join(bad) if bad else 'ok'}")
                 if bad:
                     fails.append(f"{b} {name}@{d}: {','.join(bad)}")
         if presets:
-            rows.append(f"   {'preset':16s}      {'lim s64/s127/chord':>18s}  {'clip d/r/c':>10s}  {'nl':>6s}  "
+            rows.append(f"   {'preset':16s}      {'lim s64/s127/chord':>18s}  {'clip d/r/c/w':>12s}  {'nl':>6s}  "
                         f"{'on-byp':>7s}  {'peak':>5s}")
             for pc in list(range(16)) + [32, 33, 34]:
                 nm = f"F{pc + 1:02d}" if pc < 16 else f"F{pc - 15:02d}"
@@ -231,7 +232,7 @@ def gate(builds, quick=False, presets=False, n=None, verbose=False):
                 if any(r["clip"]):
                     bad.append("clip")
                 rows.append(f"   {nm:16s}      {r['lim']['s64']:5d}/{r['lim']['s127']:5d}/{r['lim']['c127']:5d}  "
-                            f"{'%d/%d/%d' % r['clip']:>10s}  {r['nl']:6.1f}  {r['lvl'] - o['lvl']:+7.2f}  "
+                            f"{'%d/%d/%d/%d' % r['clip']:>12s}  {r['nl']:6.1f}  {r['lvl'] - o['lvl']:+7.2f}  "
                             f"{r['pk']:5.1f}  {'FAIL ' + ','.join(bad) if bad else 'ok'}")
                 if bad:
                     fails.append(f"{b} {nm}: {','.join(bad)}")

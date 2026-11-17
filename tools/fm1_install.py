@@ -784,8 +784,9 @@ def main(argv=None, backend=None, out=sys.stdout, ask=ask_tty):
                                                    "when fm1_ports.py would never pick it)")
     ap.add_argument("--new-port", metavar="NAME", help="the port name the FM-1 takes after the restart, when the "
                                                        "package changes it (tools/build.py --usb-name)")
-    ap.add_argument("--location", metavar="LOC", help="the unit's USB location (macOS ioreg locationID, e.g. "
-                                                      "0x00100000): refuse unless the port's unit is there")
+    ap.add_argument("--location", metavar="LOC", default=os.environ.get("FM1_LOCATION") or None,
+                    help="the unit's USB location (macOS ioreg locationID, e.g. 0x00100000; default: $FM1_LOCATION):"
+                         " refuse unless the port's unit is there")
     ap.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     ap.add_argument("--force", action="store_true", help="install a package without the Felucca loader marker")
     a = ap.parse_args(argv)

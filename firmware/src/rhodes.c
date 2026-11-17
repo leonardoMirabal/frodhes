@@ -104,7 +104,7 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 _Static_assert(RH_NV >= 1u && RH_NV <= 32u, "summaries are 32-bit masks");
 #define SUB 32u
 #define RAMP_SUB 5u                            /* the damper settle (rh_settle) on C3..B4, sub-blocks */
-#define FADE_SAMPLES 64u
+#define FADE_SAMPLES 64u                       /* the steal fade (rh_fade_g: a smoothstep over it, 0.9.13) */
 #define RH_OFF_LIFE 1378u                      /* blocks (8 s) a voice may still ring after an all-off */
 #define Q30 (1 << 30)
 #define RH_S_MAX_HI 2048u                      /* s >> 44 at 32 gap^2 */
@@ -146,7 +146,9 @@ typedef struct {
                                                 * strike (the key-up thump's cap: rh_left) */
     uint16_t felt_g;                           /* Q15: the key-up felt noise's gain (the same cap: RH_FELT_K) */
     uint16_t atk;                              /* Q15: the strike's output lift still to decay (RH_ATK_A, rh_voice_sub) */
-    int32_t kd, kr;                            /* DECAY's and RELEASE's k at the note-on: eps0 / eps1's (rh_retune) */
+    int32_t tn;                                /* TUNE (rh_tune_t) at the note-on: the bend retunes from it (rh_retune;
+                                                * 0.9.13: it took TUNE's value of the moment, so a TUNE turned under a held
+                                                * note jumped in at the next bend message) */
     int32_t hd_off0, hd_g0, hd_gc, hd_d, hd_y1, hd_y2; /* the harmonic decay glide (rh_hd_init): the strike's offset and
                                                 * gain there, the gain it set last, the glide's end (Q25 gap), its two
                                                 * lag states */
@@ -178,6 +180,9 @@ typedef struct {
 #endif
 #ifdef DINGHY_PLUGIN
     uint16_t pdly;                             /* the plugin: samples before the pulse starts (fr_ofs_apply) */
+#endif
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    int32_t tb;                                /* (host: the bend the voice is tuned to; frodhes.c "rtbend") */
 #endif
 } rh_voice_t;
 #ifdef RH_VMAP
@@ -223,6 +228,8 @@ static int32_t rh_mono[256] __attribute__((section(".bss.rh_buf"))), rh_xF[2u * 
 static uint32_t rh_ages;
 #ifdef DINGHY_HOST
 static uint32_t rh_h_steals;                   /* host: the steals (engine.c eng_host_report, tools/engine_ab.py) */
+static int32_t rh_h_kth = -1, rh_h_kfelt = -1;  /* host: the last key-up's knock force and felt noise gain (bars.c
+                                                 * too; frodhes.c host_state "keyup", tests/py/test_half_pedal.py) */
 #endif
 static int32_t rh_pedal_w = 32768;             /* ISR copy: damper weight for keys that are up */
 static int32_t rh_st[3][5];                    /* the pickup RLC's and the TYPE's body biquads' states (m1 m2 o1 o2 e) */
@@ -383,7 +390,9 @@ static int32_t rh_bend_used RH_OWN_SECTION(".bss.rh_bend_u");         /* ISR: th
 /* the retune spread (rh_retune): the voices still to retune to rh_bend_used, and the round-robin cursor */
 static uint32_t rh_rt_pend RH_OWN_SECTION(".bss.rh_rt_pend");
 static uint32_t rh_rt_cur RH_OWN_SECTION(".bss.rh_rt_cur");
-#define RH_RT_PER ((RH_NV + 3u) / 4u)                                     /* voices retuned per block: a quarter */
+#define RH_RT_PER RH_NV                  /* voices retuned per block: every one (0.9.13, the audio review C3: a quarter a
+                                         * block left each voice up to 4 blocks behind the bend, so a fast bend over a
+                                         * chord came in ~23-cent steps with ~20 cents between its notes) */
 
 /* ISR-written summaries (one writer each) */
 static volatile uint32_t rh_active_bits, rh_held_bits, rh_quiet_blocks;
@@ -608,14 +617,6 @@ static const uint16_t RH_DYN_V[RH_DYN_V_HI] = {             /* Q15, v 0..126 (12
     20675, 20703, 20727, 20751, 20775, 20801, 20832, 20869, 20915, 20983, 21085, 21215, 21371, 21547, 21739, 21943,
     22154, 22394, 22685, 23014, 23372, 23748, 24129, 24503, 24857, 25194, 25529, 25863, 26197, 26533, 26873, 27218,
     27571, 27936, 28313, 28699, 29089, 29477, 29859, 30229, 30581, 30914, 31232, 31540, 31843, 32145, 32451};
-/* the bars' LIGHT level map (bars.c bar_lt_g: 1 / this, up to +9 dB at v20 and below, 0 dB from v60): the electric
- * piano's FULL soft end until 2026-11-09, kept for the bars so their LIGHT stays byte-identical */
-#define RH_DYN_VB_HI 60u
-static const uint16_t RH_DYN_VB[RH_DYN_VB_HI] = {
-    11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627,
-    11627, 11627, 11627, 11627, 11627, 11649, 11714, 11821, 11969, 12156, 12382, 12646, 12949, 13291, 13670, 14087,
-    14543, 15037, 15568, 16137, 16744, 17386, 18064, 18775, 19519, 20291, 21091, 21913, 22754, 23608, 24472, 25337,
-    26197, 27044, 27870, 28665, 29420, 30125, 30769, 31341, 31831, 32228, 32523, 32705};
 static const uint16_t RH_DYN_K[RH_KEY_LO + RH_NKEY - RH_DYN_K_LO] = {   /* Q15, keys 82..108 (below: 32768) */
     32768, 32557, 31967, 31073, 29949, 28673, 27312, 25928, 24573, 23288, 22108, 21059, 20161, 19432, 18888, 18546,
     18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427};
@@ -1391,7 +1392,10 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
     v->vm = (uint8_t)(rh_touch_mode != 0);
     if (v->vm) { vx = rh_vm(0u, n - RH_KEY_LO, vel); vg = rh_vm_g(n - RH_KEY_LO, vel); }   /* MAP: X, G x rh_dyn (Q11) */
 #endif
-    v->k = k; v->kd = rh_k_decay; v->kr = rh_k_rel;
+    v->k = k; v->tn = rh_tune_t;
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    v->tb = rh_bend_t;
+#endif
     for (m = 0; m < RH_NM; m++) {
         rh_ms_t *s = &v->m[m];
         const rh_mode_t *km = &k->m[m];
@@ -1655,6 +1659,7 @@ static void rh_events(void)                     /* the block's start (rh_render,
             for (i = 0; i < RH_NV; i++)
                 if (rv[i].alive && rv[i].note == note && rv[i].held) {
                     rh_voice_t *v = &rv[i];
+                    int kn = 0;                                 /* (the knock below set the force rh_left reads) */
                     v->held = 0;
                     v->rgain = (uint16_t)rh_rel_gain(val);    /* val: the release velocity */
                     rh_set_damper_n(v, rh_rel_w(v), rh_rel_len(rh_settle(note), val));
@@ -1663,6 +1668,12 @@ static void rh_events(void)                     /* the block's start (rh_render,
                         int32_t th = rh_thump > 32767 ? 32767 : rh_thump;
                         int32_t cap = (int32_t)(((uint32_t)rh_left(v) * RH_THUMP_CAP) >> 15);
                         th = mul15(th > cap ? cap : th, v->rgain);   /* the cap, then the release velocity's x0.6..1.4 */
+                        if (rh_pedal_w < 32768) th = mul15(th, rh_pedal_w);   /* a half pedal: the felt lands as
+                                                         * lightly as it damps (0.9.13, x0.6 .. 0.9; up: as before) */
+#ifdef DINGHY_HOST
+                        rh_h_kth = th;
+#endif
+                        kn = 1;
                         v->ptab = FR_FAR2(rh_pz)(v->pbuf, &RH_PZB, RH_PZI(key, 0));
 #ifdef RH_DRIVE
                         {   /* th is a physical force: the modes get it at the strike's drive ratio (pamp / pphys) */
@@ -1694,7 +1705,13 @@ static void rh_events(void)                     /* the block's start (rh_render,
                             g = rh_dyn_gain(g, rh_dyn(v->note, v->vel, v->lt));   /* x the dynamics stage (MAP: in vn) */
                         }
 #endif
-                        v->felt_n = 353; v->felt_g = (uint16_t)(g > 32768 ? 32768 : g);
+                        if (g > 32768) g = 32768;
+                        if (rh_pedal_w < 32768 && !kn) g = (g * rh_pedal_w) >> 15;   /* a half pedal: lighter, as the
+                                                         * knock (after one, rh_left reads its force: scaled once) */
+#ifdef DINGHY_HOST
+                        rh_h_kfelt = g;
+#endif
+                        v->felt_n = 353; v->felt_g = (uint16_t)g;
                     }
                 }
             for (i = 0; i < RH_NV; i++)                 /* a note let go while it waits for a steal's fade: it
@@ -1857,6 +1874,15 @@ static FR_RAM int32_t __attribute__((noinline)) rh_mode_p(rh_ms_t *s) { return r
 
 /* the pickup loop with the steal fade (the plain one's arithmetic, then the fade per sample); its own function like
  * rh_pickup, so neither moves rh_voice_sub's mode-loop registers (the felt noise is a pass of its own, O6) */
+/* the steal fade's gain at fade f (Q15, 32767 .. 0 in FADE_SAMPLES): a smoothstep, 3 f^2 - 2 f^3 (0.9.13, the audio
+ * review D2: the straight ramp's corners put the cut of a loud low note into the highs, -54.7 dBFS above 2 kHz for C3
+ * v127 under a v30 note, -64.0 with the smoothstep, the same 1.45 ms: no later start for the note that steals; a
+ * 4-8 ms ramp would have delayed it by 3-6.5 ms) */
+static inline __attribute__((always_inline)) int32_t rh_fade_g(int32_t f)
+{
+    int32_t g = (f * f) >> 15;                  /* (f <= 32767: f^2 < 2^30) */
+    return (int32_t)(((int64_t)g * (98304 - 2 * f)) >> 15);
+}
 static FR_RAM __attribute__((noinline)) int32_t rh_pickup_fx(rh_voice_t *v, const int32_t *T, int32_t *mix, int32_t off,
                                                       int32_t Hp, int32_t gain)
 {
@@ -1866,7 +1892,7 @@ static FR_RAM __attribute__((noinline)) int32_t rh_pickup_fx(rh_voice_t *v, cons
         int32_t o = (int32_t)(((int64_t)(Hp - H) * gain) >> 24);
         Hp = H;
         if (v->fade != 32768) {
-            o = (int32_t)(((int64_t)o * v->fade) >> 15);
+            o = (int32_t)(((int64_t)o * rh_fade_g(v->fade)) >> 15);
             v->fade -= (int32_t)(32768 / FADE_SAMPLES);
             if (v->fade < 0) v->fade = 0;
         }
@@ -2031,17 +2057,18 @@ static void rh_shed(void)                                 /* overload: fade the 
 
 /* the bend moved: new resonator frequencies for the sounding voices (genkigenki's rh_retune, PR #3, for the SMK-37's
  * pitch wheel; here for MIDI pitch bend, engine.c eng_bend_set). The decay is kept (eps depends on the decay only); a
- * damper crossfade under way goes on from the new frequency. Spread: a block retunes at most RH_RT_PER sounding voices
- * (a quarter), round-robin, so every voice reaches the bend within 4 blocks of its last change and the worst block
- * pays a quarter of the whole retune (a voice born meanwhile starts at the bend in rh_init). Runs only in a block
- * where the bend changed or voices are still pending. */
+ * damper crossfade under way goes on from the new frequency. Every sounding voice in the block the bend moved (RH_RT_PER,
+ * 0.9.13; 0.9.5 - 0.9.12 spread it, a quarter of the voices a block round-robin: with more than 4 voices sounding they
+ * lagged the bend and each other by up to 4 blocks). A voice born meanwhile starts at the bend in rh_init. Runs only
+ * in a block where the bend changed (or voices still pending: RH_RT_PER under RH_NV, an experiment's) */
+/* TUNE and DECAY / RELEASE are the note-on's (0.9.13, the audio review C2): TUNE, DECAY and RELEASE act on new notes,
+ * so a bend retunes from the TUNE the voice started with (v->tn) and keeps its pair (E, eps) on the note-on's decays
+ * (s->eps0 / eps1, the eps it runs with; E from a DECAY turned since was a pair that did not match) */
 static void __attribute__((noinline)) rh_retune(void)
 {
     uint32_t i, m, k, done = 0, pend;
-    int32_t t, b = rh_bend_t, kd = rh_k_decay, kr = rh_k_rel;
+    int32_t b = rh_bend_t;
     if (b != rh_bend_used) { rh_bend_used = b; rh_rt_pend = (1u << RH_NV) - 1u; }
-    t = rh_tune_t;
-    t = t + b + (int32_t)(((int64_t)t * b) >> 30);                 /* rh_tune_now at the latched bend */
     pend = rh_rt_pend; i = rh_rt_cur;
     for (k = 0; k < RH_NV && pend && done < RH_RT_PER; k++, i = i + 1u == RH_NV ? 0u : i + 1u) {
         rh_voice_t *v = &rv[i];
@@ -2049,6 +2076,10 @@ static void __attribute__((noinline)) rh_retune(void)
         pend &= ~(1u << i);
         if (!v->alive) continue;
         done++;
+        int32_t t = v->tn + b + (int32_t)(((int64_t)v->tn * b) >> 30);   /* rh_tune_now: its TUNE, the latched bend */
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+        v->tb = b;
+#endif
         for (m = 0; m < RH_NM; m++) {
             rh_ms_t *s = &v->m[m];
             const rh_mode_t *km = &v->k->m[m];
@@ -2056,9 +2087,9 @@ static void __attribute__((noinline)) rh_retune(void)
             int64_t cr;
             if (!rh_mode_runs(v->k, m)) continue;
             cr = rh_coef_tune(km, t, &sp);                 /* rh_coef's integers: the tuning part once for both decays,
-                                                            * eps the note-on's while DECAY / RELEASE stay put */
-            s->e0 = rh_coef_e(v->kd == kd ? s->eps0 : rh_coef_eps(km->d, kd), sp, cr);
-            s->e1 = rh_coef_e(v->kr == kr ? s->eps1 : rh_coef_eps(km->drel, kr), sp, cr);
+                                                            * eps the note-on's */
+            s->e0 = rh_coef_e(s->eps0, sp, cr);
+            s->e1 = rh_coef_e(s->eps1, sp, cr);
             s->e = s->e0 + (int32_t)(((int64_t)(s->e1 - s->e0) * v->w_tgt) >> 15);
             s->es = s->e;
         }

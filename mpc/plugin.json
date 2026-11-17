@@ -8,8 +8,8 @@
   "numInputs": 0,
   "numOutputs": 2,
   "category": "Synth",
-  "file32": "VST/frodhes-arm32.so",
-  "file64": "VST/frodhes-arm64.so",
+  "file32": "frodhes-arm32.so",
+  "file64": "frodhes-arm64.so",
   "description": "Physical-model electric piano, vibraphone and marimba: the Frodhes engine (HQ, 16 voices) with its effects.",
   "url": "https://github.com/leonardoMirabal/frodhes",
   "license": "GPL-3.0-only"

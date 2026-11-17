@@ -15,8 +15,10 @@ arm-linux-gnueabihf.2.31 -mcpu=cortex_a17 and aarch64-linux-gnu.2.31 -mcpu=corte
 
 Outputs (build/mpc/ unless --out):
     native/frodhes.(dylib|so)        this machine's build, for the SDK's host simulator and the tests
-    Frodhes - VST - Frodhes/         the plugin folder: plugin.json, version.xml, VST/frodhes-arm32.so,
-                                     VST/frodhes-arm64.so, Plugin Skins/ (mpc/skins/: TUI.json, Q-Links.json, the PNGs)
+    Frodhes - VST - Frodhes/         the plugin folder: plugin.json, version.xml, frodhes-arm32.so, frodhes-arm64.so
+                                     (at its root: Plugin Manager 1.2.0 and older write plugin.json's file32 / file64
+                                     as the bare name, open-mpc/plugin-manager#12), Plugin Skins/ (mpc/skins/:
+                                     TUI.json, Q-Links.json, the PNGs)
     frodhes-mpc.zip                  the folder + INSTALL.txt, LICENSE.txt, SOURCE.txt, THIRD-PARTY-NOTICES.txt
     params.json                      the parameters as the host simulator sees them (the skin is checked against it)
 
@@ -285,7 +287,7 @@ INSTALL
        VST2 Plugins
    at the top level of a USB drive, an SD card or the MPC's internal drive (create "VST2 Plugins" if needed):
        <drive>/VST2 Plugins/{folder}/plugin.json
-       <drive>/VST2 Plugins/{folder}/VST/frodhes-arm32.so  (and frodhes-arm64.so)
+       <drive>/VST2 Plugins/{folder}/frodhes-arm32.so  (and frodhes-arm64.so)
        <drive>/VST2 Plugins/{folder}/Plugin Skins/...
    Keep the folder's name exactly as it is: the MPC finds the plugin's pages by it.
 2. Insert the drive. If Frodhes does not appear, restart the MPC (a rescan happens at start).
@@ -376,7 +378,7 @@ def main():
     folder = os.path.join(out, FOLDER)
     if os.path.isdir(folder):
         shutil.rmtree(folder)
-    os.makedirs(os.path.join(folder, "VST"))
+    os.makedirs(folder)
     manifest = json.load(open(os.path.join(MPC, "plugin.json")))
     manifest["version"] = ".".join(re.findall(r"\d+", args.version.split("-")[0])[:3]) or "0.0.0"   # (digits
     # and dots, as the MPC and validate.py want; a dev build's "0.0.0-dev" is "0.0.0" here)
@@ -384,7 +386,7 @@ def main():
         json.dump(manifest, f, indent=2)
         f.write("\n")
     for a, lib in libs.items():
-        shutil.copyfile(lib, os.path.join(folder, "VST", "%s-%s.so" % (SLUG, a)))
+        shutil.copyfile(lib, os.path.join(folder, "%s-%s.so" % (SLUG, a)))   # (the folder's root: plugin.json)
     skins(params_json, folder)
     with open(os.path.join(folder, "version.xml"), "w", newline="\n") as f:
         f.write('<?xml version="1.0" encoding="utf-8"?>\n<plugincontent version="1.0">\n    <version>%s</version>\n'
@@ -412,7 +414,7 @@ def main():
         put(zf, "LICENSE.txt", open(os.path.join(ROOT, "LICENSE")).read())
         put(zf, "THIRD-PARTY-NOTICES.txt", notices(d))
     for a in archs:
-        f = os.path.join(folder, "VST", "%s-%s.so" % (SLUG, a))
+        f = os.path.join(folder, "%s-%s.so" % (SLUG, a))
         log("%-6s %s  %.1f MB  sha256 %s" % (a, os.path.relpath(f, ROOT), os.path.getsize(f) / 1e6,
                                              hashlib.sha256(open(f, "rb").read()).hexdigest()))
     log("zip    %s  sha256 %s" % (os.path.relpath(zpath, ROOT), hashlib.sha256(open(zpath, "rb").read()).hexdigest()))

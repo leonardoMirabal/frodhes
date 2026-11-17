@@ -4,7 +4,7 @@
 # release must carry is on it, or exit 1 and the release stays a draft (v0.9.11, 2026-11-12, went public without
 # its plugin packages). NAMES is a file with one asset name per line; without it, the assets of the draft vX.Y.Z
 # (gh release view). Required: the firmware packages (versioned and fixed names), the Move package, the 5 plugin
-# packages, the MPC plugin (versioned and fixed names), the licence, and every releases/latest/download/<name> that README.md, docs/*.md or web/ links.
+# packages, the MPC plugin (versioned and fixed names, and the open-mpc catalogue's armv7 / aarch64 zips), the licence, and every releases/latest/download/<name> that README.md, docs/*.md or web/ links.
 # Refused: the retired two-core asset names frodhes-c1.fwsc and frodhes-X.Y.Z-c1.fwsc.
 set -eu
 V=$1
@@ -18,6 +18,7 @@ frodhes-$V-smk37-pro.fwsc frodhes-smk37-pro.fwsc frodhes-$V-smk37-elite.fwsc fro
 frodhes-$V-mke-p37.fwsc frodhes-mke-p37.fwsc frodhes-$V-move.tar.gz frodhes-module.tar.gz
 frodhes-plugin-macos.pkg frodhes-plugin-macos.zip frodhes-plugin-windows.zip
 frodhes-plugin-linux-x86_64.zip frodhes-plugin-linux-aarch64.zip frodhes-$V-mpc.zip frodhes-mpc.zip
+Frodhes-$V-mpc-armv7.zip Frodhes-$V-mpc-aarch64.zip
 Apache-2.0.txt"
 LINKED=$(cat README.md docs/*.md web/*.html web/*.js 2>/dev/null \
     | grep -oE 'releases/latest/download/[A-Za-z0-9._-]+' | sed 's|.*/||' | sort -u)

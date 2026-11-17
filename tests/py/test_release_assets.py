@@ -14,6 +14,7 @@ FULL = ["frodhes-%s.fwsc" % V, "frodhes.fwsc",
         "frodhes-%s-move.tar.gz" % V, "frodhes-module.tar.gz", "frodhes-plugin-macos.pkg",
         "frodhes-plugin-macos.zip", "frodhes-plugin-windows.zip", "frodhes-plugin-linux-x86_64.zip",
         "frodhes-plugin-linux-aarch64.zip", "frodhes-%s-mpc.zip" % V, "frodhes-mpc.zip",
+        "Frodhes-%s-mpc-armv7.zip" % V, "Frodhes-%s-mpc-aarch64.zip" % V,
         "Apache-2.0.txt"]
 
 

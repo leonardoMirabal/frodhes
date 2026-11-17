@@ -195,6 +195,65 @@ def test_bughunt25_fx_with_spread(binary):
     assert ratio <= 10, f"BUGHUNT #25: FX with SPREAD clicks ({ratio:.1f}x)"
 
 
+def _repro(name):
+    path = os.path.join(os.path.dirname(__file__), "monkey", name)
+    return [(int(ln.split()[0]), ln.split(" ", 1)[1].strip()) for ln in open(path) if ln[0] != "#"]
+
+
+def _step(t, size=400):
+    """a real click injected into the render with the event: a step of size LSB 5 ms after it"""
+    def f(x):
+        x[mk.ms(t + 5):] += size
+        return x
+    return f
+
+
+@pytest.mark.parametrize("name,window", [("rel0913-shape-after-fx.txt", "bypass end"),
+                                         ("rel0913-fx-browse.txt", "browse")])
+def test_the_click_windows_pass_the_artefact_and_catch_a_step(binary, name, window):
+    """0.9.13 (host monkey seeds 23615257, 23615202): the two windows of click_one where the diff's settled reference
+    says nothing. The artefact passes (it read 12.0x / 11.0x with the old reference, plain 1.38x / 0.95x), and a real
+    step injected inside the same window is still caught, by plain or by the diff's absolute step (STEP_ABS)"""
+    ev = _repro(name)
+    i, t = len(ev) - 1, ev[-1][0]
+    ratio, changed, ring, plain, diff = mk.click_one(ev, i, binary, detail=True)
+    assert ring > -55 and plain < 2 and ratio <= 10, (window, ratio, plain, diff)
+    for size in (400, 250):
+        r = mk.click_one(ev, i, binary, detail=True, inject=_step(t, size))
+        assert r[0] > 10, (window, size, r)
+
+
+def test_the_bypass_end_window_needs_the_press_and_the_old_reference_read_the_artefact(binary):
+    """the bypass-end window opens only for an FX press up to XF_MS before the event, and only its reference changes:
+    the same two renders judged with the diff's own settled reference read the artefact (over 10x); the FX events
+    the window looks for are the FX button and CC 111 on channel 1"""
+    ev = _repro("rel0913-shape-after-fx.txt")
+    t = ev[-1][0]
+    pre = mk.click_stream(ev, len(ev) - 1)
+    a = mk.run(mk.script_text(pre, (), t + 150), binary).x
+    b = mk.run(mk.script_text(pre[:-1], (), t + 150), binary).x
+    assert mk.click_ratio(a, b, t)[2] > 10                      # the old reference: the artefact
+    assert mk.fx_event("btn 2") and mk.fx_event("midi 0xB0 111 127") and not mk.fx_event("midi 0xB1 111 127")
+    assert mk.XF_MS >= 46 + 6 and mk.STEP_ABS <= 200
+
+
+@pytest.mark.parametrize("seed,t,line", [(906792336, 1496, "midi 0xB0 111 0"), (906792829, 5099, "btn 2"),
+                                         (906791411, 6944, "turn 3 1"), (23615107, 16826, "btn 3")])
+def test_the_bypass_end_window_keeps_to_its_case(binary, seed, t, line):
+    """the window opens only when both renders are bypassed at +31 ms and the event is no FX event itself (an FX on
+    after an FX press brings the wet back: its own settled diff is the reference), and its second reference never
+    lowers the first (an ARPEGGIO knob's notes do not fade with the wet): a first draft read these 18x, 15x, 32x.
+    Seed 23615107 (HOLD OFF 17 ms after FX: the arpeggio's 16th note starts only without the event, a smooth onset):
+    13.7x with the absolute step on the second difference; a 250 or 400 LSB step injected there is still caught"""
+    ev = mk.gen(seed)
+    i = ev.index((t, line))
+    ratio, changed, ring, plain, diff = mk.click_one(ev, i, binary, detail=True)
+    assert ratio <= 10, (seed, ratio, plain, diff)
+    if seed == 23615107:
+        for size in (250, 400):
+            assert mk.click_one(ev, i, binary, detail=True, inject=_step(t, size))[0] > 10, size
+
+
 # (#22 and #26, the int32 overflows: tests/py/test_overflows.py)
 
 

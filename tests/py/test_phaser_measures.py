@@ -70,7 +70,7 @@ def take(tag, settings, bpm=120, stim=h.ST_LONG):
     lines = [H.cc(5 + k // 16, c, v) for k, (c, v) in enumerate(pre)]
     t0 = 300
     if bpm != 120:
-        lines += [f"{t0} btn 7", f"{t0 + 20} turn 2 {bpm - 120}", f"{t0 + 60} btn 7"]
+        lines += [f"{t0} btn 7", f"{t0 + 20} turn 2 {2 * (bpm - 120)}", f"{t0 + 60} btn 7"]
         t0 += 400
     R = t0 + 200
     for t, kind, a, b in h.with_reset(ev):

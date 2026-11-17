@@ -36,6 +36,13 @@ zip's `INSTALL.txt` and [below](#what-to-report-back)).
 
 ## Install and remove
 
+**From the catalogue:** Frodhes is listed in the community's [Open MPC plugin catalogue](https://open-mpc.github.io).
+With its Plugin Manager on the MPC ([how to set it up](https://open-mpc.github.io/install.html)), find Frodhes in the
+catalogue and install or update it from there, on the MPC's screen or from a phone or computer; the Plugin Manager
+picks the build for your MPC (32-bit or 64-bit ARM) and puts it in `VST2 Plugins` for you. Then go on at step 3 below.
+
+**By hand:**
+
 1. Download
    [`frodhes-mpc.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-mpc.zip) and
    unzip it. Copy the folder `Frodhes - VST - Frodhes` into a folder named `VST2 Plugins` at the top level of the
@@ -138,8 +145,8 @@ framework headers compiled into the plugin are vendored in `mpc/sdk/` (MIT, with
 `--version X.Y.Z`, `--voices N`, `--tools` (the ARM test hosts, for Docker), `-j N`.
 The skin in `mpc/skins/` is made separately (above) and committed.
 
-Outputs in `build/mpc/`: `Frodhes - VST - Frodhes/` (`plugin.json`, `version.xml`, `VST/frodhes-arm32.so`,
-`VST/frodhes-arm64.so`, `Plugin Skins/`), `frodhes-mpc.zip` (the folder, `INSTALL.txt`, `LICENSE.txt`,
+Outputs in `build/mpc/`: `Frodhes - VST - Frodhes/` (`plugin.json`, `version.xml`, `frodhes-arm32.so`,
+`frodhes-arm64.so`, `Plugin Skins/`), `frodhes-mpc.zip` (the folder, `INSTALL.txt`, `LICENSE.txt`,
 `SOURCE.txt`, `THIRD-PARTY-NOTICES.txt`; the same inputs give the same zip, byte for byte), `native/` (this
 machine's build and test hosts) and `params.json`.
 

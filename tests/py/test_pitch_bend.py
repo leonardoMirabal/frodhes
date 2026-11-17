@@ -2,9 +2,9 @@
 """MIDI pitch bend (0xE0, +-2 semitones) on the Rhodes engine (engine.c eng_bend_set, rhodes.c rh_retune): a held C4 /
 A1 / C6 bent to +8191 / -8192 lands within 1 cent of the target pitch, a note struck while bent is in tune, a sweep
 does not click (the largest sample step stays at the unbent note's, scaled by the highest pitch reached) and leaves the
-level where it was (0.1 dB), CC 121 resets the bend. The retune is spread (rh_retune): a block retunes at most a
-quarter of the voices, round-robin, so a full chord reaches the bend within 4 blocks, every note in tune, and a sweep
-over a full chord neither clicks nor moves the level. The engine alone (CC 119 RAW): the pitch, not the effects."""
+level where it was (0.1 dB), CC 121 resets the bend. A block the bend moved in retunes every sounding voice (rh_retune;
+0.9.5 - 0.9.12 a quarter of them a block): a full chord follows a fast bend with no detune between its notes, every note
+in tune, and a sweep over a full chord neither clicks nor moves the level. The engine alone (CC 119 RAW): the pitch, not the effects."""
 import os
 import re
 import sys
@@ -173,26 +173,58 @@ def chord_ref():
     return _chord_ref["r"]
 
 
-def test_spread_a_quarter_per_block_all_within_4_blocks():
-    """the pending voices after a bend, read every ms: each block retunes at most ceil(V/4) voices, and none are left
-    4 blocks after the bend's first block"""
-    nv = voices()
-    per = (nv + 3) // 4
+def test_every_voice_retuned_in_the_bends_block():
+    """the pending voices after a bend, read every ms: none left after the bend's first block (0.9.13, the audio review
+    C3: 0.9.5 - 0.9.12 retuned a quarter of the voices a block, all within 4 blocks)"""
     probes = [f"{t} expect state rtpend ?" for t in range(T_BEND + 1, T_BEND + 40)]
     r = chord("spread", [bend_ev(T_BEND, UP)] + probes, end=1500)
     seen = [(int(t), int(v)) for t, v in re.findall(r"^\s*(\d+) ms  FAIL expect state rtpend = \"\?\" \(is \"(\d+)\"\)",
                                                     r.out, re.M)]
     assert len(seen) == len(probes)
-    masks = [m for _, m in seen]
-    assert masks[0] == 0 or bin(masks[0]).count("1") >= nv - per, "the bend reached the ISR before the probes"
-    first = next(t for t, m in seen if m)
-    done = next(t for t, m in seen if t > first and m == 0)
-    prev = (1 << nv) - 1
-    for _, m in seen:
-        if m:
-            assert bin(prev & ~m).count("1") <= per, f"a block retuned more than {per} voices: {prev:b} -> {m:b}"
-            prev = m
-    assert done - first <= 3 * BLOCK_MS + 1, f"retuned {done - first} ms after the first block (4 blocks: 3 more)"
+    assert all(m == 0 for _, m in seen), f"voices left to retune after the bend's block: {[m for _, m in seen if m]}"
+
+
+# ---- a fast bend over a full chord (C3): every voice follows the bend block by block, none behind another
+CHORD10 = [36, 40, 43, 47, 50, 53, 57, 58, 62, 65]
+
+
+def q30_cents(x):
+    return 1200 * np.log2(1 + np.asarray(x, float) / 2 ** 30)
+
+
+@pytest.mark.parametrize("b", [UP, DOWN], ids=["up", "down"])
+def test_fast_bend_over_a_full_chord_no_lag_no_detune(b):
+    """CHORD10 on every voice (10 at least), a 2-semitone bend in 200 ms (an event every 5 ms) and back: the bend each
+    sounding voice is tuned to ("rtbend": the lowest / highest), read every ms: no detune between the voices (0.9.12:
+    up to ~20 cents), and each voice steps no further a block than the bend itself moved since the block before
+    (0.9.12: ~23-cent steps, 4 blocks of the bend at once)"""
+    nv = voices()
+    notes = CHORD10[:max(8, min(nv, len(CHORD10)))]
+    ev = ["40 midi 0xB0 119 127"] + [f"{T_ON + i} midi 0x90 {n} 100" for i, n in enumerate(notes)]
+    ev += sweep(T_BEND, 0, b, ms=200, step=5)
+    ev += [f"{t} expect state rtbend ?" for t in range(T_BEND - 5, T_BEND + 420)]
+    ev += [f"{t} expect state bend ?" for t in range(T_BEND - 5, T_BEND + 420)]
+    ev += [f"1900 midi 0x80 {n} 0" for n in notes]
+    r = run(f"bend-fast-{b}", sorted(ev, key=lambda e: int(e.split()[0])), 2000, check=False)
+    det, step, blk = fast_bend_numbers(r, b)
+    assert det < 0.01, f"detune between the chord's voices during the bend: {det:.2f} cents"
+    assert step <= blk + 0.1, f"a voice stepped {step:.2f} cents at once (the bend: {blk:.2f} a block at most)"
+
+
+def fast_bend_numbers(r, b):
+    """from the "rtbend" probes (every ms) and the "bend" ones: the largest detune between two sounding voices, a
+    voice's largest step from one probe to the next, and the bend's own largest move between two probes a block apart
+    (cents)"""
+    rows = re.findall(r"^\s*\d+ ms  FAIL expect state rtbend = \"\?\" \(is \"([-0-9,]+)\"\)", r.out, re.M)
+    bends = [int(x) for x in re.findall(r"^\s*\d+ ms  FAIL expect state bend = \"\?\" \(is \"(-?\d+)\"\)", r.out, re.M)]
+    assert len(rows) == 425 and len(bends) == 425
+    tb = np.array([[np.nan if x == "-" else q30_cents(int(x)) for x in row.split(",")] for row in rows])
+    det = float(np.nanmax(np.nanmax(tb, 1) - np.nanmin(tb, 1)))
+    step = float(np.nanmax(np.abs(np.diff(tb, axis=0))))
+    bc = 1200 * np.log2(ratio(np.array(bends, float)))
+    k = int(np.ceil(BLOCK_MS))
+    blk = float(np.max(np.abs(bc[k:] - bc[:-k])))
+    return det, step, blk
 
 
 @pytest.mark.parametrize("b", [UP, DOWN], ids=["up", "down"])

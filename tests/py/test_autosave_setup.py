@@ -83,7 +83,7 @@ def test_external_clock_writes_nothing_and_the_hand_tempo_comes_back():
     write. A tempo set by hand before (TEMPO page BPM 108) is saved; after the clock and a power cycle the tempo is
     that 108, not the clock's 140"""
     fl = tp.flash_file("as-clock")
-    lines = ["50 btn 7", "100 turn 2 -12", "200 dump"]               # TEMPO: BPM 108, saved ~2 s later
+    lines = ["50 btn 7", "100 turn 2 -24", "200 dump"]               # TEMPO: BPM 108, saved ~2 s later
     lines += ["4000 midi 0xFA 0 0"] + clock(4000, 34000, 100) + clock(34000, 64000, 140) + ["64000 midi 0xFC 0 0"]
     lines += ["63000 dump", "66000 dump"]
     r = run("as-clock", lines, 68000, flash=fl)
@@ -99,7 +99,7 @@ def test_external_clock_writes_nothing_and_the_hand_tempo_comes_back():
 def test_tap_tempo_is_kept():
     """TAP (PLAY, three taps 500 ms apart: 120 BPM from 108): a tempo set by hand, saved and back after a power cycle"""
     fl = tp.flash_file("as-tap")
-    run("as-tap-1", ["50 btn 7", "100 turn 2 -12", "3000 btn 12", "3500 btn 12", "4000 btn 12", "4100 dump"], 7000,
+    run("as-tap-1", ["50 btn 7", "100 turn 2 -24", "3000 btn 12", "3500 btn 12", "4000 btn 12", "4100 dump"], 7000,
         flash=fl)
     s = tp.boot("as-tap-2", fl, end=300).state(100)
     assert s["bpm"] == "120.0", s["bpm"]
@@ -115,15 +115,18 @@ def test_save_and_undo_set_what_comes_back():
     assert s["header"].startswith("U01") and s["p.1"] == "77", (s["header"], s["p.1"])
 
 
-def test_no_settings_write_while_a_clock_runs():
-    """a setup change (MIDI CHANNEL) made while a 120 BPM MIDI clock runs (CLOCK EXT): no settings write while the
-    pulses come (frodhes.c settings_poll: tempo_flash_ok(), an erase would hold the pulses back); written once, just
-    after the clock stops (250 ms without a pulse). Without tempo_flash_ok it writes 2 s after the change, mid-clock"""
+def test_settings_written_while_a_clock_runs():
+    """a setup change (MIDI CHANNEL) made while a 120 BPM MIDI clock runs (CLOCK EXT): written once, ~2 s after the
+    change once quiet, mid-clock (0.9.13; before, settings_poll waited for the clock to stop: a DAW that sends clock
+    all the time kept the change unsaved until a power-off lost it). The clock's pulses are stamped and counted on
+    arrival (tempo.c), so the lock holds across the write"""
     beat = 500.0 / 24                                               # ms a pulse at 120 BPM
     ps = [f"{int(200 + i * beat)} midi 0xF8 0 0" for i in range(24 * 16)]   # 8 s of clock
     last = int(200 + (24 * 16 - 1) * beat)
     fl = tp.flash_file("as-clock")
-    r = run("as-clock", ps + GO_MIDI + ["500 turn 2 1", "600 dump"], last + 3000, flash=fl)
+    r = run("as-clock", ps + GO_MIDI + ["500 turn 2 1", "600 dump", "6000 dump"], last + 3000, flash=fl)
     assert r.state(600)["dirty"] == "1", r.state(600)["dirty"]
-    assert len(r.saves) == 1 and last + 250 <= r.saves[0] <= last + 600, (r.saves, last)
+    assert len(r.saves) == 1 and 500 + 2000 <= r.saves[0] <= 500 + 2000 + 600 and r.saves[0] < last, (r.saves, last)
+    s = r.state(6000)
+    assert s["dirty"] == "0" and s["clklock"] == "1", (s["dirty"], s["clklock"])
     assert tp.settings_record(tp.read_img(fl))[7] == 1                # settings_t midi_ch: the change, kept

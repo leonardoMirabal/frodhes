@@ -119,6 +119,9 @@ Changes you make are not kept when you switch off. To keep a sound, save it to a
 2. Turn **PRESETS** or **K1** to choose a slot, U01-U16.
 3. Press **SAVE** again. Press **HOME** to cancel.
 
+A preset you had just turned to when you pressed SAVE the first time does not load afterwards: the sound you
+saved (or, after HOME, the sound you had) keeps playing.
+
 The bottom line shows **SAVING...** until the sound has died away, then **SAVED**. Settings such as the MIDI
 channel, the tempo and the display are kept by themselves: let the FM-1 rest silent for two seconds before you
 switch it off.
@@ -320,7 +323,7 @@ velocity settings. They work in two separate layers:
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **RESPONSE** | How the instrument answers velocity, for every note (taken at each new note, so a change never jumps a ringing one). **FULL** (the default): the full dynamic range, soft notes very soft (about 32 dB from velocity 20 to 127), and the level rises slowly through the middle velocities and steeply toward the top, as a struck instrument does (velocity 64 about 19 dB under 127, 88 about 13 dB). **LIGHT**: a light touch, soft and medium notes come out louder (about 25.5 dB from 20 to 127, as 0.9.9), so even playing is easier. The tone is the same in both at every key and velocity: only the level differs, and the hardest notes play at the same loudness in both. On VIBES and MARIMBA, FULL is their own response and LIGHT lifts the soft notes by the same amount as on the electric piano (up to 9 dB, the same tone). Not part of a preset (CC 40) |
+| K1 | **RESPONSE** | How the instrument answers velocity, for every note (taken at each new note, so a change never jumps a ringing one). **FULL** (the default): the full dynamic range, soft notes very soft (about 32 dB from velocity 20 to 127), and the level rises slowly through the middle velocities and steeply toward the top, as a struck instrument does (velocity 64 about 19 dB under 127, 88 about 13 dB). **LIGHT**: a light touch, soft and medium notes come out louder (about 25.5 dB from 20 to 127, as 0.9.9), so even playing is easier. The tone is the same in both at every key and velocity: only the level differs, and the hardest notes play at the same loudness in both. On VIBES and MARIMBA, FULL is their own response and LIGHT lifts the soft notes smoothly, less the harder you play (about 8 dB at the softest, nothing at 127, the same tone), so every harder note is still louder. Not part of a preset (CC 40) |
 | K2 | **TOUCH** | How the FM-1's keys turn a press into a velocity. **MEDIUM** (the default): a medium press plays KEY VEL, a harder one louder, a softer one quieter. **LIGHT**: the same press plays louder, for a light hand. **HEAVY**: you have to press harder for the same velocity. **FIXED**: every press plays KEY VEL, however hard (no key velocity) |
 | K3 | **KEY VEL** | How hard the FM-1's own keys strike: the velocity of a medium press (harder presses play louder, softer ones quieter), and with TOUCH at **FIXED** the velocity of every press. Around 60–80 soft and round, 96 medium (the default). With velocity on, a medium press plays at most 107, so a harder press always has room to play louder: KEY VEL from 108 to 127 lifts the soft presses instead (at 127 the lightest press plays 21). With TOUCH at FIXED, 108–127 is hard with bark. MIDI notes keep their own velocity. |
 
@@ -457,7 +460,7 @@ sound the FM-1 was left on. Over MIDI: CC 70 TYPE, 74 cutoff, 71 resonance, 72 L
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **EFFECT** | **OFF**, **PAN** (the suitcase piano's stereo vibrato: the sound moves between the sides at constant power), **TREM** (volume tremolo), **WAH** (touch wah: harder playing opens it; it keeps the sound's level at every DEPTH and RATE, so a closed wah on a high chord or a soft high note is not quieter and a low one not louder, and its level make-up keeps a note's attack within 2 dB of its dry peak; MARIMBA's top octave, whose notes are very short, still comes out a little quieter) |
+| K1 | **EFFECT** | **OFF** (it remembers the effect that was on: LFO pressed twice, or turning DEPTH up on PERFORM, brings that one back), **PAN** (the suitcase piano's stereo vibrato: the sound moves between the sides at constant power), **TREM** (volume tremolo), **WAH** (touch wah: harder playing opens it; it keeps the sound's level at every DEPTH and RATE, so a closed wah on a high chord or a soft high note is not quieter and a low one not louder, and its level make-up keeps a note's attack within 2 dB of its dry peak; MARIMBA's top octave, whose notes are very short, still comes out a little quieter) |
 | K2 | **DEPTH** | How deep |
 | K3 | **RATE** | How fast; on WAH, the resonance (it glides as you turn it, without a click). When synced it shows a note value |
 | K4 | **SHAPE** | Two halves. Up to the middle (0–64): from a smooth sine to a square, choppy pulse. Above it (65–127): an amp's tremolo, the square easing back into a sine: the level falls more slowly than it comes back (at the top the dip takes about two thirds of each cycle), it moves evenly in loudness so a deep setting breathes rather than chopping to silence (the deepest dip stays at −30 dB), and loud playing makes it a little shallower (up to a quarter less depth at full level). On PAN the upper half gives the same slower swing. On WAH the card shows **-**: SHAPE does nothing there and keeps its value for TREM and PAN |
@@ -518,6 +521,9 @@ regeneration is turned up. With the PHASER's feedback and a long REVERB on as we
 output limiter, which then holds its peaks. DIG's echoes always die away. Turn FEEDBK down (the drone then dies away) or switch the
 delay off (its tail always ends) to stop it.
 
+Once the last echo has died away, the delay comes fully to rest: nothing is left in it, and TIME then jumps straight
+to its new value (on ANA too), so the next notes' echoes come evenly spaced at once.
+
 Switching the delay off or on while echoes ring does not click: the echoes already on their way ring out in their own sound. Switching to or from TAPE while echoes ring fades the old type out, then the new one in. **SEL** switches the delay off and
 back on to the type it last used (TAPE too). Over MIDI, CC 88 picks the type in the card's order: 0–31 OFF, 32–63 DIG,
 64–95 ANA, 96–127 TAPE.
@@ -576,7 +582,7 @@ Over MIDI: CC 94 PRE-DELAY, 73 SIZE (0 = AUTO), 68 MOD,
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **BPM** | Tempo, 40–240. **PLAY** taps it (from the third tap) |
+| K1 | **BPM** | Tempo, 40–240: a slow turn steps 0.1 BPM (a tapped 120.1 turns down to 120.0), a fast turn 1 to 4 BPM a click. **PLAY** taps it (from the third tap) |
 | K2 | **TREM SYNC** | The tremolo locked to the tempo (FREE = its own RATE) |
 | K3 | **PHA SYNC** | The phaser locked to the tempo |
 | K4 | **DLY SYNC** | The delay locked to the tempo |
@@ -625,7 +631,7 @@ too). Press **ARP** to come here, and **ARP** again to switch it on / off (the A
 | K1 | **MODE** | **OFF**, **UP**, **DOWN**, **UP-DN** (up and back down), **ORDER** (the order you played the notes), **RANDOM** |
 | K2 | **RATE** | The note value: 1/4 (one note per beat), 1/8, 1/8T, 1/16, 1/16T, 1/32 |
 | K3 | **OCTAVES** | 1 to 4: the pattern repeated octaves up |
-| K4 | **GATE** | How long each note sounds: 10 % short and plucked, 100 % legato |
+| K4 | **GATE** | How long each note sounds: 10 % short and plucked, 100 % legato, in 5 % steps (a value between steps, set over MIDI, moves to the next step in the direction you turn) |
 
 Up to 16 notes; every note of the arpeggio plays at the velocity of the first note you held.
 
@@ -1043,7 +1049,9 @@ always there to start again from.
 exactly as it is stored: what you turned since (knobs, effects, MIDI CCs) is gone, on purpose, so after a
 performance you always start from the original sound. To keep a sound, SAVE it to a user preset. Turning knobs
 never writes to the flash. The tempo comes back as you last set it by hand (TAP, or BPM on the TEMPO page), never as
-an external MIDI clock left it (a clock causes no save at all).
+an external MIDI clock left it (the clock's tempo is never saved). A setup change made while a MIDI clock runs is
+saved the same way, about 2 s later once the sound has died away, and so is the pattern while the sequencer is
+stopped: the clock keeps its tempo and its beat through the save.
 
 So after a setup change, let the sound die away for a couple of seconds before you switch off.
 
@@ -1126,7 +1134,8 @@ keynote.
 ## 10. Sustain and polyphony
 
 **REC** is the sustain pedal. **Hold** it like a pedal, or **tap** it to latch the sustain on, and tap again to
-release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with half-pedalling. Letting a MIDI pedal
+release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with half-pedalling: with the dampers
+only touching, the key-up knock and the felt's sound are softer too, in step with how lightly they damp. Letting a MIDI pedal
 up (CC 64 below 64) also releases a latched REC, so a real pedal always works as a pedal; with no CC 64 coming in,
 the latch stays on until you tap REC again.
 
@@ -1163,8 +1172,10 @@ makes from them is, so switch MIDI thru off in your computer's software. No cloc
 The TRS jack is MIDI in only. **Program Change** 0–15 loads F01–F16, 16–31 loads U01–U16, and 32–34 loads F17–F19.
 
 **Pitch bend** (the pitch wheel, USB or TRS, on CHANNEL) bends the electric piano types ±2 semitones: every note that sounds
-glides with the wheel and a note struck while the wheel is moved starts at the bent pitch. The bend stays across a
-preset change and adds to TUNE. CC 121 (reset all controllers) and pulling the USB cable put it back to 0. VIBES and
+glides with the wheel and a note struck while the wheel is moved starts at the bent pitch; every sounding note moves
+together, so a full chord stays in tune with itself while you bend. The bend stays across a preset change and adds to
+TUNE. A note keeps the TUNE it was struck with: turning TUNE retunes the next notes, and the wheel never changes the
+notes already sounding by more than the bend. CC 121 (reset all controllers) and pulling the USB cable put it back to 0. VIBES and
 MARIMBA ignore pitch bend: their bars always play at their own pitch.
 
 **Release velocity** (the note-off velocity, from a keyboard that sends it) shapes how the electric piano's damper lands: a
@@ -1344,7 +1355,8 @@ the desktop plugin's engine in the higher-quality version, 16 voices on every in
 F01-F57 as its programs. Everything in this manual applies to the sound. Its pages on the MPC's screen show the
 plugin's look: eight pages of large knobs in panels of four, each panel one Q-Link group; touching a panel brings it
 under the Q-Links. The MPC's tempo drives the synced effects; the FM-1's sequencer, arpeggiator and chord mode are not
-in the plugin. The download, the install and the page list: [docs/MPC.md](MPC.md).
+in the plugin. The download, the install (by hand, or from the Open MPC catalogue with its Plugin Manager) and the page list:
+[docs/MPC.md](MPC.md).
 
 ![Frodhes on the Akai MPC: the VOICE page](manual/img/mpc/mpc-voice.png?v=ab028bbc)
 

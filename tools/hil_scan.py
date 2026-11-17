@@ -4849,9 +4849,105 @@ def vibes_main(names, a):
     return fails
 
 
+# ---- the preflight (0.9.13): the saved settings the scan assumes, set and read back before any suite. The 0.9.13 rc's
+# second T2 ran after the device monkey had left RESPONSE on B (the monkey sends every CC, CC 40 included, and the FM-1
+# saves it): vibes_vel / marimba_vel / presets failed on a setting, not on the firmware. What the scan assumes and
+# MIDI can reach: RESPONSE A (CC 40, a saved setting, not in a preset), MIDI CHANNEL ALL (the tools send on channel 8
+# and the probes on all 16; the panel's setting, not settable over MIDI: checked only), and every panel parameter
+# r.dry() sets per test (ARP, CHORD, SEQ, SQREC off, the TYPE ...). Not reachable over MIDI and not checked: TUNE,
+# OCTAVE, the SCALE page, MASTER (fully up, as the header says); USB VOL (CC 114) is left as the user set it.
+# Neither CHANNEL nor RESPONSE can be read over MIDI, so the read-back is acoustic:
+#   - CHANNEL ALL: a C5 v110 on each of the 16 channels sounds on USB (hil_clock.find_channel's test, per channel);
+#   - RESPONSE A: STAGE 77 dry (r.dry()), C4 at v127 then at v20 (the CC 10 reset before each): the level at v127
+#     over v20 (RMS, 30..330 ms after each onset) is A's, PRE_RESP_A, within PRE_RESP_TOL. Measured on the host
+#     (HostRig, tests/py/test_hil_preflight.py): A 32.1 dB, B 25.4: B is 6.7 dB short of A;
+# then the stop: a wrong one ends the scan before its first suite (exit 1), with what to fix.
+PRE_SET = ((40, 0),)                     # (CC, value) on every channel: RESPONSE A
+PRE_RESP_A, PRE_RESP_TOL = 32.1, 2.5     # dB: v127 over v20, STAGE 77 C4 dry, RESPONSE A (B reads 25.4)
+
+
+def preflight_levels(r):
+    """STAGE 77 C4 dry at v127, then v20: (level v127 - level v20 dB, the two levels)"""
+    r.dry()
+    r.cc("TYPE", 0)
+    time.sleep(0.05)
+    out = []
+    for v in (127, 20):
+        x = r.take(1.2, [(0.1, "on", 60, v), (0.7, "off", 60, 0)])
+        m = x.mean(1) if x.ndim == 2 else x
+        i = onset(x, 20, 0.1)
+        if i < 0:
+            return None, out
+        seg = m[i + int(0.03 * FS):i + int(0.33 * FS)]
+        out.append(10 * np.log10(np.mean(seg.astype(float) ** 2) + 1e-9))
+        r.settle()
+    return out[0] - out[1], out
+
+
+def preflight(r, host=False):
+    """set PRE_SET on all 16 channels, then read back CHANNEL ALL and RESPONSE A; (ok, lines)"""
+    lines, ok = [], True
+    for ch in range(16):
+        for c, v in PRE_SET:
+            if host:
+                r._send("cc", c, v)
+            else:
+                r.out.raw.send(r.mido.Message("control_change", control=c, value=v, channel=ch))
+    time.sleep(0.1)
+    if not host:
+        r.dry()
+        M, deaf = r.mido.Message, []
+        cap = r.capture()
+        for ch in range(16):
+            r.wait_silence(5.0)
+            st = cap.now()["usb"]
+            r.out.raw.send(M("note_on", note=72, velocity=110, channel=ch))
+            time.sleep(0.15)
+            r.out.raw.send(M("note_off", note=72, channel=ch))
+            time.sleep(0.05)
+            if np.abs(cap.cut("usb", st, 0.3)).max() * 32768 <= 200:
+                deaf.append(ch + 1)
+        r.wait_silence(10.0)
+        if deaf:
+            ok = False
+            lines.append(f"MIDI CHANNEL: no sound on channel(s) {deaf}: set the MIDI page's CHANNEL to ALL")
+        else:
+            lines.append("MIDI CHANNEL: ALL (a note on each of the 16 channels sounds)")
+    d, lv = preflight_levels(r)
+    if d is None:
+        ok = False
+        lines.append("RESPONSE: the probe note did not sound")
+    elif abs(d - PRE_RESP_A) > PRE_RESP_TOL:
+        ok = False
+        lines.append(f"RESPONSE: v127 over v20 {d:.1f} dB, A's is {PRE_RESP_A} +- {PRE_RESP_TOL} (B reads ~25.4): "
+                     "RESPONSE is not A after CC 40 0 on all channels")
+    else:
+        lines.append(f"RESPONSE: A (v127 over v20 {d:.1f} dB; A {PRE_RESP_A} +- {PRE_RESP_TOL})")
+    return ok, lines
+
+
+def preflight_alone():
+    """the preflight on a Rig of its own, its recorder closed after it (for a run whose suites open their own)"""
+    r = Rig()
+    try:
+        preflight_or_stop(r)
+    finally:
+        if r.cap is not None:
+            r.cap.close()
+
+
+def preflight_or_stop(r, host=False):
+    ok, lines = preflight(r, host)
+    for ln in lines:
+        print(("ok    " if ok else "STOP  ") + "preflight " + ln, flush=True)
+    if not ok:
+        raise SystemExit("preflight: a saved setting the scan assumes is wrong (above); fix it and run again")
+
+
 def run_classic(names, r=None, report="report"):
     """the Rhodes-era tests: build/hil/report.txt / report.json (r: a HostRig -> host-report.*), ends on F01"""
     r = r or Rig()
+    preflight_or_stop(r, host=isinstance(r, HostRig))
     rep, lines, fails = {}, [], 0
     for n in names:
         t0 = time.time()
@@ -4962,6 +5058,8 @@ def main(argv=None):
         return 1 if vibes_main(vib, a) else 0
     if classic:
         fails += run_classic(classic)
+    elif vib:
+        preflight_alone()                           # (run_classic's preflight; the VIBES suites alone: their own)
     if vib:
         fails += vibes_main(vib, a)
     return 1 if fails else 0

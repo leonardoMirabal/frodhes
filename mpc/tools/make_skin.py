@@ -9,7 +9,7 @@ What it makes (mpc/skins/, copied verbatim into the plugin folder's "Plugin Skin
     TUI.json, Q-Links.json   the MPC's scripted UI: one tab per page, the Q-Link maps
     bg_<page>.png            each page's 1280 x 628 picture: the aluminium plate, the black body, two panels with
                              their titles and the cards' labels (everything that does not move)
-    knob_uni.png, knob_bi.png  the knob, 127 frames (the scale lit from the left, or from the top when centred)
+    knob_uni.png, knob_bi.png  the knob, 105 frames (the scale lit from the left, or from the top when centred)
     lamp<n>.png              a section's lamp, one frame per step of its switch (off, then on)
     cseg_*, hseg_*           the segmented switches' keys, one picture per choice, lit and unlit, the name cut in
 
@@ -54,7 +54,7 @@ KR = 27                                   # the knob's radius, logical (the plug
 KF = 2 * (KR + 12) * S                    # a knob frame: 156 px (the scale's ticks reach KR + 9)
 KY = 110
 VY, VH = 170, 40
-FRAMES = 127
+FRAMES = 105                               # (156 px x 105 = 16380: the MPC loads no image over 16384 px)
 SEG_H_CARD, SEG_H_HDR = 64, 40
 MENU_W = 216
 LAMP_F, LAMP_X = 28, 28                   # a lamp's frame, px; its centre from the panel's left edge

@@ -1204,6 +1204,7 @@ def tier_main(argv):
         print("  stress_max (workstream B): " + ("in TESTS, S1 calls it by name" if "stress_max" in hs.TESTS
                                                  else "not on this build: S1 runs the built-in stimulus"))
         return 0
+    hs.preflight_alone()                          # (the saved settings T1 assumes: RESPONSE A, CHANNEL ALL; hil_scan)
     v = Must(a).run()
     return 0 if v == "PASS" else 1 if v == "FAIL" else 2
 

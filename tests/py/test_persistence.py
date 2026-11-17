@@ -143,7 +143,7 @@ def test_power_cycle_keeps_everything(eng):
                                       # the panel: an edit of F01 (DRIVE, REVERB)
                             "30 btn 1",                                 # OCT+ (the FM-1's)
                             "40 turn 0 1", "42 turn 0 1", "45 turn 0 1", "50 turn 5 7",   # DECAY page, TUNE +7
-                            "60 btn 7", "65 turn 2 -12",                # TEMPO, BPM 108
+                            "60 btn 7", "65 turn 2 -24",                # TEMPO, BPM 108
                             cc(70, 53, 2), cc(71, 56, 4), cc(72, 61, 2), cc(73, 46, 60),   # ARP RATE, chord, BARS, SWING
                             "100 btn 9", "120 turn 2 1", "125 turn 2 1", "140 btn 9",   # SAVE to U03
                             cc(200, 63, 127)]                           # step-record three notes

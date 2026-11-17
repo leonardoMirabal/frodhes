@@ -19,7 +19,7 @@ limit. The big grids (make release-diff, the long make pytest) are the net befor
             the same at every TOUCH (LIGHT MEDIUM HEAVY FIXED) and KEY VEL (1 96 127), and the setting did change
   pristine  tools/release_diff.py --grid fast: every TYPE x FM-1 / HQ x effects off / RAW / FX: the pristine ceilings
             (distortion, aliasing, the key-up click post-vs-pre, noise, clips, never louder after the key-up) and the
-            moves against 0.9.11 (tests/expected_changes.yaml). One line per TYPE
+            moves against the last release (tools/release_diff.py LAST, tests/expected_changes.yaml). One line per TYPE
   crackle   tools/hil_crackle.py --host: the worst case (every voice, every effect, the pedal) through the glitch
             detectors, per engine
 The Move (K27; its HQ host build, MOVE_DEFS + HQ_DEFAULT=1: the plugin as it loads, 16 voices):

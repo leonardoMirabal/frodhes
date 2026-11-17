@@ -3,7 +3,7 @@
 it louder. 0.9.5's first test build gave a soft note (v15) a key-up damper thump 9-12 dB over the note itself (the
 thump had a fixed level; real key velocity let the notes go soft under it): "I press a key and get 2 sounds".
 
-The grid: every engine x TYPE (the four Rhodes with either RESPONSE, VIBES, MARIMBA) x NOISE (0, 48 the default, 127) x velocity (1, 15,
+The grid: every engine x TYPE (each with either RESPONSE) x NOISE (0, 48 the default, 127) x velocity (1, 15,
 30, 60, 100, 127) x key (bass, mid, top), the note held 0.2 s and 2 s, the engine alone (CC 119 RAW), then:
 - let go with the pedal up;
 - the pedal down 100 ms before the key-up, then up 300 ms after it (the dampers land at the pedal-up): the key-up
@@ -39,7 +39,7 @@ from hostrun import FS, run  # noqa: E402
 VELS = (1, 15, 30, 60, 100, 127)
 TYPES = [("STAGE77", "80", 0), ("SUITCASE", "80", 32), ("FELT", "80", 64), ("DYNO", "80", 96),
          ("VIBES", "79", 0), ("MARIMBA", "79", 96)]
-TYPES += [(n + "-LIGHT", c, v) for n, c, v in TYPES[:4]]   # 0.9.10: the Rhodes' second velocity response (CC 40 LIGHT)
+TYPES += [(n + "-LIGHT", c, v) for n, c, v in TYPES]   # 0.9.10: the second velocity response (CC 40 LIGHT); the bars' from 0.9.13
 KEYS = {"rhodes": (31, 60, 96), "bars": (55, 72, 88)}
 NOISES = (0, 48, 127)
 TOL_DB = 0.5

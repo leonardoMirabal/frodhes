@@ -45,6 +45,9 @@ host render is kept as OUT/host-<seed>.npz. Every take records the computer's 1-
 
 --dry-run: the plan (segments, seeds, messages per kind, the time) and a check of every message (mido builds it,
 no DEV_CC); no MIDI, no audio. The main session runs it on the FM-1 (USB only: the jack is not recorded here).
+At the end (also after a failure or Ctrl-C) the saved settings the stream reached over MIDI go back to their defaults
+on all 16 channels (RESTORE: RESPONSE A, the arpeggiator, chord mode, the sequencer's settings, the FX button, RAW),
+then F01, so a scan after the monkey starts from them (hil_scan's preflight checks RESPONSE and CHANNEL again).
 Report: OUT/report.md + report.json."""
 import argparse
 import json
@@ -112,6 +115,21 @@ def panic_msgs():
     for c in range(16):
         out += [[0xB0 | c, 64, 0], [0xB0 | c, 123, 0], [0xB0 | c, 120, 0], [0xB0 | c, 121, 0]]
     return out + [[0xFC]]
+
+
+# the saved settings the stream reaches over MIDI, back to their defaults at the run's end (0.9.13: the rc's device
+# monkey left RESPONSE on B, CC 40 being one of "every CC", and the T2 after it failed vibes_vel / marimba_vel /
+# presets on that setting): RESPONSE A (CC 40), the arpeggiator (52 MODE off, 53 RATE 3, 54 OCTAVES 1, 55 GATE 60),
+# chord mode (56 off, 57 / 58 / 59 0), the sequencer (60 stopped, 63 not recording, 45 ERASE off, 61 BARS 4, 62 QUANT
+# 3, 46 SWING 50), the FX button off (111) and RAW off (119), on every channel; then F01 (the sound the settings keep).
+# Not restorable: the sequencer's pattern (CC 43 CLEAR erases it); USB VOL stays FIXED (CC 114 127, the run's own).
+RESTORE = ((40, 0), (52, 0), (53, 3), (54, 0), (55, 60), (56, 0), (57, 0), (58, 0), (59, 0), (60, 0), (63, 0),
+           (45, 0), (61, 4), (62, 3), (46, 50), (111, 0), (119, 0))
+
+
+def restore_msgs():
+    """the RESTORE CCs on all 16 channels, the panic after them, then F01"""
+    return [[0xB0 | c, n, v] for c in range(16) for n, v in RESTORE] + panic_msgs() + [[0xC0, 0]]
 
 
 def probe_msgs(on):
@@ -549,6 +567,14 @@ def main(argv=None):
                     print(f"  a reset likely: the next take in {SETTLE_S:.0f} s (the boot guard)", flush=True)
                     time.sleep(SETTLE_S)                # guard's 30 s; two resets before it escalate to USB RESCUE)
     finally:
+        try:                                        # the saved settings back (RESTORE), whatever ended the run
+            for m in restore_msgs():
+                dev.raw.send(dev.mido.Message.from_bytes(m))
+                time.sleep(0.002)
+            time.sleep(0.5)
+            print("restored: RESPONSE A, ARP / CHORD / SEQ off and at their defaults, FX on, RAW off, F01", flush=True)
+        except Exception as e:                      # (a device gone: nothing to restore; say so)
+            print(f"restore not sent: {e!r}", flush=True)
         dev.close()                                 # (after the take's stream stopped and its poller joined)
     js = dict(verdict=verdict, date=time.strftime("%Y-%m-%d %H:%M"), rate=a.rate, minutes=a.minutes, takes=report)
     json.dump(js, open(os.path.join(a.out, "report.json"), "w"), indent=1, default=str)

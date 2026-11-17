@@ -112,7 +112,9 @@ def test_vibes_cards(new):
     for t in range(4):
         assert d[f"pages{t}"] == "vpages=3 count=27 comp_pos=5"     # VOICE 1/3 2/3, 3/3 (velocity), then COMPRESSOR
     # the motor on, then a Rhodes TYPE: no tremolo comes on
-    assert d["motor_on_rhodes"] == "OFF fxsw=0 fxmode=0"
+    # (fxsw 0: off. The mode is the one the K1 sweep above left: since 0.9.13 OFF keeps the kind it was turned down
+    # from, WAH's mode, TREM = 1, where it used to be rewritten to PAN on the way down)
+    assert d["motor_on_rhodes"] == "OFF fxsw=0 fxmode=1"
     assert (d["motrate.0"], d["motrate.78"], d["motrate.120"], d["motrate.127"]) == ("0.5HZ", "3.5HZ", "10HZ", "10HZ")
 
 

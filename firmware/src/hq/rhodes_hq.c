@@ -316,7 +316,7 @@ static int32_t hq_pickup(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t Hp,
         int32_t o = hq_round((p[n] - pp) * gs);
         pp = p[n];
         if (v->fade != 32768) {
-            o = (int32_t)(((int64_t)o * v->fade) >> 15);
+            o = (int32_t)(((int64_t)o * rh_fade_g(v->fade)) >> 15);
             v->fade -= (int32_t)(32768 / FADE_SAMPLES);
             if (v->fade < 0) v->fade = 0;
         }
@@ -352,7 +352,7 @@ static void hq_pickup1(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t gain)
         int32_t o = hq_round((p[n] - pp) * gs);
         pp = p[n];
         if (v->fade != 32768) {
-            o = (int32_t)(((int64_t)o * v->fade) >> 15);
+            o = (int32_t)(((int64_t)o * rh_fade_g(v->fade)) >> 15);
             v->fade -= (int32_t)(32768 / FADE_SAMPLES);
             if (v->fade < 0) v->fade = 0;
         }

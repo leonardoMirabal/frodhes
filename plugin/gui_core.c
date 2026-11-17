@@ -63,6 +63,11 @@ struct frp_gui {
 /* ---- values */
 static int hi_of(int id) { return frui_value_hi(id); }
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+/* n steps of 0.1 BPM (bpm10), as the FM-1's knob: a tempo with tenths (a host or tap tempo) reaches the whole BPM
+ * (120.1 - -> 120.0); SHIFT on the keys steps 1 BPM */
+static int bpm_step(int b, int n) { return b + n; }
+/* the BPM setting's range (bpm10, 40..240 BPM: slot_bridge.h, frodhes_clap.c): the buttons, the keys and the drag */
+enum { BPM_LO = 400, BPM_HI = 2400 };
 
 static int setting_get(frp_gui_t *g, int key, int def_local)
 {
@@ -515,7 +520,7 @@ static void button(frp_gui_t *g, int id)
         m->fx_bypass = !m->fx_bypass;
         break;
     case FRB_BPM_DOWN: case FRB_BPM_UP:
-        if (m->tempo_src == 1) setting_set(g, FRS_BPM, clampi(m->bpm10 + (id == FRB_BPM_UP ? 10 : -10), 400, 2400));
+        if (m->tempo_src == 1) setting_set(g, FRS_BPM, clampi(bpm_step(m->bpm10, id == FRB_BPM_UP ? 1 : -1), BPM_LO, BPM_HI));
         break;
     case FRB_LEARN_RESET: learn(g, FRP_UI_LEARN_FORGET_ALL, -1); break;
     case FRB_UPDATE: case FRB_UPDATE_RAIL:           /* (the package: the browser's download, or the downloaded one) */
@@ -530,7 +535,7 @@ static int focusable(const frui_widget *w)
 static void step_value(frp_gui_t *g, int id, int dir, int mods)
 {
     int hi = hi_of(id), st = hi >= 100 && (mods & FRG_SHIFT) ? 10 : 1;
-    if (id == FRS_BPM) { if (g->m.tempo_src == 1) setting_set(g, FRS_BPM, clampi(g->m.bpm10 + dir * st * 10, 200, 3000)); return; }
+    if (id == FRS_BPM) { if (g->m.tempo_src == 1) setting_set(g, FRS_BPM, clampi(bpm_step(g->m.bpm10, dir * st), BPM_LO, BPM_HI)); return; }
     set_once(g, id, clampi(frui_value(&g->m, id) + dir * st, 0, hi));
 }
 
@@ -697,9 +702,9 @@ static void mouse(frp_gui_t *g, int ev, float x, float y, int mods, int clicks)
     case M_DRAG:
         if (g->drag == DR_KNOB) {
             /* 200 logical px for the whole range; shift: ten times finer (from where shift went down) */
-            int id = g->drag_id, hi = id == FRS_BPM ? 2800 : hi_of(id), v;
-            double k = (double)hi / 200.0 * (mods & FRG_SHIFT ? 0.1 : 1.0), lo = id == FRS_BPM ? 200.0 : 0.0;
-            double top = id == FRS_BPM ? 3000.0 : (double)hi;
+            int id = g->drag_id, hi = id == FRS_BPM ? BPM_HI - BPM_LO : hi_of(id), v;
+            double k = (double)hi / 200.0 * (mods & FRG_SHIFT ? 0.1 : 1.0), lo = id == FRS_BPM ? (double)BPM_LO : 0.0;
+            double top = id == FRS_BPM ? (double)BPM_HI : (double)hi;
             g->drag_v += (double)(g->drag_y - y) * k;
             if (g->drag_v < lo) g->drag_v = lo;
             if (g->drag_v > top) g->drag_v = top;

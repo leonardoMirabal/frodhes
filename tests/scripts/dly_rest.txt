@@ -1,0 +1,75 @@
+# The delay's rest after its tail (0.9.13, the audio review C1, D1, D8). The loop's truncating arithmetic has fixed
+# points that are not 0: with the send silent, DIG's line sat on -6 (lp -12), ANA's on +2 .. -10, TAPE's in a +-5
+# cycle, for ever, the effect on or OFF; the tail never ended (fx.c dly_tail_over wanted every row within +-1), the
+# line was never cleared and dly_lp / dly_hp never went back to 0. Now, with the send silent and the line within a
+# +-8 swing over the delay, the echo fades out (46 ms) and the loop rests: activity 0, its states 0, the line clean
+# ("dlyrest": activity / lp / hp / the line's largest row). OFF, the resting delay leaves the effects' cost ("fxcost": the bar engine's budget, one core).
+# DIG, ANA, TAPE at FEEDBK 110 and 90 (the default), MIX 64, TIME ~39 ms, one C3 each, then a tail after OFF.
+0 midi 0xB0 91 0
+0 midi 0xB0 106 0
+0 midi 0xB0 84 0
+0 midi 0xB0 70 0
+0 midi 0xB0 89 64
+0 midi 0xB0 90 20
+100 expect state fxcost 0
+100 expect state dlyrest 0/0/0/0
+# DIG, FEEDBK 110
+200 midi 0xB0 88 40
+200 midi 0xB0 26 110
+500 midi 0x90 48 100
+1000 midi 0x80 48 0
+1500 expect state dlyring 1
+6000 expect state dlyrest 0/0/0/0
+6000 expect state fxcost 150
+# DIG, FEEDBK 90
+6000 midi 0xB0 26 90
+6500 midi 0x90 48 100
+7000 midi 0x80 48 0
+7500 expect state dlyring 1
+12000 expect state dlyrest 0/0/0/0
+# ANA, FEEDBK 110
+12000 midi 0xB0 88 70
+12000 midi 0xB0 26 110
+12500 midi 0x90 48 100
+13000 midi 0x80 48 0
+13500 expect state dlyring 1
+18000 expect state dlyrest 0/0/0/0
+# ANA, FEEDBK 90
+18000 midi 0xB0 26 90
+18500 midi 0x90 48 100
+19000 midi 0x80 48 0
+19500 expect state dlyring 1
+24000 expect state dlyrest 0/0/0/0
+# TAPE, FEEDBK 110 (its echoes take longer to die)
+24000 midi 0xB0 88 110
+24000 midi 0xB0 26 110
+24500 midi 0x90 48 100
+25000 midi 0x80 48 0
+25500 expect state dlyring 1
+34000 expect state dlyrest 0/0/0/0
+# TAPE, FEEDBK 90
+34000 midi 0xB0 26 90
+34500 midi 0x90 48 100
+35000 midi 0x80 48 0
+35500 expect state dlyring 1
+44000 expect state dlyrest 0/0/0/0
+# DIG, FEEDBK 110, then OFF under its echoes: the tail rings (counted), then rests (not counted)
+44000 midi 0xB0 88 40
+44000 midi 0xB0 26 110
+44500 midi 0x90 48 100
+45000 midi 0x80 48 0
+45200 midi 0xB0 88 0
+45500 expect state dlyring 1
+45500 expect state fxcost 150
+51000 expect state dlyrest 0/0/0/0
+51000 expect state fxcost 0
+# the same with TAPE: its tail after OFF ends too
+51000 midi 0xB0 88 110
+51500 midi 0x90 48 100
+52000 midi 0x80 48 0
+52200 midi 0xB0 88 0
+52500 expect state fxcost 150
+62000 expect state dlyrest 0/0/0/0
+62000 expect state fxcost 0
+62000 expect rms < -130
+62010 end

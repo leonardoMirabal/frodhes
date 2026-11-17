@@ -85,7 +85,7 @@
                                         "version": 2,
                                         "knobType": "FilmStrip",
                                         "filmStrip": "knob_bi.png",
-                                        "numFrames": 127,
+                                        "numFrames": 105,
                                         "invert": false,
                                         "handleName": "Data"
                                     }
@@ -223,7 +223,7 @@
                                         "version": 2,
                                         "knobType": "FilmStrip",
                                         "filmStrip": "knob_uni.png",
-                                        "numFrames": 127,
+                                        "numFrames": 105,
                                         "invert": false,
                                         "handleName": "Data"
                                     }
@@ -361,7 +361,7 @@
                                         "version": 2,
                                         "knobType": "FilmStrip",
                                         "filmStrip": "knob_uni.png",
-                                        "numFrames": 127,
+                                        "numFrames": 105,
                                         "invert": false,
                                         "handleName": "Data"
                                     }
