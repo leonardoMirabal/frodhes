@@ -12,7 +12,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 CC=${CC:-cc}
 INC="-I$ROOT/firmware/src -I$ROOT/firmware/gen -I$HERE"
-CF="-O2 -Wall -Wno-unused-function -Wno-unused-variable $INC"
+CF="-O2 -Wall -Wno-unused-function -Wno-unused-variable -Wno-undefined-internal $INC"
 if [ "$1" = "--old-obj" ]; then
     $CC $CF -DSIDE_OLD -c "$HERE/dly_side.c" -o "$2"
     exit 0

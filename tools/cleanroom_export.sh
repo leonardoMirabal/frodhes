@@ -8,9 +8,10 @@
 # - git archive REF into OUTDIR (no .git, no history); OUTDIR must not exist or be empty.
 # - fx.c: the two loops (dly_loop with its comment, and dly_loop_kb with its comment; the statics between them stay)
 #   are replaced by an #include of dly_own.c; a skeleton firmware/src/dly_own.c (signatures only) is written.
-# - private/ is deleted. Every other file that carries the loops' text (a line-for-line copy of any distinctive line:
-#   tools/cleanroom_scan.py's rule, inline below) is removed; the one that must stay to build, firmware/src/dly_tape.c,
-#   keeps its signatures and loses the bodies of the functions that carry the text.
+# - private/ is deleted. Every other file that carries the loops' text (three or more distinctive lines of them, the
+#   rule inline below) is removed. firmware/src/dly_tape.c must stay to build: the functions derived from the loops
+#   (dly_rd, dly_fade, dly_wr_c, dly_loop_c / _cd / _ca, dly_fade_c, tp_loop_c) are cut out, in three groups, and each
+#   group becomes an include of dly_own.c with DLY_OWN_PART 2, 3 or 4 (the skeleton lists the signatures).
 # - the harness files (tests/c/dly_equiv*, dly_side.c, dly_state.h, tests/py/test_dly_equiv.py) are copied in from this
 #   checkout, so REF may predate them.
 # - the old loops come as tests/c/dly_old.o (built from REF's own tree), so the harness can still run them.
@@ -74,15 +75,20 @@ for l in seg:
     if len(t) >= 22 and (len(t) >= 50 or any(k in t for k in TOK)):
         pats.add(t)
 new = src[:a0] + ['/* the delay\'s two sample loops, the main loop (dly_loop) and the bars wrapper (dly_loop_kb): written from',
-                  ' * the specification, firmware/src/dly_own.c */', '#include "dly_own.c"'] + src[a1 + 1:b0] + \
+                  ' * the specification, firmware/src/dly_own.c */', '#define DLY_OWN_PART 1', '#include "dly_own.c"', '#undef DLY_OWN_PART'] + src[a1 + 1:b0] + \
       ['/* (dly_loop_kb: in dly_own.c) */'] + src[b1 + 1:]
 open(fx, "w").write("\n".join(new))
 open(os.path.join(out, "firmware/src/dly_own.c"), "w").write(
 """/* SPDX-License-Identifier: GPL-3.0-only */
-/* The delay's two sample loops, written from the specification (the plugin's own-code build). Included by fx.c in
- * the place the old loops had; tests/c/dly_equiv.c says what must be exposed:
- *   static inline __attribute__((always_inline)) void dly_loop(...)   the main loop
- *   static void dly_loop_kb(...)                                      the bars wrapper (noinline) */
+/* The delay's own sample loops, written from the specification (the plugin's own-code build). One file, included
+ * from four places, each with DLY_OWN_PART set to its number (tests/c/dly_equiv.c lists the exact signatures):
+ *   1  fx.c, where the old main loops were:         dly_loop, dly_loop_kb
+ *   2  dly_tape.c, where dly_rd and dly_fade were:  dly_rd, dly_fade
+ *   3  dly_tape.c (FR_CHUNK), the chunk group:      dly_wr_c, dly_loop_c, dly_loop_cd, dly_loop_ca, dly_fade_c
+ *   4  dly_tape.c (FR_CHUNK), where tp_loop_c was:  tp_loop_c
+ * Each part sees everything defined above its include site. fx.c includes part 1; dly_tape.c sets the macro, includes
+ * the file and undefines it for parts 2 to 4. */
+#if DLY_OWN_PART == 1
 static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *R, uint32_t n, const int tape,
                                                            const int32_t msk, int32_t sg16, int32_t target, int32_t col,
                                                            int32_t fb, int32_t wet, int32_t dgt, const int rst,
@@ -96,6 +102,54 @@ __attribute__((noinline)) static void dly_loop_kb(int32_t *L, int32_t *R, uint32
 {
     (void)L; (void)R; (void)n; (void)sg16; (void)target; (void)col; (void)fb; (void)wet; (void)dgt; (void)rst;
 }
+#elif DLY_OWN_PART == 2
+static inline __attribute__((always_inline)) int32_t dly_rd(uint32_t w, int32_t d, uint32_t c)
+{
+    (void)w; (void)d; (void)c;
+    return 0;
+}
+__attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t n, int tape, int32_t msk,
+                                               int32_t sg16, int32_t target, int32_t col, int32_t fb, int32_t wet,
+                                               int32_t dgt, int32_t gs)
+{
+    (void)L; (void)R; (void)n; (void)tape; (void)msk; (void)sg16; (void)target; (void)col; (void)fb; (void)wet;
+    (void)dgt; (void)gs;
+}
+#elif DLY_OWN_PART == 3
+__attribute__((noinline)) static void dly_wr_c(uint32_t w0, uint32_t n, int32_t sg16)
+{
+    (void)w0; (void)n; (void)sg16;
+}
+static inline __attribute__((always_inline)) void dly_loop_c(int32_t *L, int32_t *R, uint32_t n, const int tape,
+                                                             int32_t target, int32_t col, int32_t fb, int32_t wet,
+                                                             int32_t dgt)
+{
+    (void)L; (void)R; (void)n; (void)tape; (void)target; (void)col; (void)fb; (void)wet; (void)dgt;
+}
+__attribute__((noinline)) static void dly_loop_cd(int32_t *L, int32_t *R, uint32_t n, int32_t target, int32_t col,
+                                                  int32_t fb, int32_t wet, int32_t dgt)
+{
+    dly_loop_c(L, R, n, 0, target, col, fb, wet, dgt);
+}
+__attribute__((noinline)) static void dly_loop_ca(int32_t *L, int32_t *R, uint32_t n, int32_t target, int32_t col,
+                                                  int32_t fb, int32_t wet, int32_t dgt)
+{
+    dly_loop_c(L, R, n, 1, target, col, fb, wet, dgt);
+}
+__attribute__((noinline)) static void dly_fade_c(int32_t *L, int32_t *R, uint32_t n, int tape, int32_t msk,
+                                                 int32_t target, int32_t col, int32_t fb, int32_t wet, int32_t dgt,
+                                                 int32_t gs)
+{
+    (void)L; (void)R; (void)n; (void)tape; (void)msk; (void)target; (void)col; (void)fb; (void)wet; (void)dgt;
+    (void)gs;
+}
+#elif DLY_OWN_PART == 4
+FX_RAM __attribute__((noinline)) static void tp_loop_c(int32_t *L, int32_t *R, uint32_t j0, uint32_t j1, uint32_t p0,
+                                                     uint32_t np, int32_t fb, int32_t wet, int32_t dgt, int32_t g0)
+{
+    (void)L; (void)R; (void)j0; (void)j1; (void)p0; (void)np; (void)fb; (void)wet; (void)dgt; (void)g0;
+}
+#endif
 """)
 
 def carriers():
@@ -114,11 +168,9 @@ def carriers():
                 res[p] = n
     return res
 
-def redact(p):
-    """keep every top-level function's signature, drop the body of those that hold a distinctive line"""
-    s = open(p).read()
-    i, n, depth, start, last = 0, len(s), 0, 0, 0   # last: end of the previous top-level statement or block
-    outp, cut = [], []
+def top_blocks(s):
+    """the top-level {} blocks of C text: (name, signature start, block end), the name from the header before '('"""
+    i, n, depth, start, last, res = 0, len(s), 0, 0, 0, []
     while i < n:
         if s.startswith("/*", i):
             i = s.index("*/", i) + 2
@@ -140,35 +192,48 @@ def redact(p):
         elif c == "}":
             depth -= 1
             if depth == 0:
-                body = s[start:i + 1]
-                if any(t in body for t in pats):
-                    hdr = re.sub(r"/\*.*?\*/", "", s[last:start], flags=re.S)
-                    hdr = re.sub(r"__attribute__\(\(.*?\)\)", "", hdr).split("(")[0]
-                    cut.append((start, i + 1, bool(re.search(r"\bvoid\b", hdr))))
+                hdr = re.sub(r"/\*.*?\*/", lambda m: " " * len(m.group(0)), s[last:start], flags=re.S)
+                k = len(hdr) - len(hdr.lstrip())
+                sig = s.rfind("\n", 0, last + k) + 1
+                if sig < last:
+                    sig = last
+                h2 = re.sub(r"__attribute__\(\(.*?\)\)", "", hdr).split("(")[0].split()
+                res.append((h2[-1].lstrip("*") if h2 else "", sig, i + 1))
                 last = i + 1
         elif c == ";" and depth == 0:
             last = i + 1
         i += 1
-    for st, en, isvoid in reversed(cut):
-        s = s[:st] + "{\n    /* the old loops' text, removed from this tree */\n" + ("" if isvoid else "    return 0;\n") + "}" + s[en:]
-    open(p, "w").write(s)
-    return len(cut)
+    return res
 
-removed, redacted = [], []
+# the derived functions of dly_tape.c, in the groups they are contiguous in: each group becomes one include of dly_own.c
+GROUPS = [(2, ["dly_rd", "dly_fade"]), (3, ["dly_wr_c", "dly_loop_c", "dly_loop_cd", "dly_loop_ca", "dly_fade_c"]),
+          (4, ["tp_loop_c"])]
+def stub_tape(p):
+    s = open(p).read()
+    blocks = {b[0]: b for b in top_blocks(s)}
+    edits = []
+    for part, names in GROUPS:
+        bs = [blocks[nm] for nm in names]                  # KeyError: a name moved or renamed: stop
+        assert all(bs[k][1] < bs[k + 1][1] for k in range(len(bs) - 1)), names
+        edits.append((bs[0][1], bs[-1][2], part))
+    for st, en, part in sorted(edits, reverse=True):
+        s = s[:st] + "#define DLY_OWN_PART %d\n#include \"dly_own.c\"\n#undef DLY_OWN_PART" % part + s[en:]
+    open(p, "w").write(s)
+    return [nm for _, names in GROUPS for nm in names]
+
+stubbed = stub_tape(os.path.join(out, "firmware/src/dly_tape.c"))
+removed = []
 for p, nlines in sorted(carriers().items()):
     rel = os.path.relpath(p, out)
-    if rel == "firmware/src/dly_tape.c":
-        redacted.append((rel, redact(p)))
-    else:
+    if rel != "firmware/src/dly_tape.c":
         os.remove(p)
         removed.append(rel)
 left = {os.path.relpath(p, out): k for p, k in carriers().items()}
 print("removed files:", removed if removed else "none")
-print("redacted:", ["%s (%d function bodies)" % r for r in redacted])
-open(os.path.join(out, ".export_patterns_left"), "w").write(repr(left))
+print("dly_tape.c functions stubbed (bodies replaced by the dly_own.c includes):", stubbed)
+print("distinctive loop lines still in dly_tape.c (tp_tape_k, tp_loop: judged own):", left.pop("firmware/src/dly_tape.c", 0))
 if left:
     raise SystemExit("cleanroom_export: carriers left: %r" % left)
-os.remove(os.path.join(out, ".export_patterns_left"))
 PY
 ( cd "$OUT" && find . -type f ! -name EXPORT.sha256 | LC_ALL=C sort | while read -r f; do shasum -a 256 "$f"; done > EXPORT.sha256 )
 echo "manifest: $(wc -l < "$OUT/EXPORT.sha256") files, $OUT/EXPORT.sha256"

@@ -8,18 +8,14 @@
  *   dly_equiv [--calls N] [--seed S] [--jobs J]       default N = 1000000, S = 1, J = 1 (10^8: --calls 100000000)
  * Output: "PASS <n> calls" or "FAIL case <k> field <name> index <i>", nothing else (k: the call's number).
  *
- * What dly_own.c must expose (private/plans/dly-own-contract.md has the same text). The side unit is fx.c whole
- * (every fx.c helper, macro and `dly_*` variable of the spec's section 1 is visible), and dly_own.c is included
- * after it, so it must not define a name fx.c already defines. It writes the plain names, as it will be written in
- * fx.c: dly_loop (the spec's main loop, section 2) and dly_loop_kb (the bars wrapper, section 10):
- *   static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *R, uint32_t n, const int tape,
- *        const int32_t msk, int32_t sg16, int32_t target, int32_t col, int32_t fb, int32_t wet, int32_t dgt,
- *        const int rst, const int kb);
- *   static void dly_loop_kb(int32_t *L, int32_t *R, uint32_t n, int32_t sg16, int32_t target, int32_t col,
- *        int32_t fb, int32_t wet, int32_t dgt, int rst);
- * The harness calls dly_loop through noinline wrappers with literal tape / msk / kb in four shapes (tape 1 or 0,
- * msk -1 or 0, kb 0) and dly_loop_kb; rst is a run-time value. FX_ENG_K / FX_ENG_G are read through the harness's
- * variables. */
+ * What dly_own.c must expose (private/plans/dly-own-contract.md has the same text). One file, included four times
+ * with DLY_OWN_PART set to 1, 2, 3, 4 (fx.c, and dly_tape.c twice more: where the derived routines were), after
+ * everything fx.c / dly_tape.c define above that place; it must not define a name they define. Part 1: dly_loop (the
+ * spec's main loop, section 2) and dly_loop_kb (section 10); part 2: dly_rd, dly_fade (11, 12); part 3 (FR_CHUNK):
+ * dly_wr_c, dly_loop_c, dly_loop_cd, dly_loop_ca, dly_fade_c (13 to 15); part 4 (FR_CHUNK): tp_loop_c (16). Signatures
+ * as in dly_tape.c / the spec; dly_side.c shows the call of each. The harness reaches them in twelve shapes (dly_state.h):
+ * dly_loop with literal tape / msk (kb 0), dly_loop_kb, dly_fade, dly_loop_cd, dly_loop_ca, dly_fade_c, dly_wr_c,
+ * tp_loop_c, dly_rd (result in L[0]). FX_ENG_K / FX_ENG_G read the harness's variables; fxc_o / fxc_e are set per call. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -108,6 +104,7 @@ static void state_init(st_t *s, args_t *a, uint64_t run)
     int32_t d;
     memset(s, 0, sizeof *s);
     a->shape = e ? (int)((run / 9) % DLY_SHAPES) : rr(0, DLY_SHAPES - 1);
+    memset(a, 0, sizeof *a), a->shape = e ? (int)((run / 9) % DLY_SHAPES) : rr(0, DLY_SHAPES - 1);
     a->rst = e ? (int)((run / 45) & 1) : rr(0, 1);
     a->target = rr(0, 65534) << 8;
     if (rp(25)) a->target = rr(0, 4096) << 8;
@@ -144,8 +141,19 @@ static void state_init(st_t *s, args_t *a, uint64_t run)
                             : rp(35) ? w - (uint32_t)rr(0, 600) : rp(35) ? w - (uint32_t)rr(65000, 66100)
                             : rp(50) ? w - rnd() : w - (uint32_t)rr(0, 70000)) : rnd();
     s->dly_son = (uint8_t)rr(0, 1); s->dly_clrn = rnd(); s->dly_qz = rnd(); s->dly_lc = (uint8_t)rr(0, 1);
-    s->dly_xm = rr(-32768, 32768); s->dly_xo = (uint8_t)rr(0, 1); s->dly_sil = rnd(); s->dly_ana = (uint8_t)rr(0, 1);
+    s->dly_xo = (uint8_t)rr(0, 1); s->dly_sil = rnd(); s->dly_ana = (uint8_t)rr(0, 1);
     s->dly_qlo = rr(-100, 100); s->dly_qhi = rr(-100, 100); s->dly_ring = (uint8_t)rr(0, 1); s->dly_rf = (uint8_t)rr(0, 1);
+    s->dly_xg = rp(30) ? pick_edgy(0, 32768) : rr(0, 32768);
+    s->dly_xm = rp(35) ? pick_edgy(0, 32768) : rp(20) ? 16384 + rr(-20, 20) : rr(0, 32768);
+    s->dly_tx = rp(55) ? 0 : rp(30) ? 1 + 32 * rr(0, 1023) : rp(50) ? 32768 : rr(1, 32768);
+    s->dly_tn = rr(0, 65534) << 8;
+    s->dly_wm = (uint8_t)rr(0, 2); s->dly_wp = (uint8_t)rr(0, 1); s->dly_wk_msk = rp(50) ? -1 : 0;
+    s->tp_b1 = rr(-4194304, 4194304); s->tp_b2 = rr(-4194304, 4194304);
+    s->tp_h1 = rr(-262144, 262144); s->tp_h2 = rr(-262144, 262144);
+    if (rp(30)) { s->tp_b1 = rr(-300, 300); s->tp_b2 = rr(-300, 300); s->tp_h1 = rr(-300, 300); s->tp_h2 = rr(-300, 300); }
+    s->tp_kf = rp(80) ? rr(1000, 8000000) : pick_edgy(0, 8388608);
+    s->tp_kq = rr(8000, 32768);
+    s->tp_kh = rp(80) ? rr(100, 32768) : pick_edgy(0, 32768);
     memset(s->hc, 0, sizeof s->hc);
     a->ek = rp(30) ? 32768 : rr(16384, 65536);
     a->eg = rp(30) ? 32768 : rr(8192, 32768);
@@ -157,6 +165,31 @@ static void args_next(args_t *a, int first, uint64_t run)
 {
     int e = first && run < 20000;
     a->n = e ? N_EDGE[(run / 7) % NEDGE(N_EDGE)] : rp(25) ? N_EDGE[rnd() % NEDGE(N_EDGE)] : (uint32_t)rr(1, 256);
+    {   /* the other shapes' arguments */
+        static const int32_t GS[] = {0, 16, -16, 8, -8, 32768, -32768, 1, -1, 2048, -2048, 128, -128};
+        uint32_t k;
+        a->mode = rr(0, 3);
+        a->msk = rp(50) ? -1 : 0;
+        a->gs = rp(60) ? GS[rnd() % NEDGE(GS)] : rr(-32768, 32768);
+        a->e = a->n; a->o = 0;
+        if (a->shape >= 6 && a->shape <= 8) {                  /* 0 <= o < e <= n, mostly on the 32-grid */
+            a->e = rp(60) ? 32u * (uint32_t)rr(1, 8) : (uint32_t)rr(1, 256);
+            if (a->n < a->e) a->n = rp(70) ? a->e + (uint32_t)rr(0, (int)(256 - a->e)) : a->e;
+            if (a->n > 256) a->n = 256;
+            if (a->e > a->n) a->e = a->n;
+            k = rp(60) ? 32u * (uint32_t)rr(0, 7) : (uint32_t)rr(0, 255);
+            a->o = k < a->e ? k : (a->e - 1) / 32u * 32u;
+            if (a->o >= a->e) a->o = 0;
+        }
+        a->w0 = rp(10) ? 0xFFFFFFFFu - (uint32_t)rr(0, 300) : rnd();
+        a->j1 = (uint32_t)rr(1, 256); a->j0 = (uint32_t)rr(0, (int)a->j1 - 1);
+        if (rp(40)) { a->j0 = 32u * (uint32_t)rr(0, 7); a->j1 = a->j0 + 8u * (uint32_t)rr(1, 4); if (a->j1 > 256) a->j1 = 256; if (a->j0 >= a->j1) a->j0 = a->j1 - 1; }
+        a->p0 = (uint32_t)rr(0, (int)a->j0);
+        a->np = rp(40) ? 8u : rp(30) ? 256u : (uint32_t)rr(1, 256);
+        a->g0 = pick_edgy(0, 32768);
+        a->c = rp(40) ? C_EDGE[rnd() % NEDGE(C_EDGE)] : rp(40) ? (uint32_t)rr(0, 70000) : rnd();
+        a->d = rp(50) ? (DI_EDGE[rnd() % NEDGE(DI_EDGE)] << 8 | FR_EDGE[rnd() % 4]) : rp(10) ? rr(-300, 0) : rr(0, 65535 << 8);
+    }
     if (!first) {
         if (rp(20)) a->col = pick_edgy(1200, 32480);
         if (rp(20)) a->fb = pick_edgy(0, 17382);
@@ -182,6 +215,7 @@ static int check_all(const st_t *o, const st_t *nw, const int32_t *oL, const int
     for (j = 0; j < 5; j++) if (o->hc[j] != nw->hc[j]) return fail("fx_h_clip", j);
     for (j = 0; j < 256; j++) if (o->dt[j] != nw->dt[j]) return fail("dly_dt", j);
     for (j = 0; j < 256; j++) if (o->m[j] != nw->m[j]) return fail("dly_m", j);
+    for (j = 0; j < 256; j++) if (o->fbv[j] != nw->fbv[j]) return fail("dly_fbv", j);
     for (j = 0; j < n; j++) {
         uint32_t row = (w0 + j) & (DLY_LEN - 1u);
         if (a[row] != b[row]) return fail("dly_buf", row);
@@ -205,11 +239,16 @@ static int worker(uint64_t calls, uint64_t seed, uint64_t first_case)
         for (c = 0; c < runlen && done < calls; c++, done++) {
             st_t so, sn;
             int32_t Lin[256], Rin[256], oL[256], oR[256], nL[256], nR[256];
-            uint32_t j, w0;
+            uint32_t j, w0, nrows;
             g_case = first_case + done;
             args_next(&a, c == 0, run);
             signal_fill(S.m, rp(70) ? 131072 : 16777216);     /* the send (masked by msk inside), the stale scratch */
             for (j = 0; j < 256; j++) S.dt[j] = (int32_t)rnd();
+            if (a.shape == 10) {                              /* tp_loop_c reads dly_dt: valid times */
+                int32_t base = rr(0, 65534 << 8);
+                for (j = 0; j < 256; j++) S.dt[j] = rp(80) ? base + rr(-2000, 2000) : rr(0, 65535 << 8);
+            }
+            signal_fill(S.fbv, rp(70) ? 131072 : 8388608);
             signal_fill(Lin, rp(70) ? 1048576 : 16777216);
             signal_fill(Rin, rp(70) ? 1048576 : 16777216);
             if (rp(20)) memcpy(Rin, Lin, sizeof Lin);
@@ -222,12 +261,13 @@ static int worker(uint64_t calls, uint64_t seed, uint64_t first_case)
                 }
             }
             if (c == 0 && rp(2)) line_fill();
-            w0 = S.dly_w;
+            w0 = a.shape == 9 ? a.w0 : S.dly_w;
+            nrows = a.shape <= 5 || a.shape == 9 ? a.n : 0;
             memcpy(oL, Lin, sizeof oL); memcpy(oR, Rin, sizeof oR);
             memcpy(nL, Lin, sizeof nL); memcpy(nR, Rin, sizeof nR);
             old_put(&S); old_call(&a, oL, oR); old_get(&so);
             new_put(&S); new_call(&a, nL, nR); new_get(&sn);
-            if (check_all(&so, &sn, oL, oR, nL, nR, w0, a.n, (done & 63u) == 0 || done < 20000)) return 1;
+            if (check_all(&so, &sn, oL, oR, nL, nR, w0, nrows, (done & 63u) == 0 || done < 20000)) return 1;
             S = so;                                            /* the next block continues from here */
             S.dly_wk = a.wet; S.dly_fbk = rp(5) ? -1 : a.fb;
             if (c == runlen - 1 && (run & 255u) == 0) line_fill();
