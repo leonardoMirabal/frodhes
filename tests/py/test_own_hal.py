@@ -2,7 +2,7 @@
 """The plugin's own hardware layer (plugin/src/own_hal.c, own_store.h) against the browser layer it replaces
 (web/web_hal.c, store.h): tests/own_hal_probe.c compiled with -DFR_OWN=0 and -DFR_OWN=1 prints every shared value and
 the behaviour of every call the app and the plugin's glue make; the two texts must be equal line for line. Also: the
-FR_OWN_HAL build's include list has neither platform.c nor the browser layer."""
+FR_OWN_HAL build's include list has none of the old platform files."""
 import os
 import subprocess
 
@@ -40,7 +40,7 @@ def test_own_hal_build_lists_no_platform_files():
         r = subprocess.run(base + [f"-DFR_OWN={own}"], capture_output=True, text=True, cwd=ROOT)
         assert r.returncode == 0, r.stderr[-2000:]
         deps[own] = {os.path.basename(p) for p in r.stdout.replace("\\\n", " ").split()[1:]}
-    old = {"platform.c", "web_hal.c"}
+    old = {"platform.c", "web_hal.c", "store.h", "fm1_flash_map.h", "fm1_cc.h"}
     assert old <= deps[0]                       # (the browser layer, as the MPC and the web build keep it)
     assert not old & deps[1], old & deps[1]
-    assert "own_hal.c" in deps[1]
+    assert {"own_hal.c", "own_store.h"} <= deps[1]
