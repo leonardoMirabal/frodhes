@@ -16,7 +16,9 @@
  *              stop, unless the arpeggiator is on: then a tap there too). REC: sustain. */
 #include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 
+#if !FR_OWN_HAL
 #include "aatext.c"                                   /* anti-aliased Inter Tight text (Felucca), the FOCUS look */
+#endif       /* (FR_OWN_HAL: plugin/src/own_gfx.h, already included by own_hal.c, has the no-op calls) */
 
 #define PR_NF_UI PR_NF_SET                            /* presets.c: PR_NF factory presets, then the user ones */
 #define PR_NALL_UI (PR_NF_SET + 16u)

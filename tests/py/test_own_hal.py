@@ -44,3 +44,19 @@ def test_own_hal_build_lists_no_platform_files():
     assert old <= deps[0]                       # (the browser layer, as the MPC and the web build keep it)
     assert not old & deps[1], old & deps[1]
     assert {"own_hal.c", "own_store.h"} <= deps[1]
+
+
+def test_own_build_lists_no_screen_stack_or_font_files():
+    """the screen stack (gfx.c, aatext.c, the bitmap and anti-aliased font data) is not in the own-code build's include
+    list; the other builds keep it"""
+    base = CC + ["-DFRP_SLOT=0", "-M", os.path.join(ROOT, "plugin", "src", "engine_unit.c")]
+    deps = {}
+    for own in (0, 1):
+        r = subprocess.run(base + [f"-DFR_OWN={own}"], capture_output=True, text=True, cwd=ROOT)
+        assert r.returncode == 0, r.stderr[-2000:]
+        deps[own] = {os.path.basename(p) for p in r.stdout.replace("\\\n", " ").split()[1:]}
+    gone = {"gfx.c", "aatext.c", "felucca_font.h", "aa_font.h", "aa_font_v24.h", "aa_font_v25.h"}
+    assert {"gfx.c", "aatext.c", "felucca_font.h", "aa_font.h"} <= deps[0]
+    assert not gone & deps[1], gone & deps[1]
+    assert not {d for d in deps[1] if "font" in d}, deps[1]
+    assert {"own_gfx.h"} <= deps[1]

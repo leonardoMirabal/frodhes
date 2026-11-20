@@ -37,7 +37,7 @@ int main(void)
     uint32_t i, n, rel, h = 0, pass = 0;
     uint8_t st, d1, d2, buf[ST_TAIL_N], set_in[256], set_out[256];
     /* the names and values the app takes from its platform */
-    V(BOARD_SMK37); V(FS); V(HALF_FRAMES); V(HOST_SAVE_MS); V(ST_TAIL_N); V(CV_MAX);
+    V(BOARD_SMK37); V(FS); V(HALF_FRAMES); V(HOST_SAVE_MS); V(ST_TAIL_N);
     V(BTN_OCT_DOWN); V(BTN_OCT_UP); V(BTN_FX); V(BTN_SEL); V(BTN_ENV); V(BTN_LFO); V(BTN_EDIT); V(BTN_GLO); V(BTN_HOME);
     V(BTN_SAVE); V(BTN_ARP); V(BTN_SEQ); V(BTN_PLAY); V(BTN_REC);
     V(ENC_SELECT); V(ENC_ALGORITHM); V(ENC_KNOB1); V(ENC_KNOB2); V(ENC_KNOB3); V(ENC_KNOB4); V(ENC_PRESETS);
