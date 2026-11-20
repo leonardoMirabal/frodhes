@@ -10,7 +10,7 @@
  *   clock      fm1_ms, platform_poll (the slot's own ms clock, then the coroutine yield)
  *   MIDI       a 64-message ring, each message with its place in the block (1/256 frame); midi_get, midi_send
  *   storage    the flash image kept in RAM (host_mem, st_read), the settings record (settings_*)
- *   screen     the canvas calls gfx.c draws through, as no-ops (until the plugin's screen layer replaces gfx.c)
+ *   screen     the canvas and text calls ui.c draws through, as no-ops (own_gfx.h)
  * The slot is silent about the rest: no USB, no audio hardware, no flash timing. */
 #ifndef FRODHES_PLUGIN_OWN_HAL_C
 #define FRODHES_PLUGIN_OWN_HAL_C
@@ -62,12 +62,12 @@ static uint8_t fm1_led_duty[2] = {16u, 16u};    /* the lit duty of the keys and 
 static volatile uint8_t uart_midi_on = 1;       /* the TRS input's switch: stored by the MIDI page, nothing reads it */
 static volatile uint8_t usb_pre_master;         /* USB audio before MASTER: there is no USB audio */
 
-/* ---- the screen: the canvas calls gfx.c draws through. Nothing shows a frame, so nothing is kept */
-#define CV_MAX (240u * 64u)                     /* the biggest text box drawn at once, in pixels */
+/* ---- the screen: the canvas and text calls ui.c draws through (plugin/src/own_gfx.h), as no-ops. Nothing shows a frame,
+ * so nothing is kept */
 static void lcd_sync(void) {}
 static void lcd_fill(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint16_t c) { (void)x; (void)y; (void)w; (void)h; (void)c; }
 static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint16_t *px) { (void)x; (void)y; (void)w; (void)h; (void)px; }
-#include "gfx.c"
+#include "own_gfx.h"
 
 /* ---- the flash image and the settings record */
 #define HOST_SAVE_MS 100u                       /* the pattern's modelled erase time (seq.c) */
