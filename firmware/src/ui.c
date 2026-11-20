@@ -354,7 +354,6 @@ static const char *const COLOR_NAME[COLOR_N] = {
     "OCEAN", "CYAN", "AQUA", "MINT", "JADE", "GREEN", "LEAF",
     "LIME", "PEAR", "LEMON", "GOLD", "MANGO", "RED",
 };
-#endif
 FR_COLD static uint16_t cd_comp(uint16_t c)                    /* an RGB565 colour's complement: its hue turned half
                                                          * way, the same lightness and saturation (max + min - each;
                                                          * Textura's, a MIX card past 64) */
@@ -364,6 +363,7 @@ FR_COLD static uint16_t cd_comp(uint16_t c)                    /* an RGB565 colo
     uint32_t mx = r8 > g8 ? (r8 > b8 ? r8 : b8) : (g8 > b8 ? g8 : b8), mn = r8 < g8 ? (r8 < b8 ? r8 : b8) : (g8 < b8 ? g8 : b8);
     return RGB(mx + mn - r8, mx + mn - g8, mx + mn - b8);
 }
+#endif
 #if !FR_OWN_HAL
 FR_COLD static uint16_t cd_lighten(uint16_t c)                 /* an RGB565 colour half way to white */
 {
@@ -423,9 +423,32 @@ FR_COLD static uint32_t leds_disp(void) { return LEDS_DISP[set.leds < LEDS_N ? s
 FR_COLD static int leds_sus_lit(void) { return set.sus_leds && (set.leds == 3u || set.leds == 4u); }
 #endif
 static uint8_t ui_cards = UI_CARDS_DEF;
+#if FR_OWN_HAL                                  /* the plugin has no screen: the tokens exist, unset (mt_update is empty) */
+static struct {
+    uint16_t acc;
+    uint16_t dim;
+    uint16_t edge;
+    uint16_t fill;
+    uint16_t frame;
+    uint16_t hair;
+    uint16_t lab;
+    uint16_t mixl;
+    uint16_t outline;
+    uint16_t seq;
+    uint16_t surf;
+    uint16_t tag;
+    uint16_t track;
+    uint16_t unit;
+    uint16_t val;
+    uint16_t wet;
+    uint16_t wfill;
+    uint16_t white;
+} mt;
+#else
 static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab, val, unit, dim, acc, seq, white, wet, wfill,
                          mixl; } mt;                    /* wet, wfill, mixl: a MIX card's part past 64, its fill, the
                                                          * line at 64 */
+#endif
 #if !FR_OWN_HAL
 /* a static in a section of its own, out of the compiler's global merge (merged in, it can split rhodes.c's rh_F / rh_x:
  * engine.c eq); nothing on the host */
