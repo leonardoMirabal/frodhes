@@ -39,8 +39,7 @@ KNOWN = "plugin/own_known.txt"
 PENDING_PART3 = ("fdrv",)
 # closure files whose copyright lines still name another author: path -> why. Reported as pending.
 PENDING_COPYRIGHT = {
-    "firmware/src/fx.c": "header names Felucca's ports (the FDRV kernel, part 3); the FM-1 builds still need it",
-    "firmware/src/fx_own.h": "line 2 repeats the Felucca copyright line: a stray line, to delete",
+    "firmware/src/fx.c": "header keeps the Felucca notice for the FDRV kernel (part 3) and the classic HALL; the FM-1 builds need it",
 }
 # paths of other people's permissive code that the plugin links: exempt from (b)
 LIBRARY_PREFIXES = (".local/plugin-deps/", "assets/fonts/")
