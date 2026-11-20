@@ -26,6 +26,8 @@
 static int printf_(const char *f, ...) __attribute__((format(printf, 1, 2)));
 #include <stdarg.h>
 static int printf_(const char *f, ...) { va_list a; int r; va_start(a, f); r = vprintf(f, a); va_end(a); return r; }
+/* DISPLAY's COLOR, BRIGHTNESS and LEDS cards are inert in the own-code build (tests/py/test_own_display.py): left out */
+#define OWN_DISPLAY_SLOT(s) ((s) == S_COLOR || (s) == S_BRIGHT || (s) == S_LEDS)
 static jmp_buf done;
 static int pass;
 static double move_now_ms(void) { return (double)pass; }
@@ -49,7 +51,7 @@ static uint64_t snapshot(void)
             uint32_t s = slot_at(pg, k);
             int32_t hi = 0, v;
             const char *lab = slot_label(pg, k);
-            if (s == S_NONE) continue;
+            if (s == S_NONE || OWN_DISPLAY_SLOT(s)) continue;
             v = slot_val(s, &hi);
             memset(t, 0, sizeof t);
             slot_text(s, t);
@@ -72,7 +74,7 @@ static void move_yield(void)
         ui_draw_page_change();
         for (k = 0; k < 4u; k++) {
             uint32_t s = slot_at(pg, k);
-            if (s != S_NONE && s != S_VERSION) slot_turn(s, (pass / 7) % 3 == 0 ? -9 : (pass / 7) % 3 == 1 ? 1 : 23);
+            if (s != S_NONE && s != S_VERSION && !OWN_DISPLAY_SLOT(s)) slot_turn(s, (pass / 7) % 3 == 0 ? -9 : (pass / 7) % 3 == 1 ? 1 : 23);
         }
     }
     if (pass % 50 == 0) printf_("pass %d %016llx page %u\n", pass, (unsigned long long)snapshot(), (unsigned)ui_page);
@@ -82,5 +84,22 @@ int main(void)
 {
     if (!setjmp(done)) app_main();
     printf_("done %d %016llx\n", pass, (unsigned long long)snapshot());
+#if FR_OWN_HAL                                  /* the own-code build only (stderr): DISPLAY's three cards do nothing */
+    {
+        static const uint32_t ids[3] = { S_COLOR, S_BRIGHT, S_LEDS };
+        uint32_t i;
+        for (i = 0; i < 3u; i++) {
+            int32_t hi = 7, v;
+            char t[32] = "x";
+            uint8_t before[sizeof set];
+            memcpy(before, &set, sizeof set);
+            v = slot_val(ids[i], &hi);
+            slot_text(ids[i], t);
+            slot_turn(ids[i], 1); slot_turn(ids[i], -1); slot_turn(ids[i], 9); slot_turn(ids[i], -9);
+            fprintf(stderr, "display %u hi %d val %d text [%s] set %s\n", (unsigned)i, (int)hi, (int)v, t,
+                     memcmp(before, &set, sizeof set) ? "changed" : "same");
+        }
+    }
+#endif
     return 0;
 }

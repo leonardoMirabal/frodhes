@@ -59,8 +59,4 @@ static int32_t aa_text_ovr(int32_t xr, int32_t y, const aafont_t *f, const char 
 { (void)y; (void)f; (void)s; (void)fg; return xr; }
 static int32_t aa_text_w(const aafont_t *f, const char *s) { (void)f; (void)s; return 0; }
 static int aa_covers(const aafont_t *f, const char *s) { (void)f; (void)s; return 1; }
-/* (the host's glyph census, host_state "glyphmiss": nothing is drawn, so nothing is missing) */
-static uint8_t aa_h_used[2][256];
-static uint32_t aa_h_miss;
-
 #endif

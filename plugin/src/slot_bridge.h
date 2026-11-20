@@ -365,12 +365,16 @@ static void sb_state_apply(void)         /* the boot's sanitize and apply steps 
     chord_sanitize();
     seq_sanitize();
     if (set.usb_fixed > 1u) set.usb_fixed = 0;
+#if !FR_OWN_HAL                      /* (the own-code build has no screen palette or lights to bound or apply) */
     if (set.palette >= COLOR_N) set.palette = 0;
     if (set.dim >= DIM_N) set.dim = 0;
+#endif
     if (set.leds > 4u) set.leds = 0;
     usb_pre_master = set.usb_fixed;
     uart_midi_on = !set.trs_off;
+#if !FR_OWN_HAL
     dim_apply();
+#endif
     params_apply_all();
     tempo_set10(set.bpm10);
     bpm_hand = sb.st_hand >= 400u && sb.st_hand <= 2400u ? sb.st_hand : set.bpm10;

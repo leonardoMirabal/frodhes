@@ -1699,14 +1699,18 @@ FR_COLD static void app_main(void)
     chord_sanitize();
     seq_sanitize();
     if (set.usb_fixed > 1u) set.usb_fixed = 0;
+#if !FR_OWN_HAL
     if (set.palette >= COLOR_N) set.palette = 0;   /* AMBER (ui.c S_COLOR) */
     if (set.dim >= DIM_N) set.dim = 0;
+#endif
     if (set.leds > 4u) set.leds = 0;                /* (ui.c LEDS_N: 0 ROOTS 1 OFF 2 PLAYED 3 ALL 4 SCALE) */
     if (set.play_off > 1u) set.play_off = 0;        /* (DISPLAY PLAY LED: 0 BEAT 1 OFF) */
     usb_pre_master = set.usb_fixed;
     uart_midi_on = !set.trs_off;
+#if !FR_OWN_HAL
     fm1_led_group_ids(KEY_LED(0), KEY_LED(26));     /* BRIGHTNESS: the keys' LEDs are their own group */
     dim_apply();                                    /* the palette and the LEDs at BRIGHTNESS (set.color is Dinghy's, unused) */
+#endif
     params_apply_all();
     drv_boot();                                     /* (the DRIVE TYPEs' RAM tables, whole: never in an audio block) */
 #ifdef RH_PU_RAM
@@ -1799,6 +1803,7 @@ FR_COLD static void app_main(void)
             else if (ty == 0xC0u) preset_load(preset_of_pc(d1));
         }
 
+#if !FR_OWN_HAL                                 /* (the plugin has no key LEDs: lit stays 0) */
         for (k = 0; k < NKEYS; k++)             /* LEDs per key: held (the FM-1's key, or its note over MIDI), or its
                                                  * note still rings under the sustain (0.9.4: MIDI notes too; only
                                                  * a note the pedal holds, not one let go before it went down).
@@ -1809,6 +1814,7 @@ FR_COLD static void app_main(void)
                 uint32_t n = scale_key_note(k);
                 if ((n < 128u && src_active[SRC_MIDI + n]) || (note_sustained(n) && !leds_sus_lit())) lit |= 1u << k;
             }
+#endif
 #if FR_LAT
         if (!lat_mid()) tempo_lock_poll();
         src_poll();
