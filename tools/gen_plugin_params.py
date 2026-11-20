@@ -27,7 +27,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "plugin", "gen", "params_map.h")
 BUILD = os.path.join(ROOT, "build", "plugin", "gen")
 # the plugin's engine flags (plugin/cmake/slots.cmake FRP_ENGINE_DEFS: the HQ paths, 24 voices)
-DEFS = ["-DFR_VOICES=24u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1"]
+DEFS = ["-DFR_VOICES=24u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1", "-DFR_OWN=1"]
 
 # id name -> (long name, group). The VOICE parameters mean other things on the bar engine (eng_pages.h ENG_BARS_C):
 # both names, the Rhodes' first.

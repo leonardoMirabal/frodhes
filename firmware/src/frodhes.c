@@ -58,6 +58,14 @@
  * as the last guard). hal/fm1_core1.h (the FM-1), c1_host.h (the host's twin), app_audio below. The FM-1 firmware and
  * the host and the web emulator (web/build.sh, since 2026-11-15: the FM-1's sound, 14 voices; c1_host.h runs core 1's
  * job on the page's thread) only: not the SMK-37, not the Move. */
+#ifndef FR_OWN
+#define FR_OWN 0                                /* the plugin's own-code build switch (plugin/cmake/slots.cmake); nothing uses it yet */
+#endif
+#if FR_OWN && defined(DINGHY_PLUGIN)
+#define FR_OWN_HAL 1
+#else
+#define FR_OWN_HAL 0
+#endif
 #ifndef FR_C1
 #define FR_C1 0
 #endif

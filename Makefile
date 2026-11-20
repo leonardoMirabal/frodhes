@@ -273,7 +273,7 @@ test-move-probe:           ## the probe's dlopen host test
 PLUGIN_J     ?= 2
 PLUGIN_BUILD ?= build/plugin
 PLUGIN_NICE  ?= nice -n 15
-.PHONY: plugin-deps plugin test-plugin gate-d plugin-dist plugin-pack plugin-win plugin-linux plugin-stress plugin-hosts
+.PHONY: plugin-deps plugin test-plugin gate-d plugin-dist plugin-pack plugin-win plugin-linux plugin-stress plugin-hosts gate-o
 plugin-deps:               ## the pinned plugin dependencies (plugin/deps.lock) into .local/plugin-deps
 	sh tools/plugin_deps.sh
 
@@ -293,6 +293,9 @@ test-plugin: plugin        ## the coroutine, the headless host's selftest (param
 
 gate-d: plugin             ## Gate D: the plugin renders the host build's audio (tools/gate_d.py, every mode)
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py
+
+gate-o:                    ## Gate O: FR_OWN=0 and FR_OWN=1 host builds render the same bytes (tools/gate_o.py)
+	$(PY) tools/gate_o.py
 
 DIST_ENGINES ?= hq
 plugin-dist: plugin        ## the dry-distortion gate (tools/dry_dist.py, against 0.9.11) through the CLAP, VST3 and AU
