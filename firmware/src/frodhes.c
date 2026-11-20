@@ -241,7 +241,11 @@ static int fr_wd_c1_ok(uint32_t now)            /* the watchdog (platform.c wd_p
 #endif
 #define APP_TAIL_EARLY FR_TAIL_EARLY
 #endif
+#if FR_OWN_HAL
+#include "../../plugin/src/own_hal.c"       /* the plugin's own-code build: its own hardware layer */
+#else
 #include "platform.c"
+#endif
 #if defined(DINGHY_HOST) && !defined(HOST_FL_CHECK)
 /* (the web build: no flash log; a place the firmware's allow-list refuses fails as on the device) */
 FR_COLD static int host_fl_check(const char *what, uint32_t at, uint32_t n) { (void)what; return FL_GUARD(at, n) ? 0 : -1; }
@@ -1833,7 +1837,7 @@ FR_COLD static void app_main(void)
     }
 }
 
-#ifdef DINGHY_WEB
+#if defined(DINGHY_WEB) && !FR_OWN_HAL
 /* the emulator (web/app.js): which page is shown, so the buttons' captions can say what they do there */
 EMSCRIPTEN_KEEPALIVE const char *web_page(void) { return PAGE_TITLE[ui_page]; }
 #endif

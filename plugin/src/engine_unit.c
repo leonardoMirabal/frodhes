@@ -30,6 +30,11 @@
 #include "../../firmware/src/frodhes.c"
 
 #undef main
+#if FR_OWN_HAL
+#define FRP_STORE_RESET() OWN_STORE_RESET()
+#else
+#define FRP_STORE_RESET() memset(web_store_buf, 0, sizeof web_store_buf)
+#endif
 #undef printf
 #undef fprintf
 #undef getenv

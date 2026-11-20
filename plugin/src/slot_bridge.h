@@ -784,7 +784,7 @@ static int sb_boot(void)
     if (!sb.stack) return -1;
     memset(sb.stack, 0, SB_STACK);       /* (every page touched now, not on the audio thread) */
     memset(host_mem, 0xFF, sizeof host_mem);   /* (the flash, erased: nothing saved, the defaults load) */
-    memset(web_store_buf, 0, sizeof web_store_buf);
+    FRP_STORE_RESET();                   /* (the settings record: nothing saved yet) */
     hq_mode = 1;                         /* (every note HQ, every engine: hq/rhodes_hq.h) */
     coro_init(&sb.co, sb.stack, SB_STACK, sb_entry, 0);
     coro_resume(&sb.co);                 /* app_main up to its first poll */
