@@ -32,7 +32,7 @@ def test_display_code_is_not_compiled():
 
 def test_display_cards_are_inert_and_the_record_keeps_its_fields():
     os.makedirs(OUT, exist_ok=True)
-    exe = os.path.join(OUT, "probe")
+    exe = os.path.join(OUT, f"probe.{os.getpid()}")      # (a name of its own per process)
     r = subprocess.run(CC + ["-O1", "-DFR_OWN=1", "-o", exe, os.path.join(ROOT, "tests", "own_gfx_probe.c"), "-lm"],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr[-3000:]

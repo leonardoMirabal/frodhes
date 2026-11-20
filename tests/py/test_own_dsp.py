@@ -10,7 +10,7 @@ OUT = os.path.join(ROOT, "build", "own_dsp")
 
 def test_own_dsp_equal():
     os.makedirs(OUT, exist_ok=True)
-    exe = os.path.join(OUT, "own_dsp_test")
+    exe = os.path.join(OUT, f"own_dsp_test.{os.getpid()}")   # (a name of its own: workers never share a binary)
     subprocess.run(["cc", "-O2", "-fwrapv", "-Wall", "-o", exe, os.path.join(ROOT, "tests", "own_dsp_test.c")], check=True)
     r = subprocess.run([exe], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout

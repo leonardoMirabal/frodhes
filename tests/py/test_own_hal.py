@@ -15,7 +15,7 @@ CC = ["cc", "-O1", "-std=gnu11", "-w", "-ffp-contract=off", "-DFR_VOICES=24u", "
 
 def probe(own):
     os.makedirs(OUT, exist_ok=True)
-    exe = os.path.join(OUT, f"probe{own}")
+    exe = os.path.join(OUT, f"probe{own}.{os.getpid()}")      # (a name of its own per process)
     # the last byte of the flash image, and (own layer) the way a slot clears its record at its boot
     extra = ["-DOWN_PROBE_LAST=0xFFFFFu"] + (["-DOWN_PROBE_RESET=OWN_STORE_RESET()"] if own else [])
     r = subprocess.run(CC + [f"-DFR_OWN={own}", *extra, "-o", exe, os.path.join(ROOT, "tests", "own_hal_probe.c"), "-lm"],

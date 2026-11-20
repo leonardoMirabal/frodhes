@@ -17,7 +17,7 @@ CC = ["cc", "-std=gnu11", "-w", "-ffp-contract=off", "-DFR_VOICES=24u", "-DFR_HQ
 
 def probe(own):
     os.makedirs(OUT, exist_ok=True)
-    exe = os.path.join(OUT, f"probe{own}")
+    exe = os.path.join(OUT, f"probe{own}.{os.getpid()}")      # (a name of its own per process)
     r = subprocess.run(CC + ["-O1", f"-DFR_OWN={own}", "-o", exe, os.path.join(ROOT, "tests", "own_gfx_probe.c"), "-lm"],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr[-3000:]
@@ -35,7 +35,7 @@ def test_no_state_depends_on_text_width():
 
 
 def test_slot_object_has_no_font_symbols():
-    obj = os.path.join(OUT, "slot.o")
+    obj = os.path.join(OUT, f"slot.{os.getpid()}.o")
     os.makedirs(OUT, exist_ok=True)
     r = subprocess.run(CC + ["-O2", "-DFR_OWN=1", "-DFRP_SLOT=0", "-c", "-o", obj,
                              os.path.join(ROOT, "plugin", "src", "engine_unit.c")], capture_output=True, text=True)
