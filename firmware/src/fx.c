@@ -629,6 +629,7 @@ static __attribute__((noinline)) void fx_filter(int32_t *m, uint32_t n)
     }
 }
 
+#if !FR_OWN                                     /* the classic drive (FDRV) is not in the plugin's own-code build: its TYPE 1 there is drv_own1.c (drive.c) */
 /* ---- DRIVE (Felucca track_dist; per TYPE drive row: gain scale, bias, make-up). Its page (0.9.3): ON / OFF, AMOUNT,
  * TONE (after the drive: a shelf at ~1.8 kHz, 0 = the highs gone (a one-pole low-pass), 64 = flat, 127 = +6 dB) and MIX
  * (dry / driven). At TONE 64 and MIX 127 the loop is the one before the page, sample for sample. TONE's gain and the
@@ -908,6 +909,7 @@ __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, i
         { dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; }   /* (and the 2x state: drive.c dr_os2) */
 }
 #endif
+#endif  /* !FR_OWN */
 #include "drive.c"                                      /* the drive's TYPEs and fx_drive */
 #include "fx_eq.c"                                      /* the EQ before the drive (fx_eq) */
 
@@ -2910,7 +2912,10 @@ static void fx_reset_state(void)
      * met them (its level moved up to 5 LU with what was played before, on the FM-1: the presets suite) */
     eng_rh_kill_all(); bar_kill_all();
     lfo_sh = 0; fl_ic[0] = fl_ic[1] = 0; fl_op = 0;                 /* the filters, the smoothers, the master */
-    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; eq_reset(); wah_env = wah_bp = wah_lp = 0; wah_cr = -1; cmp_env = 0;
+#if !FR_OWN
+    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0;
+#endif
+    eq_reset(); wah_env = wah_bp = wah_lp = 0; wah_cr = -1; cmp_env = 0;
     cmp_g = 65536; cmp_ds = 0x9E3779B9u;                /* (the gain's dither: its boot seed) */
     dc_l = dc_r = dce_l = dce_r = 0; memset(lk_l, 0, sizeof lk_l); memset(lk_r, 0, sizeof lk_r); lk_pk = 0; lk_g = 32768;
     gate_g = gate_tgt = 32768; gate_quiet = 0;

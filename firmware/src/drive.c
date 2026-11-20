@@ -33,6 +33,27 @@
 #define DRV_DATA __attribute__((section(".data.drv")))
 #endif
 
+#ifndef FR_OWN
+#define FR_OWN 0                           /* (frodhes.c sets it; a test harness that includes fx.c alone: 0) */
+#endif
+#if FR_OWN && FR_CHUNK
+#error "the plugin's own-code build (FR_OWN) runs whole blocks: no FR_CHUNK"
+#endif
+#if FR_OWN
+/* The plugin's own-code build (FR_OWN): fx.c's classic drive (FDRV) is not compiled, TYPE 1 is drv_own1.c (a TYPE as
+ * the others, below), and the state the framework shares with fx.c lives here: the wet's and the dry's gains as they
+ * glide (Q15, multiples of 256; at boot all wet, fading to the switch's target in the first 46 ms as the classic drive
+ * does), the wet share fx_spread aligns the side to, and the MIX law (as Textura's: 0 .. 64 the dry whole and the wet
+ * rising to whole, 64 .. 127 the wet whole and the dry falling to nothing, each a multiple of 256) */
+static int32_t dr_w = 32768, dr_d, dr_sal;
+#define DR_WET(v) ((v) <= 64 ? (v) * 512 : 32768)
+#define DR_DRY(v) ((v) <= 64 ? 32768 : ((127 - (v)) * 256 + 63) / 126 * 256)
+static inline int32_t dr_share(int32_t w, int32_t d)    /* the wet's share of the two gains, Q15 */
+{
+    return w + d ? (w * 32768) / (w + d) : 0;
+}
+#endif
+
 #define DRV_N 6u                   /* P_DRV_SW values: OFF, FDRV and the four TYPEs */
 #define DRV_BLK 256u               /* the most samples a call (fx_process: a block) */
 /* The cost of a TYPE, us per 256-sample block, counted whole (tools/drive_insns.py, pi32v2 -Os, ~1.6 us per
@@ -265,6 +286,8 @@ FR_RAM2 static __attribute__((noinline)) void drv_dn2(drv_os_t *s, const int32_t
     s->d1.x = op; s->d1.y0 = b0; s->d1.y1 = b1; s->d1.y2 = b2; s->od = od;
 }
 
+static DRV_BSS int32_t drv_wet[DRV_BLK];   /* the TYPE's wet signal while it blends; FDRV's 1x shaper output */
+#if !FR_OWN                                             /* (the classic drive's 2x front: not in the own-code build) */
 /* FDRV's shaper at 2x (fx.c dr_classic; 0.9.9: it ran at 1x with no anti-aliasing: a hard-driven C7 folded partials
  * 36 dB under the note, A7 24 dB; build/fx-audit, tests/py/test_drive_os.py). Per sample the high-pass and the gain as
  * before (gq Q8, ramping by dgq), clamped to +-2^20 (32 x the curve's flat ends: the clamp is never heard) and carried
@@ -282,7 +305,6 @@ FR_RAM2 static __attribute__((noinline)) void drv_dn2(drv_os_t *s, const int32_t
 #endif
 #define DR_EPS 16                                       /* ADAA: |dx| up to this, the curve at the midpoint */
 static DRV_BSS drv_os_t dr_os;
-static DRV_BSS int32_t drv_wet[DRV_BLK];   /* the TYPE's wet signal while it blends; FDRV's 1x shaper output */
 #if DR_OS_ADAA
 static DRV_BSS int32_t dr_aa_x, dr_aa_p;               /* ADAA's last input and its P / 2^13 (x bias at rest) */
 /* ADAA-1 on FX_TANH without a divide or a 64-bit integral. The curve's input is held to its table (+-4, 2^17 - 1: the
@@ -394,8 +416,9 @@ static inline __attribute__((always_inline)) const int32_t *dr_os2(const int32_t
     FR_FAR2(drv_dn2)(&dr_os, x2, y, n, DR_OS_OUT - DR_YS_X);   /* (ys keeps DR_YS_X of them: dr_classic's low-passes) */
     return y;
 }
+#endif  /* !FR_OWN */
 
-#if FR_CHUNK
+#if FR_CHUNK && !FR_OWN
 /* dr_os2 for a chunk (fx.c fxc_o / fxc_e): samples fxc_o .. fxc_e of the block into drv_wet (indexed from the block's
  * start, as the loops read it), the gain's ramp from the block's start */
 static const int32_t *dr_os2_c(const int32_t *m, int32_t gq, int32_t dgq, int32_t bias, int32_t b0)
@@ -438,9 +461,15 @@ static const int32_t *dr_os2_c(const int32_t *m, int32_t gq, int32_t dgq, int32_
 #include DRV_FILE_TSH8
 #include DRV_FILE_OHCD
 #include DRV_FILE_BHLUE
+#if FR_OWN
+#include "drv_own1.c"                                   /* TYPE 1 in the plugin's own-code build */
+#endif
 
 #define DRV_US_T(k) (DRV_US_CORE + (k))                 /* a TYPE's cost all wet (fx_cost_us) */
-static const uint16_t DRV_US[DRV_N] = {0, 0, DRV_US_T(DRV_US_KHLON), DRV_US_T(DRV_US_TSH8), DRV_US_T(DRV_US_OHCD),
+#if !FR_OWN
+#define DRV_US_OWN1 0u                                  /* (TYPE 1 is the classic drive: FX_US_DRIVE, drv_cost_us) */
+#endif
+static const uint16_t DRV_US[DRV_N] = {0, FR_OWN ? DRV_US_T(DRV_US_OWN1) : 0, DRV_US_T(DRV_US_KHLON), DRV_US_T(DRV_US_TSH8), DRV_US_T(DRV_US_OHCD),
                                        DRV_US_T(DRV_US_BHLUE)};
 _Static_assert(DRV_US_KHLON <= DRV_US_KERNEL_MAX && DRV_US_TSH8 <= DRV_US_KERNEL_MAX &&
                DRV_US_OHCD <= DRV_US_KERNEL_MAX && DRV_US_BHLUE <= DRV_US_KERNEL_MAX,
@@ -458,6 +487,9 @@ static DRV_BSS int32_t drv_rlast;                 /* the TYPE's last output samp
 static __attribute__((noinline)) void drv_reset(uint32_t t)
 {
     switch (t) {
+#if FR_OWN
+    case 1: drv_own1_reset(); break;
+#endif
     case 2: drv_khlon_reset(); break;
     case 3: drv_tsh8_reset(); break;
     case 4: drv_ohcd_reset(); break;
@@ -501,7 +533,7 @@ static void drv_rest_ramp_c(int32_t *out, uint32_t n, int32_t z)
     if (FXC_Z) drv_rlast = out[n - 1u];
 }
 #endif
-static void drv_run(uint32_t t, const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)   /* t >= 2 */
+static void drv_run(uint32_t t, const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)   /* t >= 2 (FR_OWN: >= 1) */
 {
 #if FR_C1
     int32_t z = 1;                                      /* (this chunk's samples of the three: before the run) */
@@ -512,6 +544,9 @@ static void drv_run(uint32_t t, const int32_t *in, int32_t *out, uint32_t n, con
     int32_t z = !(in[0] | in[n >> 1] | in[n - 1u]);     /* (before an in-place run overwrites in) */
 #endif
     switch (t) {
+#if FR_OWN
+    case 1: drv_own1_run(in, out, n, c); break;
+#endif
     case 2: drv_khlon_run(in, out, n, c); break;
     case 3: drv_tsh8_run(in, out, n, c); break;
     case 4: drv_ohcd_run(in, out, n, c); break;
@@ -608,7 +643,7 @@ static __attribute__((noinline)) void fx_drive_types(int32_t *m, uint32_t n, int
     int32_t d = fx_p[FXP_DRIVE], mv = fx_p[FXP_DRV_MIX], wt = !sw ? 0 : DR_WET(mv), dt = !sw ? 32768 : DR_DRY(mv);
     int32_t w0, w1, g0, g1, ek;
     drv_ctl_t c;
-    if (drv_rst_req) { uint32_t t; drv_rst_req = 0; for (t = 2u; t < DRV_N; t++) drv_reset(t); }   /* (CC 10) */
+    if (drv_rst_req) { uint32_t t; drv_rst_req = 0; for (t = FR_OWN ? 1u : 2u; t < DRV_N; t++) drv_reset(t); }   /* (CC 10) */
     if (!d) { wt = 0; dt = 32768; d = 1; }               /* AMOUNT 0: dry, faded out (as the classic drive) */
     dr_w &= ~255; dr_d &= ~255;                          /* (from FDRV's glide: onto the TYPE's grid) */
     if (!wt && !dr_w && dr_d == 32768) return;           /* off, or MIX 0: the dry signal, untouched */
@@ -638,9 +673,14 @@ static __attribute__((noinline)) int32_t drv_switch(uint32_t t)
     if (dr_w || dr_d != 32768) return 0;                 /* fading out first (AMOUNT 0 fades out too) */
     drv_on = (uint8_t)t;
     drv_reset(t);
+#if !FR_OWN
     dr_ton = 0; dr_tg = 4096;                            /* (FDRV's shelf at rest, as its own OFF leaves it) */
+#endif
     return (int32_t)t;
 }
+#ifdef FR_DRV1_PROBE
+static int fr_drv1_used;
+#endif
 /* OFF / FDRV: the classic drive, exactly as before; a TYPE: fx_drive_types. Inlined in fx_process (one caller): on
  * FDRV the framework adds a load and two tests a block. fx_drive_classic is left to the inliner, as the release base
  * had fx_drive: forced noinline it moved app_audio's registers and the Rhodes mode loops went 22 / 29 -> 25 / 31
@@ -649,9 +689,25 @@ static inline void fx_drive(int32_t *m, uint32_t n)
 {
     int32_t sw = fx_p[FXP_DRV_SW];
     if (sw && sw != (int32_t)drv_on) sw = drv_switch((uint32_t)sw);
+#if FR_OWN
+    fx_drive_types(m, n, sw);                           /* (TYPE 1, at 2x as the classic drive: its wet share aligns
+                                                        * SPREAD's side as the classic drive's did, fx.c fx_spread) */
+    dr_sal = drv_on == 1u ? dr_share(dr_w, dr_d) : 0;
+#else
+#ifdef FR_DRV1_PROBE                                    /* (a host test build, tools/gate_o.py --probe: the renders whose
+                                                        * DRIVE runs TYPE 1, the ones the own-code build's TYPE 1 moves) */
+    if (drv_on == 1u && !fr_drv1_used && (dr_w || (sw == 1 && fx_p[FXP_DRIVE]))) {   /* (TYPE 1 wet or fading, on a
+                                                        * block that is not silent) */
+        uint32_t i_;
+        int32_t o_ = 0;
+        for (i_ = 0; i_ < n; i_++) o_ |= m[i_];
+        if (o_) { fr_drv1_used = 1; fprintf(stderr, "FR_DRV1_PROBE used\n"); }
+    }
+#endif
     if (drv_on == 1u) { fx_drive_classic(m, n, sw); dr_sal = dr_share(dr_w, dr_d); }   /* (FDRV's wet share: fx.c
                                                         * fx_spread) */
     else { fx_drive_types(m, n, sw); dr_sal = 0; }
+#endif
 }
 #endif
 /* the drive's cost (fx_cost_us, only while it runs): FDRV fdrv (FX_US_DRIVE: 248, whatever its settings); a TYPE whole: DRV_US[]
@@ -661,9 +717,9 @@ static uint32_t drv_cost_us(uint32_t fdrv)
 {
     uint32_t t = (uint32_t)fx_p[FXP_DRV_SW], a = drv_on, us, ut;
     if (t >= DRV_N) t = 1u;
-    us = a == 1u ? fdrv : DRV_US[a] + (fx_p[FXP_DRV_MIX] < 127 || dr_w != 32768 || dr_d ? DRV_US_BLEND : 0u);
+    us = a == 1u && !FR_OWN ? fdrv : DRV_US[a] + (fx_p[FXP_DRV_MIX] < 127 || dr_w != 32768 || dr_d ? DRV_US_BLEND : 0u);
     if (t && t != a) {
-        ut = t == 1u ? fdrv : DRV_US[t] + DRV_US_BLEND;
+        ut = t == 1u && !FR_OWN ? fdrv : DRV_US[t] + DRV_US_BLEND;
         if (ut > us) us = ut;
     }
     return us;

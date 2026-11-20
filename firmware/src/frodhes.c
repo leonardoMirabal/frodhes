@@ -59,7 +59,7 @@
  * the host and the web emulator (web/build.sh, since 2026-11-15: the FM-1's sound, 14 voices; c1_host.h runs core 1's
  * job on the page's thread) only: not the SMK-37, not the Move. */
 #ifndef FR_OWN
-#define FR_OWN 0                                /* the plugin's own-code build switch (plugin/cmake/slots.cmake); nothing uses it yet */
+#define FR_OWN 0                                /* the plugin's own-code build switch (plugin/cmake/slots.cmake): DRIVE TYPE 1 is drv_own1.c there */
 #endif
 #if FR_OWN && defined(DINGHY_PLUGIN)
 #define FR_OWN_HAL 1
