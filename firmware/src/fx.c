@@ -2513,6 +2513,24 @@ __attribute__((noinline)) static void fx_delay(int32_t *L, int32_t *R, uint32_t 
 #ifndef FR_REV_HQ                   /* (the full-rate TYPEs, rev_hq.c: a build switch, off by default) */
 #define FR_REV_HQ 0
 #endif
+#if FR_OWN                          /* the plugin's own-code build: the small helpers come from fx_own.h; with FR_REV_HQ (the
+                                     * plugin's switch) the classic HALL below (rev_hall and its lines) is not compiled */
+#include "fx_own.h"
+#define HL_IN OWN_HL_IN
+static inline __attribute__((always_inline)) int32_t sh_tz(int32_t m, uint32_t sh) { return own_div_pow2_tz(m, sh); }
+static uint32_t exp2_neg(uint32_t x) { return own_exp2_neg(x); }
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+/* (the host: every int16 ring write a clamp cuts counts as the reverb's, fx_h_clip[1]) */
+static inline __attribute__((always_inline)) int32_t hl_c16(int32_t v)
+{
+    if (v < -32768 || v > 32767) fx_h_clip[1]++;
+    return own_sat16(v);
+}
+#else
+static inline __attribute__((always_inline)) int32_t hl_c16(int32_t v) { return own_sat16(v); }
+#endif
+#endif
+#if !(FR_OWN && FR_REV_HQ)
 #if FR_REV_HQ
 #define HL_N 16u                    /* (FR_REV_HQ: HALL is rev_hq_hall.c; rev_hall and its lines are not used) */
 #else
@@ -2529,7 +2547,9 @@ static int16_t rev_ap[556 + 441] POOL;
                                      * the tail dies to exact zero). 0.9.10 rev-grain: truncated always, a quiet low
                                      * note's harmonics sat 1.2 dB over v0.9.9's linear-reverb residual (H5, MIX 10) */
 #define HL_OUT 1
+#if !FR_OWN
 #define HL_IN 10320                 /* Felucca: 2580 with HL_OUT 4 */
+#endif
 static const uint16_t HL_LEN[HL_NL] = {467, 509, 547, 593, 631, 673, 709, 743};
 static const uint16_t HL_AP[HL_NAP] = {131, 307};
 static const int16_t HL_APG[HL_NAP] = {11469, 10240};
@@ -2543,6 +2563,7 @@ static struct {
     int32_t ldl;                    /* a line end was loud in the last block (the diffusers round) */
     int16_t y[HL_NC][HL_NL];        /* the line ends, one row per sample */
 } hl POOL;
+#if !FR_OWN
 static inline __attribute__((always_inline)) int32_t sh_tz(int32_t m, uint32_t sh) { return (m + (int32_t)((uint32_t)(m >> 31) >> (32u - sh))) >> sh; }
 static uint32_t exp2_neg(uint32_t x)
 {
@@ -2552,6 +2573,7 @@ static uint32_t exp2_neg(uint32_t x)
     p = ((p * u) >> 15) + 32768u;
     return i < 15u ? p >> (i + 1u) : 0u;
 }
+#endif
 static void hall_gains(int32_t s)                       /* s: the size in Q4 (rv_hsz; a whole size: s << 4) */
 {
     uint32_t q = exp2_neg((uint32_t)s * 4096u / 30u), k, g;
@@ -2561,6 +2583,7 @@ static void hall_gains(int32_t s)                       /* s: the size in Q4 (rv
     }
     hl.sz = (int16_t)(s + 1);
 }
+#if !FR_OWN
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
 /* (the host: every int16 ring write a clamp cuts counts as the reverb's, fx_h_clip[1]: HALL, PLATE, INFINITE, classic
  * and full-rate; 0.9.13, the audio review D5: only the send and the kernel inputs were counted) */
@@ -2571,6 +2594,7 @@ static inline __attribute__((always_inline)) int32_t hl_c16(int32_t v)
 }
 #else
 static inline __attribute__((always_inline)) int32_t hl_c16(int32_t v) { v = v > -32768 ? v : -32768; return v < 32767 ? v : 32767; }   /* smax + smin */
+#endif
 #endif
 static inline void hall_ap(int16_t *q, int32_t g, int32_t *x, uint32_t n, int ld)
 {
@@ -2698,6 +2722,7 @@ static void rev_hall(const int32_t *rev_in, int32_t size, int32_t damp, int32_t 
     w += HL_NC;
     hl.w = (uint16_t)(w >= HL_N ? 0u : w);
 }
+#endif  /* !(FR_OWN && FR_REV_HQ) */
 /* the REVERB page (0.9.3): MIX (the send, the size and the return as before), DECAY (moves the hall's size: 64 = as
  * before, 0 = about half the time, 127 = about twice: each step of the size is 2^(1/30) in T60), TONE (the lines' high
  * damping: 64 = as before (60), 0 = 150 dark, 127 = 0 bright) and PRE-DELAY (0 .. 80 ms before the hall; at 0 there is
@@ -2810,6 +2835,9 @@ static int32_t dc_l, dc_r, dce_l, dce_r;
 static const uint16_t LK_S[LK] = {79,315,705,1247,1935,2761,3719,4799,5990,7282,8661,10114,11628,13188,14778,16384,17990,19580,21140,22654,24107,25486,26778,27969,29049,30007,30833,31521,32063,32453,32689,32768};
 static int32_t lk_l[LK], lk_r[LK], lk_pk, lk_g = 32768;
 static inline __attribute__((always_inline)) int32_t lk_need(int32_t pk) { return pk > LIM_T ? (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)pk) : 32768; }
+#if FR_OWN
+static inline __attribute__((always_inline)) int32_t dc_block(int32_t x, int32_t *dc, int32_t *err) { return own_dc_block(x, dc, err); }
+#else
 static inline __attribute__((always_inline)) int32_t dc_block(int32_t x, int32_t *dc, int32_t *err)
 {
     int32_t e = (x << 6) - *dc + *err, d = e >> 12;
@@ -2817,6 +2845,7 @@ static inline __attribute__((always_inline)) int32_t dc_block(int32_t x, int32_t
     *dc += d;
     return x - ((*dc + 32) >> 6);
 }
+#endif
 static int32_t fx_L[256], fx_R[256];
 #define GATE_LO 16                                      /* -66 dBFS (Q15; 32 in 0.9.8 .. 0.9.9, 16 before): 0.9.10, the user:
                                                          * RESPONSE FULL's soft end 3 dB deeper (rhodes.c rh_dyn) with no
@@ -2861,7 +2890,9 @@ static void fx_reset_state(void)
     dly_clrn = DLY_CLR; dly_lc = 1;
     tp_reset();                                         /* TAPE's filters, noise and transport */
     memset(cho_buf, 0, sizeof cho_buf); cho_el = -1; cho_hl[0] = cho_hl[1] = cho_ly[0] = cho_ly[1] = 0;   /* (the taps restart with cp_ph) */
+#if !(FR_OWN && FR_REV_HQ)
     memset(rev_comb, 0, sizeof rev_comb); memset(rev_ap, 0, sizeof rev_ap); memset(&hl, 0, sizeof hl);
+#endif
     pd_on = 0; rv_running = 0; rev_reset_state();       /* (the pre-delay line: at its next use; the TYPE's
                                                          * state: rev_types.c) */
     rv_dg = fx_p[FXP_RV_TYPE] ? RV_DRY(fx_p[FXP_RV_DEPTH]) : 32768;   /* (MIX's dry at once) */

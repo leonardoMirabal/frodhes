@@ -35,11 +35,14 @@ Pool = multiprocessing.get_context("spawn").Pool   # (spawn on every OS, as macO
 import numpy as np
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-OUT = os.path.join(ROOT, "build", "fxp")
+OWN = os.environ.get("FXP_OWN") == "1"       # FXP_OWN=1: every build at -DFR_OWN=1 (the plugin's own-code build), in build/fxp-own
+OUT = os.path.join(ROOT, "build", "fxp-own" if OWN else "fxp")
 FS = 44100
 LIM_T = 24000
 BUILD_DEFS = {"one": [], "c1": ["-DFR_C1=1"],
               "hq": ["-DFR_VOICES=16u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1"]}
+if OWN:
+    BUILD_DEFS = {k: v + ["-DFR_OWN=1"] for k, v in BUILD_DEFS.items()}
 # every effect off: COMP, DRIVE, TREM/WAH, CHO/PHA, DELAY, REVERB MIX, FILTER, SPREAD, EQ flat
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dry_dist  # noqa: E402
