@@ -227,7 +227,11 @@ static void app_idle(void);
 #endif
 #include "fr_cold.h"     /* FR_COLD: the cold code built for flash, not speed */
 #include "frodhes_store.h"   /* the flash Frodhes writes, per board, and its allow-list APP_FL_RANGE (store.h) */
+#if FR_OWN_HAL
+#include "../../plugin/src/own_touch.h"   /* the plugin's own-code build: its own TOUCH names, no FM-1 key path */
+#else
 #include "keyvel.h"     /* key velocity's interfaces: first, so the scan tick (platform.c) can reach its hooks */
+#endif
 #if FR_C1 && !defined(DINGHY_HOST)
 static int fr_wd_c1_ok(uint32_t now)            /* the watchdog (platform.c wd_poll): core 1's jobs move while it is on */
 {
@@ -304,7 +308,9 @@ static volatile uint32_t prof_st_max[PROF_NST] __attribute__((section(".bss.prof
 #include "fx.c"
 #include "rev_types.c"  /* the REVERB's TYPEs: the framework (fx.c's fx_reverb), rev_plate.c, rev_inf.c */
 #include "params.c"
+#if !FR_OWN_HAL
 #include "keyvel.c"     /* the FM-1 keys' velocity (TOUCH, keyvel.h) */
+#endif
 #if KV_FM1KA
 #include "fm1_keyadc.h" /* and its part of the scan tick (the hooks keyvel.h maps) */
 #endif

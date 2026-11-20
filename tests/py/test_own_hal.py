@@ -47,16 +47,36 @@ def test_own_hal_build_lists_no_platform_files():
 
 
 def test_own_build_lists_no_screen_stack_or_font_files():
-    """the screen stack (gfx.c, aatext.c, the bitmap and anti-aliased font data) is not in the own-code build's include
-    list; the other builds keep it"""
+    """the screen stack (gfx.c, aatext.c, the bitmap and anti-aliased font data) and the key-velocity pair (keyvel.c,
+    keyvel.h) are not in the own-code build's include list; the other builds keep them"""
     base = CC + ["-DFRP_SLOT=0", "-M", os.path.join(ROOT, "plugin", "src", "engine_unit.c")]
     deps = {}
     for own in (0, 1):
         r = subprocess.run(base + [f"-DFR_OWN={own}"], capture_output=True, text=True, cwd=ROOT)
         assert r.returncode == 0, r.stderr[-2000:]
         deps[own] = {os.path.basename(p) for p in r.stdout.replace("\\\n", " ").split()[1:]}
-    gone = {"gfx.c", "aatext.c", "felucca_font.h", "aa_font.h", "aa_font_v24.h", "aa_font_v25.h"}
-    assert {"gfx.c", "aatext.c", "felucca_font.h", "aa_font.h"} <= deps[0]
+    gone = {"gfx.c", "aatext.c", "keyvel.c", "keyvel.h", "felucca_font.h", "aa_font.h", "aa_font_v24.h", "aa_font_v25.h"}
+    assert {"gfx.c", "aatext.c", "keyvel.c", "keyvel.h", "felucca_font.h", "aa_font.h"} <= deps[0]
     assert not gone & deps[1], gone & deps[1]
     assert not {d for d in deps[1] if "font" in d}, deps[1]
-    assert {"own_gfx.h"} <= deps[1]
+    assert {"own_gfx.h", "own_touch.h"} <= deps[1]
+
+
+def test_kv_vel_is_only_on_the_fm1_key_path():
+    """kv_vel (the FM-1 key's velocity, TOUCH) is read once, through FR_KEY_VEL in keys_pass, which starts the notes of
+    fm1_in.notes; the MIDI path (midi_note) keeps the sender's velocity. A plugin slot's keys never read pressed."""
+    import glob
+    import re
+    src = {os.path.basename(p): open(p, errors="replace").read()
+           for p in glob.glob(os.path.join(ROOT, "firmware", "src", "*.[ch]"))}
+    users = {n for n, t in src.items() if re.search(r"\bkv_vel\(|\bFR_KEY_VEL\(", t) and not n.startswith("keyvel")}
+    assert users == {"frodhes.c", "frodhes_smk.h"}, users        # (the SMK-37's header only defines FR_KEY_VEL)
+    assert len(re.findall(r"FR_KEY_VEL\(", src["frodhes_smk.h"])) == 1 and "#define FR_KEY_VEL(k)" in src["frodhes_smk.h"]
+    app = src["frodhes.c"]
+    assert len(re.findall(r"\bFR_KEY_VEL\(", app)) == 2         # the define and the one use
+    keys = app[app.index("static void keys_pass(void)"):]
+    keys = keys[:keys.index("\n}\n")]
+    assert "FR_KEY_VEL(k)" in keys and "fm1_in.notes" in keys and "src_on(SRC_KEYS + k" in keys
+    midi = app[app.index("static void midi_note("):]
+    midi = midi[:midi.index("\n}\n")]
+    assert "kv_vel" not in midi and "FR_KEY_VEL" not in midi

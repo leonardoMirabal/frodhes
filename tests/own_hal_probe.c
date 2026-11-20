@@ -114,5 +114,20 @@ int main(void)
     V(st_id(0u, 0u) != 0u); V(st_id(0x12345678u, 9u) != 0u); V(st_id(0x12345678u, 9u) == st_id(0x12345678u, 9u));
     for (i = 0; i < 100000u; i++) pass += st_id(i * 2654435761u, i) != 0u;
     V(pass); V(set_at); V(set_seq);
+    /* TOUCH and the key path (keyvel.c / own_touch.h): the names, the stored order, a press list and the velocity of a
+     * press without a reading (KEY VEL), the developer CCs. A slot's keys never read pressed (fm1_in.notes idle) */
+    V(KV_LIGHT); V(KV_MEDIUM); V(KV_HEAVY); V(KV_FIXED); V(KV_NTOUCH); V(KV_CC_MODE); V(KV_CC_QUERY); V(KV_FM1KA);
+    V(kv_last_vel());
+    for (i = 0; i < KV_NTOUCH; i++) {
+        uint32_t t = 0, j;
+        kv_touch_store(i); kv_apply();
+        set.key_vel = (uint8_t)(i * 31u + 7u);
+        printf_("touch %u %u %s vel_curve %u\n", (unsigned)i, (unsigned)kv_touch(), KV_TOUCH_NAME[i], (unsigned)set.vel_curve);
+        V(kv_keys(0u, 0u)); V(kv_keys(0u, 0x1234u)); V(kv_keys(0x5u, 0x2u)); V(kv_keys(0x7FFFFFFu, 0x7FFFFFFu));
+        for (j = 0; j < 27u; j++) t = t * 131u + kv_vel(j);
+        V(t); V(kv_vel(0)); V(kv_vel(26));
+        kv_dev_cc(KV_CC_QUERY, 0u); kv_dev_cc(KV_CC_MODE, 1u); kv_dev_cc(KV_CC_MODE, 0u); kv_dev_edges(0x3u);
+        V(kv_keys(0u, 0u));
+    }
     return 0;
 }
