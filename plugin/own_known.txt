@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Reviewed fingerprint hits (tools/own_check.py (c)): status path hash. accepted: the line states the app's
+# interface in the plugin's own HAL files (enum values, signatures); todo: a leftover to rewrite. Delete a line
+# when its source line is gone (the check fails on a line that no longer hits).
+accepted plugin/src/own_gfx.h 015e7cd4d0048e52
+accepted plugin/src/own_gfx.h d5afbe5afe4fc485
+accepted plugin/src/own_hal.c 1f75a9c8a8abb7c0
+accepted plugin/src/own_hal.c 4581100c9232e83c
+accepted plugin/src/own_hal.c 81baf41f86a9defe
+accepted plugin/src/own_hal.c 88fa77f77b9a8dc9
+accepted plugin/src/own_hal.c a1621200df1d06e3
+accepted plugin/src/own_hal.c bc933c03a70494e5
+accepted plugin/src/own_hal.c c5475ebd89f94410
+accepted plugin/src/own_hal.c e044c9ce3623945a
+accepted plugin/src/own_hal.c ed18fed597134425
+accepted plugin/src/own_hal.c fdcdda821c6994f1
+accepted plugin/src/own_touch.h 154e763eb90aff9f
+accepted plugin/src/own_touch.h af8024dbb07e1501
+accepted plugin/src/own_touch.h c2298ab3fad7de88
+accepted plugin/src/own_touch.h fb9e8fc2dea0a4c1
+todo firmware/src/dly_own.c 5bf0f98c2bb34cdf
+todo firmware/src/dly_own.c a14a7e1d27f6d011
+todo firmware/src/dly_own.c df4b9f0a3ba10387
+todo firmware/src/engine.c 2c69bef4679cc121
+todo firmware/src/fx.c ceefaa26b836f0d6
+todo firmware/src/fx.c f8994e61ec5f6e22
+todo firmware/src/rhodes.c 1d33842fe3754b56
+todo firmware/src/rhodes.c 33494e28f61518f2
+todo firmware/src/rhodes.c 6f498fd4a962b11e
+todo firmware/src/rhodes.c 9ef11d8f4cc8bd09
+todo firmware/src/rhodes.c aa0a28797073ea9c
+todo firmware/src/rhodes.c b87848743c9b1aac
+todo firmware/src/rhodes.c b9eca7eb42bf64c0
+todo firmware/src/rhodes.c c9f8167a54241fe9
+todo firmware/src/rhodes.c d1c78595c7e4baf7
+todo firmware/src/rhodes.c efc62a1e3eb3cc31
+todo firmware/src/rhodes.c f71d9d6df3d4675f
+todo firmware/src/ui.c 2b39330d641349be
+todo firmware/src/ui.c d92e11263aee905c
+todo firmware/src/ui.c e25c3bb5948e8274

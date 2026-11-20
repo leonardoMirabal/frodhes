@@ -290,6 +290,7 @@ test-plugin: plugin        ## the coroutine, the headless host's selftest (param
 	$(PY) tools/gen_plugin_params.py --check
 	$(PY) tools/gen_bend_own.py --check
 	$(PY) tools/gen_scales_own.py --check
+	$(PY) tools/own_check.py
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py --quick --only hq,rate48,core
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) -m pytest -q tests/py/test_plugin_gui.py tests/py/test_plugin_tail.py
 
