@@ -37,7 +37,9 @@ typedef struct {
 } dly_args_t;
 /* 0..3 dly_loop (tape1/msk-1, tape1/msk0, tape0/msk-1, tape0/msk0, kb 0), 4 dly_loop_kb, 5 dly_fade, 6 dly_loop_cd,
  * 7 dly_loop_ca, 8 dly_fade_c, 9 dly_wr_c, 10 tp_loop_c, 11 dly_rd */
-#define DLY_SHAPES 12
+/* 12..19 tp_tape_k with literal (rst, msk, kb) = bit 0 kb, bit 1 msk (0: -1, 1: 0), bit 2 rst; 20 tp_tape_kb, 21 tp_tape,
+ * 22 tp_loop */
+#define DLY_SHAPES 23
 #define DLY_DECL(P)                                                                                                 \
     void P##_put(const dly_st_t *s);             /* the state in */                                                 \
     void P##_get(dly_st_t *s);                   /* the state out */                                                \

@@ -10,8 +10,8 @@
 #   are replaced by an #include of dly_own.c; a skeleton firmware/src/dly_own.c (signatures only) is written.
 # - private/ is deleted. Every other file that carries the loops' text (three or more distinctive lines of them, the
 #   rule inline below) is removed. firmware/src/dly_tape.c must stay to build: the functions derived from the loops
-#   (dly_rd, dly_fade, dly_wr_c, dly_loop_c / _cd / _ca, dly_fade_c, tp_loop_c) are cut out, in three groups, and each
-#   group becomes an include of dly_own.c with DLY_OWN_PART 2, 3 or 4 (the skeleton lists the signatures).
+#   (dly_rd, dly_fade, dly_wr_c, dly_loop_c / _cd / _ca, dly_fade_c, tp_loop_c, tp_tape_k / _kb, tp_tape, tp_loop) are cut
+#   out, in four groups, and each group becomes an include of dly_own.c with DLY_OWN_PART 2 to 5 (the skeleton lists the signatures).
 # - the harness files (tests/c/dly_equiv*, dly_side.c, dly_state.h, tests/py/test_dly_equiv.py) are copied in from this
 #   checkout, so REF may predate them.
 # - the old loops come as tests/c/dly_old.o (built from REF's own tree), so the harness can still run them.
@@ -81,13 +81,14 @@ open(fx, "w").write("\n".join(new))
 open(os.path.join(out, "firmware/src/dly_own.c"), "w").write(
 """/* SPDX-License-Identifier: GPL-3.0-only */
 /* The delay's own sample loops, written from the specification (the plugin's own-code build). One file, included
- * from four places, each with DLY_OWN_PART set to its number (tests/c/dly_equiv.c lists the exact signatures):
+ * from five places, each with DLY_OWN_PART set to its number (tests/c/dly_equiv.c lists the exact signatures):
  *   1  fx.c, where the old main loops were:         dly_loop, dly_loop_kb
  *   2  dly_tape.c, where dly_rd and dly_fade were:  dly_rd, dly_fade
  *   3  dly_tape.c (FR_CHUNK), the chunk group:      dly_wr_c, dly_loop_c, dly_loop_cd, dly_loop_ca, dly_fade_c
  *   4  dly_tape.c (FR_CHUNK), where tp_loop_c was:  tp_loop_c
+ *   5  dly_tape.c, where the tape pass and loop were: tp_tape_k, tp_tape_kb, tp_tape, tp_loop
  * Each part sees everything defined above its include site. fx.c includes part 1; dly_tape.c sets the macro, includes
- * the file and undefines it for parts 2 to 4. */
+ * the file and undefines it for parts 2 to 5. */
 #if DLY_OWN_PART == 1
 static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *R, uint32_t n, const int tape,
                                                            const int32_t msk, int32_t sg16, int32_t target, int32_t col,
@@ -149,6 +150,27 @@ FX_RAM __attribute__((noinline)) static void tp_loop_c(int32_t *L, int32_t *R, u
 {
     (void)L; (void)R; (void)j0; (void)j1; (void)p0; (void)np; (void)fb; (void)wet; (void)dgt; (void)g0;
 }
+#elif DLY_OWN_PART == 5
+static inline __attribute__((always_inline)) void tp_tape_k(int32_t *m, const int32_t *dt, uint32_t n, const int32_t msk,
+                                                            int32_t fb, const int rst, const int kb)
+{
+    (void)m; (void)dt; (void)n; (void)msk; (void)fb; (void)rst; (void)kb;
+}
+__attribute__((noinline)) static void tp_tape_kb(int32_t *m, const int32_t *dt, uint32_t n, int32_t msk, int32_t fb)
+{
+    (void)m; (void)dt; (void)n; (void)msk; (void)fb;
+}
+FX_RAM __attribute__((noinline)) static void tp_tape(int32_t *m, const int32_t *dt, uint32_t n, const int32_t msk,
+                                                     int32_t fb)
+{
+    (void)m; (void)dt; (void)n; (void)msk; (void)fb;
+}
+FX_RAM __attribute__((noinline)) static void tp_loop(int32_t *L, int32_t *R, int32_t *m, const int32_t *dt, uint32_t n,
+                                                     const int32_t msk, int32_t sg16, int32_t fb, int32_t wet,
+                                                     int32_t dgt, int32_t w0)
+{
+    (void)L; (void)R; (void)m; (void)dt; (void)n; (void)msk; (void)sg16; (void)fb; (void)wet; (void)dgt; (void)w0;
+}
 #endif
 """)
 
@@ -207,7 +229,7 @@ def top_blocks(s):
 
 # the derived functions of dly_tape.c, in the groups they are contiguous in: each group becomes one include of dly_own.c
 GROUPS = [(2, ["dly_rd", "dly_fade"]), (3, ["dly_wr_c", "dly_loop_c", "dly_loop_cd", "dly_loop_ca", "dly_fade_c"]),
-          (4, ["tp_loop_c"])]
+          (4, ["tp_loop_c"]), (5, ["tp_tape_k", "tp_tape_kb", "tp_tape", "tp_loop"])]
 def stub_tape(p):
     s = open(p).read()
     blocks = {b[0]: b for b in top_blocks(s)}
@@ -231,7 +253,7 @@ for p, nlines in sorted(carriers().items()):
 left = {os.path.relpath(p, out): k for p, k in carriers().items()}
 print("removed files:", removed if removed else "none")
 print("dly_tape.c functions stubbed (bodies replaced by the dly_own.c includes):", stubbed)
-print("distinctive loop lines still in dly_tape.c (tp_tape_k, tp_loop: judged own):", left.pop("firmware/src/dly_tape.c", 0))
+print("distinctive loop lines still in dly_tape.c:", left.pop("firmware/src/dly_tape.c", 0))
 if left:
     raise SystemExit("cleanroom_export: carriers left: %r" % left)
 PY

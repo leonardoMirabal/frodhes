@@ -8,12 +8,13 @@
  *   dly_equiv [--calls N] [--seed S] [--jobs J]       default N = 1000000, S = 1, J = 1 (10^8: --calls 100000000)
  * Output: "PASS <n> calls" or "FAIL case <k> field <name> index <i>", nothing else (k: the call's number).
  *
- * What dly_own.c must expose (private/plans/dly-own-contract.md has the same text). One file, included four times
- * with DLY_OWN_PART set to 1, 2, 3, 4 (fx.c, and dly_tape.c twice more: where the derived routines were), after
+ * What dly_own.c must expose (private/plans/dly-own-contract.md has the same text). One file, included five times
+ * with DLY_OWN_PART set to 1 to 5 (fx.c, and dly_tape.c four times: where the derived routines were), after
  * everything fx.c / dly_tape.c define above that place; it must not define a name they define. Part 1: dly_loop (the
  * spec's main loop, section 2) and dly_loop_kb (section 10); part 2: dly_rd, dly_fade (11, 12); part 3 (FR_CHUNK):
- * dly_wr_c, dly_loop_c, dly_loop_cd, dly_loop_ca, dly_fade_c (13 to 15); part 4 (FR_CHUNK): tp_loop_c (16). Signatures
- * as in dly_tape.c / the spec; dly_side.c shows the call of each. The harness reaches them in twelve shapes (dly_state.h):
+ * dly_wr_c, dly_loop_c, dly_loop_cd, dly_loop_ca, dly_fade_c (13 to 15); part 4 (FR_CHUNK): tp_loop_c (16); part 5:
+ * tp_tape_k, tp_tape_kb, tp_tape, tp_loop (17, 18). Signatures
+ * as in dly_tape.c / the spec; dly_side.c shows the call of each. The harness reaches them in 23 shapes (tp_tape_k in all eight rst / msk / kb forms) (dly_state.h):
  * dly_loop with literal tape / msk (kb 0), dly_loop_kb, dly_fade, dly_loop_cd, dly_loop_ca, dly_fade_c, dly_wr_c,
  * tp_loop_c, dly_rd (result in L[0]). FX_ENG_K / FX_ENG_G read the harness's variables; fxc_o / fxc_e are set per call. */
 #include <stdint.h>
@@ -244,7 +245,7 @@ static int worker(uint64_t calls, uint64_t seed, uint64_t first_case)
             args_next(&a, c == 0, run);
             signal_fill(S.m, rp(70) ? 131072 : 16777216);     /* the send (masked by msk inside), the stale scratch */
             for (j = 0; j < 256; j++) S.dt[j] = (int32_t)rnd();
-            if (a.shape == 10) {                              /* tp_loop_c reads dly_dt: valid times */
+            if (a.shape == 10 || a.shape >= 12) {                              /* tp_loop_c reads dly_dt: valid times */
                 int32_t base = rr(0, 65534 << 8);
                 for (j = 0; j < 256; j++) S.dt[j] = rp(80) ? base + rr(-2000, 2000) : rr(0, 65535 << 8);
             }
@@ -262,7 +263,7 @@ static int worker(uint64_t calls, uint64_t seed, uint64_t first_case)
             }
             if (c == 0 && rp(2)) line_fill();
             w0 = a.shape == 9 ? a.w0 : S.dly_w;
-            nrows = a.shape <= 5 || a.shape == 9 ? a.n : 0;
+            nrows = a.shape <= 5 || a.shape == 9 || a.shape >= 12 ? a.n : 0;
             memcpy(oL, Lin, sizeof oL); memcpy(oR, Rin, sizeof oR);
             memcpy(nL, Lin, sizeof nL); memcpy(nR, Rin, sizeof nR);
             old_put(&S); old_call(&a, oL, oR); old_get(&so);

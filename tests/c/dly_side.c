@@ -41,6 +41,10 @@ static uint8_t engc_fx __attribute__((unused));
 #define dly_fade_c unused_dly_fade_c
 #define dly_wr_c unused_dly_wr_c
 #define tp_loop_c unused_tp_loop_c
+#define tp_tape_k unused_tp_tape_k
+#define tp_tape_kb unused_tp_tape_kb
+#define tp_tape unused_tp_tape
+#define tp_loop unused_tp_loop
 #endif
 #include "fx.c"
 #if !FR_CHUNK
@@ -57,12 +61,16 @@ static uint8_t engc_fx __attribute__((unused));
 #undef dly_fade_c
 #undef dly_wr_c
 #undef tp_loop_c
+#undef tp_tape_k
+#undef tp_tape_kb
+#undef tp_tape
+#undef tp_loop
 #ifdef DLY_OWN_FILE
 #define DLY_OWN_INC DLY_OWN_FILE
 #else
 #define DLY_OWN_INC "dly_own.c"
 #endif
-#define DLY_OWN_PART 1                           /* the four places fx.c / dly_tape.c include it from */
+#define DLY_OWN_PART 1                           /* the five places fx.c / dly_tape.c include it from */
 #include DLY_OWN_INC
 #undef DLY_OWN_PART
 #define DLY_OWN_PART 2
@@ -72,6 +80,9 @@ static uint8_t engc_fx __attribute__((unused));
 #include DLY_OWN_INC
 #undef DLY_OWN_PART
 #define DLY_OWN_PART 4
+#include DLY_OWN_INC
+#undef DLY_OWN_PART
+#define DLY_OWN_PART 5
 #include DLY_OWN_INC
 #undef DLY_OWN_PART
 #endif
@@ -142,6 +153,16 @@ static __attribute__((noinline)) void s11(const dly_args_t *a, int32_t *L, int32
     (void)R;
     L[0] = dly_rd(dly_w, a->d, a->c);          /* the result comes back in L[0] */
 }
+#define TK(k, rst, msk, kb) static __attribute__((noinline)) void tk##k(const dly_args_t *a) \
+    { tp_tape_k(dly_m, dly_dt, a->n, msk, a->fb, rst, kb); }
+TK(0, 0, -1, 0) TK(1, 0, -1, 1) TK(2, 0, 0, 0) TK(3, 0, 0, 1) TK(4, 1, -1, 0) TK(5, 1, -1, 1) TK(6, 1, 0, 0) TK(7, 1, 0, 1)
+static __attribute__((noinline)) void s12(const dly_args_t *a)
+{
+    switch (a->shape - 12) {
+    case 0: tk0(a); break; case 1: tk1(a); break; case 2: tk2(a); break; case 3: tk3(a); break;
+    case 4: tk4(a); break; case 5: tk5(a); break; case 6: tk6(a); break; default: tk7(a); break;
+    }
+}
 void P(call)(const dly_args_t *a, int32_t *L, int32_t *R)
 {
     h_ek = a->ek; h_eg = a->eg;
@@ -157,7 +178,11 @@ void P(call)(const dly_args_t *a, int32_t *L, int32_t *R)
     case 8: s8(a, L, R); break;
     case 9: s9(a, L, R); break;
     case 10: s10(a, L, R); break;
-    default: s11(a, L, R); break;
+    case 11: s11(a, L, R); break;
+    case 20: tp_tape_kb(dly_m, dly_dt, a->n, a->msk, a->fb); break;
+    case 21: tp_tape(dly_m, dly_dt, a->n, a->msk, a->fb); break;
+    case 22: tp_loop(L, R, dly_m, dly_dt, a->n, a->msk, a->sg16, a->fb, a->wet, a->dgt, a->g0); break;
+    default: s12(a); break;
     }
 }
 int16_t *P(line)(void) { return dly_buf; }
