@@ -2107,6 +2107,11 @@ FX_RAM __attribute__((noinline)) static void dly_ramp(int32_t *m, uint32_t n, in
         m[j] = (int32_t)(((int64_t)m[j] * (kq >> 8)) >> 16);
     }
 }
+#if FR_OWN                                      /* the plugin's own-code build: the delay's two sample loops (dly_loop, dly_loop_kb) from dly_own.c */
+#define DLY_OWN_PART 1
+#include "dly_own.c"
+#undef DLY_OWN_PART
+#else
 /* the delay's sample loop, one version for TAPE (tape = 1) and one for DIGITAL / off (tape = 0: a constant after
  * inlining), the state in locals: the same arithmetic per sample as one loop with the tests inside. msk: the send on
  * (-1) or off (0, the tail rings); sg16: the send's make-up (Q16, exactly 65536 when dly_sg is 0: x 1), ramped sample
@@ -2176,6 +2181,7 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
     }
     dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg; dly_sgk = msk ? sg16 : 0;
 }
+#endif
 static uint32_t dly_clrn = DLY_CLR;            /* the clearing's share a block: DLY_CLR (CC 10), DLY_CLR / 4 (a tail's end) */
 static uint32_t dly_qz;                         /* the send off: samples in a row the line was written within +-1 of 0 */
 static uint8_t dly_lc = 1;                      /* the line is clean (all 0, or being cleared: dly_rst) */
@@ -2189,6 +2195,7 @@ static uint32_t dly_sil RH_SP_SEC(".data.fx_dlysil") = DLY_LEN;
 static uint8_t dly_ana;                         /* the old loops last ran ANA: its tail (OFF) runs ANA's loop (0.9.5: the
                                                  * DIG loop took over at OFF, its tone and the softclip changed at once:
                                                  * a kink in the echo one delay time later, 24x a steady one's) */
+#if !FR_OWN
 /* ANA on the bars (0.9.13): dly_loop with its soft clip at the engine's level (fx_sck_k: the bars' SND3 -3 dB a level,
  * the tape's clip as on 0.9.11); in flash, the RAM copies keep their size */
 __attribute__((noinline)) static void dly_loop_kb(int32_t *L, int32_t *R, uint32_t n, int32_t sg16, int32_t target,
@@ -2196,6 +2203,7 @@ __attribute__((noinline)) static void dly_loop_kb(int32_t *L, int32_t *R, uint32
 {
     dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, dgt, rst, 1);
 }
+#endif
 __attribute__((noinline)) static void dly_clear_step(void)   /* one block's share of the reset's clearing */
 {
     uint32_t c = dly_w - dly_rb, k, p;

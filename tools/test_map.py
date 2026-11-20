@@ -80,7 +80,7 @@ RULES = [
      "the packed hammer / mallet pulses (rhodes.c rh_pz: the Rhodes and the bars decode them at the strike)"),
     ("engine:dispatch", ["firmware/src/engine.c", "firmware/src/fxp.h", "firmware/src/bend_own.h"], ALL, ENGINES_T2 + ("effects",), (),
      "the engine dispatcher / the fixed-point helpers (every engine's DSP)"),
-    ("fx", ["firmware/src/fx.c", "firmware/src/fx_own.h", "firmware/src/fx_eq.c", "firmware/src/dly_tape.c",
+    ("fx", ["firmware/src/fx.c", "firmware/src/fx_own.h", "firmware/src/fx_eq.c", "firmware/src/dly_tape.c", "firmware/src/dly_own.c",
             "firmware/gen/fx_tables.h"], (1, 4, 6),
      ("effects",), (),
      "the effects chain (its DSP or tables)"),

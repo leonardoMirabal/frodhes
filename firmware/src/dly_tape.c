@@ -89,6 +89,11 @@ __attribute__((noinline)) static int32_t tp_sat_k(int32_t v, int32_t k, int32_t 
     x = FX_TAPE_SAT[i] + (((FX_TAPE_SAT[i + 1u] - FX_TAPE_SAT[i]) * x) >> 9);
     return (x * g + 16384) >> 15;
 }
+#if FR_OWN                                      /* the plugin's own-code build: from dly_own.c, part 5 */
+#define DLY_OWN_PART 5
+#include "dly_own.c"
+#undef DLY_OWN_PART
+#else
 static inline __attribute__((always_inline)) void tp_tape_k(int32_t *m, const int32_t *dt, uint32_t n, const int32_t msk,
                                                             int32_t fb, const int rst, const int kb)
 {
@@ -173,6 +178,7 @@ FX_RAM __attribute__((noinline)) static void tp_loop(int32_t *L, int32_t *R, int
     }
     dly_dg = dg; dly_sgk = msk ? sg16 : 0;              /* (fx.c dly_son) */
 }
+#endif
 
 /* one block of TAPE (or its fade-out / tail): the coefficients for this TIME and TONE, the pre-pass, the loop.
  * gt: the fade's target (32768 in, 0 out); msk: the send on / off */
@@ -236,6 +242,11 @@ static void tp_reset(void)                              /* developer CC 10: the 
  * ~5x: a bend stays a bend). fx_delay_t routes those blocks here (tp_route); at rest the old loops */
 #define DLY_TXS 32
 static int32_t dly_tn RH_SP_SEC(".bss.fx_dlytn"), dly_tx RH_SP_SEC(".bss.fx_dlytx");
+#if FR_OWN                                      /* the plugin's own-code build: from dly_own.c, part 2 */
+#define DLY_OWN_PART 2
+#include "dly_own.c"
+#undef DLY_OWN_PART
+#else
 static inline __attribute__((always_inline)) int32_t dly_rd(uint32_t w, int32_t d, uint32_t c)   /* the tap at d (Q8) */
 {
     uint32_t i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
@@ -300,6 +311,7 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
     dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg; dly_sgk = msk ? sg16 : 0;
     dly_xg = g; dly_xm = a; dly_tn = tn; dly_tx = tx;
 }
+#endif
 
 /* the blocks fx_delay_t hands to tp_route: TAPE, a switch to / from it, DIG <-> ANA (#17), a DIG time change, ANA's
  * big time change with sound in the line (#3) */
@@ -373,6 +385,11 @@ static uint8_t dly_wm;                                 /* the rows' write: 0 non
 static uint8_t dly_wp;                                 /* the send's ramp: 0 over the block, 1 TAPE's fade (8 a piece) */
 static int32_t dly_wk_msk;                             /* the send on (-1) or off (0) */
 /* the last chunk: the block's rows, from w0 (dly_w at the block's start), the send ramped from dly_sgk to sg16 */
+#if FR_OWN                                      /* the plugin's own-code build: from dly_own.c, part 3 */
+#define DLY_OWN_PART 3
+#include "dly_own.c"
+#undef DLY_OWN_PART
+#else
 __attribute__((noinline)) static void dly_wr_c(uint32_t w0, uint32_t n, int32_t sg16)
 {
     int32_t msk = dly_wk_msk, kq = dly_sgk << 8, dk = n ? ((sg16 - dly_sgk) << 8) / (int32_t)n : 0;
@@ -532,6 +549,7 @@ __attribute__((noinline)) static void dly_fade_c(int32_t *L, int32_t *R, uint32_
     dly_xg = g; dly_xm = a; dly_tn = tn; dly_tx = tx;
     dly_wm = 1; dly_wp = 0; dly_wk_msk = msk;
 }
+#endif
 /* tp_mod for a chunk: dly_dt[fxc_o .. fxc_e) */
 FX_RAM __attribute__((noinline)) static void tp_mod_c(int32_t target, int32_t s, int32_t lv)
 {
@@ -565,6 +583,11 @@ FX_RAM __attribute__((noinline)) static void tp_mod_c(int32_t target, int32_t s,
 }
 /* tp_tape + tp_loop for samples j0 .. j1 (the reads; the echo's feedback term into dly_fbv), the echo's gain from w0
  * to wet over np samples, this piece's first at j0 - p0 of them */
+#if FR_OWN                                      /* the plugin's own-code build: from dly_own.c, part 4 */
+#define DLY_OWN_PART 4
+#include "dly_own.c"
+#undef DLY_OWN_PART
+#else
 FX_RAM __attribute__((noinline)) static void tp_loop_c(int32_t *L, int32_t *R, uint32_t j0, uint32_t j1, uint32_t p0,
                                                      uint32_t np, int32_t fb, int32_t wet, int32_t dgt, int32_t w0)
 {
@@ -605,6 +628,7 @@ FX_RAM __attribute__((noinline)) static void tp_loop_c(int32_t *L, int32_t *R, u
     }
     dly_w = w; tp_b1 = b1; tp_b2 = b2; tp_h1 = h1; tp_h2 = h2; dly_dg = dg;
 }
+#endif
 /* tp_block for a chunk: its coefficients and TONE's glide at the first, its fade decided there (8 a piece) */
 static struct { int32_t fb, wet, s, lv, fade; } tp_c;
 __attribute__((noinline)) static void tp_block_c(int32_t *L, int32_t *R, uint32_t n, int32_t target, int32_t msk,
