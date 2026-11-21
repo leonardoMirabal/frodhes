@@ -36,6 +36,20 @@ Every plugin package (`tools/plugin_pack.sh`, docs/PLUGIN.md "Packages") carries
 `THIRD-PARTY-NOTICES.txt` with the full licence text of each item above that its binaries contain, taken from the
 pinned checkouts at build time.
 
+## The Frodhes name and logo
+
+The GPL covers the code, not the project's identity. "Frodhes", the Frodhes wordmark and logo, and the boot screen and
+artwork that show them (on the instruments, the plugin window, the MPC skin, the documentation and the website) are
+Leonardo Mirabal's and are not licensed under the GPL. As GPL-3.0 section 7(e) allows, no right to use them is granted.
+
+You may fork, change and share the code under the GPL. If you distribute a changed version:
+- give it a different name that does not contain "Frodhes", and use your own logo and boot screen;
+- don't present it as Frodhes or as made, endorsed or supported by this project, and don't point its links or
+  homepage at this project's pages as if they were its own;
+- you may say, as a plain fact, that it is "based on Frodhes" and link here.
+
+Unchanged copies of an official release may keep the name and logo. For anything else, ask first.
+
 ## Trademarks
 
 "Felucca" and "Hügelton Instruments" are names of Hügelton Instruments; "M-VAVE", "FM-1", "SMK-37" and "MKE-P37"

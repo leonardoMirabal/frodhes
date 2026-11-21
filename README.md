@@ -210,7 +210,9 @@ Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/le
 
 ## License and disclaimer
 
-GPL-3.0-only, the same as Dinghy, Felucca and SLOOP ([LICENSING.md](LICENSING.md)).
+GPL-3.0-only, the same as Dinghy, Felucca and SLOOP ([LICENSING.md](LICENSING.md)). The licence covers the code,
+not the Frodhes name and logo: a changed version you share needs its own name and logo
+([LICENSING.md](LICENSING.md#the-frodhes-name-and-logo)).
 
 Frodhes is an independent open-source project, not affiliated with or endorsed by M-VAVE,
 Ableton, the Rhodes or Fender trademark owners or any instrument maker. It comes with no warranty: install it at your own risk.
