@@ -358,6 +358,7 @@ void frg_view_repaint(frg_view *v)
 }
 
 const char *const FRG_VIEW_API = "x11";
+const int FRG_VIEW_SIZES_IN_POINTS = 0;
 const uint32_t *frg_view_grab(frg_view *v, int *w, int *h)
 {
     if (!v->px) return 0;

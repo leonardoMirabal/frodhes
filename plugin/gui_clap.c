@@ -271,7 +271,7 @@ static bool g_create(const clap_plugin_t *plugin, const char *api, bool is_float
 {
     frp_gui_clap_t *c = GUI(plugin);
     if (!c || !g_api_ok(api, is_floating) || c->core) return false;
-    c->px_api = strcmp(api, CLAP_WINDOW_API_COCOA) != 0;
+    c->px_api = !FRG_VIEW_SIZES_IN_POINTS;
     saved_size(c);
     c->core = frp_gui_new(&c->uh);
     if (!c->core) return false;
