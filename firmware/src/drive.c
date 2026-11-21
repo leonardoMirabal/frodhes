@@ -286,7 +286,9 @@ FR_RAM2 static __attribute__((noinline)) void drv_dn2(drv_os_t *s, const int32_t
     s->d1.x = op; s->d1.y0 = b0; s->d1.y1 = b1; s->d1.y2 = b2; s->od = od;
 }
 
-static DRV_BSS int32_t drv_wet[DRV_BLK];   /* the TYPE's wet signal while it blends; FDRV's 1x shaper output */
+#if FR_OWN
+static DRV_BSS int32_t drv_wet[DRV_BLK];   /* the TYPE's wet signal while it blends */
+#endif
 #if !FR_OWN                                             /* (the classic drive's 2x front: not in the own-code build) */
 /* FDRV's shaper at 2x (fx.c dr_classic; 0.9.9: it ran at 1x with no anti-aliasing: a hard-driven C7 folded partials
  * 36 dB under the note, A7 24 dB; build/fx-audit, tests/py/test_drive_os.py). Per sample the high-pass and the gain as
@@ -305,6 +307,7 @@ static DRV_BSS int32_t drv_wet[DRV_BLK];   /* the TYPE's wet signal while it ble
 #endif
 #define DR_EPS 16                                       /* ADAA: |dx| up to this, the curve at the midpoint */
 static DRV_BSS drv_os_t dr_os;
+static DRV_BSS int32_t drv_wet[DRV_BLK];   /* the TYPE's wet signal while it blends; FDRV's 1x shaper output */
 #if DR_OS_ADAA
 static DRV_BSS int32_t dr_aa_x, dr_aa_p;               /* ADAA's last input and its P / 2^13 (x bias at rest) */
 /* ADAA-1 on FX_TANH without a divide or a 64-bit integral. The curve's input is held to its table (+-4, 2^17 - 1: the

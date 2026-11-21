@@ -110,6 +110,9 @@ elseif(APPLE)
     target_link_libraries(frodhes_clap_impl PUBLIC "-framework Foundation" "-framework AppKit")
 endif()
 target_compile_definitions(frodhes_clap_impl PRIVATE "FRP_VERSION=\"${FRP_VERSION}\"")
+# (the plugin's own-code build: plugin/gen/params_map.h shows the drive's TYPE 1 as WARM here, as FDRV in a build
+# without FR_OWN, e.g. the MPC's, which shares the header and runs the classic drive)
+target_compile_definitions(frodhes_clap_impl PRIVATE FR_OWN=1)
 target_compile_options(frodhes_clap_impl PRIVATE $<$<COMPILE_LANGUAGE:C>:-O2 ${FRP_C_STD} ${FRP_C_WARN} ${FRP_C_WIN}>
                        $<$<COMPILE_LANGUAGE:OBJC>:-O2 -fno-objc-arc ${FRP_C_WARN}>)
 # frp_git.h: a dev build's commit for the window's VERSION (cmake/git_rev.cmake, at every build; unchanged: no rebuild)
