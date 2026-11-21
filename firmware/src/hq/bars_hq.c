@@ -228,7 +228,7 @@ static uint32_t hqb_ck_n;                      /* contacts run this block (bar_r
 static void hqb_pulse(bar_voice_t *v, uint32_t vel, int restrike)
 {
     HQ_FP_STRICT
-    const uint32_t ty = bar_sub < BAR_NTYPE ? bar_sub : 0u, key = (uint32_t)(v->k - BAR_KEYS[ty]);
+    const uint32_t ty = bar_sub < BAR_NTYPE ? bar_sub : 0u, key = (uint32_t)(v->k - BAR_KP[ty]);
     const hqb_ck_t *c = &HQB_CK[ty][key];
     hqb_st_t *h = &hqb_st[v - bv];
     static hqb_live_t lv[4];

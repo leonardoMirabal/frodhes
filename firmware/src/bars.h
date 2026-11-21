@@ -37,8 +37,21 @@
 #define BAR_FX_K ((int32_t)((1073741824 + BAR_MIX_G / 2) / BAR_MIX_G))   /* 32768 / BAR_MIX_G in Q15: 46288 */
 #define BAR_FX_DT 2041                              /* log2(32768 / BAR_MIX_G) in Q12 (4096 x 0.49833) */
 
+/* the generated table's layout (bars_tables.h BAR_KEYS, 8 mode slots): not linked; the firmware reads BAR_KP (bars_pack.h) */
 typedef struct {
     rh_mode_t m[8];             /* V1 TUBE V2 V3 V4 T1 T2 X; m[1] (TUBE): b = 0, drel = d */
+    int32_t k_bt, k_tb;         /* Q30 coupling at BELL 64, discs open (same sign: a symmetric stiffness coupling) */
+    int32_t wt;                 /* Q28 tube radiation weight (|wt| <= 4.0) */
+    int32_t gain;               /* Q16 per-key output gain */
+    int32_t kill;               /* Q25 */
+    uint16_t life;              /* blocks */
+    uint8_t band, flags;        /* flags bit0: outside the authentic range; bit1: T1/T2 present; bit2: sigma clamped;
+                                 * bit3 (MARIMBA below C4): RING (bar_k_decay) scales the tube slot too;
+                                 * bit4 (MARIMBA): BAR_RINGG[key] at RING scales the gain (the ceiling) */
+} bar_key8_t;
+typedef struct {
+    rh_mode_t m[7];             /* V1 TUBE V2 V3 V4 T1 T2; m[1] (TUBE): b = 0, drel = d. The 8th slot (X) is all zero in
+                                 * every key: not stored (BAR_NMK, BAR_KM; tools/gen_bars_pack.py) */
     int32_t k_bt, k_tb;         /* Q30 coupling at BELL 64, discs open (same sign: a symmetric stiffness coupling) */
     int32_t wt;                 /* Q28 tube radiation weight (|wt| <= 4.0) */
     int32_t gain;               /* Q16 per-key output gain */
@@ -57,9 +70,14 @@ typedef struct {
     uint8_t kn_tube_top;        /* KN_TUBE[t][127] in 1/100 (informational) */
 } bar_type_t;
 #define BAR_MOT_COS BAR_MOT_COS_GEN                 /* (0.9.5, the flash: the generated quarter cosine is not used, */
+#define bar_key_t bar_key8_t                        /* (BAR_KEYS in it is the contract, not linked: BAR_KP below is) */
 #include "bars_tables.h"
+#undef bar_key_t
 #undef BAR_MOT_COS                                  /* so not linked: |cos(pi i / 512)| for i 0..256 is fx_tables.h */
 #define BAR_MOT_COS (FX_SINE + 256)                 /* FX_SINE[256 + i], the same numbers: test_fx_tables_derived.py */
+#include "bars_pack.h"                              /* BAR_KP (the keys, 7 mode slots), BAR_GROW (the gain rows), their indexes */
+static const rh_mode_t bar_zm;                      /* the 8th slot, all zero in every key (BAR_NMK) */
+#define BAR_KM(k, i) ((i) < BAR_NMK ? &(k)->m[i] : &bar_zm)   /* mode slot i of a key, 0 .. BAR_NM - 1 */
 _Static_assert(BAR_NM == 8, "bars.c: 8 mode slots");
 
 #define BAR_NV BAR_VOICES                           /* voices: rhodes.c BAR_VOICES (10 by default, as the Rhodes) */
