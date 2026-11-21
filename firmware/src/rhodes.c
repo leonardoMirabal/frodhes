@@ -31,7 +31,7 @@
 /* ---- generated-table types (must match tools/gen_rhodes.py) */
 typedef struct { int32_t sh, ch, th, d, drel, cr, b; } rh_mode_t;
 typedef struct {
-    rh_mode_t m[5];
+    rh_mode_t m[4];                                       /* V1 V2 O1 O2 (the old fifth slot was zero on every key: RH_NM 4) */
     int32_t off, gain, kill, hc, pk;
     uint16_t prate, life;
     uint8_t band, fam, res, pad;
@@ -43,6 +43,7 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
     uint8_t nbody, drive_row; /* body biquads in use (RH_BODY), the drive's row */
 } rh_type_t;
 #include "rhodes_tables.h"
+_Static_assert(RH_NM == 4, "rh_key_t holds RH_NM modes");
 #ifndef RH_NO_TONE_G                           /* (-DRH_NO_TONE_G: without it, as tools/tone_level.py measures) */
 #include "rh_tone_g.h"                         /* TONE's level compensation (tools/tone_level.py --write) */
 #if defined(RH_DRIVE) && defined(RH_VM_ON)

@@ -52,17 +52,17 @@ def build(src_text, tag, extra=()):
 
 
 def modes():
-    """every live mode word set (th != 0): RH_KEYS (5 per key) and BAR_KEYS (8 slots per key per type)"""
+    """every live mode word set (th != 0): RH_KEYS (4 per key) and BAR_KEYS (8 slots per key per type)"""
     rt, _ = table_ab.parse(os.path.join(ROOT, "firmware", "gen", "rhodes_tables.h"))
     bt, _ = table_ab.parse(os.path.join(ROOT, "firmware", "gen", "bars_tables.h"))
     out, names = [], []
     rk = rt["RH_KEYS"]["vals"]
     per = len(rk) // 88
     for k in range(88):
-        for m in range(5):
+        for m in range(4):
             w = rk[k * per + 7 * m: k * per + 7 * m + 7]
             if w[2]:
-                out.append(w); names.append(f"{table_ab.note_name(21 + k)} {['V1', 'V2', 'O1', 'O2', 'X'][m]}")
+                out.append(w); names.append(f"{table_ab.note_name(21 + k)} {['V1', 'V2', 'O1', 'O2'][m]}")
     bk = bt["BAR_KEYS"]["vals"]
     per = len(table_ab.KEY_F)
     for i in range(len(bk) // per):

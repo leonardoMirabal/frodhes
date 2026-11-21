@@ -160,7 +160,7 @@ def test_dense_table_equals_the_layers(tmp_path):
 #include <stdio.h>
 #include <string.h>
 typedef struct { int32_t sh, ch, th, d, drel, cr, b; } rh_mode_t;
-typedef struct { rh_mode_t m[5]; int32_t off, gain, kill, hc, pk; uint16_t prate, life; uint8_t band, fam, res, pad; } rh_key_t;
+typedef struct { rh_mode_t m[4]; int32_t off, gain, kill, hc, pk; uint16_t prate, life; uint8_t band, fam, res, pad; } rh_key_t;
 typedef struct { int32_t off_delta, bark, bark_g, bell, ham; uint8_t nbody, drive_row; } rh_type_t;
 #include "rhodes_tables.h"
 #include "hq/rh_hq_pulse.h"
