@@ -22,6 +22,14 @@ the project (`.local/plugin-deps`), pinned by commit and checked at configure ti
 
 The bundles are universal (Apple silicon and Intel). `make plugin` installs nothing.
 
+**Own-code build.** The plugin is built with `FR_OWN=1` (`plugin/cmake/slots.cmake`), so it compiles only Frodhes' own
+code plus the pinned libraries. `FR_OWN` swaps in the drive (`drv_own1.c`), the delay loops (`dly_own.c`), the small
+fixed-point helpers (`fx_own.h`) and the pitch-bend and scale tables; `FR_OWN_HAL` swaps the platform layer for
+`plugin/src/own_hal.c`. In this build **DRIVE TYPE 1 is WARM**, a drive of its own, in place of the FM-1's FDRV: the
+parameter, its range and the presets stay the same, the sound of that type differs, and the other four types are
+unchanged. The FM-1, Move, MPC and web builds keep FDRV. `make gate-o` renders both switches and compares them
+(docs/ARCHITECTURE.md).
+
 ## Try it in a DAW
 
 Copy the bundle your host uses into your plug-in folder, clear the download flag, and rescan:
@@ -335,6 +343,7 @@ CLAP support may need CLAP enabled in its plug-in preferences first.
 | | |
 | --- | --- |
 | `plugin/CMakeLists.txt`, `plugin/cmake/` | the build: the pins, the 16 engine slots (the HQ build, 24 voices), the formats through clap-wrapper |
+| `plugin/src/own_hal.c`, `own_store.h`, `own_gfx.h`, `own_touch.h` | the plugin's own platform layer (`FR_OWN_HAL`): clock, MIDI ring, storage in RAM, silent screen calls, key-velocity names |
 | `plugin/src/engine_unit.c`, `slot_bridge.h` | one engine slot: the app over the browser's platform layer, with every symbol private to the slot; its presets, MIDI learn, settings, state |
 | `plugin/src/bridge.c`, `bridge.h` | the instance: its slot, time, events, the UI queue, the resamplers, the user preset files |
 | `plugin/src/frp_os.h` | the oversampler: 160/147 polyphase and 2x half-band stages |
