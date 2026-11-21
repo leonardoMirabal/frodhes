@@ -88,6 +88,12 @@ size_t frp_path_root(int os, const char *p)
 #undef SEP
 }
 
+#ifdef FRP_PRESET_ROOT                   /* a build's own preset folder (frp_paths.h); the variable still wins */
+static void preset_root_default(frp_env_t *e) { if (!e->preset_dir || !*e->preset_dir) e->preset_dir = FRP_PRESET_ROOT; }
+#else
+#define preset_root_default(e) ((void)(e))
+#endif
+
 #if defined(_WIN32)
 /* UTF-8 -> UTF-16 (a static buffer per call site is not enough: two at once for the replace) */
 static int wide(const char *s, wchar_t *w, int n) { return MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) > 0 ? 0 : -1; }
@@ -108,6 +114,7 @@ void frp_env_here(frp_env_t *e)
     e->home = utf8_env(L"USERPROFILE");
     e->appdata = utf8_env(L"APPDATA");
     e->preset_dir = utf8_env(L"FRODHES_PRESET_DIR");
+    preset_root_default(e);
     e->usable = frp_dir_usable;
 }
 int frp_dir_usable(const char *dir)
@@ -171,6 +178,7 @@ void frp_env_here(frp_env_t *e)
     e->xdg_data = getenv("XDG_DATA_HOME");
     e->sandbox = getenv("APP_SANDBOX_CONTAINER_ID");
     e->preset_dir = getenv("FRODHES_PRESET_DIR");
+    preset_root_default(e);
     e->usable = frp_dir_usable;
     {
         struct passwd *pw = getpwuid(getuid());   /* (the account's home: outside a sandbox's container) */
