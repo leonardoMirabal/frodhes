@@ -1423,7 +1423,7 @@ static inline uint32_t rd_bscale(void)                         /* BARK x the typ
     if (b > (uint32_t)RD_LIM.bark_max) b = (uint32_t)RD_LIM.bark_max;
     return b < 4096u ? 4096u : b;
 }
-static inline int32_t rd_hermite(int32_t u)                    /* the pickup curve at gap offset u (Q25): Phi~(u * u) */
+static inline __attribute__((always_inline)) int32_t rd_hermite(int32_t u)                    /* the pickup curve at gap offset u (Q25): Phi~(u * u) */
 {
     int64_t s = (int64_t)u * u;
     uint32_t i, t;
@@ -2116,8 +2116,9 @@ static FR_RAM __attribute__((noinline)) int32_t rh_pickup_fx(rh_voice_t *v, cons
 }
 
 /* WHURLI's pickup: the same form as rh_pickup / rh_pickup_s / rh_pickup_fx in one loop (the steal fade and the stereo
- * position tested a sample: reed voices only), through its own curve (rd_hermite). Returns the last H */
-static FR_RAM __attribute__((noinline)) int32_t rh_pickup_rd(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t off,
+ * position tested a sample: reed voices only), through its own curve (rd_hermite). Returns the last H. Not FR_RAM: the one-core
+ * images' RAM text has no room for it (it runs from flash there; the two-core image runs everything from flash) */
+static __attribute__((noinline)) int32_t rh_pickup_rd(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t off,
                                                       int32_t Hp, int32_t gain)
 {
     uint32_t j;
