@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* fx_own.h: the small fixed-point helpers (2^-x, truncating shifts, int16 saturation, two DC blockers) written from
- * private/plans/own-dsp-spec.md, bit for bit equal to the ones in fx.c / rev_hq.c. Included by fx.c under FR_OWN (the plugin's own-code build);
+ * a written spec of their arithmetic, bit for bit equal to the ones in fx.c / rev_hq.c. Included by fx.c under FR_OWN (the plugin's own-code build);
  * tests/own_dsp_test.c proves the equality. Integers only; the sums wrap as unsigned 32-bit, so no signed overflow. */
 #ifndef FX_OWN_H
 #define FX_OWN_H

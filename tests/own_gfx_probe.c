@@ -55,6 +55,7 @@ static uint64_t snapshot(void)
             v = slot_val(s, &hi);
             memset(t, 0, sizeof t);
             slot_text(s, t);
+            if (!strcmp(t, N_DRV[1])) strcpy(t, "TYPE1");     /* (the drive's TYPE 1 has a name per build: FDRV, WARM) */
             h = fnv(h, t, strlen(t) + 1u);
             h = fnv(h, lab, strlen(lab) + 1u);
             h = fnv(h, &v, sizeof v);

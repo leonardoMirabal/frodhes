@@ -3,7 +3,8 @@
 font data): tests/own_gfx_probe.c, the app as the plugin builds it, runs the main loop with every page walked and every
 knob's parameter turned, once with the real text widths (-DFR_OWN=0) and once with every text 0 px wide (-DFR_OWN=1).
 The hash of the settings, the page and every page's texts, labels, values and ranges after each step must be the same:
-no state decision depends on a text's width. Also: a slot object of the own-code build has no font, glyph or aa_ symbol."""
+no state decision depends on a text's width (the drive's TYPE 1 name, FDRV or WARM, is the one text that differs by
+build, not by width: the probe hashes it as TYPE1). Also: a slot object of the own-code build has no font, glyph or aa_ symbol."""
 import os
 import re
 import subprocess
