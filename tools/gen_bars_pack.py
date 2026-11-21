@@ -10,6 +10,8 @@ flash, as BAR_PULSE next to pulse_pz.h).
  BAR_PS              BAR_POS without its columns for mode slots 1 (TUBE) and 7 (X): zero in every band and point, and those
                      slots' b is 0 in every key (so bars.c bar_init takes w = 0 for them, the product is the same 0);
                      BAR_NPC = 6 columns, slot m (0, 2 .. 6) at column m - (m > 1)
+ BAR_PRU             the distinct 10-anchor rows of BAR_PRATE (714 of its 880; 163 are flat), BAR_PRATE_I[type][key][family]
+                     a uint16 index
  BAR_GROW            the distinct 17-point gain rows of BAR_POSG and BAR_TUBEG (most of the TUBE rows are the flat
                      16384 row), each table now a uint8 row index: BAR_POSG_I[band][family], BAR_TUBEG_I[band][family]
 
@@ -105,6 +107,17 @@ def header(text):
     for b in pos:
         L.append("  {" + ",".join(cvals([pt[0]] + pt[2:7]) for pt in b) + "},")
     L.append("};")
+    pr = table(text, "BAR_PRATE")
+    prow, pidx = {}, []
+    for ty in pr:
+        pidx.append([])
+        for key in ty:
+            pidx[-1].append([prow.setdefault(tuple(r), len(prow)) for r in key])
+    assert len(prow) < 65536
+    L.append(f"static const uint16_t BAR_PRU[{len(prow)}][RH_NANCH] = {{")
+    L += ["    {" + ",".join(map(str, r)) + "}," for r in prow]
+    L.append("};")
+    L.append("static const uint16_t BAR_PRATE_I[BAR_NTYPE][BAR_NKEY][BAR_NFAM] = " + cvals(pidx) + ";")
     L.append("static const uint8_t BAR_POSG_I[BAR_NBAND][BAR_NFAM] = {" + ",".join(cvals(b) for b in idx["BAR_POSG"]) + "};")
     L.append("static const uint8_t BAR_TUBEG_I[BAR_NBAND][BAR_NFAM] = {" + ",".join(cvals(b) for b in idx["BAR_TUBEG"]) + "};")
     L += ["#endif", ""]

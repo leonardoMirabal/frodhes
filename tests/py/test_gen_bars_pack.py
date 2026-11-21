@@ -2,7 +2,7 @@
 """The packed bar tables (tools/gen_bars_pack.py -> firmware/gen/bars_pack.h; bars.c BAR_KM / bar_card_gain): the header
 is current, bars.h's key type is the 7-slot one, and the tables the firmware links give every integer the generated
 ones (bars_tables.h) hold: every field of every key of every type (the 8th mode slot reads as zero), every
-BAR_POS column the code reads, and every BAR_POSG / BAR_TUBEG point of every band and family through the row index."""
+BAR_POS column the code reads, and every BAR_POSG / BAR_TUBEG point of every band and family and every BAR_PRATE anchor through the row indexes."""
 import os
 import subprocess
 import sys
@@ -55,6 +55,10 @@ int main(void)
         for (p = 0; p < BAR_NPOS; p++)
             for (m = 0; m < BAR_NM; m++)       /* the columns the code reads; TUBE and X (w = 0) hold 0 and b 0 */
                 bad += (m == 1 || m == 7) ? BAR_POS[b][p][m] != 0 : BAR_POS[b][p][m] != BAR_PS[b][p][m - (m > 1)];
+    for (t = 0; t < BAR_NTYPE; t++)
+        for (k = 0; k < BAR_NKEY; k++)
+            for (f = 0; f < BAR_NFAM; f++)
+                for (p = 0; p < RH_NANCH; p++) bad += BAR_PRATE[t][k][f][p] != BAR_PRU[BAR_PRATE_I[t][k][f]][p];
     printf("bad %d\n", bad);
     return bad != 0;
 }

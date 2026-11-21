@@ -143,11 +143,11 @@ static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
     }
     {
         const uint16_t (*PA)[RH_NANCH] = BAR_PAMP[ty][key];
-        const uint16_t (*PR)[RH_NANCH] = BAR_PRATE[ty][key];
+        const uint16_t *PR0 = BAR_PRU[BAR_PRATE_I[ty][key][f]], *PR1 = BAR_PRU[BAR_PRATE_I[ty][key][f2]];   /* (the distinct rows) */
         pa = (int32_t)PA[f][vi] + ((((int32_t)PA[f][vi + 1] - (int32_t)PA[f][vi]) * (int32_t)vf) >> 8);
         pa2 = (int32_t)PA[f2][vi] + ((((int32_t)PA[f2][vi + 1] - (int32_t)PA[f2][vi]) * (int32_t)vf) >> 8);
-        pr = (int32_t)PR[f][vi] + ((((int32_t)PR[f][vi + 1] - (int32_t)PR[f][vi]) * (int32_t)vf) >> 8);
-        pr2 = (int32_t)PR[f2][vi] + ((((int32_t)PR[f2][vi + 1] - (int32_t)PR[f2][vi]) * (int32_t)vf) >> 8);
+        pr = (int32_t)PR0[vi] + ((((int32_t)PR0[vi + 1] - (int32_t)PR0[vi]) * (int32_t)vf) >> 8);
+        pr2 = (int32_t)PR1[vi] + ((((int32_t)PR1[vi + 1] - (int32_t)PR1[vi]) * (int32_t)vf) >> 8);
     }
     pa += ((pa2 - pa) * a) >> 8;
     pr += (int32_t)(((int64_t)(pr2 - pr) * a) >> 8);
@@ -416,7 +416,7 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     v->age = ++bar_ages;
     v->life = k->life;
     v->pthump = BAR_THUMP[BAR_PBAND[k->band]];     /* the felt's knock: SOFT, the softest layer (pulse_pz.h) */
-    v->prate_thump = (uint32_t)BAR_PRATE[tyi][n - BAR_KEY_LO][0][1] << 4;
+    v->prate_thump = (uint32_t)BAR_PRU[BAR_PRATE_I[tyi][n - BAR_KEY_LO][0]][1] << 4;
     bar_load_pulse(v, vel);
 #if defined(FR_HQ) && HQB_CONTACT
     hqb_pulse(v, vel, 0);                           /* HQ: MARIMBA's top keys from the live contact */
