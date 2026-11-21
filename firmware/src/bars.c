@@ -336,7 +336,7 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     const bar_key_t *k = &BAR_KP[tyi][n - BAR_KEY_LO];
     int32_t tone = bar_pos, s = bar_tube;
     uint32_t q = (uint32_t)tone * (16u * 256u) / 127u, pi = q >> 8, pf = q & 255u;
-    const int16_t (*pos)[BAR_NM] = BAR_POS[k->band];
+    const int16_t (*pos)[BAR_NPC] = BAR_PS[k->band];
     v->k = k;
 #if BAR_CC
     const bar_cc_t *cc = bar_cc_find(n - BAR_KEY_LO, tyi);
@@ -366,7 +366,11 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
                                                          * damper: drel is the hand mute, never scaled by RELEASE (C5) */
         }
         ms->e = ms->es = ms->e0; ms->eps = ms->epss = ms->eps0;
-        w = pi < BAR_NPOS - 1u ? pos[pi][m] + (((pos[pi + 1u][m] - pos[pi][m]) * (int32_t)pf) >> 8) : pos[BAR_NPOS - 1u][m];
+        if (m == 1u || m == 7u) w = 0;              /* (TUBE, X: b is 0 in every key, BAR_PS keeps no column for them) */
+        else {
+            uint32_t pc = m - (m > 1u);
+            w = pi < BAR_NPOS - 1u ? pos[pi][pc] + (((pos[pi + 1u][pc] - pos[pi][pc]) * (int32_t)pf) >> 8) : pos[BAR_NPOS - 1u][pc];
+        }
         b = ((int64_t)km->b * w) >> 14;
         if (m == 5u || m == 6u) b = tone > 64 ? (b * ty->tors_db) >> 15 : 0;   /* torsion: off the centreline only */
         ms->b = b > 0x7FFFFFFF ? 0x7FFFFFFF : b < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)b;

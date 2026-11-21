@@ -7,6 +7,9 @@ flash, as BAR_PULSE next to pulse_pz.h).
 
  BAR_KP[type][key]   BAR_KEYS without the 8th mode slot (X), which is all zero in every key of every type (28 B a
                      key); bars.c reads slot 7 as a zero mode (BAR_KM)
+ BAR_PS              BAR_POS without its columns for mode slots 1 (TUBE) and 7 (X): zero in every band and point, and those
+                     slots' b is 0 in every key (so bars.c bar_init takes w = 0 for them, the product is the same 0);
+                     BAR_NPC = 6 columns, slot m (0, 2 .. 6) at column m - (m > 1)
  BAR_GROW            the distinct 17-point gain rows of BAR_POSG and BAR_TUBEG (most of the TUBE rows are the flat
                      16384 row), each table now a uint8 row index: BAR_POSG_I[band][family], BAR_TUBEG_I[band][family]
 
@@ -92,6 +95,15 @@ def header(text):
         idx[nm_] = [[row(f) for f in band] for band in t]
     L.append(f"static const uint16_t BAR_GROW[{len(pool)}][BAR_NPOS] = {{")
     L += ["    {" + ",".join(map(str, r)) + "}," for r in pool]
+    L.append("};")
+    pos = table(text, "BAR_POS")
+    assert len(pos) == define(text, "BAR_NBAND") and all(len(b) == define(text, "BAR_NPOS") for b in pos)
+    assert all(pt[1] == 0 and pt[7] == 0 for b in pos for pt in b), "BAR_POS: a TUBE / X column is not zero"
+    assert all(k[0][m][6] == 0 for t in keys for k in t for m in (1, 7)), "a TUBE / X mode has a force"
+    L.append("#define BAR_NPC 6")
+    L.append("static const int16_t BAR_PS[BAR_NBAND][BAR_NPOS][BAR_NPC] = {")
+    for b in pos:
+        L.append("  {" + ",".join(cvals([pt[0]] + pt[2:7]) for pt in b) + "},")
     L.append("};")
     L.append("static const uint8_t BAR_POSG_I[BAR_NBAND][BAR_NFAM] = {" + ",".join(cvals(b) for b in idx["BAR_POSG"]) + "};")
     L.append("static const uint8_t BAR_TUBEG_I[BAR_NBAND][BAR_NFAM] = {" + ",".join(cvals(b) for b in idx["BAR_TUBEG"]) + "};")

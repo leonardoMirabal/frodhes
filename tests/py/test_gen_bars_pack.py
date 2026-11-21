@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The packed bar tables (tools/gen_bars_pack.py -> firmware/gen/bars_pack.h; bars.c BAR_KM / bar_card_gain): the header
 is current, bars.h's key type is the 7-slot one, and the tables the firmware links give every integer the generated
-ones (bars_tables.h) hold: every field of every key of every type (the 8th mode slot reads as zero), and every
-BAR_POSG / BAR_TUBEG point of every band and family through the row index."""
+ones (bars_tables.h) hold: every field of every key of every type (the 8th mode slot reads as zero), every
+BAR_POS column the code reads, and every BAR_POSG / BAR_TUBEG point of every band and family through the row index."""
 import os
 import subprocess
 import sys
@@ -51,6 +51,10 @@ int main(void)
         for (f = 0; f < BAR_NFAM; f++)
             for (p = 0; p < BAR_NPOS; p++)
                 bad += BAR_POSG[b][f][p] != BAR_GROW[BAR_POSG_I[b][f]][p] || BAR_TUBEG[b][f][p] != BAR_GROW[BAR_TUBEG_I[b][f]][p];
+    for (b = 0; b < BAR_NBAND; b++)
+        for (p = 0; p < BAR_NPOS; p++)
+            for (m = 0; m < BAR_NM; m++)       /* the columns the code reads; TUBE and X (w = 0) hold 0 and b 0 */
+                bad += (m == 1 || m == 7) ? BAR_POS[b][p][m] != 0 : BAR_POS[b][p][m] != BAR_PS[b][p][m - (m > 1)];
     printf("bad %d\n", bad);
     return bad != 0;
 }
