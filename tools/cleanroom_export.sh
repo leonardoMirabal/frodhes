@@ -6,7 +6,7 @@
 #   tools/cleanroom_export.sh REF OUTDIR
 #
 # - git archive REF into OUTDIR (no .git, no history); OUTDIR must not exist or be empty.
-# - fx.c: the two loops (dly_loop with its comment, and dly_loop_kb with its comment; the statics between them stay)
+# - fx_fel.c (fx.c in a REF before the split): the two loops (dly_loop with its comment, and dly_loop_kb with its comment; the statics between them stay)
 #   are replaced by an #include of dly_own.c; a skeleton firmware/src/dly_own.c (signatures only) is written.
 # - private/ is deleted. Every other file that carries the loops' text (three or more distinctive lines of them, the
 #   rule inline below) is removed. firmware/src/dly_tape.c must stay to build: the functions derived from the loops
@@ -39,7 +39,9 @@ rm -rf "$OUT/private"
 python3 -I - "$OUT" <<'PY'
 import os, re, sys
 out = sys.argv[1]
-fx = os.path.join(out, "firmware/src/fx.c")
+fx = os.path.join(out, "firmware/src/fx_fel.c")      # the old loops live in fx_fel.c (parts 1 and 2); a REF before the split: fx.c
+if not os.path.exists(fx):
+    fx = os.path.join(out, "firmware/src/fx.c")
 src = open(fx).read().split("\n")
 
 def find(pred, start=0):
