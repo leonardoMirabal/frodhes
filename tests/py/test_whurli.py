@@ -71,3 +71,60 @@ def test_the_type_maps_agree():
     names = re.search(r'N_TYPE_LONG\[\] = \{([^}]*)\}', par).group(1)
     assert e == u and len(e) == 7 and names.split(",")[6].strip() == '"WHURLI"'
     assert "RH_T_REED" in eng and "#define ENG_NTYPE 7u" in eng
+
+
+def test_a_compact_row_expands_to_the_generators_words(tmp_path):
+    """rhodes.c rd_expand (sin, cos and the coupling word from theta, by integers: the C itself, copied out) against
+    the words rh_coefs.mode_coefs gives for the same mode (the engine's rh_key_t rows): sh, ch within 4 LSB of Q30, cr
+    within 1e-5, the rest verbatim; every key, every present mode"""
+    import re
+    import subprocess
+    sys.path.insert(0, os.path.join(H.ROOT, "tools"))
+    import gen_reed as gw
+    import rh_coefs as rc
+    src = open(os.path.join(H.ROOT, "firmware", "src", "rhodes.c")).read()
+    td = src[src.index("typedef struct {                               /* a WHURLI key's row"):src.index("} rd_key_t;") + 11]
+    fn = src[src.index("static void rd_sincos("):src.index("static void rh_load_pulse_rd(rh_voice_t *v, uint32_t vel, int fresh)\n{")]
+    c = tmp_path / "t.c"
+    c.write_text("""#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+typedef struct { int32_t sh, ch, th, d, drel, cr, b; } rh_mode_t;
+typedef struct { rh_mode_t m[4]; int32_t off, gain, kill, hc, pk; uint16_t prate, life; uint8_t band, fam, res, pad; } rh_key_t;
+typedef struct { int32_t off_delta; int32_t bark, bark_g; int32_t bell, ham; uint8_t nbody, drive_row; } rh_type_t;
+typedef struct { int32_t bark_max, off_max; uint16_t pamp_max, pad; } rd_lim_t;
+#define RH_PLEN 64
+""" + td + """
+#include "%s"
+""" % os.path.abspath(gw.OUT) + fn + """
+int main(void) {
+    int k, m;
+    for (k = 0; k < RD_NKEY; k++) {
+        rh_key_t o;
+        rd_expand(&RD_KEYS[k], &o);
+        for (m = 0; m < 3; m++)
+            printf("%d %d %d %d %d %d %d %d\\n", k, m, o.m[m].sh, o.m[m].ch, o.m[m].th, o.m[m].d, o.m[m].drel, o.m[m].cr);
+    }
+    return 0;
+}
+""")
+    exe = tmp_path / "t"
+    subprocess.run(["cc", "-O2", "-Wall", "-Wno-unused-variable", "-Wno-unused-function", str(c), "-o", str(exe)], check=True)
+    out = subprocess.run([str(exe)], capture_output=True, text=True, check=True).stdout.split("\n")
+    spec = gw.build()
+    n = 0
+    for ln in out:
+        if not ln:
+            continue
+        k, m, sh, ch, th, d, dr, cr = [int(x) for x in ln.split()]
+        mm = spec["keys"][k]["modes"]
+        if m >= len(mm):
+            assert th == 0
+            continue
+        w = rc.mode_coefs(mm[m]["f"], mm[m]["t60"], mm[m]["t60_rel"])
+        assert th == w["th"] and d == w["d"] and dr == w["drel"], (k, m)
+        if w["th"]:
+            n += 1
+            assert abs(sh - w["sh"]) <= 4 and abs(ch - w["ch"]) <= 4, (k, m, sh, w["sh"], ch, w["ch"])
+            assert abs(cr - w["cr"]) <= max(2, 1e-5 * w["cr"]), (k, m, cr, w["cr"])
+    assert n > 150

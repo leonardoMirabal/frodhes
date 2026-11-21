@@ -41,9 +41,9 @@ def test_compiles_at_the_interface_sizes(tmp_path):
     c = tmp_path / "t.c"
     c.write_text("""#include <stdint.h>
 #include <stdio.h>
-typedef struct { int32_t sh, ch, th, d, drel, cr, b; } rh_mode_t;
-typedef struct { rh_mode_t m[4]; int32_t off, gain, kill, hc, pk; uint16_t prate, life; uint8_t band, fam, res, pad; } rh_key_t;
+typedef struct { int32_t th[3]; uint32_t d[3], drel[3]; int32_t b[3]; int32_t gain, kill; uint16_t life, pad; } rd_key_t;
 typedef struct { int32_t off_delta; int32_t bark, bark_g; int32_t bell, ham; uint8_t nbody, drive_row; } rh_type_t;
+typedef struct { int32_t bark_max, off_max; uint16_t pamp_max, pad; } rd_lim_t;
 #define RH_PLEN 64
 #include "%s"
 int main(void) { printf("%%zu %%zu %%zu %%zu %%zu\\n", sizeof RD_KEYS, sizeof RD_PRATE + sizeof RD_PAMP + sizeof RD_PGAIN,
@@ -59,7 +59,7 @@ int main(void) { printf("%%zu %%zu %%zu %%zu %%zu\\n", sizeof RD_KEYS, sizeof RD
 
 def test_rom_window(hdr):
     ws = gw.words(hdr)
-    assert len(ws) > 5000
+    assert len(ws) > 3000                 # (the compact rows: 3922 words; the parse found the arrays)
     bad = [v for v in ws if gw.ROM_LO <= (v & 0xFFFFFFFF) <= gw.ROM_HI]
     assert not bad, bad[:5]
 

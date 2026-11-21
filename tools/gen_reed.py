@@ -25,7 +25,7 @@ The model, per key 33..96 (64 reeds, A1..C7):
 - the load and the amplifier: the pickup capacitance against the input load is a first-order corner (current mode
   below it, charge mode above), the small speakers a band-pass with a midrange lift (RD_RLC, RD_BODY).
 
-Format: private/plans/whurli-interface.md (rh_key_t rows with 4 mode slots, 5 velocity anchors at v = 0, 32, 64, 96,
+Format: private/plans/whurli-interface.md (compact rd_key_t rows of 3 reed modes, 5 velocity anchors at v = 0, 32, 64, 96,
 128, raw pulse shapes per group, the interleaved Hermite pickup row, Q28 biquads). Every word is checked out of the
 chip-ROM window. The solver results (finite elements, capacitance curves) are pinned in reed_pins.json, rounded, so
 every machine builds the same header.
@@ -52,7 +52,7 @@ GEN_VERSION = 1
 FS = 44100.0
 KEY_LO, KEY_HI = rb.KEY_LO, rb.KEY_HI
 NKEY = KEY_HI - KEY_LO + 1
-NSLOT = 4                       # rh_key_t mode slots (RH_NM in the engine)
+NSLOT = 3                       # reed modes in a row (rd_key_t th[3]: the engine expands a row into an rh_key_t)
 NMODE = 3                       # reed modes 1..3 present; slot 4 absent (mode 4 is ~45 x f1 and barely struck)
 PLEN = 64
 PU_N = 256                      # pickup knots - 1 over s = 0 .. S_MAX
@@ -392,20 +392,22 @@ def rom_b(keys):
 
 # ---------------------------------------------------------------- emit
 def key_row(k):
-    ms = []
+    """the compact row (rd_key_t): per reed mode theta (Q29), the sustain and damped decays (Q30) and the force gain (Q30);
+    the engine derives sin, cos and the coupling word from theta at the strike. Then gain (Q16), kill (Q25), life"""
+    th, d, dr, bb = [], [], [], []
     for j in range(NSLOT):
         if j < len(k["modes"]):
             m = k["modes"][j]
             c = rc.mode_coefs(m["f"], m["t60"], m["t60_rel"])
             b = int(round(m["b"] * Q30)) if c["th"] else 0
         else:
-            c, b = dict(sh=0, ch=0, th=0, d=0, drel=0, cr=0), 0
+            c, b = dict(th=0, d=0, drel=0), 0
         assert gr.rom_safe(b) == b, (k["midi"], j, b)
-        ms.append("{%d,%d,%d,%d,%d,%d,%d}" % (gr.rom_safe(c["sh"]), gr.rom_safe(c["ch"]), gr.rom_safe(c["th"]),
-                                              gr.rom_safe(c["d"]), gr.rom_safe(c["drel"]), gr.rom_safe(c["cr"]), b))
-    return "  {{%s}, %d, %d, %d, 0, 0, 0, %d, 0, 0, 0, 0}," % (
-        ",".join(ms), gr.rom_safe(int(round(k["off"] * Q25))), int(round(k["gain"] * Q16)),
-        gr.rom_safe(int(round(k["kill"] * Q25))), k["life_blocks"])
+        th.append(gr.rom_safe(c["th"])); d.append(gr.rom_safe(c["d"])); dr.append(gr.rom_safe(c["drel"])); bb.append(b)
+    assert all(x >= 0 for x in d + dr), k["midi"]
+    return "  {{%s},{%s},{%s},{%s}, %d, %d, %d, 0}," % (
+        ",".join(map(str, th)), ",".join(map(str, d)), ",".join(map(str, dr)), ",".join(map(str, bb)),
+        int(round(k["gain"] * Q16)), gr.rom_safe(int(round(k["kill"] * Q25))), k["life_blocks"])
 
 
 def emit(spec):
@@ -418,8 +420,11 @@ def emit(spec):
     w("#define RD_GEN_VERSION %d" % GEN_VERSION)
     w("#define RD_KEY_LO %d\n#define RD_NKEY %d\n#define RD_NANCH %d" % (KEY_LO, NKEY, len(VA)))
     w("#define RD_NGRP %d\n#define RD_PU_N %d\n#define RD_PU_SH %d" % (len(P["groups"]), PU_N, PU_SH))
-    w("/* per key: reed modes 1..3 (slot 4 absent), off (Q25, edge half-heights), gain (Q16), kill (Q25), life */")
-    w("static const rh_key_t RD_KEYS[RD_NKEY] = {")
+    offs = {int(round(k["off"] * Q25)) for k in spec["keys"]}
+    assert len(offs) == 1, offs                                   # one operating point for every key (RD_OFF)
+    w("#define RD_OFF %d   /* the pickup's rest offset u0 (Q25, edge half-heights), every key's */" % gr.rom_safe(offs.pop()))
+    w("/* per key (rd_key_t, rhodes.c): per reed mode theta Q29, sustain and damped decay Q30, force gain Q30; gain Q16, kill Q25, life */")
+    w("static const rd_key_t RD_KEYS[RD_NKEY] = {")
     for k in spec["keys"]:
         w(key_row(k))
     w("};")
@@ -444,7 +449,6 @@ def emit(spec):
     w("static const int32_t RD_BODY[2][5] = {%s};" % ",".join(
         "{" + ",".join(map(str, q28_words(c))) + "}" for c in spec["body"]))
     w("static const rh_type_t RD_TYPE = {0, %d, %d, %d, %d, %d, 0};" % (Q16, Q16, Q16, Q16, len(spec["body"])))
-    w("typedef struct { int32_t bark_max; int32_t off_max; uint16_t pamp_max; uint16_t pad; } rd_lim_t;")
     lm = spec["lim"]
     w("static const rd_lim_t RD_LIM = {%d, %d, %d, 0};" % (lm["bark_max"], lm["off_max"], lm["pamp_max"]))
     w("#endif")
@@ -453,9 +457,9 @@ def emit(spec):
 
 
 def sizes():
-    """flash bytes per table as the compiler lays them out (rh_key_t with 4 mode slots: 140 B)"""
+    """flash bytes per table as the compiler lays them out (rd_key_t: 60 B a key)"""
     na, ng = len(VA), len(P["groups"])
-    return {"RD_KEYS": NKEY * (NSLOT * 7 * 4 + 5 * 4 + 2 * 2 + 4), "RD_PRATE+PAMP+PGAIN": 3 * NKEY * na * 2,
+    return {"RD_KEYS": NKEY * (NSLOT * 4 * 4 + 2 * 4 + 2 * 2), "RD_PRATE+PAMP+PGAIN": 3 * NKEY * na * 2,
             "RD_KGRP": NKEY, "RD_PULSE": ng * na * (PLEN + 2) * 2, "RD_PHIM": 2 * (PU_N + 1) * 4,
             "RD_RLC+BODY+TYPE+LIM": 15 * 4 + 28 + 12}
 
