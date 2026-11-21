@@ -48,16 +48,6 @@ _Static_assert(RH_NM == 4, "rh_key_t holds RH_NM modes");
  * private/plans/whurli-interface.md. Read only by the reed paths below (rh_init_rd, rh_load_pulse_rd, rh_pickup_rd, the
  * chain of TYPE 4): every other TYPE takes exactly the path it always did */
 typedef struct { int32_t bark_max, off_max; uint16_t pamp_max, pad; } rd_lim_t;
-typedef struct {                               /* a WHURLI key's row: three reed modes (the pitch word theta Q29, the sustain and the
-                                                * damped decay Q30, the force gain Q30; 0 = the mode is absent) and the key's gain
-                                                * Q16, kill level Q25 and life in blocks: 60 B, where an rh_key_t is 140. The sin, cos
-                                                * and coupling words come from theta at the strike (rd_expand) */
-    int32_t th[3];
-    uint32_t d[3], drel[3];
-    int32_t b[3];
-    int32_t gain, kill;
-    uint16_t life, pad;
-} rd_key_t;
 #include "reed_tables.h"
 #define RH_T_REED 4u                           /* rh_type of the reed type (the Rhodes types 0..3) */
 #ifndef RH_NO_TONE_G                           /* (-DRH_NO_TONE_G: without it, as tools/tone_level.py measures) */
@@ -145,7 +135,6 @@ typedef struct {
     const rh_key_t *k;
     uint8_t note, vel, alive, held;
     uint8_t rd;                                /* a WHURLI voice (rh_init_rd): its own key table, pulse laws and pickup curve */
-    rh_key_t rk;                               /* ... and its expanded key row (k points here; unused by the other TYPEs) */
     uint8_t ramp;                              /* damper crossfade sub-blocks left */
     uint8_t rlen;                              /* its length (RAMP_SUB, or the release velocity's: rh_rel_len) */
     uint16_t rgain;                            /* Q15: the release velocity's damper weight scale (key up only) */
@@ -1446,43 +1435,6 @@ static int32_t rd_slope(int32_t u)                             /* |dPhi/du| near
     int32_t d = 1 << 20, h = rd_hermite(u + d) - rd_hermite(u - d);
     return h < 0 ? -h : h;
 }
-static void rd_sincos(int32_t a, int32_t *sn, int32_t *cs)   /* sin and cos of a (Q30 radians, 0 .. 1.4: a mode under 18 kHz): Horner */
-{
-    int32_t a2 = (int32_t)(((int64_t)a * a + (1 << 29)) >> 30), s = 1 << 30, c = 1 << 30, k;
-    for (k = 8; k >= 1; k--) {                      /* s = 1 - a2 s / (2k (2k + 1)), c = 1 - a2 c / ((2k - 1) 2k), the last term in first */
-        s = (1 << 30) - (int32_t)((int64_t)a2 * s >> 30) / (2 * k * (2 * k + 1));
-        c = (1 << 30) - (int32_t)((int64_t)a2 * c >> 30) / ((2 * k - 1) * 2 * k);
-    }
-    *sn = (int32_t)(((int64_t)a * s + (1 << 29)) >> 30);
-    *cs = c;
-}
-static uint32_t rd_cr(int32_t sh)                          /* the coupling word Q16 / (8 sin^2 (theta / 2)) = 2^73 / sh^2, by long
-                                                            * division (the chip has no 64-bit divide), saturating */
-{
-    uint64_t pn = ((uint64_t)(uint32_t)sh * (uint32_t)sh) >> 20, r = 0, q = 0;   /* sh^2 in Q40 (>= 2^24 above 27 Hz) */
-    int i;
-    if (pn < 1u) pn = 1u;
-    for (i = 53; i >= 0; i--) {                              /* 2^53 / pn: the dividend's one set bit comes in first */
-        r = (r << 1) | (uint64_t)(i == 53);
-        q <<= 1;
-        if (r >= pn) { r -= pn; q |= 1u; }
-    }
-    return q > 0x7FFFFFFFu ? 0x7FFFFFFFu : (uint32_t)q;
-}
-static void rd_expand(const rd_key_t *r, rh_key_t *o)       /* a compact row -> the engine's rh_key_t (the voice's own) */
-{
-    uint32_t m;
-    memset(o, 0, sizeof *o);
-    for (m = 0; m < 3u; m++) {
-        rh_mode_t *x = &o->m[m];
-        if (!r->th[m]) continue;
-        x->th = r->th[m];
-        rd_sincos(r->th[m], &x->sh, &x->ch);                  /* theta / 2 in Q30 is theta in Q29: the same word */
-        x->d = (int32_t)r->d[m]; x->drel = (int32_t)r->drel[m]; x->b = r->b[m];
-        x->cr = (int32_t)rd_cr(x->sh);
-    }
-    o->off = RD_OFF; o->gain = r->gain; o->kill = r->kill; o->life = r->life;
-}
 static void rh_load_pulse_rd(rh_voice_t *v, uint32_t vel, int fresh)
 {
     uint32_t key = rd_row(v->note), i = vel >> 5, w = (vel & 31u) << 10, j, h, gl;
@@ -1519,9 +1471,8 @@ static void rh_load_pulse_rd(rh_voice_t *v, uint32_t vel, int fresh)
 static void rh_init_rd(rh_voice_t *v, uint32_t note, uint32_t vel)
 {
     uint32_t m, key = rd_row(note), bs = rd_bscale(), bg = (0x80000000u / bs) << 1, gl, kk, q;
-    const rh_key_t *k = &v->rk;
+    const rh_key_t *k = &RD_KEYS[key];
     int32_t t = rh_tune_now(), bell = rh_bell_at(note), u, g;
-    rd_expand(&RD_KEYS[key], &v->rk);
     v->rd = 1; v->k = k; v->tn = rh_tune_t;
 #ifdef RH_VMAP
     v->vm = 0;
