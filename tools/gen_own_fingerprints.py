@@ -41,7 +41,7 @@ BLOCKS = [
     ("pr3", "firmware/src/engine.c", [(113, 117)]),
     ("pr3", "firmware/src/tempo.c", [(396, 402)]),
     ("pr3", "firmware/src/rhodes.c", [(2058, 2097)]),
-    ("fdrv", "firmware/src/fx.c", [(632, 911)]),            # the Felucca DRIVE kernel and its wrappers (part 3)
+    ("fdrv", "firmware/src/fx.c", [(632, 911)]),            # the Felucca DRIVE kernel and its wrappers (now fx_fel.c part 4)
     ("felucca-delay", "firmware/src/fx.c", [(2116, 2180)]),
     ("felucca-dc", "firmware/src/fx.c", [(2813, 2819)]),
     ("felucca-hall", "firmware/src/fx.c", [(2500, 2712)]),

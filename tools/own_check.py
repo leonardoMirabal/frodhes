@@ -16,9 +16,8 @@ permissive libraries (plugin/deps.lock) and the window's OFL fonts.
      states the app's own interface (an enum value, a signature) in the plugin's own HAL files, todo = a leftover
      to rewrite. Any other hit fails; so does a listed line that no longer hits (delete it).
 
-The DRIVE kernel (group fdrv) is being replaced in this build (part 3 of the plan); until then its fingerprints, and
-the copyright lines of PENDING_COPYRIGHT's files, are reported as pending. PENDING_PART3 = () and an empty
-PENDING_COPYRIGHT make them failures: that is the whole change when part 3 lands."""
+The copyright lines of PENDING_COPYRIGHT's files are reported as pending (no failure); PENDING_PART3 names fingerprint
+groups that are still being replaced (none now: the WARM drive replaced FDRV)."""
 import argparse
 import hashlib
 import os
@@ -34,12 +33,11 @@ ALLOW = "plugin/own_allow.txt"
 FINGERPRINTS = "plugin/own_fingerprints.txt"
 KNOWN = "plugin/own_known.txt"
 
-# fingerprint groups that part 3 (the new DRIVE, replacing the FDRV kernel fx.c:632-911 in this build) removes:
-# reported as pending, not as failures. Remove the list's entry (PENDING_PART3 = ()) when part 3 is merged.
-PENDING_PART3 = ("fdrv",)
+# fingerprint groups still being replaced in this build: reported as pending, not as failures (none: part 3 landed)
+PENDING_PART3 = ()
 # closure files whose copyright lines still name another author: path -> why. Reported as pending.
 PENDING_COPYRIGHT = {
-    "firmware/src/fx.c": "header keeps the Felucca notice for the FDRV kernel (part 3) and the classic HALL; the FM-1 builds need it",
+    "firmware/src/fx.c": "header keeps the Felucca notice for the classic HALL (rev_hall), which the FM-1 builds compile and the plugin never does (FR_REV_HQ)",
 }
 # paths of other people's permissive code that the plugin links: exempt from (b)
 LIBRARY_PREFIXES = (".local/plugin-deps/", "assets/fonts/")

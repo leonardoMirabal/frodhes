@@ -57,7 +57,7 @@ def test_passes_on_the_tree():
     assert oc.run(out=out) == 0, out.getvalue()
     text = out.getvalue()
     assert "(a) allow-list: ok" in text and "(b) copyright lines: ok" in text
-    assert re.search(r"\(c\) .*: ok; \d+ pending \(fdrv\)", text), text
+    assert re.search(r"\(c\) .*: ok; 0 pending \(none\)", text), text
 
 
 def test_the_closure_is_the_plugins():
@@ -73,16 +73,15 @@ def test_the_closure_is_the_plugins():
     assert "plugin" in tcl.targets_of("plugin/src/bridge.c", tcl.closures())
 
 
-def test_pending_part3_is_the_only_pending_group(tree):
-    """emptying PENDING_PART3 turns the DRIVE kernel's fingerprints into failures: the one-line change of part 3"""
-    out = io.StringIO()
-    old = oc.PENDING_PART3
-    oc.PENDING_PART3 = ()
-    try:
-        assert oc.run(out=out) == 1
-    finally:
-        oc.PENDING_PART3 = old
-    assert "FAIL" in out.getvalue() and "fdrv" in out.getvalue()
+def test_fails_when_the_classic_drive_is_put_back(tree):
+    """the FDRV kernel (fx_fel.c part 4) compiled in the own-code build: (a) and (c) both fail"""
+    old = "#if !FR_OWN                                     /* the classic drive (FDRV): fx_fel.c part 4;"
+    with Edit(tree, "firmware/src/fx.c", lambda t: t.replace(old, "#if 1" + old[len("#if !FR_OWN"):], 1)):
+        rc, out = check_in(tree)
+    assert rc == 1, out
+    assert "fx_fel.c" in out and "fdrv" in out, out
+    rc, out = check_in(tree)
+    assert rc == 0, out
 
 
 def test_fails_when_gfx_c_is_put_back_in_the_closure(tree):

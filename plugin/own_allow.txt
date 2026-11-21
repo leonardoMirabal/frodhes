@@ -5,6 +5,7 @@
 assets/fonts/InterTight[wght].ttf
 assets/fonts/Michroma-Regular.ttf
 firmware/gen/bars_tables.h
+firmware/gen/drive_own_tables.h
 firmware/gen/drive_tables.h
 firmware/gen/fx_tables.h
 firmware/gen/hq/bars_hq_contact.h
@@ -27,6 +28,7 @@ firmware/src/drive.c
 firmware/src/drv_bhlue.c
 firmware/src/drv_khlon.c
 firmware/src/drv_ohcd.c
+firmware/src/drv_own1.c
 firmware/src/drv_tsh8.c
 firmware/src/eng_pages.h
 firmware/src/engine.c
