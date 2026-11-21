@@ -72,7 +72,7 @@ RULES = [
      "the app's glue: the audio ISR's wiring, the main loop, the MIDI CC map"),
     ("engine:rhodes", ["firmware/src/rhodes.c", "firmware/gen/rhodes_tables.h", "firmware/gen/rhodes_phim.h", "firmware/gen/rh_tone_g.h",
                        "firmware/gen/rh_tone_b.h", "firmware/gen/rh_velmap.h", "firmware/gen/rh_velmap_mk.h", "firmware/gen/rh_drive_mk.h",
-                       "firmware/gen/rh_top.h"], ALL, ("rhodes",), (),
+                       "firmware/gen/rh_top.h", "firmware/gen/rh_pack.h"], ALL, ("rhodes",), (),
      "the Rhodes engine (its DSP or tables)"),
     ("engine:bars", ["firmware/src/bars.c", "firmware/src/bars.h", "firmware/gen/bars_tables.h",
                     "firmware/gen/bars_pack.h"], ALL,
