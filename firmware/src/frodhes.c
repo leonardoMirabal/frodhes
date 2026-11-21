@@ -1920,6 +1920,7 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     v[0] = 0;
     if (!strcmp(key, "header")) { if (set.preset < PR_NALL_UI) preset_name(set.preset, t); else p_strcpy(t, "FRODHES", 8); t[14] = 0; snprintf(v, n, "%s", t); }
     else if (!strcmp(key, "preset")) snprintf(v, n, "%u", set.preset);
+    else if (!strcmp(key, "type")) snprintf(v, n, "%s", N_TYPE_LONG[PV(P_TYPE) < N_TYPE_N ? PV(P_TYPE) : 0u]);   /* the TYPE (tests/scripts/whurli.txt) */
     else if (!strcmp(key, "bpm10")) snprintf(v, n, "%u", tempo_bpm10());          /* the tempo shown (tempo.c) */
     else if (!strcmp(key, "setbpm")) snprintf(v, n, "%u", set.bpm10);             /* the tempo setting */
     else if (!strcmp(key, "vresp")) snprintf(v, n, "%u/%u", set.vel_resp, rh_touch_mode);   /* RESPONSE: the setting, the engine's */

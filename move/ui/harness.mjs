@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const W = 128, H = 64;
 const MOD = path.join(ROOT, "move", "module");
-const TYPE_UI = [0, 0, 0, 0, 1, 2];                 // eng_pages.h TYPE_UI: ST77 SUIT FELT DYNO -> 0, VIBE 1, MRMB 2
+const TYPE_UI = [0, 0, 0, 0, 1, 2, 0];             // eng_pages.h TYPE_UI: ST77 SUIT FELT DYNO -> 0, VIBE 1, MRMB 2, WHRL 0
 
 export function loadScreen(file = path.join(MOD, "screen.js")) {
     const g = {};

@@ -41,7 +41,7 @@ function servedTexts() {
     return out;
 }
 const SERVED = servedTexts();
-const TYPE_ENG = [0, 0, 0, 0, 1, 2];        // eng_pages.h TYPE_UI
+const TYPE_ENG = [0, 0, 0, 0, 1, 2, 0];     // eng_pages.h TYPE_UI
 const ENG_MOVED_MS = 600;                   // move_bridge.h MB_ENG_MOVED_MS
 
 // the plugin as the grid sees it: a parameter store, the per-engine pages, is_loading (mb_engine_moved); `old`: the

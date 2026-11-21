@@ -625,7 +625,7 @@ def help_lines(text):
 
 def help_json(m, levels, reach):
     kids = [{"title": "Overview", "lines": help_lines(
-        "Physical models of an electric piano (four types), a vibraphone and a marimba. No samples. TYPE on the "
+        "Physical models of an electric piano (four types), a reed piano, a vibraphone and a marimba. No samples. TYPE on the "
         "first page picks the instrument; its VOICE pages follow it.") + [""] + help_lines(
         "SUS is the sustain pedal, on or off: ON holds the notes, OFF lets them go. A pedal on CC 64 works too.") + [""]
         + help_lines(
@@ -926,7 +926,7 @@ SAY_NAMES = {
 SAY_PAGES = {"EQ": "EQ", "DRIVE/FILTER": "Drive and filter", "TREM/PHASER": "Tremolo and phaser", "LFO/SETUP": "LFO and setup"}
 SAY_WORDS = {
     "ST77": "Stage 77", "SUIT": "Suitcase", "FELT": "Early felt", "DYNO": "Bell dyno", "VIBE": "Vibes",
-    "MRMB": "Marimba", "INF": "Infinite", "DIG": "Digital", "ANA": "Analog", "RAND": "Random", "UP-DN": "Up down",
+    "MRMB": "Marimba", "WHRL": "Whurli", "INF": "Infinite", "DIG": "Digital", "ANA": "Analog", "RAND": "Random", "UP-DN": "Up down",
     "SQR": "Square", "TRI": "Triangle", "S&H": "Sample and hold", "LP12": "Low pass 12", "LP18": "Low pass 18",
     "HP12": "High pass 12", "HP18": "High pass 18", "BP": "Band pass", "TREM": "Tremolo",
     "1/32": "32nd", "16T": "16th triplet", "1/16": "16th", "8T": "8th triplet", "16D": "dotted 16th", "1/8": "8th",
