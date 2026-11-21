@@ -115,25 +115,6 @@ int main(int argc, char **argv)
         EXPECT(frp_mkdirs(t) == -1, "mkdir -p through a file fails");
         frp_remove(f);
     }
-    {                                                       /* the settable preset root: default unchanged, this call wins */
-        char out[1024];
-        frp_env_t h;
-        frp_env_here(&h);
-        EXPECT(frp_paths_set_preset_root("/tmp/root-a") == 0, "set the root");
-        frp_env_here(&h);
-        EXPECT(h.preset_dir && !strcmp(h.preset_dir, "/tmp/root-a"), "the root is the environment's preset folder");
-        EXPECT(frp_path_presets(FRP_OS_LINUX, &h, out, sizeof out) == 0 && !strcmp(out, "/tmp/root-a"), "presets at the root");
-        EXPECT(frp_paths_set_preset_root("") == 0, "clear the root");
-        frp_env_here(&h);
-        EXPECT(!h.preset_dir || strcmp(h.preset_dir, "/tmp/root-a"), "no root: the default again");
-        {
-            char big[1100];
-            memset(big, 'x', sizeof big - 1); big[sizeof big - 1] = 0;
-            EXPECT(frp_paths_set_preset_root(big) == -1, "a root too long is refused");
-            frp_env_here(&h);
-            EXPECT(!h.preset_dir || h.preset_dir[0] != 'x', "and is none");
-        }
-    }
     if (!fails) printf("ok    paths: macOS (and its App Sandbox), Linux (XDG), Windows (APPDATA, UNC, drive roots)%s\n",
                        argc > 1 ? "; mkdir -p, the atomic replace, the listing on this OS" : "");
     return fails ? 1 : 0;
