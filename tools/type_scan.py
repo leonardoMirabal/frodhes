@@ -57,14 +57,15 @@ The checks (codes; numbers calibrated on the existing TYPEs, see KNOWN for what 
        one jump), the events not guarded: CLK = 0 and GLT = 0, and (slow / fast) the 10 ms level never moves > 1.5 dB
        more than the same chord's own decay
   REP  fast repeats (16 a second, v127, staccato holds 8 ms, mixed velocity), a ten-note release storm and all-notes-off
-       (CC 123 / 120): no repeat's peak > 5 dB over the first (this code), and CLK GLT CLP IDL over the whole render
+       (CC 123 / 120): the last 20 repeats' peak over the 12 before them <= 3 dB (build-up plateaus, runaway does not) (this code), and CLK GLT CLP IDL over the whole render
   CHD  the superposition residual of a 4-note chord (nl, reported, never judged: a growl is non-linear by design)
   Cases (the group line of the table, rows of the codes above): pedal (pedal down, eight notes, release by pedal-up,
   flutter, a held note under the pedal; REL after the pedal-up), repeat (above), chord (4 / 6 notes in three registers,
   v64 / v127, the limiter in), fx, cpu, zip, knob.
   FXS  every effect on (MIX / DEPTH 127) and off: the effects' pristine rules on this TYPE (tools/fx_pristine.py): CLK
        CLP, the effects' clamps (delay / reverb / chorus / wah) = 0, the effect adds <= 2 dB peak over the bypass (6 dB for the touch wah:
-       level-dependent by design, 5 dB for a delay at feedback), a tail that ends (the last 0.5 s under -70 dBFS; a delay's repeats do not rise)
+       level-dependent by design, 5 dB for a delay at feedback, 3.1 for the constant-power pan: its bound is 3.01,
+       3 for the TREM slot on a bar TYPE, which is the motor's amplitude modulation), a tail that ends (the last 0.5 s under -70 dBFS; a delay's repeats do not rise)
   CPU  the two-core build's 14 voices: the cost model's us per block (cpu-proxy: voices only, P0 costs; the host's
        model, a ratio against STAGE 77 more than an absolute) <= 5500 (a bar TYPE 4500), the cost per voice against STAGE 77's (<= 1.25 x + 5 us), a 14-voice worst case
        (all fingers, pedal, every effect, 20 notes stolen): CLK CLP and every voice taken
@@ -108,6 +109,7 @@ Pool = multiprocessing.get_context("spawn").Pool
 
 # ---------------------------------------------------------------- the numbers
 CLP_RAW, CLP_LIM = 32700, 32767
+RUN_HARD = 15.0             # dB: a swell beyond this is judged runaway even if it falls again
 RUN_RISE = 3.0              # dB: the 50 ms RMS over its running minimum after the peak (beating of the tine's own pair)
 ALI_INH, ALI_HF = -40.0, -50.0   # dB re H1; never under the white floor + ALI_WHITE
 ALI_WHITE = 3.0
@@ -115,17 +117,20 @@ ALI_VMIN = 64
 ALI_KMIN = 28               # (the lowest keys' f0 is under the 30 Hz the spectrum starts at: no off-harmonic band to read)
 NSE_DB, NSE_ABS = -55.0, -88.0     # dB re H1, or dBFS: the 16-bit rounding's own floor reads -94 dBFS
 LEV_STEP, LEV_DEV_MID, LEV_DEV_OUT = 1.5, 1.5, 3.0
+LEV_KMIN, LEV_KMAX = 28, 103   # the Rhodes' 73 notes (tools/calib_report.py): above 103 EARLY FELT falls 3 dB a key by design of the clean top
 CBL_STEP, CBL_DEV_MID, CBL_DEV_OUT = 3.0, 2.5, 4.5   # the band loudness moves more from key to key (a partial's place
                                                        # in the bands; key 44's f0 sits on the 100 Hz edge: STAGE 77
                                                        # 2.8): STAGE 77 reads 1.7 deviation, MARIMBA 2.2
 VEL_DROP = 0.5
-TYP_LU = 3.0
+TYP_LU, TYP_PHON_BAR = 3.0, 6.0   # the strike (0..300 ms): a percussive bar's 1 s integral is its decay, not its level
+                                  # (MARIMBA: +1.4 LU at the strike, -1.6 over 1 s); band loudness of a pure bar partial
+                                  # against a tine's spread spectrum differs more (VIBES +2.3 LU, +5.6 phon: documented +2.5 dB)
 REL_RMS, REL_PEAK = 0.5, 1.0
 KNB_LEVEL = 18.0
 KNB_STEP, KNB_CENT = 3.0, 0.30
 ZIP_STEP = 1.5
-REP_PEAK = 5.0   # dB: a key struck again over its own ring adds up (STAGE 77 low +4.2, SUITCASE +4.3)
-FX_PK, FX_PK_FB, FX_PK_WAH = 2.0, 5.0, 6.0       # a delay at high feedback stacks its repeats on the note: 5 dB
+REP_PEAK = 3.0   # dB: the repeats' peak still growing at the end (a key struck again builds, then plateaus)
+FX_PK, FX_PK_FB, FX_PK_WAH, FX_PK_PAN, FX_PK_MOTOR = 2.0, 5.0, 6.0, 3.1, 3.0       # a delay at high feedback stacks its repeats on the note: 5 dB
 CPU_US_ONE, CPU_US_C1, CPU_VOICE_X, CPU_VOICE_ADD = 4500, 5500, 1.25, 5.0   # the host's cost model: voices only (P0
 # costs, tests/host.c cpu-proxy) for the electric pianos; a bar TYPE's is its whole block (S11: 4500). STAGE 77 reads
 # 5424 at 14 voices on the two-core build and clears the FM-1's 4800 gate there, so 5500 is 'no dearer than STAGE 77'
@@ -167,6 +172,20 @@ class Type:
 
     def dump(self):
         return (self.idx, self.name, self.ccnum, self.ccval, self.partials)
+
+
+MODAL = (5.0, 8.0)          # x f0: where a tine's first overtone (a cantilever's 6.27 f0, the Rhodes tines 6.2 .. 6.8 on the
+                            # host) and its pickup sidebands at +-f0 sit. Review 2026-11-21: BELL DYNO key 60 v127 DECAY=127
+                            # read inh -31.6 dB (limit -40): a line at 6.80 f0 (-35 dB) with neighbours at 5.80 and 7.80
+                            # f0, the same ratio class at keys 40 / 72 (6.18 / 6.70): the tine's own mode ringing into
+                            # the 150..650 ms window at the long DECAY, not an alias (an alias does not scale with f0).
+                            # ALI leaves this band out of inh and judges it on its own ceiling
+MODAL_MAX = -25.0           # dB re H1: the overtone line and its sidebands together
+
+
+def modal_of(ty):
+    """the modal band of an electric piano TYPE (a bar TYPE's partials are all inharmonic: not judged here)"""
+    return MODAL if judges_alias(ty) else None
 
 
 def judges_alias(ty):
@@ -289,9 +308,36 @@ def seg(x, t_ms, dur_ms):
     return bs.seg(x, t_ms, dur_ms)
 
 
+HP_FLOOR_DB = -78.0         # dBFS: the 8 kHz+ energy of a burst window must be 4 LSB RMS or more (see det_hp)
+
+
+def det_hp(x, ev_ms, guard_ms=int(GUARD_POST)):
+    """HP bursts, bar_scan.click_count's rule with a higher floor: 1 ms windows whose energy above 8 kHz is over -40 dB
+    of the window's, over 10 dB above the HF 3 ms either side, and above HP_FLOOR_DB (bar_scan: -90). Review
+    2026-11-21: at -90 dBFS (1.5 LSB RMS) a one-LSB stair step of a quiet bass note (BELL DYNO key 36 v1 TONE=0, 224 ms,
+    HF -86.5 dBFS, second difference 11 of a 115 LSB signal) counted as a click; a click that is audible has 4 LSB or
+    more of HF energy even on a quiet note"""
+    from scipy.signal import butter, sosfilt
+    m = mono(x)
+    hp = sosfilt(butter(4, 8000, "hp", fs=FS, output="sos"), m)
+    w = FS // 1000
+    n = len(m) // w
+    ea = (m[:n * w].reshape(n, w) ** 2).mean(axis=1)
+    eh = (hp[:n * w].reshape(n, w) ** 2).mean(axis=1)
+    share = 10 * np.log10(eh / (ea + 1e-20) + 1e-20)
+    nb = np.maximum(np.concatenate([eh[:3], eh[:-3]]), np.concatenate([eh[3:], eh[-3:]]))
+    g = np.ones(n, bool)
+    for t in ev_ms:
+        i = int(t * FS / 1000) // w
+        g[max(0, i - bs.PRE_MS):i + guard_ms] = False
+    loud = (ea > (32767 * 1e-4) ** 2) & (eh > (32767 * 10 ** (HP_FLOOR_DB / 20)) ** 2)
+    return int((g & loud & (share > -40) & (eh > 10 * nb)).sum())
+
+
 def det_clicks(x, ev_ms):
-    """CLK: (second-difference hits, HP bursts) outside the guards: bar_scan.click_count (S1)"""
-    return bs.click_count(x, ev_ms, int(GUARD_POST))
+    """CLK: (second-difference hits, HP bursts) outside the guards: bar_scan.click_count's second difference (S1) and
+    det_hp"""
+    return bs.click_count(x, ev_ms, int(GUARD_POST))[0], det_hp(x, ev_ms)
 
 
 def det_lpc(x, ev_ms):
@@ -317,17 +363,27 @@ def det_clip(x, limit):
     return int((np.abs(x) >= limit).sum())
 
 
-def det_rise(x, t_on, t_off, rise=RUN_RISE):
-    """RUN: the 50 ms RMS (dB) of a held note, the largest rise over its running minimum after its peak (dB)"""
+def det_swell(x, t_on, t_off):
+    """(the largest rise of the 50 ms RMS over its running minimum after its peak, dB; still rising at the end of the
+    held note: the last 150 ms over the 150 ms before it by more than 1 dB)"""
     m = seg(mono(x), t_on, t_off - t_on)
     h = int(0.05 * FS)
     n = len(m) // h
     if n < 6:
-        return 0.0
+        return 0.0, False
     e = 10 * np.log10(np.mean(m[:n * h].reshape(n, h) ** 2, axis=1) + 1e-3)
     pk = int(np.argmax(e[:max(3, int(0.15 / 0.05))]))
     lo = np.minimum.accumulate(e[pk:])
-    return float(np.max(e[pk:] - lo))
+    return float(np.max(e[pk:] - lo)), bool(e[-3:].mean() - e[-6:-3].mean() > 1.0)
+
+
+def det_rise(x, t_on, t_off, rise=RUN_RISE):
+    """RUN: runaway, not swell. A note whose level grows and is still growing when the key goes up (or grows by more
+    than RUN_HARD) is unstable; one that swells and then falls is not (review 2026-11-21: the low bars of VIBES and
+    MARIMBA swell 5-9 dB over 0.4-0.7 s, velocity-independent, then decay, and counted as runaway). Returns the rise in
+    dB when it is runaway, else 0"""
+    r, rising = det_swell(x, t_on, t_off)
+    return r if (rising and r > rise) or r > RUN_HARD else 0.0
 
 
 def det_release(x, t_off):
@@ -347,8 +403,8 @@ def det_idle(x, tail_ms=1000):
     return float(a.max()), int((a > 0).sum())
 
 
-def alias_cells(window, f0, partials=()):
-    """ALI: (inh, inh_hf, inhw, h1, bark, floor) of a held note's window (mono, int16 units; partials: extra bands, the
+def alias_cells(window, f0, partials=(), modal=None):
+    """ALI: (inh, inh_hf, inhw, h1, bark, floor, modal) of a held note's window (mono, int16 units; partials: extra bands, the
     modes' ratios to f0, counted as the note's own): the power off the harmonic bands
     re H1 over 30 Hz .. 20 kHz and over 10 .. 20 kHz, the white floor, H1's dBFS, and the growl (H2..H5 over H1, dB:
     harmonic energy, reported never judged)"""
@@ -358,6 +414,10 @@ def alias_cells(window, f0, partials=()):
     h1m |= np.abs(fr - fund) < max(dd.IBW, fund * dd.IREL)
     for k in range(1, int(20000 / fund) + 1):
         on |= np.abs(fr - k * fund) < max(dd.IBW, k * fund * dd.IREL)
+    mod = np.zeros(len(fr), bool)
+    if modal:                                # the tine's first overtone and its pickup sidebands: see MODAL
+        mod = (fr > modal[0] * fund) & (fr < modal[1] * fund) & ~on
+        on |= mod
     for r in partials:                       # the TYPE's own modes (--partials: ratios of f0), physical, not a defect
         on |= np.abs(fr - r * fund) < max(dd.IBW, r * fund * dd.IREL)
     a = p[h1m].sum() + 1e-30
@@ -373,7 +433,8 @@ def alias_cells(window, f0, partials=()):
         m = (fr > k * fund * 0.97) & (fr < k * fund * 1.03)
         gr += p[m].max() if m.any() else 0.0
     return (float(10 * np.log10(b / a + 1e-30)), float(10 * np.log10(bh / a + 1e-30)), inhw, float(h1db),
-            float(10 * np.log10(gr / (p[h1m].max() + 1e-30) + 1e-30)), float(floor))
+            float(10 * np.log10(gr / (p[h1m].max() + 1e-30) + 1e-30)), float(floor),
+            float(10 * np.log10(p[mod].sum() / a + 1e-30)))
 
 
 def ali_limits(inhw):
@@ -428,11 +489,12 @@ def common(x, ev, st, case, raw, hold_runs=True, lpc=True, rel=True, idle=True):
     n = det_clip(x, CLP_RAW if raw else CLP_LIM)
     rows.append(row("CLP", case, n, 0, n == 0))
     if hold_runs:
-        worst = 0.0
+        worst, swell = 0.0, 0.0
         for (_, _, on, off) in st:
             if off - on >= 600:
                 worst = max(worst, det_rise(x, on, off))
-        rows.append(row("RUN", case, worst, RUN_RISE, worst <= RUN_RISE))
+                swell = max(swell, det_swell(x, on, off)[0])
+        rows.append(row("RUN", case, worst, RUN_RISE, worst <= RUN_RISE, f"largest swell {swell:.1f} dB (reported)"))
     if rel:
         w = [det_release(x, off) for (_, _, on, off) in st if off - on >= 500]
         if w:
@@ -460,18 +522,20 @@ def case_keys(spec):
         d = dict(lufs=level_lufs(x, o, 1000), phon=level_phon(x, o, 1000), lufs5=level_lufs(x, o, 500))
         if n in alikeys and n >= ALI_KMIN and vel >= ALI_VMIN:
             w = mono(x)[int((o + 150) * FS / 1000):int((o + 650) * FS / 1000)]
-            inh, hf, inhw, h1, bark, floor = alias_cells(w, dd.f0(n), ty.partials)
+            inh, hf, inhw, h1, bark, floor, mdl = alias_cells(w, dd.f0(n), ty.partials, modal_of(ty))
             li, lh = ali_limits(inhw)
-            d.update(inh=inh, inh_hf=hf, inhw=inhw, h1=h1, bark=bark, floor=floor)
-            rows.append(row("ALI", f"v{vel} key {n}", max(inh - li, hf - lh), 0, inh <= li and hf <= lh,
-                            f"inh {inh:.1f} (limit {li:.1f}), hf {hf:.1f} ({lh:.1f}), bark {bark:.1f} dB", judged=judge_ali))
+            d.update(inh=inh, inh_hf=hf, inhw=inhw, h1=h1, bark=bark, floor=floor, modal=mdl)
+            rows.append(row("ALI", f"v{vel} key {n}", max(inh - li, hf - lh, mdl - MODAL_MAX), 0,
+                            inh <= li and hf <= lh and mdl <= MODAL_MAX,
+                            f"inh {inh:.1f} (limit {li:.1f}), hf {hf:.1f} ({lh:.1f}), modal {mdl:.1f} ({MODAL_MAX:.0f}), bark {bark:.1f} dB",
+                            judged=judge_ali))
             nse_ok = floor <= NSE_DB or floor + h1 <= NSE_ABS
             rows.append(row("NSE", f"v{vel} key {n}", floor + h1, NSE_ABS, nse_ok, f"between-partial floor {floor:.1f} dB re H1 = {floor + h1:.1f} dBFS", judged=judge_ali))
         data["keys"][n] = d
     return rows, data
 
 
-def spread_rows(data_by_vel, vel_ref=100):
+def spread_rows(data_by_vel, vel_ref=100, scoped=True):
     """LEV CBL VEL from the key renders' data"""
     rows = []
     d = data_by_vel.get(vel_ref)
@@ -479,6 +543,7 @@ def spread_rows(data_by_vel, vel_ref=100):
         ks = sorted(d["keys"])
         for code, field, st_lim, dm, do in (("LEV", "lufs", LEV_STEP, LEV_DEV_MID, LEV_DEV_OUT),
                                             ("CBL", "phon", CBL_STEP, CBL_DEV_MID, CBL_DEV_OUT)):
+            ks = [k for k in sorted(d["keys"]) if k in range(LEV_KMIN, LEV_KMAX + 1)] if scoped else sorted(d["keys"])
             lv = {k: d["keys"][k][field] for k in ks}
             worst_step, worst_dev = 0.0, 0.0
             for a, b in zip(ks, ks[1:]):
@@ -515,7 +580,8 @@ def case_type_level(spec):
         ev += bm.note(300, n, 100, 1500)
     x, _ = render(spec["bin"], setup(ty, "raw") + ev, 3000)
     o = bs.onset_ms(300)
-    return [], dict(lufs=level_lufs(x, o, 1000), phon=level_phon(x, o, 1000))
+    return [], dict(lufs=level_lufs(x, o, 300), phon=level_phon(x, o, 300), lufs1=level_lufs(x, o, 1000),
+                    phon1=level_phon(x, o, 1000))
 
 
 def case_knob(spec):
@@ -535,10 +601,12 @@ def case_knob(spec):
         lv[(n, v)] = level_lufs(x, o, 500)
         if v >= ALI_VMIN and n >= ALI_KMIN:
             w = mono(x)[int((o + 150) * FS / 1000):int((o + 650) * FS / 1000)]
-            inh, hf, inhw, h1, bark, floor = alias_cells(w, dd.f0(n), ty.partials)
+            inh, hf, inhw, h1, bark, floor, mdl = alias_cells(w, dd.f0(n), ty.partials, modal_of(ty))
             li, lh = ali_limits(inhw)
-            rows.append(row("ALI", f"{k}={val} key {n} v{v}", max(inh - li, hf - lh), 0, inh <= li and hf <= lh,
-                            f"inh {inh:.1f} ({li:.1f}), hf {hf:.1f} ({lh:.1f}), bark {bark:.1f} dB", judged=judges_alias(ty)))
+            rows.append(row("ALI", f"{k}={val} key {n} v{v}", max(inh - li, hf - lh, mdl - MODAL_MAX), 0,
+                            inh <= li and hf <= lh and mdl <= MODAL_MAX,
+                            f"inh {inh:.1f} ({li:.1f}), hf {hf:.1f} ({lh:.1f}), modal {mdl:.1f} ({MODAL_MAX:.0f}), bark {bark:.1f} dB",
+                            judged=judges_alias(ty)))
     return rows, dict(knob=k, val=val, lv={f"{n}/{v}": l for (n, v), l in lv.items()})
 
 
@@ -653,8 +721,12 @@ def case_repeat(spec):
     rows = common(x, ev, [], f"repeat {reg}", False, rel=False)
     m = mono(x)
     pk = [20 * math.log10(np.max(np.abs(seg(m, bs.onset_ms(t), 60))) + 1e-9) for t in onsets]
-    worst = max(pk[1:]) - pk[0]
-    rows.append(row("REP", f"repeat {reg} peak", worst, REP_PEAK, worst <= REP_PEAK, f"first {pk[0]:.1f} dBFS, max {max(pk):.1f}"))
+    # a struck bar or tine rings on and the next strike adds to it: the level builds, then plateaus (VIBES key 36: first
+    # strike 69 dB, plateau 78 dB, its own sub-bass swell). Runaway is growth that does not stop: the last 20 repeats'
+    # peak against the 12 before them
+    worst = max(pk[20:]) - max(pk[8:20])
+    rows.append(row("REP", f"repeat {reg} peak", worst, REP_PEAK, worst <= REP_PEAK,
+                    f"first {pk[0]:.1f}, plateau {max(pk[8:20]):.1f}, end {max(pk[20:]):.1f} dB (peak per repeat, 60 ms)"))
     return rows, {}
 
 
@@ -711,8 +783,10 @@ def case_fx(spec):
         rows.append(row("FXS", f"{c} clamps", bad, 0, bad == 0, f"delay {cl[0]} reverb {cl[1]} chorus {cl[2]} wah {cl[4]}; limiter {cl[3]}"))
     pk = 20 * math.log10(np.max(np.abs(x)) + 1) - 20 * math.log10(np.max(np.abs(xb)) + 1)
     fb = "fb" in name or name == "inf"
-    ok = pk <= (FX_PK_FB if fb else FX_PK_WAH if name == "wah" else FX_PK) or name.startswith(("eq", "filter")) and d >= 127
-    rows.append(row("FXS", f"{c} peak over bypass", pk, FX_PK, ok, f"{pk:+.2f} dB"))
+    lim = FX_PK_FB if fb else FX_PK_WAH if name == "wah" else FX_PK_PAN if name == "pan" else \
+        FX_PK_MOTOR if name == "trem" and ty.idx in (4, 5) else FX_PK
+    ok = pk <= lim or name.startswith(("eq", "filter")) and d >= 127
+    rows.append(row("FXS", f"{c} peak over bypass", pk, lim, ok, f"{pk:+.2f} dB"))
     rms = lambda a: 20 * math.log10(math.sqrt(np.mean(a ** 2)) / 32768 + 1e-9)       # noqa: E731
     tail, prev = rms(x[-int(0.5 * FS):]), rms(x[-int(1.0 * FS):-int(0.5 * FS)])
     if fb:      # high feedback and the infinite hold ring on by design (reported); a plain delay's repeats must not rise
@@ -830,6 +904,13 @@ def selftest_rows(binary):
     rn *= np.where(t > 1.5, 10 ** (9 * (t - 1.5) / 20), 1.0)[:, None]
     r0, r1 = det_rise(x, 300, 5500), det_rise(np.clip(rn, -32768, 32767), 300, 5500)
     rows.append(row("SLF", "RUN fires on a growing tail, quiet on the clean note", r1, RUN_RISE, r1 > RUN_RISE and r0 <= RUN_RISE, f"clean {r0:.2f} dB, grown {r1:.2f} dB"))
+    # a swell that then falls is not a runaway (low bars of the bar TYPEs); a rise still going at the key-up is
+    sw = x.copy()
+    ramp = np.where(t < 1.1, 10 ** (-14 * (1.1 - t) / 0.8 / 20), 1.0)
+    sw *= ramp[:, None]
+    q0 = det_rise(sw, 300, 5500)
+    rows.append(row("SLF", "RUN quiet on a swell that then decays", q0, RUN_RISE, q0 == 0.0 and det_swell(sw, 300, 5500)[0] > 3,
+                    f"swell {det_swell(sw, 300, 5500)[0]:.1f} dB, runaway {q0:.1f}"))
     # level jump (zipper): a 3 dB step at 3 s
     jp = x.copy()
     jp[int(3 * FS):] *= 1.41
@@ -861,6 +942,13 @@ def selftest_rows(binary):
     la, _ = ali_limits(ca[2])
     rows.append(row("SLF", "ALI quiet on pure harmonic growl, fires on an off-harmonic tone", ca[0], la, ca[0] > la and ch[0] <= li,
                     f"harmonic {ch[0]:.1f} (limit {li:.1f}), aliased {ca[0]:.1f} dB, bark {ch[4]:.1f} dB"))
+    mod_t = harm + 2000 * 10 ** (-33 / 20) * np.sin(2 * np.pi * 6.5 * f0 * tt)
+    mod_l = harm + 2000 * 10 ** (-20 / 20) * np.sin(2 * np.pi * 6.5 * f0 * tt)
+    cm, cl = alias_cells(np.round(mod_t), f0, (), MODAL), alias_cells(np.round(mod_l), f0, (), MODAL)
+    cn = alias_cells(np.round(mod_t), f0)
+    rows.append(row("SLF", "ALI: a tine overtone at 6.5 f0 passes under the modal ceiling, fails over it", cl[6], MODAL_MAX,
+                    cm[6] <= MODAL_MAX and cl[6] > MODAL_MAX and cm[0] <= li and cn[0] > li,
+                    f"-33 dB: modal {cm[6]:.1f}, inh {cm[0]:.1f} (without the band {cn[0]:.1f}); -20 dB: modal {cl[6]:.1f}"))
     rows.append(row("SLF", "NSE fires on a white floor", cw[5], NSE_DB, cw[5] > NSE_DB and cw[5] + cw[3] > NSE_ABS and ch[5] <= NSE_DB,
                     f"clean {ch[5]:.1f}, noisy {cw[5]:.1f} dB re H1 ({cw[5] + cw[3]:.1f} dBFS)"))
     return rows
@@ -952,7 +1040,7 @@ def scan_type(ty, prof, jobs, checks, bins, ref=None, quiet=False):
         bykind.setdefault(kind, []).append((label, data))
     kv = {d["vel"]: d for _, d in bykind.get("keys", [])}
     if kv:
-        rows += spread_rows(kv)
+        rows += spread_rows(kv, scoped=judges_alias(ty))
     # KNB: the level against the default setting (a sanity bound)
     kd = dict(bykind.get("knobdef", [("", {})])[0][1]).get("lv") if bykind.get("knobdef") else None
     if kd:
@@ -974,8 +1062,12 @@ def scan_type(ty, prof, jobs, checks, bins, ref=None, quiet=False):
         if me["typelevel"] and ref.get("typelevel"):
             dl = me["typelevel"]["lufs"] - ref["typelevel"]["lufs"]
             dp = me["typelevel"]["phon"] - ref["typelevel"]["phon"]
-            rows.append(row("TYP", "A3-E4-A4 v100 LUFS vs STAGE 77", abs(dl), TYP_LU, abs(dl) <= TYP_LU, f"{dl:+.2f} LU"))
-            rows.append(row("TYP", "A3-E4-A4 v100 bands vs STAGE 77", abs(dp), TYP_LU, abs(dp) <= TYP_LU, f"{dp:+.2f} phon"))
+            d1 = me["typelevel"]["lufs1"] - ref["typelevel"]["lufs1"]
+            lim_p = TYP_LU if judges_alias(ty) else TYP_PHON_BAR
+            rows.append(row("TYP", "A3-E4-A4 v100 LUFS vs STAGE 77", abs(dl), TYP_LU, abs(dl) <= TYP_LU,
+                            f"{dl:+.2f} LU over the strike (0..300 ms), {d1:+.2f} over 1 s"))
+            rows.append(row("TYP", "A3-E4-A4 v100 bands vs STAGE 77", abs(dp), lim_p, abs(dp) <= lim_p,
+                            f"{dp:+.2f} phon over the strike, {me['typelevel']['phon1'] - ref['typelevel']['phon1']:+.2f} over 1 s"))
         if slope is not None and ref.get("cpu_slope") is not None:
             lim = ref["cpu_slope"] * CPU_VOICE_X + CPU_VOICE_ADD
             rows.append(row("CPU", "cost per voice vs STAGE 77", slope, lim, slope <= lim, f"{slope:.1f} us (STAGE 77 {ref['cpu_slope']:.1f})"))

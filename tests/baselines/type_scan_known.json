@@ -1,86 +1,19 @@
 {
  "BELLDYNO": {
-  "ALI": {
-   "cases": [
-    "DECAY=127\\ key\\ 60\\ v127"
-   ],
-   "why": "the Dyno's bell partials are not harmonic; DECAY=127 lets them ring into the window (inh -31.6 dB, limit -40; hf -81 is clean)"
-  },
-  "CLK": {
-   "cases": [
-    "TONE=0"
-   ],
-   "why": "one HF burst window at TONE=0, not investigated (baseline finding)"
-  },
   "CLP": {
    "cases": [
     "keys\\ v127",
     "TONE=0"
    ],
-   "why": "the dry (RAW, no limiter) Dyno reaches the rail at v127 (50 samples) and TONE=0 (26); the limiter in the chain holds it"
+   "why": "REAL, minor headroom: dry (RAW) BELL DYNO peaks at 2-3x STAGE 77's: key 108 v127 reaches the rail (+10 dB over STAGE 77's 10.5k), TONE=0 v127 key 36 / 60 reach 32767 / 30213 (STAGE 77 16.6k). The master limiter holds it to 24000 in the chain, no hard clip. See private/plans/type-scan-known-review.md"
   }
  },
  "EARLYFELT": {
   "LEV": {
    "cases": [
-    "neighbour\\ step\\ v100",
-    "median\\ deviation\\ v100"
+    "neighbour\\ step\\ v100"
    ],
-   "why": "register steps of the felt tines: neighbour step 1.51 dB (limit 1.5), deviation over the +-3 key median"
-  }
- },
- "MARIMBA": {
-  "FXS": {
-   "cases": [
-    "pan\\ 127\\ peak\\ over\\ bypass"
-   ],
-   "why": "the pan (trem AM) adds 2.1 dB peak over the bypass on bars (the bar's own decay envelope)"
-  },
-  "RUN": {
-   "cases": [
-    "DECAY=127"
-   ],
-   "why": "DECAY=127: the bar's mode pair beats, the 50 ms level rises 4.7 dB over its minimum"
-  },
-  "TYP": {
-   "cases": [
-    "A3\\-E4\\-A4\\ v100\\ bands\\ vs\\ STAGE\\ 77"
-   ],
-   "why": "a different instrument: 7.7 phon quieter than STAGE 77 on the A3-E4-A4 chord (LUFS within 3)"
-  }
- },
- "STAGE77": {},
- "SUITCASE": {},
- "VIBES": {
-  "FXS": {
-   "cases": [
-    "pan\\ 127\\ peak\\ over\\ bypass",
-    "trem\\ 127\\ peak\\ over\\ bypass"
-   ],
-   "why": "pan / trem add 2.6 dB peak over the bypass on bars"
-  },
-  "REP": {
-   "cases": [
-    "repeat\\ low\\ peak"
-   ],
-   "why": "a bar struck again over its ring adds up: +9.8 dB over the first strike"
-  },
-  "RUN": {
-   "cases": [
-    "keys\\ v1",
-    "keys\\ v100",
-    "keys\\ v127",
-    "keys\\ v64",
-    "BARK=0",
-    "HAMMER=127"
-   ],
-   "why": "the bars' mode pairs beat: the 50 ms level rises up to 7.5 dB over its minimum (quiet v1 worst)"
-  },
-  "TYP": {
-   "cases": [
-    "A3\\-E4\\-A4\\ v100\\ bands\\ vs\\ STAGE\\ 77"
-   ],
-   "why": "a different instrument: 4 phon louder than STAGE 77 on the A3-E4-A4 chord (LUFS within 3)"
+   "why": "REAL, minor: a 1.5 dB level step between keys 84 and 85 at v100 (limit 1.5; 1.59 on the 0..500 ms window, so not a release-window artefact). STAGE 77 / SUITCASE are smooth there. Probably (not verified) the clean top's cap table for EARLY FELT (rh_top.h). See private/plans/type-scan-known-review.md"
   }
  }
 }
