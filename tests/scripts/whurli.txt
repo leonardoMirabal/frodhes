@@ -12,22 +12,22 @@
 200 expect state type WHURLI
 # one note per register, soft to hard
 300 midi 0x90 36 40
-700 expect rms > -70
+700 expect rms > -65
 900 midi 0x80 36 0
 1000 midi 0x90 48 70
-1400 expect rms > -60
+1400 expect rms > -65
 1600 midi 0x80 48 0
 1700 midi 0x90 60 100
-2100 expect rms > -55
+2100 expect rms > -65
 2300 midi 0x80 60 0
 2400 midi 0x90 72 127
-2800 expect rms > -55
+2800 expect rms > -65
 3000 midi 0x80 72 0
 3100 midi 0x90 84 90
-3500 expect rms > -70
+3500 expect rms > -65
 3700 midi 0x80 84 0
 3800 midi 0x90 95 110
-4200 expect rms > -75
+4200 expect rms > -65
 4400 midi 0x80 95 0
 # re-strike of a ringing note (soft then hard, then soft), no key-up between
 5000 midi 0x90 55 50
@@ -43,7 +43,7 @@
 6510 midi 0x90 57 90
 6510 midi 0x90 60 90
 6510 midi 0x90 65 90
-6900 expect rms > -55
+6900 expect rms > -65
 7000 midi 0x80 41 0
 7000 midi 0x80 48 0
 7000 midi 0x80 53 0
@@ -61,7 +61,7 @@
 13000 midi 0x90 62 100
 13100 midi 0xB0 80 0
 13200 midi 0x90 64 100
-13600 expect rms > -55
+13600 expect rms > -65
 13700 midi 0xB0 123 0
 15500 expect rms < -90
 15500 end

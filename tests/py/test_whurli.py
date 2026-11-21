@@ -58,3 +58,16 @@ def test_a_note_outside_the_keys_has_no_voice():
 def test_the_header_has_the_type():
     src = open(os.path.join(H.ROOT, "firmware", "gen", "reed_tables.h")).read()
     assert "#define RD_KEY_LO" in src and "#define RD_NKEY" in src
+
+
+def test_the_type_maps_agree():
+    """one TYPE -> engine map: engine.c's, the plugin UI's copy and params.c's names (WHURLI is TYPE 6, the last)"""
+    import re
+    eng = open(os.path.join(H.ROOT, "firmware", "src", "engine.c")).read()
+    ui = open(os.path.join(H.ROOT, "plugin", "ui", "frui_params.h")).read()
+    par = open(os.path.join(H.ROOT, "firmware", "src", "params.c")).read()
+    e = [int(x) for x in re.search(r"ENG_TYPE_ENG\[ENG_NTYPE\] = \{([^}]*)\}", eng).group(1).split(",")]
+    u = [int(x) for x in re.search(r"FRN_TYPE_BARS\[FRN_NTYPE\] = \{([^}]*)\}", ui).group(1).split(",")]
+    names = re.search(r'N_TYPE_LONG\[\] = \{([^}]*)\}', par).group(1)
+    assert e == u and len(e) == 7 and names.split(",")[6].strip() == '"WHURLI"'
+    assert "RH_T_REED" in eng and "#define ENG_NTYPE 7u" in eng
