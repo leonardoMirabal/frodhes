@@ -2,12 +2,13 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* The code of fx.c that derives from Felucca (GPL-3.0-only) and is compiled only when FR_OWN is 0: the FM-1, SMK-37,
  * Move, MPC and web builds. The plugin's own-code build (FR_OWN=1) has its own versions of these (dly_own.c, fx_own.h)
- * and never includes this file. One file, included from fx.c under !FR_OWN at four places, each with FEL_PART set to
+ * and never includes this file. One file, included from fx.c under !FR_OWN at five places, each with FEL_PART set to
  * its number; each part sees everything fx.c defines above its include site (moved here as whole blocks, unchanged):
  *   1  the delay's main sample loop (dly_loop)
  *   2  the delay's bars wrapper (dly_loop_kb)
  *   3  the master DC blocker (dc_block)
- *   4  the classic drive (FDRV: dr_classic, fx_drive_classic and their state) */
+ *   4  the classic drive (FDRV: dr_classic, fx_drive_classic and their state)
+ *   5  the classic HALL reverb (rev_hall, its lines and helpers; included under !(FR_OWN && FR_REV_HQ)) */
 #if FEL_PART == 1
 /* the delay's sample loop, one version for TAPE (tape = 1) and one for DIGITAL / off (tape = 0: a constant after
  * inlining), the state in locals: the same arithmetic per sample as one loop with the tests inside. msk: the send on
@@ -375,4 +376,198 @@ __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, i
         { dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; }   /* (and the 2x state: drive.c dr_os2) */
 }
 #endif
+#elif FEL_PART == 5
+/* the classic HALL reverb (Felucca's HALL): the lines, the diffusers, the 2:1 down and rev_hall; its shared macros (CTL,
+ * HL_NL, HL_NAP, HL_NC, RV_DZ) and the FR_OWN helper block are in fx.c above the include */
+#if FR_REV_HQ
+#define HL_N 16u                    /* (FR_REV_HQ: HALL is rev_hq_hall.c; rev_hall and its lines are not used) */
+#else
+#define HL_N 752u
+#endif
+static int16_t rev_comb[(HL_N + 1u) * HL_NL] POOL;
+static int16_t rev_ap[556 + 441] POOL;
+#define HL_MOD 8                    /* the modulation's depth at MOD 64 (rev_types.c: (MOD + 4) >> 3, 0 .. 16) */
+#define HL_LPM 0x69u
+#define HL_KD(d) (32767 - (d) * 180)
+#define HL_LOUD 32
+#define HL_LIVE 64                  /* the diffusers round while the block's input reaches this (or a line end was loud
+                                     * the block before); else their feed truncates toward zero (no input, no growth:
+                                     * the tail dies to exact zero). 0.9.10 rev-grain: truncated always, a quiet low
+                                     * note's harmonics sat 1.2 dB over v0.9.9's linear-reverb residual (H5, MIX 10) */
+#define HL_OUT 1
+#if !FR_OWN
+#define HL_IN 10320                 /* Felucca: 2580 with HL_OUT 4 */
+#endif
+static const uint16_t HL_LEN[HL_NL] = {467, 509, 547, 593, 631, 673, 709, 743};
+static const uint16_t HL_AP[HL_NAP] = {131, 307};
+static const int16_t HL_APG[HL_NAP] = {11469, 10240};
+static struct {
+    uint16_t w, d[HL_NAP];          /* the ring's write row, the allpasses' indices */
+    int32_t lp[HL_NL], le[HL_NL];
+    int32_t hp, he;                 /* the DC blocker */
+    int16_t g[HL_NL], sz;
+    uint32_t ph;
+    int32_t bx[HL_NC];
+    int32_t ldl;                    /* a line end was loud in the last block (the diffusers round) */
+    int16_t y[HL_NC][HL_NL];        /* the line ends, one row per sample */
+} hl POOL;
+#if !FR_OWN
+static inline __attribute__((always_inline)) int32_t sh_tz(int32_t m, uint32_t sh) { return (m + (int32_t)((uint32_t)(m >> 31) >> (32u - sh))) >> sh; }
+static uint32_t exp2_neg(uint32_t x)
+{
+    uint32_t i = x >> 16, u = 32768u - ((x & 0xFFFFu) >> 1), p = 2579u;
+    p = ((p * u) >> 15) + 7409u;
+    p = ((p * u) >> 15) + 22780u;
+    p = ((p * u) >> 15) + 32768u;
+    return i < 15u ? p >> (i + 1u) : 0u;
+}
+#endif
+static void hall_gains(int32_t s)                       /* s: the size in Q4 (rv_hsz; a whole size: s << 4) */
+{
+    uint32_t q = exp2_neg((uint32_t)s * 4096u / 30u), k, g;
+    for (k = 0; k < HL_NL; k++) {
+        g = exp2_neg((HL_LEN[k] * 59u * q) >> 15);
+        hl.g[k] = (int16_t)(((g > 32440u ? 32440u : g) * 6193u) >> 15);
+    }
+    hl.sz = (int16_t)(s + 1);
+}
+#if !FR_OWN
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+/* (the host: every int16 ring write a clamp cuts counts as the reverb's, fx_h_clip[1]: HALL, PLATE, INFINITE, classic
+ * and full-rate; 0.9.13, the audio review D5: only the send and the kernel inputs were counted) */
+static inline __attribute__((always_inline)) int32_t hl_c16(int32_t v)
+{
+    if (v < -32768 || v > 32767) fx_h_clip[1]++;
+    v = v > -32768 ? v : -32768; return v < 32767 ? v : 32767;
+}
+#else
+static inline __attribute__((always_inline)) int32_t hl_c16(int32_t v) { v = v > -32768 ? v : -32768; return v < 32767 ? v : 32767; }   /* smax + smin */
+#endif
+#endif
+static inline void hall_ap(int16_t *q, int32_t g, int32_t *x, uint32_t n, int ld)
+{
+    int16_t *e = q + n;
+    if (ld)                                             /* (loud: rounded; quiet: the feed truncated, HL_LIVE) */
+        for (; q < e; q++, x++) {
+            int32_t y = *q, v = *x + ((y * g + 8192) >> 14);
+            *q = (int16_t)hl_c16(v);
+            *x = y - ((v * g + 8192) >> 14);
+        }
+    else
+        for (; q < e; q++, x++) {
+            int32_t y = *q, v = *x + sh_tz(y * g, 14);
+            *q = (int16_t)hl_c16(v);
+            *x = y - ((v * g + 8192) >> 14);
+        }
+}
+/* the line ends (n >= 1): b steps HL_NL (one ring row), y steps HL_NL (one hl.y row) */
+static inline void hall_end(const int16_t *b, int32_t f, int16_t *y, uint32_t n, int32_t g, int lo)
+{
+    int32_t p = *b, q;
+    if (lo)
+        do { b += HL_NL; q = *b; *y = (int16_t)sh_tz((p + (((q - p) * f + 128) >> 8)) * g, 14); y += HL_NL; p = q; } while (--n);
+    else
+        do { b += HL_NL; q = *b; *y = (int16_t)(((p + (((q - p) * f + 128) >> 8)) * g + 8192) >> 14); y += HL_NL; p = q; } while (--n);
+}
+static inline void hall_end_lp(const int16_t *b, int16_t *y, uint32_t n, int32_t g, int lo, int32_t *lp, int32_t *le,
+                               int32_t kd)
+{
+    int32_t l = *lp, r = *le, e;
+    if (lo)
+        do { e = (*b - l) * kd + r, r = e & 32767, l += e >> 15; *y = (int16_t)sh_tz(l * g, 14); b += HL_NL; y += HL_NL; } while (--n);
+    else
+        do { e = (*b - l) * kd + r, r = e & 32767, l += e >> 15; *y = (int16_t)((l * g + 8192) >> 14); b += HL_NL; y += HL_NL; } while (--n);
+    *lp = l;
+    *le = r;
+}
+#define HL_RUNS(d, len, k, s, body)                                                         \
+    for (s = 0; s < HL_NC; s += k) {                                                        \
+        k = (len) - (d) < HL_NC - s ? (len) - (d) : HL_NC - s;                              \
+        body;                                                                               \
+        d = (d) + k >= (len) ? 0u : (d) + k;                                                \
+    }
+/* the 2:1 down into every reverb TYPE (CTL frames in, HL_NC out; HALL here, the kernels' rev_dec): an 11-tap half-band
+ * (1024 at the centre, (624, -152, 40) at +-1, 3, 5, / 2048: a minimax design, the band that folds below 6.9 kHz down
+ * 41 dB and more; the old (1, 2, 1) / 4 let a 15 kHz tone fold to 7 kHz only 10 dB down), then HL_IN and the DC
+ * blocker. in[-RV_DZ .. CTL): the block with the RV_DZ samples before it (rv_inb), |x| <= 2^19 (fx_reverb clamps the
+ * send to +-131071; LOW CUT may double it). RV_HB(c, d): the half-band's odd taps around c, d apart */
+#define RV_HB(c, d) (624 * ((c)[-(d)] + (c)[0]) - 152 * ((c)[-2 * (d)] + (c)[d]) + 40 * ((c)[-3 * (d)] + (c)[2 * (d)]))
+static FX_RAM __attribute__((noinline)) int32_t rev_down(const int32_t *in, int32_t *php, int32_t *phe, int32_t *out)
+{
+    int32_t hp = *php, he = *phe, ma = 0;
+    uint32_t i;
+    for (i = 0; i < HL_NC; i++) {
+        const int32_t *c = in + 2u * i - 4u;                /* (c[5]: this pair's second sample, in[2i + 1]) */
+        int32_t x = (1024 * c[0] + RV_HB(c + 1, 2) + 1024) >> 11, v;
+        x = mulq15(clampi(FX_HC(1, x, -131071, 131071), -131071, 131071), HL_IN);
+        v = x - hp + he;
+        he = v & 31;
+        hp += v >> 5;
+        out[i] = x - hp;
+        ma |= out[i] < 0 ? -out[i] : out[i];
+    }
+    *php = hp, *phe = he;
+    return ma;                                          /* (its |out| ORed: >= 2^k when one reaches 2^k) */
+}
+#define HL_LFO ((uint32_t)(0.37 * CTL / FS * 4294967296.0))
+/* one control block (CTL frames in, HL_NC at the half rate out): ol[] = the mid, or[] = the side (x HL_OUT), the
+ * caller upsamples them (fx_reverb) */
+static void rev_hall(const int32_t *rev_in, int32_t size, int32_t damp, int32_t md, int32_t *ol, int32_t *or)
+{                                                       /* (size: Q4) */
+    int16_t *a = rev_ap, *o, *y;
+    uint32_t i, k, s, m, d, w = hl.w;
+    int32_t kd = HL_KD(damp), ld;
+    if (hl.sz != size + 1) hall_gains(size);
+    ld = FR_FAR(rev_down)(rev_in, &hl.hp, &hl.he, hl.bx) >= HL_LIVE || hl.ldl;
+    hl.ldl = 0;
+    for (k = 0; k < HL_NAP; k++) {
+        d = hl.d[k];
+        HL_RUNS(d, HL_AP[k], m, s, hall_ap(a + d, HL_APG[k], hl.bx + s, m, ld));
+        hl.d[k] = (uint16_t)d;
+        a += HL_AP[k];
+    }
+    hl.ph += HL_LFO;
+    for (k = 0; k < HL_NL; k++) {
+        const int16_t *b = rev_comb + k;
+        int32_t g = hl.g[k], f = 0, lo;
+        uint32_t len = HL_LEN[k];
+        d = w + HL_N - len;                             /* the row written len samples ago */
+        if (!((HL_LPM >> k) & 1u)) {
+            uint32_t r = (uint32_t)(md + 512 + ((osc_sine(hl.ph * (1u + (k & 1u)) + k * 0x2C000000u) * md) >> 15));   /* (md:
+                                                        * Q8; (md + 2) << 8 + sine md >> 7 at a whole md) */
+            f = (int32_t)(r & 255u);
+            d += r >> 8;
+        }
+        d = d >= HL_N ? d - HL_N : d;
+        s = d + len / 2u;
+        s = s >= HL_N ? s - HL_N : s;
+        lo = (b[d * HL_NL] < 0 ? -b[d * HL_NL] : b[d * HL_NL]) + (b[s * HL_NL] < 0 ? -b[s * HL_NL] : b[s * HL_NL]) < HL_LOUD;
+        hl.ldl |= !lo;
+        if ((HL_LPM >> k) & 1u) {
+            HL_RUNS(d, HL_N, m, s, hall_end_lp(b + d * HL_NL, hl.y[s] + k, m, g, lo, &hl.lp[k], &hl.le[k], kd));
+        } else {
+            HL_RUNS(d, HL_N, m, s, hall_end(b + d * HL_NL, f, hl.y[s] + k, m, g, lo));
+        }
+    }
+    /* the feedback matrix (8x8, 0 on the diagonal, +-1 elsewhere: y_k' = 2 p_k + y_k - S + x, S = the sum of all 8,
+     * p_k = 3 of the others), straight into the ring's next 16 rows, and the outputs */
+    o = rev_comb + w * HL_NL;
+    for (i = 0, y = hl.y[0]; i < HL_NC; i++, y += HL_NL, o += HL_NL) {
+        int32_t y0 = y[0], y1 = y[1], y2 = y[2], y3 = y[3], y4 = y[4], y5 = y[5], y6 = y[6], y7 = y[7], x = hl.bx[i];
+        int32_t u = y3 + y4, r = y1 + y2 + y5 + y6, l = y0 + u - y7, t = r + u + y7, c = x - (y0 + t);
+        ol[i] = (l + r) * HL_OUT;
+        or[i] = (l - r) * HL_OUT;
+        o[0] = (int16_t)hl_c16(t + x);
+        o[1] = (int16_t)hl_c16(2 * (y2 + y3 + y5) + y1 + c);
+        o[2] = (int16_t)hl_c16(2 * (y3 + y4 + y6) + y2 + c);
+        o[3] = (int16_t)hl_c16(2 * (y4 + y5 + y7) + y3 + c);
+        o[4] = (int16_t)hl_c16(2 * (y5 + y6 + y1) + y4 + c);
+        o[5] = (int16_t)hl_c16(2 * (y6 + y7 + y2) + y5 + c);
+        o[6] = (int16_t)hl_c16(2 * (y7 + y1 + y3) + y6 + c);
+        o[7] = (int16_t)hl_c16(2 * (y1 + y2 + y4) + y7 + c - 2 * x);
+    }
+    if (!w) memcpy(rev_comb + HL_N * HL_NL, rev_comb, HL_NL * sizeof rev_comb[0]);
+    w += HL_NC;
+    hl.w = (uint16_t)(w >= HL_N ? 0u : w);
+}
 #endif

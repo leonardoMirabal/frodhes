@@ -58,6 +58,7 @@ def test_passes_on_the_tree():
     text = out.getvalue()
     assert "(a) allow-list: ok" in text and "(b) copyright lines: ok" in text
     assert re.search(r"\(c\) .*: ok; 0 pending \(none\)", text), text
+    assert "(b) copyright lines: ok, 0 pending" in text, text
 
 
 def test_the_closure_is_the_plugins():

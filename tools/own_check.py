@@ -35,10 +35,9 @@ KNOWN = "plugin/own_known.txt"
 
 # fingerprint groups still being replaced in this build: reported as pending, not as failures (none: part 3 landed)
 PENDING_PART3 = ()
-# closure files whose copyright lines still name another author: path -> why. Reported as pending.
-PENDING_COPYRIGHT = {
-    "firmware/src/fx.c": "header keeps the Felucca notice for the classic HALL (rev_hall), which the FM-1 builds compile and the plugin never does (FR_REV_HQ)",
-}
+# closure files whose copyright lines still name another author: path -> why. Reported as pending (none now: the
+# classic HALL moved to fx_fel.c, fx.c's header is Leo's only).
+PENDING_COPYRIGHT = {}
 # paths of other people's permissive code that the plugin links: exempt from (b)
 LIBRARY_PREFIXES = (".local/plugin-deps/", "assets/fonts/")
 # numbers fixed by mathematics (a generated table of 2^(k/48) - 1): equal lines are not copying
