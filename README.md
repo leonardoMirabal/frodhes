@@ -11,8 +11,8 @@ Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/le
 
 <table align="center">
   <tr>
-    <td align="center" width="50%"><img src="docs/manual/img/piano.png?v=d41944c5" width="100%" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"><br><b>On the M-VAVE FM-1</b>: colour screen, four knobs</td>
-    <td align="center" width="50%"><img src="docs/manual/img/move/move-frodhes.png?v=ba262a7f" width="100%" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"><br><b>On the Ableton Move</b>: its own screen, eight knobs</td>
+    <td align="center" width="50%"><img src="docs/manual/img/piano.png?v=d6338298" width="100%" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"><br><b>On the M-VAVE FM-1</b>: colour screen, four knobs</td>
+    <td align="center" width="50%"><img src="docs/manual/img/move/move-frodhes.png?v=630fd25b" width="100%" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"><br><b>On the Ableton Move</b>: its own screen, eight knobs</td>
   </tr>
   <tr>
     <td align="center" width="50%"><img src="docs/manual/img/plugin/plugin-main.png?v=a6729600" width="100%" alt="The desktop plugin's window: the VOICE knobs, two effect sections and a keyboard"><br><b>On your computer</b>: a plugin with its own window</td>

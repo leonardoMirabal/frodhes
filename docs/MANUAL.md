@@ -18,7 +18,7 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 the Rhodes or Fender trademark owners or any instrument maker. It comes with no warranty: install it at your own risk. The original
 firmware can always be put back ([how](#going-back-to-the-original-firmware)). See [LICENSING.md](../LICENSING.md).
 
-![The FRODHES page: TYPE (here BELL DYNO), TONE and BELL](manual/img/piano.png?v=d41944c5)
+![The FRODHES page: TYPE (here BELL DYNO), TONE and BELL](manual/img/piano.png?v=d6338298)
 
 ## Contents
 
@@ -275,7 +275,7 @@ Turning it back to 0 makes it dry again (the effect stays switched on; its butto
 
 The page after PERFORM (press **HOME** twice) carries the instrument's name as its title and holds the essentials.
 
-![The main page](manual/img/piano.png?v=d41944c5)
+![The main page](manual/img/piano.png?v=d6338298)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -802,7 +802,7 @@ times higher), the tube that takes a moment to build up under the bar, and the m
 electric piano type and VIBES fades out what is still ringing, held notes too; a note still held plays again on the new type
 the next time it is struck (a MIDI note-on, or a key on the same note).
 
-![The main page on VIBES](manual/img/piano-vibes.png?v=38ae6bed)
+![The main page on VIBES](manual/img/piano-vibes.png?v=68faeda8)
 
 The main page's middle cards belong to the engine: on VIBES they are **MALLET** (the same as VOICE 1/4's MALLET)
 and **MOTOR** (on / off, the same as VOICE 3/4's first card); on an electric piano type they are **TONE** and **BELL** (DRIVE
@@ -902,7 +902,7 @@ C5 up the note starts at its loudest. A marimba has **no damper and no motor**: 
 player stops it with a hand. Switching between VIBES and MARIMBA (or an electric piano type) fades out what is still ringing,
 held notes too; a note still held plays again on the new type the next time it is struck.
 
-![The main page on MARIMBA](manual/img/piano-marimba.png?v=22a5f94c)
+![The main page on MARIMBA](manual/img/piano-marimba.png?v=5402b7e0)
 
 The main page's middle cards on MARIMBA are **MALLET** (the same as VOICE 1/3's MALLET) and **TUBE** (VOICE 1/3's
 TUBE). MARIMBA has two VOICE pages, **VOICE 1/3** (the strike) and **VOICE 2/3** (how the bars ring and stop), and no
@@ -1320,7 +1320,7 @@ sound and the pages; the SMK-37 reaches them with its own buttons, its eight kno
 pads, faders and wheels. Its manual has the files, the flash backup to make first, the install, the way back to stock,
 the controls and what differs: **[SMK37.md](SMK37.md)**.
 
-![The FRODHES page on the SMK-37: the cards on K5..K8](manual/img/smk/smk-frodhes.png?v=c80c649f)
+![The FRODHES page on the SMK-37: the cards on K5..K8](manual/img/smk/smk-frodhes.png?v=857f5b7f)
 
 ## 16. Appendix: the Ableton Move
 

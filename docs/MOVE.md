@@ -7,7 +7,7 @@ instrument. Frodhes draws its own screen: the Move's eight knobs as eight cards,
 What each control does to the sound is described in the [FM-1 manual](MANUAL.md#4-the-pages). This manual covers
 the Move's controls and what is different.
 
-![The first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix](manual/img/move/move-frodhes.png?v=ba262a7f)
+![The first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix](manual/img/move/move-frodhes.png?v=630fd25b)
 
 ## Contents
 
@@ -132,7 +132,7 @@ the Move runs and shown 4 times larger.
   shows that the effects are off (FX OFF, the Left arrow). An **`S`** shows that the sustain holds (SUS ON, the Right
   arrow).
 
-![The header with the effects off (X) and the sustain on (S); the FX and SUS cards agree](manual/img/move/move-header-fx-sus.png?v=333d757c)
+![The header with the effects off (X) and the sustain on (S); the FX and SUS cards agree](manual/img/move/move-header-fx-sus.png?v=0f0541f8)
 
 - **The large card**: touch a knob, or turn it, and its card fills the screen: the name, the value in large letters,
   a wide bar of the same kind and, along the bottom, a mark for each of the page's knobs, the one you hold filled.
@@ -145,7 +145,7 @@ the Move runs and shown 4 times larger.
 - **A message** shows in a box for about a second: `SPRD RESET` after a double tap, `SAVED U05` after a save,
   `NOT SAVED` when you leave the save card with Back.
 
-![A double tap on SPREAD: back to 0, SPRD RESET](manual/img/move/move-reset.png?v=c42be043)
+![A double tap on SPREAD: back to 0, SPRD RESET](manual/img/move/move-reset.png?v=105f51c4)
 
 - **The knob lights** show each knob's value, as on Schwung's own screens: knobs 1-4 white and 5-8 amber, brighter
   as the value grows, dark where the page has no control. **The Left arrow** is lit while the effects are on, **the
@@ -195,7 +195,7 @@ effects](#the-effects)), PRESET (knob 5: the sound, its full name across knobs 5
 saving](#presets-and-saving)) and the delay's MIX (DELAY, knob 8, the FM-1's PERFORM name for it). Knobs 6 and 7 have
 no control here.
 
-![FRODHES](manual/img/move/move-frodhes.png?v=ba262a7f)
+![FRODHES](manual/img/move/move-frodhes.png?v=630fd25b)
 ![Knob 5 touched: the preset, its name above and its number large](manual/img/move/move-frodhes-k5.png?v=caea2c9e)
 
 ### PIANO VOICE, VIBES VOICE, VIBES MOTOR, MARIMBA VOICE

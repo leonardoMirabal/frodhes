@@ -125,3 +125,4 @@ aa8af4a32a5bf1e426cd4c18623b319472960d3cda589cf78c25ad2031c8644d  scripts/vibes_
 # host-only scripts/vibes_head: FM-1 input lines: turn
 # host-only scripts/vibes_motor_page: FM-1 input lines: btn, keys, turn
 # host-only scripts/wah_shape: FM-1 input lines: btn, turn
+# host-only scripts/whurli: FM-1 input lines: turn
