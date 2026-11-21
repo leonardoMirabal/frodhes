@@ -47,6 +47,11 @@ size_t frp_path_root(int os, const char *path);
 char frp_path_sep(int os);
 
 void frp_env_here(frp_env_t *e);         /* this process's environment (the strings live until the process ends) */
+/* an optional root for the user-preset folder, set by the host application before the first path is asked for: the
+ * folder given is then the preset folder (as FRODHES_PRESET_DIR would make it; this call wins over the variable).
+ * NULL or "": none again (the default: the OS's folder above). A copy is kept; 0 ok, -1 the path is too long (the
+ * root is then none) */
+int frp_paths_set_preset_root(const char *dir);
 int frp_dir_usable(const char *dir);     /* a folder that exists and can be written */
 
 /* mkdir -p: every missing folder of path, 0 ok (they exist), -1 not */

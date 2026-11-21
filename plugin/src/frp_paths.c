@@ -88,6 +88,17 @@ size_t frp_path_root(int os, const char *p)
 #undef SEP
 }
 
+static char preset_root[1024];           /* frp_paths_set_preset_root (empty: none) */
+int frp_paths_set_preset_root(const char *dir)
+{
+    preset_root[0] = 0;
+    if (!dir || !*dir) return 0;
+    if (strlen(dir) >= sizeof preset_root) return -1;
+    memcpy(preset_root, dir, strlen(dir) + 1);
+    return 0;
+}
+static void preset_root_apply(frp_env_t *e) { if (preset_root[0]) e->preset_dir = preset_root; }
+
 #if defined(_WIN32)
 /* UTF-8 -> UTF-16 (a static buffer per call site is not enough: two at once for the replace) */
 static int wide(const char *s, wchar_t *w, int n) { return MultiByteToWideChar(CP_UTF8, 0, s, -1, w, n) > 0 ? 0 : -1; }
@@ -108,6 +119,7 @@ void frp_env_here(frp_env_t *e)
     e->home = utf8_env(L"USERPROFILE");
     e->appdata = utf8_env(L"APPDATA");
     e->preset_dir = utf8_env(L"FRODHES_PRESET_DIR");
+    preset_root_apply(e);
     e->usable = frp_dir_usable;
 }
 int frp_dir_usable(const char *dir)
@@ -171,6 +183,7 @@ void frp_env_here(frp_env_t *e)
     e->xdg_data = getenv("XDG_DATA_HOME");
     e->sandbox = getenv("APP_SANDBOX_CONTAINER_ID");
     e->preset_dir = getenv("FRODHES_PRESET_DIR");
+    preset_root_apply(e);
     e->usable = frp_dir_usable;
     {
         struct passwd *pw = getpwuid(getuid());   /* (the account's home: outside a sandbox's container) */
