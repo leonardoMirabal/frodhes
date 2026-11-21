@@ -131,6 +131,7 @@ def main():
         # TYPE's tip (DYNO) reaches the pamp cap and the match chased 0.9.9's folded loudness (DYNO A3 +2..4.7 dB)
         code = np.clip(np.round(c + 128), 0, 255).astype(int)
         write(code)
+        subprocess.run([sys.executable, os.path.join(ROOT, "tools", "gen_rh_pack.py")], check=True)   # (the firmware links the packed rows)
         print("wrote %s: make-up %.1f .. %.1f dB" % (HDR, (code.min() - 128) * 6.0206 / 32, (code.max() - 128) * 6.0206 / 32))
         return
     cur = build("cur", ROOT)

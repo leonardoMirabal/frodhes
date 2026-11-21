@@ -71,6 +71,7 @@ typedef struct {                               /* a WHURLI key's row: three reed
 #if defined(RH_DRIVE) && !defined(RH_NO_DRV_MK)  /* (-DRH_NO_DRV_MK: without it, as tools/drive_makeup.py measures) */
 #include "rh_drive_mk.h"                       /* the pickup drive's level make-up (tools/drive_makeup.py --write) */
 #endif
+#include "rh_pack.h"                            /* the make-up and TONE blend rows, each distinct row once (tools/gen_rh_pack.py) */
 #if defined(RH_DRIVE) && !defined(RH_NO_TOP) && !defined(RH_VM_PROBE)   /* (-DRH_NO_TOP: without it, as tools/rh_top.py
                                                 * measures) */
 #include "rh_top.h"                            /* the clean top's swing cut per TYPE and key (tools/rh_top.py --write) */
@@ -285,7 +286,7 @@ static uint32_t rh_mk_q12(const uint8_t *row, uint32_t vel)      /* Q12, < 2^16 
 /* the pickup drive's level make-up per TYPE, key and velocity: the drive's loudness back to the level the notes had
  * before it at mf and above, never under it (tools/drive_makeup.py). A gain on the voice's output only: the timbre
  * (the swing through the pickup) is the drive's. Note-on / re-strike only */
-#define rh_drv_mk(key, vel) rh_mk_q12(RH_DRV_MK[rh_type & 3u][key], vel)
+#define rh_drv_mk(key, vel) rh_mk_q12(RH_MK_U[RH_DRV_MK_I[rh_type & 3u][key]], vel)
 /* the mechanical noises (knock, felt, pedal thud: absolute levels) follow the notes' level: the make-up brings the
  * notes back to the reference's level, the noises were set against, so they stay at their own (without it: RH_NZ_G,
  * the drive's gain target re the noises' reference, -6 dB; with it the pedal's thud played 6 dB under 0.9.9's) */
@@ -1066,7 +1067,7 @@ static int32_t __attribute__((noinline)) rh_tone_gain(int32_t gain, int32_t o64,
 #ifdef RH_TONE_W_Q
     /* S1a: with the pickup drive each key swings its own way at each velocity, so the blend is per TYPE, key and
      * velocity anchor (tone_level.py fit_w), x RH_TONE_W_Q, extrapolated past the two curves where the swing is past them */
-    const uint8_t *wt = RH_TONE_W[rh_type & 3u][ki];
+    const uint8_t *wt = RH_TW_U[RH_TONE_W_I[rh_type & 3u][ki]];
     uint32_t vi = RH_VPOS_I[vel], vf = RH_VPOS_F[vel] > 255u ? 255u : RH_VPOS_F[vel];
     int32_t w = (int32_t)wt[vi] + ((((int32_t)wt[vi + 1u] - (int32_t)wt[vi]) * (int32_t)vf) >> 8) - RH_TONE_W_Q;
     s = rh_tone_a(As, o64); h = rh_tone_a(Ah, o64); a64 = s + (h - s) * w / RH_TONE_W_Q;
@@ -1292,7 +1293,7 @@ static int32_t rh_vm(uint32_t t, uint32_t key, uint32_t vel)     /* t 0: X, 1: G
 #ifdef RH_VM_MK_Q
     if (t) {   /* G x the level make-up (Q12, the notes back to the reference release's level at mf and above, never
                 * under it below: an output gain only, the colour is the map's) */
-        a = (int32_t)(((uint32_t)a * rh_mk_q12(RH_VM_MK[key], vel)) >> 12);
+        a = (int32_t)(((uint32_t)a * rh_mk_q12(RH_VMK_U[RH_VM_MK_I[key]], vel)) >> 12);
         if (a > 65535) a = 65535;
         if (a < 1) a = 1;
     }

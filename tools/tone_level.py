@@ -253,6 +253,7 @@ def write(R, n_grid, omax, W=None):
             o.append(" },")
         o.append("};")
     open(HDR, "w").write("\n".join(o) + "\n")
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "gen_rh_pack.py")], check=True)   # (the firmware links the packed rows)
 
 
 HDR_B = os.path.join(ROOT, "firmware", "gen", "rh_tone_b.h")
