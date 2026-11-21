@@ -93,14 +93,23 @@ include(cmake/gui.cmake)
 
 # the plugin: a static library with the CLAP entry's three functions (clap-wrapper's "clap first" layout)
 # CHECK FOR UPDATES (plugin/src/frp_update.h): the request through the system's own library on each OS (macOS
-# Foundation, Windows winhttp.dll, Linux libcurl by dlopen when present): nothing new to install
-if(APPLE)
-    set(_frp_update_net "${FRP_ROOT}/plugin/src/frp_update_mac.m")
+# Foundation, Windows winhttp.dll, Linux libcurl by dlopen when present): nothing new to install.
+# FRP_UPDATE_CHECK=OFF builds the plugin against a module whose calls do nothing (plugin/src/frp_update_off.c): no
+# request, no download, no thread
+option(FRP_UPDATE_CHECK "the plugin checks for newer releases (CHECK FOR UPDATES, plugin/src/frp_update.h)" ON)
+if(FRP_UPDATE_CHECK)
+    if(APPLE)
+        set(_frp_update_src "${FRP_ROOT}/plugin/src/frp_update.c" "${FRP_ROOT}/plugin/src/frp_update_rt.c"
+            "${FRP_ROOT}/plugin/src/frp_update_mac.m")
+    else()
+        set(_frp_update_src "${FRP_ROOT}/plugin/src/frp_update.c" "${FRP_ROOT}/plugin/src/frp_update_rt.c"
+            "${FRP_ROOT}/plugin/src/frp_update_net.c")
+    endif()
 else()
-    set(_frp_update_net "${FRP_ROOT}/plugin/src/frp_update_net.c")
+    set(_frp_update_src "${FRP_ROOT}/plugin/src/frp_update_off.c")
 endif()
 add_library(frodhes_clap_impl STATIC "${FRP_ROOT}/plugin/src/frodhes_clap.c" "${FRP_ROOT}/plugin/gui_clap.c"
-            "${FRP_ROOT}/plugin/src/frp_update.c" "${FRP_ROOT}/plugin/src/frp_update_rt.c" "${_frp_update_net}")
+            ${_frp_update_src})
 target_link_libraries(frodhes_clap_impl PUBLIC frodhes_engine clap ${FRP_GUI_VIEW})
 if(UNIX AND NOT APPLE)
     target_link_libraries(frodhes_clap_impl PUBLIC Threads::Threads m ${CMAKE_DL_LIBS})
