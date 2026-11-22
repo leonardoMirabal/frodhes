@@ -631,6 +631,14 @@ static const uint16_t RH_DYN_V[RH_DYN_V_HI] = {             /* Q15, v 0..126 (12
 static const uint16_t RH_DYN_K[RH_KEY_LO + RH_NKEY - RH_DYN_K_LO] = {   /* Q15, keys 82..108 (below: 32768) */
     32768, 32557, 31967, 31073, 29949, 28673, 27312, 25928, 24573, 23288, 22108, 21059, 20161, 19432, 18888, 18546,
     18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427};
+/* BELL DYNO's top keys (2026-11-22): its presence (the body's shelf, +4 dB at 4.2 kHz, and the RLC's +1.9) and its
+ * harder tip raise the fundamental of the keys whose f0 sits in the shelf, so its top octave climbed 9 dB from key 99 to
+ * 108 against STAGE 77's 3 (v100) and a single v127 note on key 108 reached the rail (35.7k unclipped). From key 100
+ * up its level follows STAGE 77's key tracking, its own offset at keys 96..99 kept: a cut of 6.4 ((k - 99) / 9)^1.6 dB
+ * (0.2 dB at key 100, 1.75 at 103, 6.4 at 108). Only ever a cut; DYNO only */
+#define RH_DYN3_K_LO 99u
+static const uint16_t RH_DYN_K3[RH_KEY_LO + RH_NKEY - 1u - RH_DYN3_K_LO] = {   /* Q15, keys 100..108 */
+    32058, 30663, 28858, 26793, 24576, 22294, 20017, 17800, 15684};
 static uint32_t rh_dyn(uint32_t n, uint32_t vel, uint32_t lt)   /* Q15 (<= 32768): the key n (clamped), velocity vel;
                                                 * lt: RESPONSE B (light: 0.9.9's velocity law, the key taper only) */
 {   /* (-DRH_NO_DYN: without it, as tests/py/test_rhodes_dyn.py compares; off in the velocity map's probe builds:
@@ -643,6 +651,7 @@ static uint32_t rh_dyn(uint32_t n, uint32_t vel, uint32_t lt)   /* Q15 (<= 32768
     if (n > RH_KEY_LO + RH_NKEY - 1u) n = RH_KEY_LO + RH_NKEY - 1u;   /* (a MIDI note over 108 plays the top key's
                                                 * values: the table ended there, read past its end: the sanitizer) */
     if (n >= RH_DYN_K_LO) g = (g * RH_DYN_K[n - RH_DYN_K_LO]) >> 15;
+    if (n > RH_DYN3_K_LO && rh_type == 3u) g = (g * RH_DYN_K3[n - RH_DYN3_K_LO - 1u]) >> 15;
     return g;
 #endif
 }
@@ -787,6 +796,21 @@ static void rh_drv_restrike(rh_voice_t *v, uint32_t ki, uint32_t vel)
 #endif
 }
 #endif
+/* the TYPE's tip scale at a key (2026-11-22): RH_TYPE's ham (EARLY FELT x0.7, BELL DYNO x1.2) scales the contact rate.
+ * The band-3 hammers' pulse (keys 71..84) is long enough for that to move the fundamental (EARLY FELT key 84 -2.9 dB
+ * against STAGE 77 at v40), the band-4 wood hammers' (key 85 up, 4x faster) barely moves, so the scale ended in a level
+ * step at keys 84 / 85: EARLY FELT +1.5 dB at v100, +3.0 at v40, +4.7 at v10; BELL DYNO -1.3. Over the 8 keys under
+ * key 85 the scale fades to unity, linearly (key 78 1/8 of the way .. key 84 7/8): the step spread over the keys, the
+ * softer (harder) tip kept below. A TYPE at x1 (STAGE 77, SUITCASE) is unchanged */
+#define RH_HAM_K1 (85u - RH_KEY_LO)                 /* the first band-4 key's index */
+#define RH_HAM_SH 3u                                /* the fade over 1 << RH_HAM_SH keys */
+static uint32_t rh_ty_ham(uint32_t ki)
+{
+    int32_t h = RH_TYPE[rh_type & 3u].ham;
+    if (ki < RH_HAM_K1 && ki + (1u << RH_HAM_SH) > RH_HAM_K1)
+        h += ((65536 - h) * (int32_t)(ki + (1u << RH_HAM_SH) - RH_HAM_K1)) >> RH_HAM_SH;
+    return (uint32_t)h;
+}
 static void rh_load_pulse_rd(rh_voice_t *v, uint32_t vel, int fresh);   /* (the WHURLI strike, below) */
 static void rh_load_pulse(rh_voice_t *v, uint32_t vel, int fresh)   /* fresh: rh_init's (the drive's level just set) */
 {
@@ -847,7 +871,7 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel, int fresh)   /* fresh: rh
 #endif
     {   /* HAMMER knob x TYPE tips scale the contact rate; the force scales with it so the impulse (the hammer's
          * momentum) is kept: a softer tip pushes longer and less hard, it does not give more energy */
-        uint32_t h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RH_TYPE[rh_type & 3u].ham) >> 16);
+        uint32_t h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * rh_ty_ham(key)) >> 16);
         v->prate = (uint32_t)(((uint64_t)v->prate * h) >> 16);
         v->pamp = (int32_t)(((int64_t)v->pamp * h) >> 16);
         if (v->pamp > 32767) v->pamp = 32767;   /* mul15s range; the drive too (0.9.10, the user: clean at every
@@ -1592,7 +1616,19 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
         int32_t mx = RH_OFF_MAX >> sh;
         v->off = k->off + ((ty->off_delta + rh_tone_off) >> sh);
         if (v->off > mx) v->off = mx;                  /* never onto the pole axis (the fundamental cancels there) */
-        v->gain = mul16(mul16(mul16(k->gain, rh_bark_g), ty->bark_g), RH_TYPE_FG[rh_type][k->fam]);
+        int32_t bg = ty->bark_g, to = rh_tone_off;
+        if (bg > 65536 && to < 0) {                    /* BELL DYNO's level trim (x1.36, the only one over 1: set at
+                                                        * TONE 64 for its pickup nearer the pole axis) fades to unity as
+                                                        * TONE below 64 takes the pickup away (2026-11-22: held, DYNO at
+                                                        * TONE 0 played 2.7 dB over its own relation to STAGE 77, and a
+                                                        * v127 bass note's bell strike reached the rail, 36k unclipped):
+                                                        * by t (3 - t) / 2, t = (64 - TONE) / 64, as the measured excess
+                                                        * grows (0.63 of it at TONE 32) */
+            uint32_t t = (uint32_t)(-to) >> 8;          /* Q16: TONE 64 .. 0 -> 0 .. 65536 (rh_tone_off -2^24 at 0) */
+            uint32_t f = (uint32_t)(((uint64_t)t * (196608u - t)) >> 17);
+            bg -= (int32_t)(((int64_t)(bg - 65536) * f) >> 16);
+        }
+        v->gain = mul16(mul16(mul16(k->gain, rh_bark_g), bg), RH_TYPE_FG[rh_type][k->fam]);
 #ifndef RH_NO_TONE_G
         if (rh_tone_off > 0) {                         /* TONE above 64: its loudness back (the offsets in the family's
                                                         * own gap, the family's own curve: S8) */
@@ -1705,7 +1741,7 @@ static void __attribute__((noinline)) rh_knock_strike(uint32_t note, uint32_t ve
     pamp = (int32_t)RH_PAMP[key][i] + ((((int32_t)RH_PAMP[key][i + 1] - (int32_t)RH_PAMP[key][i]) * (int32_t)f) >> 8);
     prate = (uint32_t)((int32_t)RH_PRATE_B[key] + RH_PRATE[key][i] + ((((int32_t)RH_PRATE[key][i + 1] - (int32_t)RH_PRATE[key][i])
                                                        * (int32_t)f) >> 8)) << 4;
-    h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RH_TYPE[rh_type & 3u].ham) >> 16);
+    h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * rh_ty_ham(key)) >> 16);
     prate = (uint32_t)(((uint64_t)prate * h) >> 16);
     pamp = (int32_t)(((int64_t)pamp * h) >> 16);
     if (pamp > 32767) pamp = 32767;

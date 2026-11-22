@@ -712,7 +712,8 @@ def report(cand, base, fails, moves, stale, expected, grid, top=25):
         for cid, lab, m, v, b, d, hit in big:
             f = (lambda x: f"{x:8.2f}" if isinstance(x, float) else f"{x!s:>8}")
             lines.append(f"  {cid}/{lab:10s} {m:7s} {f(v)}  last {f(b)}  move {d if d is None else round(d, 2)!s:>7}  "
-                         + ("listed: " + str(expected[hit].get("reason", ""))[:60] if hit is not None else "UNLISTED"))
+                         + ("listed: " + str(expected[hit].get("reason", ""))[:60] if isinstance(hit, int)
+                            else str(hit)[:60] if hit is not None else "UNLISTED"))   # (a new preset: its note)
     if stale:
         lines.append("\nexpected-changes entries that matched nothing (stale? remove them): "
                      + ", ".join(str(i + 1) for i in stale))
