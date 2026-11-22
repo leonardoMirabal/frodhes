@@ -57,7 +57,8 @@ MIDI to the headphone jack). `frodhes.fwsc` is the FM-1's only package; installi
 0.9.10 or 0.9.11 keeps your settings, presets and pattern.
 
 Your settings and presets stay when you update. 0.9.10 changes the factory presets and some of their program numbers
-(four new, four gone, SUIT TREM now F08): [the list](docs/MANUAL.md#6-presets). You can always go back to M-VAVE's own
+(four new, four gone, SUIT TREM now F08), and the WHURLI presets came in as F20-F23, with your own U01-U16 after
+them: [the list](docs/MANUAL.md#6-presets). You can always go back to M-VAVE's own
 firmware:
 [how](docs/MANUAL.md#going-back-to-the-original-firmware).
 
@@ -101,8 +102,9 @@ Schwung's module catalog, you can also install and update it from there. The ste
 Frodhes also runs in your music software as an instrument plugin: CLAP and VST3 on macOS, Windows and Linux, and an
 Audio Unit on macOS.
 
-- The same instruments, effects and factory sounds, computed by the same code. It plays the higher-quality
-  version of every instrument and effect, with 24 voices.
+- The same instruments, effects and factory sounds, computed by the same engine. It plays the higher-quality
+  version of every instrument and effect, with 24 voices. The drive's first type is **WARM**, the plugin's own
+  overdrive, in place of the FM-1's FDRV.
 - Its own window: the FM-1's pages as cards with knobs, resizable. Presets, MIDI learn, the effects' bypass and the
   sustain latch are in it, and everything is saved with your project.
 - The host's tempo drives the synced effects. Any sample rate. Up to 16 instances in one project.
