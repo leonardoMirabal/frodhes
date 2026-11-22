@@ -587,7 +587,12 @@ static void param_set(uint32_t id, int32_t v)
 FR_COLD static void type_pick(int32_t t)
 {
     int was = TYPE_HAS_MOTOR(PV(P_TYPE));
+    int to_reed = t == 6 && PV(P_TYPE) != 6;   /* WHURLI (TYPE 6) */
     param_set(P_TYPE, t);
+    if (to_reed) {   /* turning TO WHURLI: its own neutral voicing, the one its tables are calibrated at (the knobs of the type
+                      * left are not carried over); turning away from it leaves every knob as it is */
+        param_set(P_TONE, 64); param_set(P_BARK, 64); param_set(P_BELL, 64); param_set(P_HAMMER, 64);
+    }
     if (!was && TYPE_HAS_MOTOR(PV(P_TYPE)) && !PV(P_MOT_ON) && !set.mot_user_off) param_set(P_MOT_ON, 1);
 }
 
