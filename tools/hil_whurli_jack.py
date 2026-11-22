@@ -80,16 +80,78 @@ def level(x, t, lo=0.06, hi=0.30):
     return 20 * np.log10(np.sqrt(np.mean(s * s)) + 1e-12)
 
 
+NEAR_FLOOR_SNR_DB = 20.0     # a note under this far over the jack's floor (on USB's scale) is reported "near floor", not gated
+
+
+def _env(x, a, n, fs=FS):
+    s = np.asarray(x[a:a + n], float)
+    m = max(int(0.002 * fs), 1)
+    return np.sqrt(np.convolve(s * s, np.ones(m) / m, "same"))
+
+
+def align_lag(dev, host, t, fs=FS, span=0.04, pre=0.02, post=0.25):
+    """the device's delay at the note struck at t: the lag (s, 0..span, 1 ms steps) at which its envelope best fits the host's. The
+    device audio lags the MIDI event by its own latency (11-12 ms on the FM-1, other per build and block size): a window anchored at
+    the event time sees an earlier part of the note, louder by the decay x the lag (key 93: 0.07 dB/ms)"""
+    a, n = int((t - pre) * fs), int((pre + post) * fs)
+    eh = _env(host, a, n, fs)
+    best, step = (-1.0, 0), max(int(fs / 1000), 1)
+    for lag in range(0, int(span * fs) + 1, step):
+        ed = _env(dev, a + lag, n, fs)
+        c = float(np.dot(ed, eh) / (np.linalg.norm(ed) * np.linalg.norm(eh) + 1e-30))
+        if c > best[0]:
+            best = (c, lag)
+    return best[1] / fs
+
+
+def score_sweep(u, j, h, notes, floor_jack_db, fs=FS):
+    """USB against the host per note (each note's own delay found, the take's median where a note is too quiet to align), the jack
+    against USB; notes within NEAR_FLOOR_SNR_DB of the jack's floor (its level on USB's scale) are listed with their SNR, not gated"""
+    lags = [align_lag(u, h, t, fs) for t, k, v in notes]
+    loud = [lg for lg, (t, k, v) in zip(lags, notes) if level(h, t) > -60]
+    med = float(np.median(loud)) if loud else 0.0
+    jo = [level(j, t + lg) - level(u, t + lg) for lg, (t, k, v) in zip(lags, notes)]
+    jm = float(np.median(jo))
+    floor_usb = floor_jack_db - jm
+    rows = []
+    for (t, k, v), lg in zip(notes, lags):
+        lu = level(u, t)
+        snr = level(u, t) - floor_usb
+        lg = lg if snr >= NEAR_FLOOR_SNR_DB else med
+        rows.append(dict(key=k, vel=v, lag_ms=lg * 1000, d_db=level(u, t + lg) - level(h, t),
+                         jack_re_usb=level(j, t + lg) - level(u, t + lg), snr_db=snr, near_floor=snr < NEAR_FLOOR_SNR_DB))
+    ok_rows = [r for r in rows if not r["near_floor"]]
+    return dict(rows=rows, max_abs=max(abs(r["d_db"]) for r in ok_rows), mean=float(np.mean([r["d_db"] for r in ok_rows])),
+                jack_median=jm, jack_spread=max(r["jack_re_usb"] for r in ok_rows) - min(r["jack_re_usb"] for r in ok_rows),
+                near_floor=[(r["key"], r["vel"], round(r["d_db"], 2), round(r["snr_db"], 1)) for r in rows if r["near_floor"]],
+                median_lag_ms=med * 1000)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=os.path.join(HERE, "..", "build", "whurli-fm1"))
     ap.add_argument("--dev", default="M6")
     ap.add_argument("--ch", type=int, default=5)
+    ap.add_argument("--rescore", metavar="DIR", help="no device: score the sweep WAVs saved in DIR again (sweep-usb / -jack / -host)")
     ap.add_argument("--ref-db", type=float, default=JACK_RE_USB_DB, help="the preflight's expected jack level re USB (dB)")
     ap.add_argument("--ref-tol", type=float, default=1.5)
     ap.add_argument("--reference", action="store_true", help="the same sweep on STAGE 77 (no program change; keys 36..93): the rig's own "
                     "device-against-host spread, to read WHURLI's against")
     a = ap.parse_args()
+    if a.rescore:
+        def rd(n):
+            w = wave.open(os.path.join(a.rescore, n))
+            return np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(float) / 32768
+        rj = json.load(open(os.path.join(a.rescore, "jack-report.json")))
+        sc = score_sweep(rd("sweep-usb.wav"), rd("sweep-jack.wav"), rd("sweep-host.wav"), notes_of_sweep(),
+                         rj["floor"]["whurli_jack"]["total"])
+        for key in KEYS:
+            ds = [r["d_db"] for r in sc["rows"] if r["key"] == key and not r["near_floor"]]
+            print("key %2d  USB vs host: %s dB" % (key, " ".join("%+.2f" % x for x in ds)))
+        print("max |d| %.2f dB (gated notes), mean %+.2f, median delay %.1f ms; jack re USB median %+.2f spread %.2f dB" % (
+            sc["max_abs"], sc["mean"], sc["median_lag_ms"], sc["jack_median"], sc["jack_spread"]))
+        print("near floor (key, vel, d dB, SNR dB), reported not gated:", sc["near_floor"])
+        return 0
     os.makedirs(a.out, exist_ok=True)
     import hil_jack as hj
     J = hj.Jack(a.dev, a.ch)
@@ -134,13 +196,13 @@ def main():
     h = host_render("whurli-sweep-host", events_of(notes, None if a.reference else 35), dur)
     save(os.path.join(a.out, "sweep-host.wav"), h)
     # the level: USB against the host per note; the jack against USB as one offset
-    dl = [level(u, t) - level(h, t) for t, k, v in notes]
-    jo = [level(j, t) - level(u, t) for t, k, v in notes]
-    rep["sweep_usb_vs_host_db"] = dict(max_abs=float(np.max(np.abs(dl))), mean=float(np.mean(dl)),
-                                      per_note=[(k, v, round(x, 2)) for (t, k, v), x in zip(notes, dl)])
-    rep["jack_minus_usb_db"] = dict(median=float(np.median(jo)), spread=float(np.max(jo) - np.min(jo)))
-    ok &= float(np.max(np.abs(dl))) <= 1.0
-    ok &= float(np.max(jo) - np.min(jo)) <= 1.0
+    sc = score_sweep(u, j, h, notes, rep["floor"]["whurli_jack"]["total"])
+    rep["sweep_usb_vs_host_db"] = dict(max_abs=sc["max_abs"], mean=sc["mean"], near_floor=sc["near_floor"],
+                                      median_lag_ms=sc["median_lag_ms"],
+                                      per_note=[(r["key"], r["vel"], round(r["d_db"], 2)) for r in sc["rows"]])
+    rep["jack_minus_usb_db"] = dict(median=sc["jack_median"], spread=sc["jack_spread"])
+    ok &= sc["max_abs"] <= 1.0
+    ok &= sc["jack_spread"] <= 1.0
     # the clicks, USB and jack, the bark-aware detector (every LPC event judged by its excess over the periodic waveform)
     for nm, x in (("usb", u), ("jack", j)):
         x = np.asarray(x, float)
@@ -176,7 +238,8 @@ def main():
         save(os.path.join(a.out, f"F{pc - 15}-jack.wav"), jj)
         hh = host_render(f"whurli-f{pc - 15}-host", ev, 6.5)
         save(os.path.join(a.out, f"F{pc - 15}-host.wav"), hh)
-        rep[f"F{pc - 15}"] = dict(usb_vs_host_db=[round(level(uu, t, 0.06, 0.5) - level(hh, t, 0.06, 0.5), 2) for t, k, v in nts])
+        rep[f"F{pc - 15}"] = dict(usb_vs_host_db=[round(level(uu, t + align_lag(uu, hh, t), 0.06, 0.5) - level(hh, t, 0.06, 0.5), 2)
+                                                  for t, k, v in nts])
         ok &= max(abs(x) for x in rep[f"F{pc - 15}"]["usb_vs_host_db"]) <= 1.0
     if a.reference:
         print(json.dumps(rep["sweep_usb_vs_host_db"], indent=0)[:3000])
