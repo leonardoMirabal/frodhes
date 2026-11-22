@@ -9,7 +9,7 @@
 # frp_slot_<N> (two copies of the app must never share a symbol).
 set(FRP_SLOTS 16)
 # the app's build switches (tools/gate_d.py DEFS and tools/gen_plugin_params.py DEFS are the same)
-set(FRP_ENGINE_DEFS FR_VOICES=24u FR_HQ=1 FR_BYP_KEEP_CMP=1 FR_REV_HQ=1 "APP_VER=\"${FRP_VERSION}\"")
+set(FRP_ENGINE_DEFS FR_VOICES=24u FR_HQ=1 FR_BYP_KEEP_CMP=1 FR_REV_HQ=1 FR_OWN=1 "APP_VER=\"${FRP_VERSION}\"")
 if(MSVC)   # clang-cl (Windows): the same switches in its spelling; COFF exports nothing unless asked
     set(FRP_ENGINE_FLAGS -O2 ${FRP_C_STD} /W3 -Wno-unused-function -Wno-unused-variable ${FRP_C_WIN})
 else()

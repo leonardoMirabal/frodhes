@@ -32,7 +32,8 @@ notices() {   # DIR [windows]: LICENSE.txt, SOURCE.txt, THIRD-PARTY-NOTICES.txt
     cat > "$1/SOURCE.txt" <<EOF
 Frodhes is free software under the GNU General Public License, version 3 only (LICENSE.txt).
 Its complete source, the plugin's build files and the exact versions of every dependency (plugin/deps.lock) are at
-https://github.com/leonardoMirabal/frodhes (the release's tag). The plugin is built from plugin/ (docs/PLUGIN.md).
+https://github.com/leonardoMirabal/frodhes (the release's tag). The plugin is built from plugin/ (docs/PLUGIN.md). It compiles only Frodhes' own code plus the libraries listed in
+THIRD-PARTY-NOTICES.txt.
 EOF
     n=$1/THIRD-PARTY-NOTICES.txt
     {

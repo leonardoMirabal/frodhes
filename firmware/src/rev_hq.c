@@ -95,11 +95,16 @@ static FX_RAM __attribute__((noinline)) void rq_in(const int32_t *in, int32_t *o
     int32_t hp = rv_hp, he = rv_he;
     uint32_t i;
     for (i = 0; i < RQ_NC; i++) {
+#if FR_OWN
+        int32_t x = mulq15(clampi(FX_HC(1, in[i], -131071, 131071), -131071, 131071), hl);
+        out[i] = own_dc_hp(x, &hp, &he);
+#else
         int32_t x = mulq15(clampi(FX_HC(1, in[i], -131071, 131071), -131071, 131071), hl), v;
         v = x - hp + he;
         he = v & 63;
         hp += v >> 6;
         out[i] = x - hp;
+#endif
     }
     rv_hp = hp, rv_he = he;
 }

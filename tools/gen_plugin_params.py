@@ -27,7 +27,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "plugin", "gen", "params_map.h")
 BUILD = os.path.join(ROOT, "build", "plugin", "gen")
 # the plugin's engine flags (plugin/cmake/slots.cmake FRP_ENGINE_DEFS: the HQ paths, 24 voices)
-DEFS = ["-DFR_VOICES=24u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1"]
+DEFS = ["-DFR_VOICES=24u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1", "-DFR_OWN=1"]
 
 # id name -> (long name, group). The VOICE parameters mean other things on the bar engine (eng_pages.h ENG_BARS_C):
 # both names, the Rhodes' first.
@@ -134,11 +134,13 @@ def param_enum():
     return names
 
 
-def dump():
+def dump(defs=None):
+    """the app's parameters and texts at the plugin's switches (FR_OWN=1), or at defs (the classic ones)"""
+    defs = DEFS if defs is None else defs
     os.makedirs(BUILD, exist_ok=True)
-    exe = os.path.join(BUILD, "param_dump")
+    exe = os.path.join(BUILD, "param_dump" + ("" if defs is DEFS else "_classic"))
     tmp = f"{exe}.{os.getpid()}"
-    subprocess.run([os.environ.get("CC", "cc"), "-O1", "-w", "-DDINGHY_HOST", '-DAPP_VER="dev"', *DEFS,
+    subprocess.run([os.environ.get("CC", "cc"), "-O1", "-w", "-DDINGHY_HOST", '-DAPP_VER="dev"', *defs,
                     "-I" + os.path.join(ROOT, "firmware", "src"), "-I" + os.path.join(ROOT, "firmware", "gen"),
                     "-o", tmp, os.path.join(ROOT, "plugin", "tests", "param_dump.c"), "-lm"], check=True)
     os.replace(tmp, exe)
@@ -180,12 +182,15 @@ def with_unit(fmt, t):
 
 
 def c_str(s):
+    if isinstance(s, tuple):
+        return "%s(%s, %s)" % (s[0], c_str(s[1]), c_str(s[2]))
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def render():
     names = param_enum()
     params, text, fact = dump()
+    ctext = dump([d for d in DEFS if d != "-DFR_OWN=1"])[1]      # the same at FR_OWN=0 (the MPC shares this header)
     if len(names) != len(params):
         raise SystemExit(f"gen_plugin_params: params.c's enum has {len(names)} ids, PARAMS[] {len(params)}")
     missing = [n for n in names if n not in LONG]
@@ -199,7 +204,10 @@ def render():
     for d, nm in zip(params, names):
         lng, grp = LONG[nm]
         t0 = len(texts)
-        texts += [with_unit(d["fmt"], t) for t in text[d["id"]]]
+        # a text that differs with FR_OWN (the drive's TYPE 1: WARM in the own-code build, FDRV in the others) is a
+        # macro that picks one, so the MPC, which shares this header and runs the classic drive, shows FDRV
+        texts += [with_unit(d["fmt"], t) if t == c else ("FRP_OWN_TXT", with_unit(d["fmt"], t), with_unit(d["fmt"], c))
+                  for t, c in zip(text[d["id"]], ctext[d["id"]])]
         stepped = FMTS[d["fmt"]] in ("F_ENUM", "F_DIV")
         rows.append(f"    {{{d['id']}u, {c_str(lng)}, {c_str(grp)}, {d['hi']}u, {d['deff']}u, {d['cc']}u, "
                     f"{1 if stepped else 0}u, {t0}u}},   /* {nm} ({d['lab']}) */")
@@ -218,6 +226,15 @@ def render():
         "#ifndef FRODHES_PLUGIN_PARAMS_MAP_H",
         "#define FRODHES_PLUGIN_PARAMS_MAP_H",
         "#include <stdint.h>",
+        "",
+        "#ifndef FR_OWN",
+        "#define FR_OWN 0",
+        "#endif",
+        "#if FR_OWN                      /* the plugin's own-code build (plugin/CMakeLists.txt defines it for every target) */",
+        "#define FRP_OWN_TXT(own, classic) own",
+        "#else",
+        "#define FRP_OWN_TXT(own, classic) classic",
+        "#endif",
         "",
         "typedef struct {",
         "    uint32_t id;",

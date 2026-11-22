@@ -2254,6 +2254,61 @@ static void rh_shed(void)                                 /* overload: fade the 
 /* TUNE and DECAY / RELEASE are the note-on's (0.9.13, the audio review C2): TUNE, DECAY and RELEASE act on new notes,
  * so a bend retunes from the TUNE the voice started with (v->tn) and keeps its pair (E, eps) on the note-on's decays
  * (s->eps0 / eps1, the eps it runs with; E from a DECAY turned since was a pair that did not match) */
+#if FR_OWN                                      /* the plugin's own-code build: the same retune, written from what it computes */
+/* One sounding voice at the bend: its tuning is (1 + TUNE at the note-on)(1 + bend) - 1 (Q30); each mode that runs
+ * gets the coefficient pair for both of its decays (the note-on's eps0 / eps1) and the pair the damper crossfade
+ * (weight w_tgt, Q15) has reached between them. The bend is held in the voice's host-test copy. */
+static void rh_retune_voice(rh_voice_t *v, int32_t bend)
+{
+    uint32_t m;
+    const int32_t tune = v->tn + bend + mul30(v->tn, bend);
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    v->tb = bend;
+#endif
+    for (m = 0; m < RH_NM; m++) {
+        rh_ms_t *ms = &v->m[m];
+        int32_t sp, lo, hi;
+        int64_t cr;
+        if (rh_mode_runs(v->k, m)) {
+            cr = rh_coef_tune(&v->k->m[m], tune, &sp);
+            lo = rh_coef_e(ms->eps0, sp, cr);
+            hi = rh_coef_e(ms->eps1, sp, cr);
+            ms->e0 = lo;
+            ms->e1 = hi;
+            ms->e = lo + (int32_t)(((int64_t)(hi - lo) * v->w_tgt) >> 15);
+            ms->es = ms->e;
+        }
+    }
+}
+
+/* A new bend marks every voice as owing a retune; each block then serves the owing voices in a ring from the cursor,
+ * at most RH_RT_PER sounding ones, and the cursor ends one past the last voice looked at. */
+static void rh_retune(void) __attribute__((noinline));
+static void rh_retune(void)
+{
+    const int32_t bend = rh_bend_t;
+    uint32_t owing, cur, looked = 0, budget = RH_RT_PER;
+    if (bend != rh_bend_used) {
+        rh_bend_used = bend;
+        rh_rt_pend = ~0u >> (32u - RH_NV);
+    }
+    owing = rh_rt_pend;
+    cur = rh_rt_cur;
+    while (looked < RH_NV && owing != 0u && budget != 0u) {
+        if (owing & (1u << cur)) {
+            owing &= ~(1u << cur);
+            if (rv[cur].alive) {
+                rh_retune_voice(&rv[cur], bend);
+                budget--;
+            }
+        }
+        looked++;
+        cur = cur + 1u < RH_NV ? cur + 1u : 0u;
+    }
+    rh_rt_pend = owing;
+    rh_rt_cur = cur;
+}
+#else
 static void __attribute__((noinline)) rh_retune(void)
 {
     uint32_t i, m, k, done = 0, pend;
@@ -2286,6 +2341,7 @@ static void __attribute__((noinline)) rh_retune(void)
     }
     rh_rt_pend = pend; rh_rt_cur = i;
 }
+#endif
 
 /* the mechanical noises after the voices, into the mix (Q20): the key-down knock (S11), the pedal's thud (S12) */
 static FR_RAM void __attribute__((noinline)) rh_noise(int32_t *mix, uint32_t n)

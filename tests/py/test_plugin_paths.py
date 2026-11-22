@@ -23,3 +23,22 @@ def test_plugin_paths(tmp_path):
     r = subprocess.run([str(exe), str(tmp_path / "scratch")], capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
     assert r.stdout.startswith("ok    paths")
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="no C compiler")
+@pytest.mark.parametrize("define, env, want", [
+    (None, None, "none"), (None, "/env/p", "/env/p"),                   # the default: unchanged
+    ('"/build/p"', None, "/build/p"), ('"/build/p"', "/env/p", "/env/p")])   # a build's root; the variable wins
+def test_preset_root_define(tmp_path, define, env, want):
+    (tmp_path / "t.c").write_text('#include <stdio.h>\n#include "frp_paths.h"\n'
+                                  'int main(void) { frp_env_t e; frp_env_here(&e); '
+                                  'puts(e.preset_dir ? e.preset_dir : "none"); return 0; }\n')
+    exe = str(tmp_path / "t")
+    r = subprocess.run(["cc", "-Wall", "-Werror", "-I", os.path.join(ROOT, "plugin", "src"), *(["-DFRP_PRESET_ROOT=" + define] if define else []),
+                        str(tmp_path / "t.c"), os.path.join(ROOT, "plugin", "src", "frp_paths.c"), "-o", exe],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    e = {k: v for k, v in os.environ.items() if k != "FRODHES_PRESET_DIR"}
+    if env:
+        e["FRODHES_PRESET_DIR"] = env
+    assert subprocess.run([exe], capture_output=True, text=True, env=e).stdout.strip() == want

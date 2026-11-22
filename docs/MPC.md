@@ -196,7 +196,9 @@ not built):
 - **Bit-exactness** (`mpc/tests/bitexact.py`): 84 scripts (Gate M's MIDI-driven entries: `tests/scripts`, the
   effect and calibration scripts, Gate D's list; and `tests/hq`), every one byte for byte:
   - the MPC build at 24 voices = the desktop plugin = the host build (in the plugins' host-time test mode), and the
-    MPC build as it ships (16 voices) = the host build at the Move's switches;
+    MPC build as it ships (16 voices) = the host build at the Move's switches. The 24-voice comparison build is made
+    with the desktop plugin's own-code switch (`mpc/build.py --own`, `FR_OWN=1`), so it plays the plugin's DRIVE TYPE 1
+    (WARM); the shipped MPC build keeps FDRV;
   - as they ship: the MPC build at 24 voices = the desktop plugin at 44.1 and at 48 kHz, also with random block
     sizes on the MPC;
   - the shipped `frodhes-arm64.so` and `frodhes-arm32.so` on Linux (Docker; the 32-bit one under QEMU) = the host

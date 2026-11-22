@@ -19,6 +19,7 @@
 #include "ui/frui.h"
 
 const char *const FRG_VIEW_API = "cocoa";
+const int FRG_VIEW_SIZES_IN_POINTS = 1;
 
 struct frg_view {
     frg_client cl;

@@ -373,12 +373,16 @@ static void sb_state_apply(void)         /* the boot's sanitize and apply steps 
     chord_sanitize();
     seq_sanitize();
     if (set.usb_fixed > 1u) set.usb_fixed = 0;
+#if !FR_OWN_HAL                      /* (the own-code build has no screen palette or lights to bound or apply) */
     if (set.palette >= COLOR_N) set.palette = 0;
     if (set.dim >= DIM_N) set.dim = 0;
+#endif
     if (set.leds > 4u) set.leds = 0;
     usb_pre_master = set.usb_fixed;
     uart_midi_on = !set.trs_off;
+#if !FR_OWN_HAL
     dim_apply();
+#endif
     params_apply_all();
     tempo_set10(set.bpm10);
     bpm_hand = sb.st_hand >= 400u && sb.st_hand <= 2400u ? sb.st_hand : set.bpm10;
@@ -792,7 +796,7 @@ static int sb_boot(void)
     if (!sb.stack) return -1;
     memset(sb.stack, 0, SB_STACK);       /* (every page touched now, not on the audio thread) */
     memset(host_mem, 0xFF, sizeof host_mem);   /* (the flash, erased: nothing saved, the defaults load) */
-    memset(web_store_buf, 0, sizeof web_store_buf);
+    FRP_STORE_RESET();                   /* (the settings record: nothing saved yet) */
     hq_mode = 1;                         /* (every note HQ, every engine: hq/rhodes_hq.h) */
     coro_init(&sb.co, sb.stack, SB_STACK, sb_entry, 0);
     coro_resume(&sb.co);                 /* app_main up to its first poll */

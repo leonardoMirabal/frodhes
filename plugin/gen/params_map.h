@@ -6,6 +6,15 @@
 #define FRODHES_PLUGIN_PARAMS_MAP_H
 #include <stdint.h>
 
+#ifndef FR_OWN
+#define FR_OWN 0
+#endif
+#if FR_OWN                      /* the plugin's own-code build (plugin/CMakeLists.txt defines it for every target) */
+#define FRP_OWN_TXT(own, classic) own
+#else
+#define FRP_OWN_TXT(own, classic) classic
+#endif
+
 typedef struct {
     uint32_t id;
     const char *name, *module;   /* the host's name and group */
@@ -658,7 +667,7 @@ static const char *const FRP_TEXT[6328] = {
     "7.7", "7.8", "7.9", "8.0", "8.0", "8.1", "8.2", "8.3",
     "8.3", "8.4", "8.5", "8.6", "8.7", "8.7", "8.8", "8.9",
     "9.0", "9.1", "9.1", "9.2", "9.3", "9.4", "9.4", "9.5",
-    "9.6", "9.7", "9.8", "9.8", "9.9", "10.0", "OFF", "FDRV",
+    "9.6", "9.7", "9.8", "9.8", "9.9", "10.0", "OFF", FRP_OWN_TXT("WARM", "FDRV"),
     "KHLON", "TSH8", "OHCD", "BHLUE", "0.0", "0.1", "0.2", "0.2",
     "0.3", "0.4", "0.5", "0.6", "0.6", "0.7", "0.8", "0.9",
     "0.9", "1.0", "1.1", "1.2", "1.3", "1.3", "1.4", "1.5",

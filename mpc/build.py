@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Frodhes for the Akai MPC (docs/MPC.md): build the plugin folder and its zip.
 
-    python3 mpc/build.py [--target all|native|arm32|arm64] [--version X.Y.Z] [--voices N] [-j N] [--no-lto]
+    python3 mpc/build.py [--target all|native|arm32|arm64] [--version X.Y.Z] [--voices N] [--own] [-j N] [--no-lto]
 
 The engine is the desktop plugin's, compiled from the same sources with the Linux plugin build's settings
 (plugin/cmake/slots.cmake, tools/plugin_linux.sh): plugin/src/engine_unit.c once per slot (-DFRP_SLOT=0..15, every
@@ -176,7 +176,7 @@ def build_arch(arch, zig, d, args, out_dir):
     # way, as the desktop plugin's Gate D shows for its LTO switch)
     lto = [] if args.no_lto or (arch == "native" and IS_MAC) else ["-flto=full"]
     defs = ["-DFR_VOICES=%du" % args.voices, "-DFRP_VOICES=%du" % args.voices, "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1",
-            "-DFR_REV_HQ=1", '-DAPP_VER="%s"' % args.version]
+            "-DFR_REV_HQ=1", '-DAPP_VER="%s"' % args.version] + (["-DFR_OWN=1"] if args.own else [])
     src_t = newest([os.path.join(ROOT, p) for p in ("firmware/src", "firmware/gen", "plugin/src", "plugin/compat",
                                                     "plugin/gen", "plugin/frp_ui_iface.h", "web", "move/move_presets.h",
                                                     "mpc/sdk", "mpc/src")])
@@ -341,6 +341,8 @@ def main():
     ap.add_argument("--version", default="0.0.0-dev", help="the version text (a release's X.Y.Z)")
     ap.add_argument("--voices", type=int, default=16, help="voices on every engine (16: the Move's; 24: the desktop "
                     "plugin's, for the bit-exactness test)")
+    ap.add_argument("--own", action="store_true", help="the desktop plugin's own-code switch (-DFR_OWN=1), for the "
+                    "24-voice comparison build only (the MPC ships without it); native only")
     ap.add_argument("-j", "--jobs", type=int, default=2)
     ap.add_argument("--out", default=os.path.join(ROOT, "build", "mpc"))
     ap.add_argument("--no-lto", action="store_true", help="no LTO on the slots (faster, larger)")
@@ -348,6 +350,8 @@ def main():
     ap.add_argument("--tools", action="store_true", help="also the ARM test hosts (vst2_render, host_sim, test_coro) "
                     "in build/mpc/stage/<arch>, for the Docker runs (tests/py/test_mpc.py)")
     args = ap.parse_args()
+    if args.own and args.target != "native":
+        die("--own: the native comparison build only", 2)
     if not re.match(r"^[0-9A-Za-z.\-]+$", args.version):
         die("--version: letters, digits, dots and dashes", 2)
     d = sdk_dir(fetch=not args.no_fetch)

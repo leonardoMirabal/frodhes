@@ -467,6 +467,10 @@ drive is off in it). The type is part of the sound and is saved in presets. Movi
 knobs glides, so you can turn them while you play. Over MIDI: CC 81 AMOUNT, 82 TONE, 83 MIX, 84 the type:
 0–63 OFF, 64–75 KHLON, 76–87 TSH8, 88–99 OHCD, 100–111 BHLUE, 112–127 FDRV.
 
+**In the desktop plugin** the first type is **WARM** in place of FDRV: a warm, smooth overdrive of the plugin's own,
+with the same knobs, the same CC 84 band and the same place in the presets (a preset with FDRV plays WARM there). The
+other four types are the same. The FM-1, the Move and the MPC keep FDRV.
+
 ### FILTER
 
 ![FILTER](manual/img/filter.png?v=ff9471b8)
@@ -1250,7 +1254,7 @@ the FILTER, TREM and the delay reach it too), and it fades out while SPREAD is a
 | 108 / 109 | COMP ATTACK / RELEASE | | |
 | 34 / 35 | EQ LOW / MID (−15 to +15 dB, 64 = 0 dB) | 36 / 37 | EQ MID FREQ (200 Hz – 5 kHz) / HIGH |
 | 81 | DRIVE (AMOUNT) | 82 / 83 | DRIVE TONE / MIX |
-| 84 | DRIVE type: 0–63 OFF, 64–75 KHLON, 76–87 TSH8, 88–99 OHCD, 100–111 BHLUE, 112–127 FDRV | | |
+| 84 | DRIVE type: 0–63 OFF, 64–75 KHLON, 76–87 TSH8, 88–99 OHCD, 100–111 BHLUE, 112–127 FDRV (WARM in the desktop plugin) | | |
 | 70 / 74 | FILTER TYPE (7 bands: off, LP12, LP18, HP12, HP18, BP, notch) / CUTOFF | 71 / 72 | FILTER RESONANCE / LFO AMOUNT |
 | 75 / 76 | LFO SHAPE (6 bands) / RATE | 77 / 78 | LFO SYNC / RETRIG (free, key) |
 | 17 | TREM/WAH: 0–42 off, 43–85 trem/pan, 86–127 wah | 18 / 19 | TREM DEPTH / RATE |
@@ -1376,7 +1380,8 @@ page and what differs: **[MOVE.md](MOVE.md)**.
 
 Frodhes also runs in your music software as an instrument plugin: CLAP and VST3 on macOS, Windows and Linux, and an
 Audio Unit on macOS. It has the same instruments, effects and factory sounds as the FM-1, computed by the same code,
-in the higher-quality version, with 24 voices. Everything in this manual applies to the sound. Its own window shows the pages as cards
+in the higher-quality version, with 24 voices. Everything in this manual applies to the sound, except that the
+DRIVE's first type is **WARM**, the plugin's own drive, in place of FDRV ([DRIVE](#drive)). Its own window shows the pages as cards
 with knobs, with the presets, MIDI learn, the effects' bypass and the sustain latch; your host saves everything with
 the project. The host's tempo drives the synced effects; the FM-1's sequencer, arpeggiator and chord mode are not in
 the plugin. When a newer Frodhes is out, the plugin downloads its package into Downloads and shows an INSTALL key on
@@ -1391,7 +1396,7 @@ not signed yet: [the README](../README.md#on-your-computer-the-desktop-plugin).
 
 Frodhes also runs on Akai MPC standalone hardware as a plugin (MPC OS 3.10.1 or later, External Plugin Support on):
 the desktop plugin's engine in the higher-quality version, 16 voices on every instrument, and the factory presets
-F01-F57 as its programs. Everything in this manual applies to the sound. Its pages on the MPC's screen show the
+F01-F61 as its programs. Everything in this manual applies to the sound. Its pages on the MPC's screen show the
 plugin's look: eight pages of large knobs in panels of four, each panel one Q-Link group; touching a panel brings it
 under the Q-Links. The MPC's tempo drives the synced effects; the FM-1's sequencer, arpeggiator and chord mode are not
 in the plugin. The download, the install (by hand, or from the Open MPC catalogue with its Plugin Manager) and the page list:

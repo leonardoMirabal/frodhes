@@ -84,8 +84,13 @@ FR_COLD static void eng_bar_knob(uint32_t k, uint32_t v) { (void)k; (void)v; }
 static const char *const N_TW[] = {"OFF", "TRM", "WAH"};
 static const char *const N_CP[] = {"OFF", "CHO", "PHA"};   /* "PHA": records before 0.4 */
 static const char *const N_ONOFF[] = {"OFF", "ON"};
+#if !FR_OWN
 static const char *const N_DRV[] = {"OFF", "FDRV", "KHLON", "TSH8", "OHCD", "BHLUE"};   /* the drive's TYPE (fx.c
                                     * drive.c): 1 FDRV, the drive before ("ON" in older records), 2.. the circuits */
+#else
+static const char *const N_DRV[] = {"OFF", "WARM", "KHLON", "TSH8", "OHCD", "BHLUE"};   /* the plugin's own-code build:
+                                    * TYPE 1 is its own drive (drive.c, drv_own1.c), the same value in the records */
+#endif
 static const uint8_t DRV_CC84[6] = {0, 112, 64, 76, 88, 100};   /* CC 84's band start per drive TYPE (as TYPE_CC79):
                                     * OFF 0..63 and FDRV 112..127 (0 and 127 keep their sound), the others in between */
 static uint8_t drv_last = 1;       /* the drive TYPE last on: turning DRIVE up on PERFORM / FRODHES wakes it (not saved) */
