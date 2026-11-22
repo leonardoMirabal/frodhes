@@ -201,8 +201,8 @@ static int phi(int id)
     }
     return id == FRP_TUNE ? 100 : id == FRP_TW_KIND ? 3 : id >= 0 && id < FRP_COUNT ? FRP_HI[id] : 1;
 }
-static int is_bars(const frui_model *m) { return m->p[FRP_TYPE] >= 4; }
-static int has_motor(const frui_model *m) { return m->p[FRP_TYPE] == 4; }
+static int is_bars(const frui_model *m) { int t = m->p[FRP_TYPE]; return t >= 0 && t < FRN_NTYPE && FRN_TYPE_BARS[t]; }
+static int has_motor(const frui_model *m) { return m->p[FRP_TYPE] == FRN_T_VIBES; }
 
 static const char *const *opt_names(int id, int *n)
 {
@@ -576,6 +576,10 @@ static void eicon(frui *u, int type, float x, float y, float k, uint32_t col)
             RR(bx + 1.5f, 7, 3, th, 1.5f);
         }
         break;
+    case 6:   /* the reed piano: steel reeds, long to short, over the pickup plate */
+        L(3, 4, 37, 4);
+        for (i = 0; i < 7; i++) FR(5.f + 5.f * (float)i, 7.f, 2.f, 15.f - 1.7f * (float)i, 0.8f, col);
+        break;
     default:  /* marimba: wooden bars, long to short, on their frame */
         for (i = 0; i < 6; i++) {
             float bx = 3.f + 6.f * (float)i, bh = 17.f - 2.2f * (float)i;
@@ -731,7 +735,7 @@ static void type_selector(frui *u, float x, float y, float h)
     key_btn(u, FRB_TYPE_PREV, 0, x, y, 28.f, h);
     ctrl_box(u, bx, y, bw, h, open || is_hover(u, FRW_MENU, FRP_TYPE), open);
     eicon(u, t, bx + 8.f, y + (h - 24.f * 0.75f) * 0.5f, 0.75f, C_TEXT);
-    tx(u, bx + 46.f, mid(u, y + h * 0.5f, 10.5f), T_MENU, 0, FRN_TYPE[t <= 5 ? t : 0], C_TEXT);
+    tx(u, bx + 46.f, mid(u, y + h * 0.5f, 10.5f), T_MENU, 0, FRN_TYPE[t >= 0 && t < FRN_NTYPE ? t : 0], C_TEXT);
     chevron(u, bx + bw - 12.f, y + h * 0.5f, 3.f, 0, C_TEXT2);
     if (is_focus(u, FRW_MENU, FRP_TYPE))
         frui_rrect_stroke(u->c, X(bx - 3.f), X(y - 3.f), X(bw + 6.f), X(h + 6.f), X(R_CTRL + 3.f), X(1.f), C_ACC);

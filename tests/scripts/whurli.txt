@@ -1,0 +1,67 @@
+# WHURLI (TYPE 6, ALGORITHM six steps from ST77: the Rhodes engine on its own tables, rh_type 4): notes over its
+# 64-key range (33..96) at soft / medium / hard velocities, a re-strike, a pedal chord, notes outside the range
+# (no voice: exact silence), a TYPE change away and back, silence at the end. RAW: the engine without the effects.
+# tests/py/test_whurli.py renders this script's WAV and looks for clicks and NaN-like jumps.
+50 midi 0xB0 119 127
+60 turn 1 1
+62 turn 1 1
+64 turn 1 1
+66 turn 1 1
+68 turn 1 1
+70 turn 1 1
+200 expect state type WHURLI
+# one note per register, soft to hard
+300 midi 0x90 36 40
+700 expect rms > -65
+900 midi 0x80 36 0
+1000 midi 0x90 48 70
+1400 expect rms > -65
+1600 midi 0x80 48 0
+1700 midi 0x90 60 100
+2100 expect rms > -65
+2300 midi 0x80 60 0
+2400 midi 0x90 72 127
+2800 expect rms > -65
+3000 midi 0x80 72 0
+3100 midi 0x90 84 90
+3500 expect rms > -65
+3700 midi 0x80 84 0
+3800 midi 0x90 95 110
+4200 expect rms > -65
+4400 midi 0x80 95 0
+# re-strike of a ringing note (soft then hard, then soft), no key-up between
+5000 midi 0x90 55 50
+5200 midi 0x90 55 120
+5400 midi 0x90 55 30
+5700 expect rms > -65
+5800 midi 0x80 55 0
+# a pedal chord over six voices, then the pedal up
+6500 midi 0xB0 64 127
+6510 midi 0x90 41 90
+6510 midi 0x90 48 90
+6510 midi 0x90 53 90
+6510 midi 0x90 57 90
+6510 midi 0x90 60 90
+6510 midi 0x90 65 90
+6900 expect rms > -65
+7000 midi 0x80 41 0
+7000 midi 0x80 48 0
+7000 midi 0x80 53 0
+7000 midi 0x80 57 0
+7000 midi 0x80 60 0
+7000 midi 0x80 65 0
+7600 midi 0xB0 64 0
+# notes outside the 33..96 range have no voice: 2.5 s later the engine is exactly silent
+11000 midi 0x90 24 100
+11000 midi 0x90 100 100
+11200 midi 0x80 24 0
+11200 midi 0x80 100 0
+12500 expect rms < -90
+# TYPE away (ST77) and back while a note rings
+13000 midi 0x90 62 100
+13100 midi 0xB0 80 0
+13200 midi 0x90 64 100
+13600 expect rms > -65
+13700 midi 0xB0 123 0
+15500 expect rms < -90
+15500 end

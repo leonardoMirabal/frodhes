@@ -196,6 +196,8 @@ def build(tag, header):
     inc = d / "gen"
     inc.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(header, inc / "bars_tables.h")
+    subprocess.run([sys.executable, str(ROOT / "tools" / "gen_bars_pack.py"), "--src", str(inc / "bars_tables.h"),
+                    "--out", str(inc)], check=True, capture_output=True)   # (the firmware links the packed form: B's too)
     binary = d / "frodhes"
     subprocess.run([os.environ.get("CC", "cc"), "-I" + str(inc)] + gate_r.CFLAGS +
                    ["-o", str(binary), "firmware/src/frodhes.c", "-lm"], cwd=ROOT, check=True)

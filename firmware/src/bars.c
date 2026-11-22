@@ -125,7 +125,7 @@ static int32_t bar_lsin(const bar_ms_t *s)
 static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
 {
     uint32_t ty = bar_sub < BAR_NTYPE ? bar_sub : 0u;   /* constant while the voice lives (engine.c C1) */
-    uint32_t key = (uint32_t)(v->k - BAR_KEYS[ty]), fam = (uint32_t)bar_fam, f = fam >> 8, f2, l, l2, i;
+    uint32_t key = (uint32_t)(v->k - BAR_KP[ty]), fam = (uint32_t)bar_fam, f = fam >> 8, f2, l, l2, i;
     uint32_t pb = BAR_PBAND[v->k->band];               /* the key's pulse band (shared bank) */
     int32_t a = (int32_t)(fam & 255u), w, pa, pa2, pr, pr2;
     uint32_t vi = RH_VPOS_I[vel], vf = RH_VPOS_F[vel];
@@ -143,11 +143,11 @@ static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
     }
     {
         const uint16_t (*PA)[RH_NANCH] = BAR_PAMP[ty][key];
-        const uint16_t (*PR)[RH_NANCH] = BAR_PRATE[ty][key];
+        const uint16_t *PR0 = BAR_PRU[BAR_PRATE_I[ty][key][f]], *PR1 = BAR_PRU[BAR_PRATE_I[ty][key][f2]];   /* (the distinct rows) */
         pa = (int32_t)PA[f][vi] + ((((int32_t)PA[f][vi + 1] - (int32_t)PA[f][vi]) * (int32_t)vf) >> 8);
         pa2 = (int32_t)PA[f2][vi] + ((((int32_t)PA[f2][vi + 1] - (int32_t)PA[f2][vi]) * (int32_t)vf) >> 8);
-        pr = (int32_t)PR[f][vi] + ((((int32_t)PR[f][vi + 1] - (int32_t)PR[f][vi]) * (int32_t)vf) >> 8);
-        pr2 = (int32_t)PR[f2][vi] + ((((int32_t)PR[f2][vi + 1] - (int32_t)PR[f2][vi]) * (int32_t)vf) >> 8);
+        pr = (int32_t)PR0[vi] + ((((int32_t)PR0[vi + 1] - (int32_t)PR0[vi]) * (int32_t)vf) >> 8);
+        pr2 = (int32_t)PR1[vi] + ((((int32_t)PR1[vi + 1] - (int32_t)PR1[vi]) * (int32_t)vf) >> 8);
     }
     pa += ((pa2 - pa) * a) >> 8;
     pr += (int32_t)(((int64_t)(pr2 - pr) * a) >> 8);
@@ -171,7 +171,7 @@ static void bar_predict(bar_voice_t *v)
     v->pred = 1;
     for (m = 0; m < BAR_NM; m++) {
         bar_ms_t *s = &v->m[m];
-        const rh_mode_t *km = &v->k->m[m];
+        const rh_mode_t *km = BAR_KM(v->k, m);
         uint64_t tpe;
         uint32_t ph, i, k;
         int32_t c, s1 = 0, s2 = 0, l;
@@ -201,14 +201,15 @@ static void bar_predict(bar_voice_t *v)
 
 /* a card's level compensation (BAR_POSG / BAR_TUBEG of one band, Q14): the 17 points at q = raw 4096 / 127 for
  * the family fm and the next, blended by the MALLET fraction fa (Q8), as the pulse */
-static int32_t bar_card_gain(const uint16_t (*t)[BAR_NPOS], uint32_t fm, int32_t fa, uint32_t q)
+static int32_t bar_card_gain(const uint8_t *ix, uint32_t fm, int32_t fa, uint32_t q)   /* ix: the band's row index per family */
 {
     uint32_t i = q >> 8, f2 = fm + 1u < BAR_NFAM ? fm + 1u : fm;
+    const uint16_t *t0 = BAR_GROW[ix[fm]], *t1 = BAR_GROW[ix[f2]];   /* (the distinct rows: bars_pack.h) */
     int32_t fr = (int32_t)(q & 255u), g0, g1;
-    if (i >= BAR_NPOS - 1u) { g0 = t[fm][BAR_NPOS - 1u]; g1 = t[f2][BAR_NPOS - 1u]; }
+    if (i >= BAR_NPOS - 1u) { g0 = t0[BAR_NPOS - 1u]; g1 = t1[BAR_NPOS - 1u]; }
     else {
-        g0 = t[fm][i] + ((((int32_t)t[fm][i + 1u] - (int32_t)t[fm][i]) * fr) >> 8);
-        g1 = t[f2][i] + ((((int32_t)t[f2][i + 1u] - (int32_t)t[f2][i]) * fr) >> 8);
+        g0 = t0[i] + ((((int32_t)t0[i + 1u] - (int32_t)t0[i]) * fr) >> 8);
+        g1 = t1[i] + ((((int32_t)t1[i + 1u] - (int32_t)t1[i]) * fr) >> 8);
     }
     return g0 + (((g1 - g0) * fa) >> 8);
 }
@@ -294,12 +295,12 @@ static void bar_cc_fill(uint32_t slot, uint32_t note)  /* main loop (eng_post): 
     uint32_t tyi = eng_want_sub < BAR_NTYPE ? eng_want_sub : 0u, m;
     uint32_t n = note < BAR_KEY_LO ? BAR_KEY_LO : note > BAR_KEY_LO + BAR_NKEY - 1u ? BAR_KEY_LO + BAR_NKEY - 1u : note;
     const bar_type_t *ty = &BAR_TYPE[tyi];
-    const bar_key_t *k = &BAR_KEYS[tyi][n - BAR_KEY_LO];
+    const bar_key_t *k = &BAR_KP[tyi][n - BAR_KEY_LO];
     int32_t t = rh_tune_t, kd = bar_k_decay, kr = bar_k_rel;
     c->ok = 0;
     RING_PUBLISH();
     for (m = 0; m < BAR_NM; m++) {
-        const rh_mode_t *km = &k->m[m];
+        const rh_mode_t *km = BAR_KM(k, m);
         if (!km->th) continue;
         rh_coef(km, km->d, t, m == 1u && !(k->flags & 8u) ? 65536 : kd, &c->c[m][0], &c->c[m][1]);
         rh_coef(km, km->drel, t, m == 1u || !(ty->flags & 2u) ? 65536 : kr, &c->c[m][2], &c->c[m][3]);
@@ -332,17 +333,17 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     uint32_t tyi = bar_sub < BAR_NTYPE ? bar_sub : 0u;
     const bar_type_t *ty = &BAR_TYPE[tyi];
     uint32_t m, n = note < BAR_KEY_LO ? BAR_KEY_LO : note > BAR_KEY_LO + BAR_NKEY - 1u ? BAR_KEY_LO + BAR_NKEY - 1u : note;
-    const bar_key_t *k = &BAR_KEYS[tyi][n - BAR_KEY_LO];
+    const bar_key_t *k = &BAR_KP[tyi][n - BAR_KEY_LO];
     int32_t tone = bar_pos, s = bar_tube;
     uint32_t q = (uint32_t)tone * (16u * 256u) / 127u, pi = q >> 8, pf = q & 255u;
-    const int16_t (*pos)[BAR_NM] = BAR_POS[k->band];
+    const int16_t (*pos)[BAR_NPC] = BAR_PS[k->band];
     v->k = k;
 #if BAR_CC
     const bar_cc_t *cc = bar_cc_find(n - BAR_KEY_LO, tyi);
 #endif
     for (m = 0; m < BAR_NM; m++) {
         bar_ms_t *ms = &v->m[m];
-        const rh_mode_t *km = &k->m[m];
+        const rh_mode_t *km = BAR_KM(k, m);
         int64_t b;
         int32_t w, lf;
         ms->x1 = ms->x2 = ms->err = 0;
@@ -365,7 +366,11 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
                                                          * damper: drel is the hand mute, never scaled by RELEASE (C5) */
         }
         ms->e = ms->es = ms->e0; ms->eps = ms->epss = ms->eps0;
-        w = pi < BAR_NPOS - 1u ? pos[pi][m] + (((pos[pi + 1u][m] - pos[pi][m]) * (int32_t)pf) >> 8) : pos[BAR_NPOS - 1u][m];
+        if (m == 1u || m == 7u) w = 0;              /* (TUBE, X: b is 0 in every key, BAR_PS keeps no column for them) */
+        else {
+            uint32_t pc = m - (m > 1u);
+            w = pi < BAR_NPOS - 1u ? pos[pi][pc] + (((pos[pi + 1u][pc] - pos[pi][pc]) * (int32_t)pf) >> 8) : pos[BAR_NPOS - 1u][pc];
+        }
         b = ((int64_t)km->b * w) >> 14;
         if (m == 5u || m == 6u) b = tone > 64 ? (b * ty->tors_db) >> 15 : 0;   /* torsion: off the centreline only */
         ms->b = b > 0x7FFFFFFF ? 0x7FFFFFFF : b < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)b;
@@ -387,8 +392,8 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
         int32_t fa = (int32_t)((uint32_t)bar_fam & 255u), gt, gb;
         int64_t g;
         if (fm > BAR_NFAM - 1u) { fm = BAR_NFAM - 1u; fa = 0; }
-        gt = bar_card_gain(BAR_POSG[k->band], fm, fa, q);
-        gb = bar_card_gain(BAR_TUBEG[k->band], fm, fa, qb);
+        gt = bar_card_gain(BAR_POSG_I[k->band], fm, fa, q);
+        gb = bar_card_gain(BAR_TUBEG_I[k->band], fm, fa, qb);
         g = ((((int64_t)k->gain * gt) >> 14) * gb) >> 14;
 #ifdef BAR_RINGG_ROWS
         if (k->flags & 16u) {                       /* key flag bit4 (MARIMBA, never VIBES): the single-strike ceiling
@@ -411,7 +416,7 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     v->age = ++bar_ages;
     v->life = k->life;
     v->pthump = BAR_THUMP[BAR_PBAND[k->band]];     /* the felt's knock: SOFT, the softest layer (pulse_pz.h) */
-    v->prate_thump = (uint32_t)BAR_PRATE[tyi][n - BAR_KEY_LO][0][1] << 4;
+    v->prate_thump = (uint32_t)BAR_PRU[BAR_PRATE_I[tyi][n - BAR_KEY_LO][0]][1] << 4;
     bar_load_pulse(v, vel);
 #if defined(FR_HQ) && HQB_CONTACT
     hqb_pulse(v, vel, 0);                           /* HQ: MARIMBA's top keys from the live contact */

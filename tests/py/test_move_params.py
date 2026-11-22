@@ -31,6 +31,9 @@ TYPE_CC79 = [int(x) for x in re.search(r"TYPE_CC79\[N_TYPE_N\] = \{([^}]*)\}", P
 DRV_CC84 = [int(x) for x in re.search(r"DRV_CC84\[\d*\] = \{([^}]*)\}", PARAMS_C).group(1).split(",")]
 
 
+NO_CC_TYPE = 6                                                 # the TYPE no CC selects (the open MIDI-route question)
+
+
 def cc_for(slot, x):
     """the (CC, value) that sets parameter slot to x through frodhes.c midi_cc: the inverse of its banding"""
     p = M["params"][slot]
@@ -66,6 +69,8 @@ def test_every_parameter_key_round_trips():
         p = M["params"][slot]
         assert kcc == p["cc"], (key, kcc)
         for x in values(p["hi"]):
+            if slot == "P_TYPE" and x == NO_CC_TYPE:               # WHURLI: ALGORITHM, the host's parameter and the page reach it,
+                continue                                           # no CC yet (CC 80 has four bands, CC 79 is the bars'); tests/py/test_whurli.py
             n, v = cc_for(slot, x)
             lines += [cc(t, n, v), f"{t + 3} dump"]
             want.append((t + 3, slot, x))

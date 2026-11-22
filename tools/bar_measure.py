@@ -28,9 +28,14 @@ BAR_NAME = dict(TONE="STRIKE", BARK="MALLET", BELL="TUBE", HAMMER="WEIGHT", DECA
                 NOISE="NOISE", TUNE="TUNE")
 
 
+NO_CC_TYPES = 1            # the last TYPEs a CC cannot select: WHURLI (TYPE 6) has no MIDI route yet (CC 80 has four bands,
+                           # CC 79 is the bars'); the scans drive the others by CC
+
+
 def n_types():
+    """the TYPEs the scans can drive by CC (all of params.c's but the last NO_CC_TYPES)"""
     src = open(os.path.join(ROOT, "firmware", "src", "params.c")).read()
-    return int(re.search(r'\[P_TYPE\] = \{"[^"]*", (\d+),', src).group(1)) + 1
+    return int(re.search(r'\[P_TYPE\] = \{"[^"]*", (\d+),', src).group(1)) + 1 - NO_CC_TYPES
 
 
 def type_cc(t):
