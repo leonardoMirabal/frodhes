@@ -18,6 +18,33 @@ VELS = (20, 64, 100, 127)
 STEP = 500
 
 
+EXCESS_MAX = 3.0     # a click's excess over the periodic waveform: 6 at +150 LSB, 125 at +3000; the bark's: 0.35 .. 1.05
+
+
+def excess(x, n, f0):
+    """how far the 2nd-difference spike at sample n stands out of the periodic waveform: its size over the largest 2nd difference
+    of the cycle before and of the cycle after (period 1 / f0). A bark pulse (the pickup's lopsided current at a hard strike)
+    belongs to every cycle: about 1. A click is in neither: well over 1 (the raw LPC residual cannot tell them apart)"""
+    d = np.abs(np.diff(np.asarray(x, float), 2))
+    P = H.FS / f0
+    s0 = d[max(n - 3, 0):n + 4].max()
+
+    def cyc(c):
+        a, b = int(c - P / 2), int(c + P / 2)
+        return d[a:b].max() if a >= 0 and b < len(d) else 0.0
+    return s0 / max(cyc(n - P), cyc(n + P), 1.0)
+
+
+def clicks(x, f0_at):
+    """the LPC glitch detector's events that are not bark: f0_at(sample) gives the sounding key's f0"""
+    return [e for e in G.events(x, H.FS) if excess(x, e, f0_at(e)) >= EXCESS_MAX]
+
+
+def sweep_f0(n):
+    i = max(int((n / 44.1 - 300) // STEP), 0)
+    return 440 * 2 ** ((KEYS[i % len(KEYS)] - 69) / 12)
+
+
 def sweep(whurli):
     ls = [H.cc(50, 119, 127)]
     if whurli:
@@ -38,7 +65,7 @@ def test_the_sweep_has_no_click_and_nothing_saturates():
     assert "sat28 hits 0" in w.out
     assert np.max(np.abs(w.L)) < 32000 and np.max(np.abs(w.R)) < 32000
     assert np.all(w.L[-4410:] == 0) and np.all(w.R[-4410:] == 0), "the engine ends in exact silence"
-    ew, er = len(G.events(w.L, H.FS)), len(G.events(ref.L, H.FS))
+    ew, er = len(clicks(w.L, sweep_f0)), len(clicks(ref.L, sweep_f0))     # (bark-aware: see excess)
     assert ew <= er + 2, f"WHURLI {ew} glitch events, STAGE 77 {er}"
     lv = []          # each velocity sounds, and a harder strike is louder (the median over the keys)
     for v in range(len(VELS)):
@@ -71,3 +98,17 @@ def test_the_type_maps_agree():
     names = re.search(r'N_TYPE_LONG\[\] = \{([^}]*)\}', par).group(1)
     assert e == u and len(e) == 7 and names.split(",")[6].strip() == '"WHURLI"'
     assert "RH_T_REED" in eng and "#define ENG_NTYPE 7u" in eng
+
+
+def test_the_detector_still_fires_on_a_click_at_v127_key_40():
+    """self-test of the bark-aware detector: a clean v127 key 40 (barking) has no click; the same render with 150 LSB added in
+    one sample is found (excess 6; the LPC residual alone flags bark and click alike)"""
+    ls = [H.cc(50, 119, 127)] + [f"{60 + 2 * i} turn 1 1" for i in range(6)] + H.note(300, 40, 127, 600)
+    x = H.run("whurli-k40", ls, 1500).L.copy()
+    f0 = lambda n: 440 * 2 ** ((40 - 69) / 12)
+    assert clicks(x, f0) == []
+    n0 = int(450 * 44.1)
+    for amp in (150, 800):
+        y = x.copy()
+        y[n0] += amp
+        assert [abs(e - n0) < 8 for e in clicks(y, f0)] == [True], amp
