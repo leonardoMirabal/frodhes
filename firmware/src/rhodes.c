@@ -676,15 +676,34 @@ static int32_t rh_bell_at(uint32_t n)                       /* Q16: BELL's scale
  * 1) stacked on BELL's x3.9 at 127 drove O1 / O2 at 7x their fitted force, and a v127 strike on keys 28-31 peaked over
  * the rail dry (39.4k at key 28; STAGE 77 at BELL 127 13.7k). From BELL 96 (x2) to 127 the TYPE's scale gives up to
  * 26 % of itself, linearly in BELL's scale: DYNO's product at 127 is x5.2 (its BELL 113), still rising at every step
- * (the knob's 0.19 dB a step against at most 0.1 dB of fade). BELL up to 96 and every other TYPE as before */
+ * (the knob's 0.19 dB a step against at most 0.1 dB of fade). BELL up to 96 and every other TYPE as before.
+ * TONE under 64 (2026-11-23) brings the pickup nearer: DYNO's overtone strike grows with it, and a v127 bass note at
+ * TONE 0 reached the rail from BELL 80 (TONE 32 from BELL 104). There the product TYPE x BELL eases toward a ceiling:
+ * over BELL 64 its rise d becomes d M / (d + M) (M = 0.35: at most x2.15 at TONE 0, DYNO's own x1.8 at BELL 64), blended
+ * in by TONE's t (3 - t) / 2 as the level trim's fade; still rising at every BELL step. TONE 64 up and BELL 64 down as
+ * before */
+#define RH_BELL_M 22938u                                   /* 0.35 (Q16) */
 #define RH_BELL_TQ 131072                                  /* BELL 96: x2 (KN_P32) */
 static int32_t rh_ty_bell(int32_t tb)                      /* Q16: the TYPE's overtone scale at this BELL */
 {
-    int32_t x = rh_bell - RH_BELL_TQ;
-    if (tb <= 65536 || x <= 0) return tb;
-    x = (int32_t)(((uint32_t)x * 535u) >> 10);             /* / (x3.914 - x2) in Q16: 0 .. 65536 */
-    if (x > 65536) x = 65536;
-    return tb - (int32_t)((((int64_t)tb * 17039) >> 16) * x >> 16);   /* 17039: 0.26 */
+    int32_t x = rh_bell - RH_BELL_TQ, r = tb, to = rh_tone_off;
+    uint32_t t, f, k, p, d, sat, pe;
+    if (tb <= 65536) return tb;
+    if (x > 0) {
+        x = (int32_t)(((uint32_t)x * 535u) >> 10);             /* / (x3.914 - x2) in Q16: 0 .. 65536 */
+        if (x > 65536) x = 65536;
+        r = tb - (int32_t)((((int64_t)tb * 17039) >> 16) * x >> 16);   /* 17039: 0.26 */
+    }
+    if (to >= 0 || rh_bell <= 65536) return r;
+    t = (uint32_t)(-to) >> 8;
+    f = (uint32_t)(((uint64_t)t * (196608u - t)) >> 17);
+    k = (uint32_t)rh_bell;
+    p = (uint32_t)(((uint64_t)(uint32_t)r * k) >> 16);
+    d = (uint32_t)(((uint64_t)(uint32_t)tb * k) >> 16) - (uint32_t)tb;
+    sat = (uint32_t)tb + (uint32_t)(((d >> 4) * (RH_BELL_M >> 4)) / ((d >> 4) + (RH_BELL_M >> 4)) << 4);
+    if (sat >= p) return r;
+    pe = p - (uint32_t)(((uint64_t)(p - sat) * f) >> 16);
+    return (int32_t)((pe << 12) / (k >> 4));
 }
 static int32_t rh_dyn_gain(int32_t gain, uint32_t gd)       /* gain x gd (32768: gain itself, byte-identical) */
 {

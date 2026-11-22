@@ -202,7 +202,9 @@ def resolve_type(arg, cc=None, partials=()):
         return Type(idx, str(arg) if not str(arg).isdigit() else f"TYPE{arg}", int(c), int(v), partials)
     if str(arg).isdigit():
         i = int(arg)
-        if i >= 6:
+        if i == 6:
+            return Type(6, "WHURLI", -1, 6, partials)          # no CC: encoder 1 six steps from STAGE 77 (tests/scripts/whurli.txt)
+        if i > 6:
             raise SystemExit(f"TYPE {i}: the tool does not know its selecting CC yet, pass --type-cc CC:VALUE")
     else:
         names = [bm.type_name(k) for k in range(n)]
@@ -272,7 +274,10 @@ def setup(ty, mode, t0=20, **knobs):
     """the voicing at dry_dist.TYPE_BASE, the TYPE, then mode: "raw" (CC 119: every effect and the limiter bypassed) or
     "norm" (tools/fx_pristine.py's every-effect-off chain, the limiter in); knobs: name=value after the TYPE"""
     ev = [(t0, f"midi 0xB0 {c} {v}") for c, v in dd.TYPE_BASE]
-    ev.append((t0 + 5, f"midi 0xB0 {ty.ccnum} {ty.ccval}"))
+    if ty.ccnum < 0:
+        ev += [(t0 + 2 + i, "turn 1 1") for i in range(ty.ccval)]   # the TYPE by encoder 1 (WHURLI: its own voicing)
+    else:
+        ev.append((t0 + 5, f"midi 0xB0 {ty.ccnum} {ty.ccval}"))
     if ty.idx in (4, 5):
         ev.append((t0 + 6, "midi 0xB0 47 0"))                   # the bar TYPEs' motor off
     if mode == "raw":
@@ -973,6 +978,9 @@ def run_spec(spec):
 
 def plan(ty, prof, bins, checks):
     P = PROFILES[prof]
+    if ty.idx == 6:                                          # WHURLI: its 64 keys 33..96 (reed_tables.h); others no voice
+        inr = lambda ks: [k for k in ks if 33 <= k <= 96]                             # noqa: E731
+        P = dict(P, keys=inr(P["keys"]), alikeys=inr(P["alikeys"]), knob_keys=inr(P["knob_keys"]))
     d = ty.dump()
     S = []
     want = lambda c: not checks or c in checks                                       # noqa: E731

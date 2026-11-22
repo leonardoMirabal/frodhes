@@ -70,3 +70,23 @@ def test_dyno_tone0():
     for i, k in enumerate(keys):
         rel0, rel64 = d0[i][0] - s0[i][0], d64[i][0] - s64[i][0]
         assert abs(rel0 - rel64) < 0.7, (k, rel0, rel64)
+
+
+def test_dyno_tone_low_bell_high():
+    """round 3 (2026-11-23): BELL DYNO with TONE under 64 and BELL over 64 (the pickup nearer, the TYPE's x1.8 on BELL's
+    scale) reached the rail dry: v127 bass at TONE 0 from BELL 96 up, at TONE 32 from BELL 104. rh_ty_bell's product
+    eases toward a ceiling as TONE goes down (TONE 64 and BELL 64 as before): every peak under 30000"""
+    keys = [28, 29, 30, 33, 36, 40, 45, 55, 60]
+    for tone in (0, 32, 48):
+        for bell in (96, 112, 127):
+            d = notes(f"dyno-t{tone}-b{bell}", "DYNO", keys, 127, tone, bell)
+            assert max(p for _, p in d) < 30000, (tone, bell, d)
+
+
+def test_dyno_no_step_at_key_55():
+    """round 3: BELL DYNO's clean-top gain back (RH_TOP_G 8 on keys 55..60, 0 beside) stepped 1.27 dB at 54 / 55 and
+    60 / 61 at v100; tools/rh_top.py bridge_g ramps the neighbours: every step of keys 50..64 under 0.7 dB at v100"""
+    keys = list(range(50, 65))
+    lv = [a for a, _ in notes("dyno-k55", "DYNO", keys, 100)]
+    st = np.abs(np.diff(lv))
+    assert st.max() < 0.7, dict(zip(keys[1:], np.round(st, 2)))

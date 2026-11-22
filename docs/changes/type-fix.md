@@ -7,3 +7,5 @@
   same loudness against STAGE 77 as at the middle. Its top keys (E7 and up) no longer get louder and louder toward C8.
   With BELL near its top, the bell in the low notes is a little softer.
 
+  With TONE low and BELL high together, hard bass notes no longer hit the top of the output: there BELL adds less
+  above its middle. The small jump in loudness between F#3 and G3, and between C4 and C#4, in hard playing is gone.
