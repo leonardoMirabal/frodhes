@@ -53,7 +53,7 @@ WHERE = {"voice1": "VOICE 1/3 and 2/3", "voice2": "VOICE 1/3 and 2/3", "voice3":
          "bypass": "7. Effects on and off", "piano-vibes": "VIBES: the vibraphone",
          "voice1-vibes": "VIBES: the vibraphone", "voice2-vibes": "VIBES: the vibraphone",
          "voice3-vibes": "The motor: on and off", "piano-marimba": "MARIMBA", "voice1-marimba": "MARIMBA",
-         "voice2-marimba": "MARIMBA"}
+         "voice2-marimba": "MARIMBA", "piano-whurli": "WHURLI: the reed piano", "voice1-whurli": "WHURLI: the reed piano"}
 README_ONLY = {"overview", "thumbnail"}                      # the README's pictures (tools/manual_shots.py makes both;
                                                              # the social preview, thumbnail, is linked from docs/BUILD.md)
 

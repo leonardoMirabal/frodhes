@@ -153,19 +153,19 @@ def test_main_store_user_preset_and_factory_presets_load_eq_flat():
         with open(os.path.join(d, "store.bin"), "wb") as f:      # (kept as hex: the repo holds no binary file here)
             f.write(bytes.fromhex("".join(open(os.path.join(FIX, "store.hex")).read().split())))
         lines = ["get s_mch", "get s_tune"]
-        # U05 (main's, before the EQ), F01, the Move-only F20 and F57: each with the EQ off flat first
-        for idx in (23, 0, 35, 72):
+        # U05 (main's, before the EQ), F01, the Move-only F24 and F61: each with the EQ off flat first
+        for idx in (27, 0, 39, 76):
             lines += _eq_off() + ["set preset %d" % idx, "render 10", "get preset_name"] + _get_eq() + ["get p_tone",
                                                                                                     "get p_spread"]
         # a user preset saved with the EQ keeps it (U06)
         lines += ["set p_eq_lo 90", "set p_eq_hi 20", "render 5", "set u_save 6", "render 20", "sleep 200",
-                  "render 100", "set preset 0", "render 10", "set preset 24", "render 10", "get preset_name",
+                  "render 100", "set preset 0", "render 10", "set preset 28", "render 10", "get preset_name",
                   "get p_eq_lo", "get p_eq_hi"]
         got, r = _bridge(lines, tb_dir=d if native else "/src/" + _rel(d))
         assert got.get("s_mch") == ["5"] and got.get("s_tune") == ["-7"], (got, r.stdout[-2000:], r.stderr[-2000:])
         names = got["preset_name"]
-        assert names[0] == "U05 ST77" and names[1].startswith("F01 ") and names[2].startswith("F20 ") \
-            and names[3].startswith("F57 "), names
+        assert names[0] == "U05 ST77" and names[1].startswith("F01 ") and names[2].startswith("F24 ") \
+            and names[3].startswith("F61 "), names
         for i in range(4):
             assert [got[k][i] for k in EQ_KEYS] == ["64"] * 4, (names[i], got)
         assert (got["p_tone"][0], got["p_spread"][0]) == ("44", "77"), "U05 as main saved it"

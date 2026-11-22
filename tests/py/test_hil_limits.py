@@ -160,7 +160,7 @@ def test_presets_on_the_host_every_preset_on_target():
     r, rep = h.HostRig(1), {}
     ok, msg = h.presets(r, rep)
     every = list(range(1, h.PR_COUNT + h.PR_STARTERS + 1))       # F01..F19, then the starters U01..U09 (the host only)
-    assert h.PR_COUNT == 19 and [q["preset"] for q in rep["presets"]] == every
+    assert h.PR_COUNT == 23 and [q["preset"] for q in rep["presets"]] == every
     lv = [q["level"] for q in rep["presets"]]
     for p, v in zip(every, lv):
         target, tol = h.preset_target(p, host=True)   # (F11: the host reads it 0.2 LU over the FM-1, HOST_SHIFT)

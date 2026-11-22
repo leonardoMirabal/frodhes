@@ -1321,7 +1321,7 @@ static float pl_colx(int k) { return (k & 2 ? G_H1 : G_H0) + (k & 1 ? 2.f * G_CO
 static int pl_flow(const frui_model *m, void (*f)(void *ctx, int slot, int idx, int type), void *ctx)
 {
     int t, i, pass, slot = 0, n = m->pl_n < FRUI_PL_MAX ? m->pl_n : FRUI_PL_MAX;
-    for (t = 0; t < 6; t++) {
+    for (t = 0; t < 7; t++) {
         int any = 0;
         for (i = 0; i < n && !any; i++) any = m->pl[i].type == t;
         if (!any) continue;

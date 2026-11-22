@@ -74,7 +74,7 @@ def test_every_preset_within_4200us():
             worst.append((us, f"{lab}{i + 1:02d}", on))
     over = [w for w in worst if w[0] > PRESET_US]
     assert not over, over
-    assert len([w for w in worst if w[1][0] == "F"]) == 19
+    assert len([w for w in worst if w[1][0] == "F"]) == 23
 
 
 def test_starters_loadable():

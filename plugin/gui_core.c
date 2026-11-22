@@ -426,7 +426,7 @@ static void pl_fill(frp_gui_t *g)                   /* the list from the host (t
         memset(&m->pl[n], 0, sizeof m->pl[n]);
         memcpy(m->pl[n].tag, tag, sizeof tag); m->pl[n].tag[7] = 0;
         memcpy(m->pl[n].name, name, sizeof name); m->pl[n].name[23] = 0;
-        m->pl[n].type = (uint8_t)clampi(type, 0, 5);
+        m->pl[n].type = (uint8_t)clampi(type, 0, 6);
         m->pl[n].user = user != 0;
         n++;
     }

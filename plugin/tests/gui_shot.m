@@ -552,10 +552,12 @@ int main(int argc, char **argv)
                     m = snap("presets");
                     CHECK(m && m->presets && m->pl_n == n0, "the preset's name opens PRESETS (%d entries, the core has %d)",
                           m ? m->pl_n : -1, n0);
-                    for (k = 0; m && k < m->pl_n && k < 57; k++) {
+                    for (k = 0; m && k < m->pl_n && k < 61; k++) {
                         frp_preset_info q;
                         vt->preset_info(pc, k, &q);
-                        ok &= !strcmp(m->pl[k].name, q.name) && m->pl[k].type == vt->preset_type(pc, k) && !m->pl[k].user;
+                        { int g = !strcmp(m->pl[k].name, q.name) && m->pl[k].type == vt->preset_type(pc, k) && !m->pl[k].user;
+                            if (!g) printf("      entry %d: ui '%s' type %d user %d, core '%s' type %d\n", k, m->pl[k].name, m->pl[k].type, m->pl[k].user, q.name, vt->preset_type(pc, k));
+                            ok &= g; }
                     }
                     CHECK(ok, "every factory entry: the core's name and instrument");
                     if (find(FRW_PITEM, 12, &x, &y, 0)) click(x, y, 1);
