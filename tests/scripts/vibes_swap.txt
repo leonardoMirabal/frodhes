@@ -22,8 +22,8 @@
 1906 midi 0xB0 79 0
 1950 midi 0x90 72 100
 2400 expect rms > -40
-# CC 80 104: DYNO (CC 80 keeps the four Rhodes types; VIBES is CC 79)
-2500 midi 0xB0 80 104
+# CC 80 96: DYNO (CC 80: the electric pianos in five bands; VIBES is CC 79)
+2500 midi 0xB0 80 96
 2520 midi 0x90 52 100
 3000 expect rms > -40
 # pedal up, all notes off: everything stops

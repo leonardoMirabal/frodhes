@@ -121,10 +121,10 @@ def test_vibes_cards(new):
 def test_midi(new):
     d = run(new, "midi")
     ty = [int(d[f"cc80.{v}"]) for v in range(128)]
-    assert ty[:96] == [v >> 5 for v in range(96)]                   # 0..95 as before
-    assert set(ty[96:]) == {3}                                      # 96..127 DYNO, exactly as before
+    assert ty == [(0, 1, 2, 3, 6)[v * 5 >> 7] for v in range(128)]  # five equal bands (0.9.14), WHURLI 103..127
+    assert [ty[v] for v in (0, 32, 64, 96)] == [0, 1, 2, 3]         # the old band starts keep their TYPE
     assert [int(d[f"cc79.{v}"]) for v in range(128)] == [4] * 96 + [5] * 32   # CC 79: VIBES 0..95 (0.9.3: all), MARIMBA 96..127
-    assert ty[104] == 3                                             # hil_scan's DYNO value
+    assert ty[96] == 3                                              # hil_scan's DYNO value
     for t in range(4):                                              # Rhodes: CC 21 exactly the old two bands
         assert [int(d[f"cc21.{t}.{v}"]) for v in range(128)] == [v * 2 >> 7 for v in range(128)]
     m = [int(d[f"cc21.4.{v}"]) for v in range(128)]                # records v3: no MOTOR band (the motor: CC 47)

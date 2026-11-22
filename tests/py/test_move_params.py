@@ -96,7 +96,7 @@ def test_cc_path_traps_are_as_documented():
     assert s1[f"p.{pid['P_PH_SW']}"] == "1" and s1[f"p.{pid['P_CP_SW']}"] == "0"
     assert s2[f"p.{pid['P_PH_DEPTH']}"] == "100" and s2[f"p.{pid['P_CP_DEPTH']}"] == s1[f"p.{pid['P_CP_DEPTH']}"]
     assert s3[f"p.{pid['P_CP_SW']}"] == "1" and s3[f"p.{pid['P_PH_SW']}"] == "0"
-    assert s4[f"p.{pid['P_TYPE']}"] == "3"
+    assert s4[f"p.{pid['P_TYPE']}"] == "6"                       # 127: WHURLI (CC 80 five bands), a piano
 
 
 def card_of(slot):

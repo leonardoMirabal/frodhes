@@ -23,7 +23,7 @@ def ppm(path):
 
 def test_type_names_same_size():
     subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
-    sel = [(80, 8), (80, 40), (80, 72), (80, 104), (79, 0), (79, 127)]   # ST77 SUIT FELT DYNO, VIBES, MARIMBA (CC 79)
+    sel = [(80, 8), (80, 40), (80, 72), (80, 96), (79, 0), (79, 127)]   # ST77 SUIT FELT DYNO, VIBES, MARIMBA (CC 79)
     lines = ["50 btn 8", "60 expect state row0 ~"]
     for i, (cc, v) in enumerate(sel):
         lines += [f"{100 + 300 * i} midi 0xB0 {cc} {v}", f"{300 + 300 * i} shot", f"{300 + 300 * i} expect state row0 ~",

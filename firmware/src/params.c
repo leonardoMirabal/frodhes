@@ -60,6 +60,10 @@ static const uint8_t TYPE_DRIVE_ROW[N_TYPE_N] = {0, 1, 2, 3, 0, 0, 0};   /* (WHU
 static const uint8_t TYPE_FLAGS[N_TYPE_N] = {0, 0, 0, 0, 3, 0, 0};
 static const uint8_t TYPE_CC79[N_TYPE_N] = {0, 0, 0, 0, 0, 96, 0};   /* the bar types' CC 79 band starts, rising in TYPE
                                     * order (frodhes.c midi_cc): VIBES 0..95, MARIMBA 96..127 (the Rhodes: CC 80) */
+/* CC 80: the electric pianos in five equal bands, band = (v * 5) >> 7 (frodhes.c midi_cc): STAGE 77 0..25, SUITCASE 26..51,
+ * EARLY FELT 52..76, BELL DYNO 77..102, WHURLI 103..127. The old band starts 0 / 32 / 64 / 96 keep their TYPE (0.9.14; it
+ * was v >> 5, four bands of 32, 96..127 DYNO) */
+static const uint8_t TYPE_CC80[5] = {0, 1, 2, 3, 6};
 _Static_assert(sizeof N_TYPE / sizeof N_TYPE[0] == N_TYPE_N && sizeof N_TYPE_LONG / sizeof N_TYPE_LONG[0] == N_TYPE_N,
                "one name per TYPE");
 #define TYPE_IS_BARS(t) ((uint32_t)(t) < N_TYPE_N && TYPE_ENGINE[(t)] != 0u)   /* the main loop's TYPE (the UI) */

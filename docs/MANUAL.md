@@ -370,8 +370,8 @@ BARK sets how much, HAMMER where it starts and how sharp it is, RESPONSE how har
 clean reed piano take BARK down and HAMMER softer; for a growl on every chord, BARK up, HAMMER harder, RESPONSE LIGHT.
 
 **Presets:** **F20 WHURLI** (dry), **F21 REED GROWL** (bark and a hard hammer), **F22 REED TREM** (the tremolo
-piano) and **F23 REED SOFT** (soft and mellow). Over MIDI, a Program Change (35 to 38) loads them; the TYPE
-controller (CC 80) reaches the other four electric pianos only.
+piano) and **F23 REED SOFT** (soft and mellow). Over MIDI, a Program Change (35 to 38) loads them, and the TYPE
+controller selects WHURLI at CC 80 values 103 to 127.
 
 ### COMPRESSOR
 
@@ -1240,7 +1240,7 @@ the FILTER, TREM and the delay reach it too), and it fades out while SPREAD is a
 
 | CC | Parameter | CC | Parameter |
 | --- | --- | --- | --- |
-| 79 | TYPE of the bar instruments: 0–95 VIBES, 96–127 MARIMBA | 80 | TYPE of the electric pianos (0–31 STAGE, 32–63 SUITCASE, 64–95 FELT, 96–127 DYNO) |
+| 79 | TYPE of the bar instruments: 0–95 VIBES, 96–127 MARIMBA | 80 | TYPE of the electric pianos (0–25 STAGE, 26–51 SUITCASE, 52–76 FELT, 77–102 DYNO, 103–127 WHURLI) |
 | 28–31 | TONE / BARK / BELL / HAMMER | 102 / 103 / 104 | DECAY / RELEASE (VIBES: DAMPER; MARIMBA: MUTE) / NOISE |
 | 47 / 48 | VIBES MOTOR on (≥ 64) / DEPTH (no effect on MARIMBA) | 49 / 50 / 51 | VIBES MOTOR SPEED / SHAPE / SYNC |
 | 105 | SPREAD: the electric piano across the stereo field by key (0 mono, the default; saved with the preset) | 64 | Sustain (half-pedal) |
