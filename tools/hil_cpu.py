@@ -4,7 +4,7 @@
 firmware for the longest audio block since the last query (frodhes.c midi_cc; replies on CC 116/117 = us / 4).
 The block is 256 frames at 44.1 kHz = 5805 us of real time; the voice shedder starts at 5000 us.
 
-    python3 tools/hil_cpu.py [--engine vibes|marimba] [--voices N] [--worst] [--fx-each] [--calib] [--stages] [--tail]
+    python3 tools/hil_cpu.py [--engine vibes|marimba|whurli] [--voices N] [--worst] [--fx-each] [--calib] [--stages] [--tail]
                              [--bend-sweep] [--cc-sweep CC[:LO:HI:STEP_MS]]
 
 --voices N (default: the engine's own count, rhodes.c RH_VOICES 10 / BAR_VOICES 10) plays N-note chords and N bass
@@ -154,7 +154,7 @@ def default_voices(eng):
     """the firmware's voice count for an engine: rhodes.c RH_VOICES (the Rhodes) or BAR_VOICES (VIBES, MARIMBA)"""
     import re
     src = open(os.path.join(os.path.dirname(__file__), "..", "firmware", "src", "rhodes.c")).read()
-    key = "RH_VOICES" if eng == "rhodes" else "BAR_VOICES"
+    key = "RH_VOICES" if eng in ("rhodes", "whurli") else "BAR_VOICES"
     return fm1_ports.image_voices(int(re.search(r"#define " + key + r" (\d+)u", src).group(1)))
 
 
@@ -342,6 +342,7 @@ def run_cpu(argv):  # noqa: C901
     key converter's items or None), code (the verdict: 0, or 1 over 4500 us / a shed voice / a USB fault))"""
     sys.argv = list(argv)                             # (the options as the command line's: main() restores it)
     eng = sys.argv[sys.argv.index("--engine") + 1] if "--engine" in sys.argv else "rhodes"
+    whurli = eng == "whurli"                          # the reed type (TYPE 6): the Rhodes engine on its own tables, by PC
     marimba = eng == "marimba"                        # the second bar TYPE (CC 79 96..127): no motor
     vibes = eng in ("vibes", "marimba") or "--calib" in sys.argv
     kmode = sys.argv[sys.argv.index("--keyadc") + 1] if "--keyadc" in sys.argv else None
@@ -354,8 +355,12 @@ def run_cpu(argv):  # noqa: C901
 
     def reset(**kv):
         cc(120, 0)
+        if whurli:                                    # WHURLI has no CC: program change 35 = F20 WHURLI (it loads its preset 400 ms
+            out.send(mido.Message("program_change", program=35))   # later); then the defaults but TYPE, and the scenario's CCs
+            time.sleep(0.9)
         for c, v in param_defaults():
-            cc(c, v)
+            if not (whurli and c == CC["TYPE"]):
+                cc(c, v)
         d = dict(DRY)
         d.update(kv)
         if d.get("CP_SW"):                            # CC 85 (the combined CHO/PHA) switches the phaser off: send it first
@@ -569,6 +574,8 @@ def run_cpu(argv):  # noqa: C901
         sys.exit("--voices: 1..16")
     bass8 = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52, 53, 55][:nv]   # the first 8: the lists as before
     chord8 = [48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83, 86, 88, 91, 95][:nv]  # (13-16: two-core builds, FR_C1)
+    if whurli:                                    # its keys are 33..96 (a note outside has no voice): the same number of voices inside
+        bass8 = [33, 34, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52, 53, 55, 57][:nv]
     worst_only = "--worst" in sys.argv
     rows = []
 
@@ -692,7 +699,7 @@ def run_cpu(argv):  # noqa: C901
         run(N + " bass notes v127 at once, no effects", {}, bass8, 127)
         run(N + "-note chord v100, every effect on", heavy, chord8)
     run(N + " bass notes v127 + pedal, every effect on", heavy, bass8, 127, pedal=True)
-    midtop = mid_top(nv)                              # (2026-11-02: the monkey's peaks over this one's: more live
+    midtop = list(range(48, 48 + max(0, nv - 2))) + [93, 96][:min(2, nv)] if whurli else mid_top(nv)                              # (2026-11-02: the monkey's peaks over this one's: more live
                                                       # modes in the middle, and the top keys)
     run(f"{N} mid + top keys v127 + pedal, every effect on", heavy, midtop, 127, pedal=True)
     # (a TYPE change while PLATE / INFINITE ring made reverb-stage peaks in the monkey: the fade block)

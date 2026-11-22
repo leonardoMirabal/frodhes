@@ -404,6 +404,9 @@ def ports(a):
 
 
 def run(a):  # noqa: C901 (the device run)
+    if a.whurli:                                          # WHURLI's keys are 33..96 (a note outside has no voice): 14 distinct notes inside
+        VOICINGS.update(midtop=list(range(48, 60)) + [93, 96], bass=[33, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52, 53, 55],
+                        spread=[33, 40, 52, 59, 64, 71, 76, 83, 88, 95, 96, 55, 35, 47])
     mido, out, inp = ports(a)
     if not a.no_audio:
         import sounddevice as sd
@@ -459,7 +462,10 @@ def run(a):  # noqa: C901 (the device run)
     jobs_prev = first.get("jobs", -1)
     def setup(i):                                         # the engine i and every effect at its heaviest
         sel = ENGINES[i][0]
-        if sel is None:
+        if a.whurli:                                      # WHURLI: F20 by program change (it loads 400 ms later), then the heavy settings
+            out.send(mido.Message("program_change", program=35))
+            time.sleep(0.9)
+        elif sel is None:
             cc(80, 0)                                     # the Rhodes (STAGE77)
         else:
             cc(79, sel)
@@ -512,7 +518,7 @@ def run(a):  # noqa: C901 (the device run)
                     cc(111, 0)
                     next_byp = t + p["bypass_every_s"]
                 if t >= next_pc:                          # a Program Change burst, then the heavy settings again
-                    for pc in range(1, 7):
+                    for pc in (range(35, 39) if a.whurli else range(1, 7)):
                         out.send(mido.Message("program_change", program=pc))
                         time.sleep(0.04)
                     setup(eng_i)
@@ -673,6 +679,8 @@ def main():
     ap.add_argument("--rate", type=int, default=48000, choices=(44100, 48000))
     ap.add_argument("--out", default=OUT)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--whurli", action="store_true", help="the reed type (TYPE 6, no CC: program change 35 = F20) instead of STAGE 77, "
+                    "its 33..96 keys for the voicings, its presets F20..F23 for the Program Change bursts (rows 274 / 277 / 278)")
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--settle-s", type=float, default=35.0, help="after a reset: no stimulus until the FM-1 has been up this long (the boot guard counts a reset before 30 s up as a failed boot; 0: off)")
