@@ -80,19 +80,20 @@ changes:
   - {match: '*/MARIMBA/RAW/B/k69v40', metric: clk_off, max: 0.0, reason: "RESPONSE B's bar law (0.9.13): the key-up's click count at v40 fell from 2.5 to none (the louder B strike's tail ends above the output gate's step instead of in it); a fall only. Coordinator sign-off 2026-11-16"}
   - {match: 'hq/MARIMBA/FX/B/k84v40', metric: keyup, silent: false, min: -45, max: -42, reason: "RESPONSE B's bar law (0.9.13): the B strike's new level (v40 +2.0, v64 +4.4, v96 +2.2 dB; v20 -1.5) moves the tail's windows at the 16-bit floor; never louder after the key-up (no pristine ceiling broken; tests/py/test_release_never_louder.py's bar LIGHT rows). Coordinator sign-off 2026-11-16"}
   - {match: 'fm1/MARIMBA/FX/B/k84v96', metric: keyup, silent: false, min: -40, max: -37, reason: "RESPONSE B's bar law (0.9.13): the B strike's new level (v40 +2.0, v64 +4.4, v96 +2.2 dB; v20 -1.5) moves the tail's windows at the 16-bit floor; never louder after the key-up (no pristine ceiling broken; tests/py/test_release_never_louder.py's bar LIGHT rows). Coordinator sign-off 2026-11-16"}
-# ---- type-fix (2026-11-22): two defects of the settings scan (tools/type_scan.py), fixed at their cause in rhodes.c.
+# ---- type-fix (2026-11-22): defects of the settings scan (tools/type_scan.py), fixed at their cause in rhodes.c.
 # BELL DYNO's level trim (bark_g x1.36) fades to unity below TONE 64 (TONE 0: -2.67 dB, its TONE-64 relation to
-# STAGE 77 kept; the v127 bass bell strike no longer reaches the rail); its keys 100..108 follow STAGE 77's key
-# tracking (not on this grid). A TYPE's tip scale fades to unity over keys 78..84, under the band-4 hammers (EARLY
-# FELT's +1.5 dB step at keys 84 / 85 at v100, +3 dB at v40, spread over the keys: key 81 +1.2 .. +1.7 dB at v40..v100,
-# more at v20 and with HAMMER 0). Coordinator sign-off: the type-fix brief, 2026-11-22
+# STAGE 77 kept); its keys 100..108 follow STAGE 77's key tracking (not on this grid); its own overtone scale (x1.8)
+# gives up to 26 % of itself from BELL 96 to 127 (rh_ty_bell; v127 keys 28..31 no longer at the rail). A TYPE's tip
+# scale is shaped per key over each hammer-band edge (RH_HAM_M, keys 48..52, 58..62, 68..72, 82..84; BELL DYNO only
+# 82..84): EARLY FELT's steps at 50/51, 60/61, 70/71 and 84/85 bridged; on this grid only key 69 moves.
+# Coordinator sign-off: the type-fix brief and its follow-ups, 2026-11-22
   - {match: '*/DYNO/TONE0/*', metric: 'level lu peak', min: -3.4, max: -2.2, reason: "type-fix: BELL DYNO's level trim fades to unity below TONE 64 (TONE 0 -2.67 dB, spectrum unchanged; the chain's compressor / limiter cases -2.5 .. -3.0)"}
   - {match: '*/DYNO/TONE0/*', metric: cb, min: -6.0, max: -1.5, reason: "type-fix: the same -2.67 dB of level read in critical bands (more at v20, near threshold)"}
   - {match: '*/DYNO/TONE0/*', metric: 'imd keyup', min: -5.0, max: -1.5, reason: "type-fix: the same level cut: less intermodulation in the chords (a fall only), the key-up window 2 dB lower"}
   - {match: 'c1/DYNO/TONE0/A/k93v20', metric: keyup, silent: true, reason: "type-fix: TONE 0 -2.67 dB takes the v20 tail (-60.6 dB) under the output gate: silent"}
-  - {match: '*/FELT/*/*/k81v*', metric: 'level lu peak cb keyup', min: 1.0, max: 4.4, reason: "type-fix: EARLY FELT's soft tip fades to unity over keys 78..84 (key 81 3/8 of the way): the 84 / 85 step spread over the keys, key 81 louder (v20 +3.9, v40 +1.3, v100 +0.6 dB; HAMMER 0 more); never louder after the key-up (keyup follows the note)"}
-  - {match: '*/FELT/*/*/k81v*', metric: inh, min: -4.0, max: -3.0, reason: "type-fix: the same, key 81 HAMMER 0: less off-harmonic energy (a fall only)"}
-  - {match: 'c1/FELT/BARK0/A/k81v20', metric: keyup, silent: false, min: -64, max: -61, reason: "type-fix: key 81 v20 +3.9 dB keeps its tail over the output gate"}
-  - {match: 'c1/FELT/HAMMER0/A/k81v20', metric: keyup, silent: false, min: -61, max: -58, reason: "type-fix: key 81 v20 HAMMER 0 +3.9 dB keeps its tail over the output gate"}
-  - {match: '*/EARLY_FELT/PRESET/*/k81v*', metric: 'level lu cb keyup', min: 1.0, max: 3.5, reason: "type-fix: F03 EARLY FELT (the TYPE): key 81 louder, as the TYPE's cells"}
-  - {match: '*/DREAM/PRESET/*/k81v*', metric: 'lu cb', min: 1.0, max: 1.9, reason: "type-fix: F18 DREAM (EARLY FELT's hammers): key 81 louder, as the TYPE's cells"}
+  - {match: '*/DYNO/BELL127/*', metric: 'level lu peak cb', min: -3.2, max: -1.0, reason: "type-fix: at BELL 127 BELL DYNO's overtone scale is x1.33 (was x1.8) on BELL's x3.9: the bell strike 26 % softer, the v127 bass under the rail (key 28 dry peak 39.4k -> 27.8k)"}
+  - {match: '*/DYNO/BELL127/*', metric: cent, min: -0.22, max: -0.05, reason: "type-fix: the same, the O1 / O2 overtones 2.6 dB lower: the centroid 8 .. 20 % lower at BELL 127 (BELL up to 96 unchanged)"}
+  - {match: '*/FELT/*/*/k69v*', metric: 'level lu cb keyup', min: 1.0, max: 8.6, reason: "type-fix: key 69 two keys under the 70 / 71 hammer-band edge, its soft tip eased (m 98 / 128): +1.1 dB at v100, +2.6 at v20; the key-up windows of v20 near the floor follow the note (+3.5 .. +8.4); never louder after the key-up"}
+  - {match: 'c1/FELT/DECAY0/A/k69v20', metric: keyup, silent: false, min: -52, max: -48, reason: "type-fix: key 69 v20 louder keeps its DECAY 0 tail over the output gate"}
+  - {match: 'fm1/FELT/DECAY0/A/k69v20', metric: keyup, silent: false, min: -55, max: -50, reason: "type-fix: key 69 v20 louder keeps its DECAY 0 tail over the output gate"}
+  - {match: '*/EARLY_FELT/PRESET/*/k69v*', metric: 'level lu cb keyup', min: 1.0, max: 3.0, reason: "type-fix: F03 EARLY FELT (the TYPE): key 69 louder, as the TYPE's cells"}

@@ -1,6 +1,9 @@
 ## Fixed
 
-- **EARLY FELT**: the jump in loudness between C6 and C#6 is gone. The soft felt hammers now ease into
-  the treble over the seven keys below C#6, so a line across that point stays even at every velocity.
+- **EARLY FELT**: the small jumps in loudness from one key to the next where the hammers change (between D3 and D#3,
+  C4 and C#4, A#4 and B4, C6 and C#6) are gone, most audible in soft playing. The keys either side now blend into each
+  other, and the felt sound is kept.
 - **BELL DYNO**: a single hard note no longer hits the top of the output. With TONE below the middle it now keeps the
-  same loudness against STAGE 77 as at the middle, and its top keys (E7 and up) no longer get louder and louder toward C8.
+  same loudness against STAGE 77 as at the middle. Its top keys (E7 and up) no longer get louder and louder toward C8.
+  With BELL near its top, the bell in the low notes is a little softer.
+

@@ -672,6 +672,20 @@ static int32_t rh_bell_at(uint32_t n)                       /* Q16: BELL's scale
     if (n >= RH_BELL_K1) return 65536;
     return 65536 + (int32_t)(((int64_t)(b - 65536) * RH_BELL_T[n - RH_BELL_K0 - 1u]) >> 15);
 }
+/* a TYPE's own overtone scale under BELL's top quarter (2026-11-22): BELL DYNO's x1.8 (RH_TYPE bell, the only one over
+ * 1) stacked on BELL's x3.9 at 127 drove O1 / O2 at 7x their fitted force, and a v127 strike on keys 28-31 peaked over
+ * the rail dry (39.4k at key 28; STAGE 77 at BELL 127 13.7k). From BELL 96 (x2) to 127 the TYPE's scale gives up to
+ * 26 % of itself, linearly in BELL's scale: DYNO's product at 127 is x5.2 (its BELL 113), still rising at every step
+ * (the knob's 0.19 dB a step against at most 0.1 dB of fade). BELL up to 96 and every other TYPE as before */
+#define RH_BELL_TQ 131072                                  /* BELL 96: x2 (KN_P32) */
+static int32_t rh_ty_bell(int32_t tb)                      /* Q16: the TYPE's overtone scale at this BELL */
+{
+    int32_t x = rh_bell - RH_BELL_TQ;
+    if (tb <= 65536 || x <= 0) return tb;
+    x = (int32_t)(((uint32_t)x * 535u) >> 10);             /* / (x3.914 - x2) in Q16: 0 .. 65536 */
+    if (x > 65536) x = 65536;
+    return tb - (int32_t)((((int64_t)tb * 17039) >> 16) * x >> 16);   /* 17039: 0.26 */
+}
 static int32_t rh_dyn_gain(int32_t gain, uint32_t gd)       /* gain x gd (32768: gain itself, byte-identical) */
 {
     return gd >= 32768u ? gain : (int32_t)(((int64_t)gain * gd) >> 15);
@@ -797,18 +811,25 @@ static void rh_drv_restrike(rh_voice_t *v, uint32_t ki, uint32_t vel)
 }
 #endif
 /* the TYPE's tip scale at a key (2026-11-22): RH_TYPE's ham (EARLY FELT x0.7, BELL DYNO x1.2) scales the contact rate.
- * The band-3 hammers' pulse (keys 71..84) is long enough for that to move the fundamental (EARLY FELT key 84 -2.9 dB
- * against STAGE 77 at v40), the band-4 wood hammers' (key 85 up, 4x faster) barely moves, so the scale ended in a level
- * step at keys 84 / 85: EARLY FELT +1.5 dB at v100, +3.0 at v40, +4.7 at v10; BELL DYNO -1.3. Over the 8 keys under
- * key 85 the scale fades to unity, linearly (key 78 1/8 of the way .. key 84 7/8): the step spread over the keys, the
- * softer (harder) tip kept below. A TYPE at x1 (STAGE 77, SUITCASE) is unchanged */
-#define RH_HAM_K1 (85u - RH_KEY_LO)                 /* the first band-4 key's index */
-#define RH_HAM_SH 3u                                /* the fade over 1 << RH_HAM_SH keys */
+ * The hammer bands' pulses (gen_rhodes: bands start at keys 51, 61, 71 and 85, each 2-4x faster than the one under
+ * it) are lengthened by a softer tip enough to lower the fundamental more and more up a band, and much less on the
+ * next band's first key, so EARLY FELT's level stepped at each band edge: +1.3, +1.5, +1.9 and +3.0 dB at v40 (50/51,
+ * 60/61, 70/71, 84/85; +1.5 dB at 84/85 at v100), BELL DYNO's harder tip the mirror steps (-1.3 dB at 84/85).
+ * RH_HAM_M bridges each edge: the TYPE's deviation from x1 times m / 128 over the three keys either side (fitted on
+ * EARLY FELT at v40 and v100 to a straight line in level across the edge, the felt's loss elsewhere as it was; band 4
+ * barely moves with the tip, so at key 85 the three keys under it take the whole step). BELL DYNO (x1.2) only at the
+ * 84 / 85 edge (keys 82..84): its steps at 51, 61 and 71 are 0.06 .. 0.36 dB at v40. STAGE 77 / SUITCASE (x1)
+ * unchanged; every other key 128 (as before) */
+#define RH_HAM_M_LO (48u - RH_KEY_LO)
+#define RH_HAM_M_HI (82u - RH_KEY_LO)       /* a harder tip (BELL DYNO) only at 84 / 85: its lower edges step 0.06 .. 0.36 dB */
+static const uint8_t RH_HAM_M[] = {   /* keys 48..84, Q7 */
+    124, 104, 102, 143, 135, 128, 128, 128, 128, 128, 124, 114, 102, 153, 139, 128, 128, 128, 128,
+    128, 117, 98, 76, 143, 135, 128, 128, 128, 128, 128, 128, 128, 128, 128, 97, 63, 29};
 static uint32_t rh_ty_ham(uint32_t ki)
 {
     int32_t h = RH_TYPE[rh_type & 3u].ham;
-    if (ki < RH_HAM_K1 && ki + (1u << RH_HAM_SH) > RH_HAM_K1)
-        h += ((65536 - h) * (int32_t)(ki + (1u << RH_HAM_SH) - RH_HAM_K1)) >> RH_HAM_SH;
+    if (ki >= (h > 65536 ? RH_HAM_M_HI : RH_HAM_M_LO) && ki < RH_HAM_M_LO + sizeof RH_HAM_M)
+        h = 65536 - (((65536 - h) * (int32_t)RH_HAM_M[ki - RH_HAM_M_LO]) >> 7);
     return (uint32_t)h;
 }
 static void rh_load_pulse_rd(rh_voice_t *v, uint32_t vel, int fresh);   /* (the WHURLI strike, below) */
@@ -1348,7 +1369,7 @@ static int32_t rh_vm_b(const rh_mode_t *km, uint32_t m, const rh_type_t *ty, uin
 {
     int64_t b = ((int64_t)km->b * RH_DRV_IB[key]) >> 12;
     b = (((b * rh_bark_s) >> 16) * ty->bark) >> 16;
-    if (m == RH_O1 || m == RH_O2) b = (((b * ty->bell) >> 16) * rh_bell_at(key + RH_KEY_LO)) >> 16;
+    if (m == RH_O1 || m == RH_O2) b = (((b * rh_ty_bell(ty->bell)) >> 16) * rh_bell_at(key + RH_KEY_LO)) >> 16;
     b = (b * x) >> RH_VM_Q;
     return b > 0x7FFFFFFF ? 0x7FFFFFFF : b < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)b;
 }
@@ -1602,7 +1623,7 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
 #endif
         {   /* force gain: BARK scales the tip (the pickup then barks), BELL the overtones; saturating */
             int64_t b = ((((int64_t)km->b * rh_bark_s) >> 16) * ty->bark) >> 16;
-            if (m == RH_O1 || m == RH_O2) b = (((b * ty->bell) >> 16) * bell) >> 16;
+            if (m == RH_O1 || m == RH_O2) b = (((b * rh_ty_bell(ty->bell)) >> 16) * bell) >> 16;
             s->b = b > 0x7FFFFFFF ? 0x7FFFFFFF : b < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)b;
         }
     }
