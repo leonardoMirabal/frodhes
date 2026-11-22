@@ -16,7 +16,9 @@
  *              stop, unless the arpeggiator is on: then a tap there too). REC: sustain. */
 #include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 
+#if !FR_OWN_HAL
 #include "aatext.c"                                   /* anti-aliased Inter Tight text (Felucca), the FOCUS look */
+#endif       /* (FR_OWN_HAL: plugin/src/own_gfx.h, already included by own_hal.c, has the no-op calls) */
 
 #define PR_NF_UI PR_NF_SET                            /* presets.c: PR_NF factory presets, then the user ones */
 #define PR_NALL_UI (PR_NF_SET + 16u)
@@ -328,6 +330,7 @@ FR_COLD static uint16_t cd_shade(uint16_t c, uint32_t pct)      /* an RGB565 col
     uint32_t r = (c >> 11) & 31u, g = (c >> 5) & 63u, b = c & 31u;
     return (uint16_t)((r * pct / 100u) << 11 | (g * pct / 100u) << 5 | (b * pct / 100u));
 }
+#if !FR_OWN_HAL      /* (the plugin's own-code build has no screen palette or lights: the DISPLAY cards below are inert) */
 /* ---- COLOR (DISPLAY K1, 0.9.4): the screen's palette, set.palette. Step 0 is AMBER, gfx.c's own palette (the default,
  * the manual's pictures); then 25 pastel hues around the colour wheel, hue falling from peach through the pinks,
  * violets, blues, cyans and greens to yellow and back (the user's pick on the FM-1, 2026-10-19: the five anchors
@@ -360,6 +363,8 @@ FR_COLD static uint16_t cd_comp(uint16_t c)                    /* an RGB565 colo
     uint32_t mx = r8 > g8 ? (r8 > b8 ? r8 : b8) : (g8 > b8 ? g8 : b8), mn = r8 < g8 ? (r8 < b8 ? r8 : b8) : (g8 < b8 ? g8 : b8);
     return RGB(mx + mn - r8, mx + mn - g8, mx + mn - b8);
 }
+#endif
+#if !FR_OWN_HAL
 FR_COLD static uint16_t cd_lighten(uint16_t c)                 /* an RGB565 colour half way to white */
 {
     uint32_t r = (c >> 11) & 31u, g = (c >> 5) & 63u, b = c & 31u;
@@ -416,10 +421,35 @@ FR_COLD static uint32_t leds_disp(void) { return LEDS_DISP[set.leds < LEDS_N ? s
  * rings its note on: DARK (as before: dark until the sound stops) or LIT (the map again as soon as it is let go). The
  * other LEDS ways light the sounding keys: unchanged */
 FR_COLD static int leds_sus_lit(void) { return set.sus_leds && (set.leds == 3u || set.leds == 4u); }
+#endif
 static uint8_t ui_cards = UI_CARDS_DEF;
+#if FR_OWN_HAL                                  /* the plugin has no screen: the tokens exist, unset (mt_update is empty) */
+static struct {
+    uint16_t acc;
+    uint16_t dim;
+    uint16_t edge;
+    uint16_t fill;
+    uint16_t frame;
+    uint16_t hair;
+    uint16_t lab;
+    uint16_t mixl;
+    uint16_t outline;
+    uint16_t seq;
+    uint16_t surf;
+    uint16_t tag;
+    uint16_t track;
+    uint16_t unit;
+    uint16_t val;
+    uint16_t wet;
+    uint16_t wfill;
+    uint16_t white;
+} mt;
+#else
 static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab, val, unit, dim, acc, seq, white, wet, wfill,
                          mixl; } mt;                    /* wet, wfill, mixl: a MIX card's part past 64, its fill, the
                                                          * line at 64 */
+#endif
+#if !FR_OWN_HAL
 /* a static in a section of its own, out of the compiler's global merge (merged in, it can split rhodes.c's rh_F / rh_x:
  * engine.c eq); nothing on the host */
 #ifdef DINGHY_HOST
@@ -427,6 +457,10 @@ static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab
 #else
 #define UI_OWN_SECTION(name) __attribute__((section(name)))
 #endif
+#endif
+#if FR_OWN_HAL
+FR_COLD static void mt_update(void) {}          /* no screen in the plugin: the colour tokens stay unset */
+#else
 FR_COLD static void mt_update(void)                             /* the tokens for the look and the palette (each pass; done
                                                          * again only when one of them changed: the dimmed tokens
                                                          * cost 33 divides) */
@@ -457,6 +491,7 @@ FR_COLD static void mt_update(void)                             /* the tokens fo
     mt.wet = cd_comp(mt.edge); mt.wfill = cd_shade(mt.wet, UI_FILL_PCT > 0 ? UI_FILL_PCT : 45);   /* (the accent's
                                                          * complement: a MIX past 64, the wet side) */
 }
+#endif
 #define UI_ACC mt.acc                                   /* the title, SUS, a turned knob's label, the frame */
 #define FC_BG C_BLACK
 #define FC_LAB mt.lab                                   /* names */
@@ -630,7 +665,9 @@ FR_COLD static uint32_t tw_kind(void)                          /* OFF PAN TREM W
     uint32_t sw = PV(P_TW_SW), m = PV(P_TW_MODE);
     return sw == 2u ? 3u : sw != 1u ? 0u : m ? 2u : 1u;
 }
+#if !FR_OWN_HAL
 FR_COLD static void color_text(char *v, uint32_t i) { p_strcpy(v, COLOR_NAME[i < COLOR_N ? i : 0u], 6); }
+#endif
 FR_COLD static int32_t slot_val(uint32_t s, int32_t *hi)
 {
     if (s < P_COUNT) { *hi = PARAMS[s].hi; return PV(s); }
@@ -652,9 +689,13 @@ FR_COLD static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_USBVOL: *hi = 1; return set.usb_fixed;
     case S_MCH: *hi = 16; return set.midi_ch;
     case S_TRS: *hi = 1; return !set.trs_off;
+#if FR_OWN_HAL
+    case S_COLOR: case S_BRIGHT: case S_LEDS: *hi = 0; return 0;      /* (no colours or lights to set here) */
+#else
     case S_COLOR: *hi = (int32_t)COLOR_N - 1; return set.palette;
     case S_BRIGHT: *hi = DIM_N - 1; return DIM_N - 1 - (int32_t)set.dim;
     case S_LEDS: *hi = (int32_t)LEDS_N - 1; return (int32_t)leds_disp();
+#endif
     case S_TOUCH: *hi = KV_NTOUCH - 1; return (int32_t)kv_touch();   /* keyvel.h: LIGHT .. FIXED */
     case S_PLED: *hi = 1; return !set.play_off;
     case S_SUSLED: *hi = 1; return set.sus_leds;
@@ -744,9 +785,13 @@ FR_COLD static void slot_text(uint32_t s, char *v)
     case S_USBVOL: p_strcpy(v, set.usb_fixed ? "FIXED" : "KNOB", 5); return;
     case S_MCH: if (set.midi_ch) p_fmt_int(v, set.midi_ch); else p_strcpy(v, "ALL", 3); return;
     case S_TRS: p_strcpy(v, set.trs_off ? "OFF" : "ON", 3); return;
+#if FR_OWN_HAL
+    case S_COLOR: case S_BRIGHT: case S_LEDS: v[0] = 0; return;
+#else
     case S_COLOR: color_text(v, set.palette); return;
     case S_BRIGHT: p_fmt_int(v, DIM_N - (int32_t)set.dim); return;
     case S_LEDS: p_strcpy(v, LEDS_NAME[leds_disp()], 6); return;
+#endif
     case S_TOUCH: p_strcpy(v, KV_TOUCH_NAME[kv_touch()], 6); return;
     case S_PLED: p_strcpy(v, set.play_off ? "OFF" : "BEAT", 4); return;
     case S_SUSLED: p_strcpy(v, set.sus_leds ? "LIT" : "DARK", 4); return;
@@ -780,7 +825,9 @@ FR_COLD static void slot_text(uint32_t s, char *v)
     if (s < P_COUNT) param_text(s, v);
 }
 
+#if !FR_OWN_HAL
 static void ui_draw_page_change(void);                 /* (below: every element dirty) */
+#endif
 FR_COLD static void slot_turn(uint32_t s, int32_t d)
 {
     if (!d || s == S_NONE || s == S_VERSION) return;   /* (VERSION: read only) */
@@ -850,6 +897,9 @@ FR_COLD static void slot_turn(uint32_t s, int32_t d)
     case S_USBVOL: set.usb_fixed = d > 0; usb_pre_master = set.usb_fixed; break;
     case S_MCH: set.midi_ch = (uint8_t)clampi(set.midi_ch + sgn(d), 0, 16); break;
     case S_TRS: set.trs_off = d < 0; uart_midi_on = !set.trs_off; break;
+#if FR_OWN_HAL
+    case S_COLOR: case S_BRIGHT: case S_LEDS: break;
+#else
     case S_COLOR:                                   /* the screen's palette (COLOR_ACC): the whole page again in it */
         set.palette = (uint8_t)clampi(set.palette + sgn(d), 0, (int32_t)COLOR_N - 1);
         color_apply(set.palette);
@@ -861,6 +911,7 @@ FR_COLD static void slot_turn(uint32_t s, int32_t d)
         ui_draw_page_change();
         break;
     case S_LEDS: set.leds = LEDS_STORED[clampi((int32_t)leds_disp() + sgn(d), 0, (int32_t)LEDS_N - 1)]; break;
+#endif
     case S_PLED: set.play_off = d < 0; break;
     case S_SUSLED: set.sus_leds = d > 0; break;
     case S_VRESP: vresp_set((uint32_t)clampi((int32_t)set.vel_resp + sgn(d), 0, VRESP_N - 1)); break;   /* (next strike) */          /* PLAY's beat light: BEAT / OFF (the dark, issue #29) */
@@ -1413,7 +1464,9 @@ FR_COLD static uint32_t ui_fit_scan(void)
                 }
         }
     set = keep;
+#if !FR_OWN_HAL
     dim_apply();                                        /* (S_COLOR and S_BRIGHT were turned through) */
+#endif
     ui_page = page0; ui_vp = vp0;
     return bad;
 }
@@ -1542,7 +1595,11 @@ FR_COLD static void draw_now(void)                              /* NOW (big) and
         ft_c(50, "SEQ: REC, THEN PLAY", FC_LAB);
     } else {
         if (empty) p_strcpy(v, "-", 1); else sq_group_name(now, v);
+#if FR_OWN_HAL
+        if (big_ok(v, 236)) ft_big(22, v, sq_browsing() ? UI_ACC : seq_play ? C_WHITE : FC_VAL);
+#else
         if (big_ok(v, 236)) ft_big(22, v, sq_browsing() ? UI_ACC : seq_play ? mt.white : FC_VAL);
+#endif
         else ft_c(22, v, FC_VAL);
         sq_group_name(next, v);
         p_strcpy(t, "NEXT ", 5); n = 5; p_strcpy(t + n, v, 12); while (t[n]) n++;
@@ -1576,13 +1633,21 @@ FR_COLD static void draw_strip(void)                            /* the bar playi
     cv_begin(240, 62, C_BLACK);
     for (i = 0; i < 16u; i++) {
         int32_t x = 4 + (int32_t)(i % 8u) * 29, y = i < 8u ? 2 : 33;
+#if FR_OWN_HAL
+        uint16_t c = i == cur ? C_WHITE : hit[i] == 1u ? C_AMB : C_LINE;
+#else
         uint16_t c = i == cur ? mt.white : hit[i] == 1u ? C_AMB : hit[i] ? C_LINE : C_LINE;
+#endif
         if (hit[i] == 2u && i != cur) { cv_rect(x, y, 26, 26, C_LINE); cv_rect(x, y + 9, 26, 8, C_DIM); }   /* held */
         else if (hit[i] || i == cur) cv_rect(x, y, 26, 26, c);
         else { cv_rect(x, y, 26, 26, i % 4u == 0u ? C_DIM : C_LINE); cv_rect(x + 2, y + 2, 22, 22, C_BLACK); }
         if (sq_browsing() && i == (p - b0) / 24u) {    /* the cursor: a white frame around its cell (inside: */
+#if FR_OWN_HAL
+            cv_rect(x - 2, y - 2, 30, 30, C_WHITE);     /* (the cursor's cell: nothing is drawn in the plugin) */
+#else
             cv_rect(x - 2, y - 2, 30, 3, mt.white); cv_rect(x - 2, y + 25, 30, 3, mt.white);   /* black on a filled */
             cv_rect(x - 2, y - 2, 3, 30, mt.white); cv_rect(x + 25, y - 2, 3, 30, mt.white);   /* one, so it shows) */
+#endif
             if (hit[i] == 1u && i != cur) { cv_rect(x + 1, y + 1, 24, 2, C_BLACK); cv_rect(x + 1, y + 23, 24, 2, C_BLACK);
                                       cv_rect(x + 1, y + 1, 2, 24, C_BLACK); cv_rect(x + 23, y + 1, 2, 24, C_BLACK); }
         }
@@ -1897,8 +1962,13 @@ FR_COLD static void ui_input(uint32_t b, uint32_t rel)
         else { chord_toggle(); ui_say(chord_on() ? "CHORDS ON" : "CHORDS OFF"); ui_changed(); ui_mark(E_CARDS); }
     }
     if (b >> BTN_ENV & 1u) ui_fx_button(PG_PHA, 3);   /* PHASER; on it: on / off (0.9.2: was DECAY / COMP) */
+#if FR_OWN_HAL
+    if (b & (1u << BTN_GLO))                            /* TEMPO -> SETUP -> MIDI (the plugin has no DISPLAY page to reach) */
+        ui_goto(ui_page == PG_TEMPO ? PG_SETUP : ui_page == PG_SETUP ? PG_MIDI : PG_TEMPO);
+#else
     if (b >> BTN_GLO & 1u)                                                        /* TEMPO -> SETUP -> MIDI -> DISPLAY */
         ui_goto(ui_page == PG_TEMPO ? PG_SETUP : ui_page == PG_SETUP ? PG_MIDI : ui_page == PG_MIDI ? PG_DISPLAY : PG_TEMPO);
+#endif
     if (b >> BTN_LFO & 1u) ui_fx_button(PG_TREM, 0);
     if (b >> BTN_SEL & 1u) {                            /* DELAY; on it: on / off (0.9.2: was CHORUS); HOLD on / off on
                                                          * ARPEGGIO and, while the arpeggiator is on, on every page (0.9.3) */
@@ -1973,6 +2043,9 @@ FR_COLD static void ui_input(uint32_t b, uint32_t rel)
 
 /* ---- LEDs, once per pass: the page's shortcut button is lit; LFO / SEL / ENV: that effect is on (SEL while it is
  * HOLD: HOLD), ARP: the arpeggiator, EDIT: chord mode, SEQ: the sequencer playing (blinking: recording) */
+#if FR_OWN_HAL
+FR_COLD static void ui_leds(uint32_t lit, uint32_t beat_on) { (void)lit; (void)beat_on; }   /* no LEDs in the plugin */
+#else
 FR_COLD static void ui_leds(uint32_t lit, uint32_t beat_on)
 {
     static struct { uint32_t lit, glow, btn; uint8_t done; } was UI_OWN_SECTION(".bss.ui_leds");
@@ -2015,3 +2088,4 @@ FR_COLD static void ui_leds(uint32_t lit, uint32_t beat_on)
     }
     fm1_led_build();                                                    /* (the scan ISR's tables) */
 }
+#endif

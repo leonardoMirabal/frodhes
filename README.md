@@ -204,6 +204,8 @@ Vestal's [fm1-velocity](https://github.com/charlesvestal/fm1-velocity).
 
 How to build, test and contribute: [docs/BUILD.md](docs/BUILD.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
+The desktop plugin is built with `FR_OWN=1` (`make plugin`): it compiles only Frodhes' own code plus the pinned libraries ([docs/PLUGIN.md](docs/PLUGIN.md#build)).
+
 ## Support
 
 Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/leomirabal).

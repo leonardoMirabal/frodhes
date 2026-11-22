@@ -70,7 +70,8 @@ SAN_FLAGS = ["-fsanitize=undefined,address,implicit-signed-integer-truncation", 
              "-fno-omit-frame-pointer"]
 # the wrap check: the sanitizer build is compiled from a copy of the source with the audio path's (int16_t) casts
 # taken out, so a narrowing that changes a sample (an int16 wrap) is a sanitizer report; in range they are no-ops
-WRAP_SRC = ("rhodes.c", "bars.c", "fx.c", "dly_tape.c", "rev_plate.c", "rev_inf.c")
+# (fx.c has no such cast left: the classic HALL's are in fx_fel.c)
+WRAP_SRC = ("rhodes.c", "bars.c", "fx_fel.c", "dly_tape.c", "rev_plate.c", "rev_inf.c")
 RAND_MS = 20000                    # the random part
 FOCUS_XF = False                   # --focus-xfade: more of the controls with a crossfade (switches, TYPEs, LEVEL, MIX, presets)
 FOCUS_CC = [80, 79, 17, 85, 88, 12, 106, 107, 110, 70, 84, 95, 91, 111, 27, 89]

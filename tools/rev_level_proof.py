@@ -36,7 +36,7 @@ RI_OG_OLD = 3215                   # rev_hq_inf.c's RI_OG in 0.9.12
 
 
 def old_level():
-    hl = re.search(r"#define HL_IN (\d+)", open(os.path.join(ROOT, "firmware", "src", "fx.c")).read()).group(1)
+    hl = re.search(r"#define HL_IN (\d+)", open(os.path.join(ROOT, "firmware", "src", "fx_fel.c")).read()).group(1)
     return [f"-DRQ_IN_HALL={hl}", f"-DRI_OG={RI_OG_OLD}"]
 
 

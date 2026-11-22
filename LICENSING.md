@@ -17,6 +17,18 @@ complete source under the same licence too.
 | The app `firmware/src/frodhes.c` (derived from Dinghy's app), the engine `firmware/src/rhodes.c` | Leonardo Mirabal |
 | Key velocity: `firmware/src/keyvel.c`, `firmware/src/keyvel.h`, `firmware/hal/fm1_keyadc.h` and the converter scheduling in `firmware/hal/fm1_adc.h`, after [fm1-velocity](https://github.com/charlesvestal/fm1-velocity) (commit 8f62ce0, GPL-3.0-only): the method, the row drive and the curve, rewritten in integers for the panel scan | Charles Vestal (fm1-velocity); Leonardo Mirabal (this version) |
 
+## What each target compiles
+
+| Target | Compiles | Third-party code |
+| --- | --- | --- |
+| FM-1 and SMK-37 firmware | the whole tree above: the platform files, the app, the engines | as listed under "Who made what" and "Third-party material" |
+| Move, MPC, web emulator | the app and engines with their own platform layers | as today: the same third-party code as the firmware where it compiles it |
+| Desktop plugin (CLAP, VST3, Audio Unit) | only Frodhes' own code: the app with its own plugin layer, drive, delay and tables (`FR_OWN`, `FR_OWN_HAL`; `docs/ARCHITECTURE.md`), and the window | only the libraries in `plugin/deps.lock` (CLAP, clap-wrapper with {fmt}, the VST3 SDK, AudioUnitSDK, all MIT or Apache-2.0), the platform's C/C++ runtime, and the window's SIL OFL fonts (Inter Tight, Michroma). No Terminus font, none of the platform files, no third-party delay or drive code |
+
+The plugin's files carry Frodhes' own copyright only, and outside contributions are not merged into them
+(`AGENTS.md`). `tools/own_check.py` checks the plugin's source closure for this. The upstream copyright headers of
+the other targets stay where they are.
+
 ## Third-party material
 
 | What | Licence | Where |

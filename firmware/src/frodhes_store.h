@@ -62,7 +62,11 @@
                               FL_IN(off, n, FR_OTA_V16, FR_OTA_V16 + 0x5000u))
 #endif
 
+#if FR_OWN_HAL
+#include "../../plugin/src/own_store.h"        /* (the plugin's own-code build: FL_GUARD, FL_IN, FL_GLOB_LO) */
+#else
 #include "store.h"                              /* (FL_GUARD, FL_IN, the stock map: hal/fm1_flash_map.h) */
+#endif
 
 /* every sector Frodhes writes: whole, sector aligned, through the app's allow-list and the RAM driver's own net */
 #define FR_SECTOR_OK(at) ((at) % 0x1000u == 0u && FL_GUARD(at, 0x1000u) && FL_GUARD((at) + 0xF00u, 0x100u))

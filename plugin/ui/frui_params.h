@@ -54,7 +54,8 @@ static const unsigned char FRN_TYPE_BARS[FRN_NTYPE] = {0, 0, 0, 0, 1, 1, 0};
 
 static const char *const FRN_ONOFF[] = {"OFF", "ON"};
 static const char *const FRN_TWK[] = {"OFF", "PAN", "TREM", "WAH"};
-static const char *const FRN_DRV[] = {"OFF", "FDRV", "KHLON", "TSH8", "OHCD", "BHLUE"};
+static const char *const FRN_DRV[] = {"OFF", "WARM", "KHLON", "TSH8", "OHCD", "BHLUE"};   /* (the plugin's own-code
+                                    * build's names: params.c N_DRV under FR_OWN) */
 static const char *const FRN_DL[] = {"OFF", "DIG", "ANA", "TAPE"};
 static const char *const FRN_RV[] = {"OFF", "HALL", "PLATE", "INFINITE"};
 static const char *const FRN_FLT[] = {"OFF", "LP12", "LP18", "HP12", "HP18", "BP", "NOTCH"};

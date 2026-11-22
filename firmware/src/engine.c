@@ -117,10 +117,19 @@ static int eng_is_bars(void) { return eng_want == ENG_BARS; }   /* the main loop
  * where the bend changed, a new note starts at it); VIBES and MARIMBA ignore it. +-2 semitones. v14: the 14-bit MIDI
  * value (8192 = centre; for an SMK-37 pitch wheel, 8192 + its bend in 1/4096 semitone). The table and rh_retune are
  * genkigenki's (PR #3, the SMK-37 pitch wheel) */
+#if FR_OWN                                      /* the plugin's own-code build: the table from tools/gen_bend_own.py */
+#include "bend_own.h"
+#define ENG_BEND_T BEND_OWN_T
+#else
 static const int32_t ENG_BEND_T[17] = {   /* Q30: 2^(k/48) - 1, k = -8..8 (quarter semitones, +-2 semitones) */
     -117146609, -103232612, -89116230, -74794521, -60264498, -45523131, -30567345, -15394023, 0,
     15617934, 31463037, 47538612, 63848011, 80394637, 97181938, 114213416, 131492623};
+#endif
+#if FR_OWN
+static uint16_t eng_bend14 = 1u << 13;          /* the last bend value, 14 bits, 1 << 13 = centre (the host tests read it) */
+#else
 static uint16_t eng_bend14 = 8192u;            /* the bend last set (the host tests read it) */
+#endif
 static void eng_bend_set(int32_t v14)
 {
     int32_t q = v14 < 0 ? 0 : v14 > 16383 ? 16383 : v14, i = q >> 10, f = q & 1023;

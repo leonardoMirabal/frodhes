@@ -307,8 +307,9 @@ def model():
         for i, n in enumerate(x.strip() for x in m.group(1).split(",")):
             if re.fullmatch(r"[A-Za-z_]\w*", n):
                 defs.setdefault(n, i)
-    names = {m.group(1): re.findall(r'"([^"]*)"', m.group(2))
-             for m in re.finditer(r"static const char \*const (\w+)\[[^\]]*\] = \{([^}]*)\};", allt)}
+    names = {}                                     # (the first definition: params.c's N_DRV under #if !FR_OWN, not the
+    for m in re.finditer(r"static const char \*const (\w+)\[[^\]]*\] = \{([^}]*)\};", allt):   # own-code build's)
+        names.setdefault(m.group(1), re.findall(r'"([^"]*)"', m.group(2)))
     pc = src["params.c"]
     penum = re.search(r"enum \{ (P_TYPE.*?)P_COUNT \};", pc, re.S).group(1)
     pids = [p.strip() for p in penum.split(",") if p.strip()]

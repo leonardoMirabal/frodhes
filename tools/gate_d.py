@@ -54,7 +54,7 @@ PLUG_BUILD = Path(os.environ.get("FRP_BUILD", ROOT / "build" / "plugin"))
 PLUGIN = PLUG_BUILD / "bundles" / "Frodhes.clap"
 RENDER = PLUG_BUILD / "frp_clap_render"
 # the plugin's engine switches (plugin/cmake/slots.cmake FRP_ENGINE_DEFS: the Move's HQ switches, 24 voices)
-DEFS = ["-DFR_VOICES=24u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1"]
+DEFS = ["-DFR_VOICES=24u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1", "-DFR_OWN=1"]
 NICE = ["nice", "-n", "15"]
 MODES = ["hq", "blocks", "rate48", "rates", "x86_64", "core"]
 RATES = [8000, 22050, 48000, 88200, 96000, 176400, 192000]

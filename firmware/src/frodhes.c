@@ -58,6 +58,14 @@
  * as the last guard). hal/fm1_core1.h (the FM-1), c1_host.h (the host's twin), app_audio below. The FM-1 firmware and
  * the host and the web emulator (web/build.sh, since 2026-11-15: the FM-1's sound, 14 voices; c1_host.h runs core 1's
  * job on the page's thread) only: not the SMK-37, not the Move. */
+#ifndef FR_OWN
+#define FR_OWN 0                                /* the plugin's own-code build switch (plugin/cmake/slots.cmake): DRIVE TYPE 1 is drv_own1.c there */
+#endif
+#if FR_OWN && defined(DINGHY_PLUGIN)
+#define FR_OWN_HAL 1
+#else
+#define FR_OWN_HAL 0
+#endif
 #ifndef FR_C1
 #define FR_C1 0
 #endif
@@ -219,7 +227,11 @@ static void app_idle(void);
 #endif
 #include "fr_cold.h"     /* FR_COLD: the cold code built for flash, not speed */
 #include "frodhes_store.h"   /* the flash Frodhes writes, per board, and its allow-list APP_FL_RANGE (store.h) */
+#if FR_OWN_HAL
+#include "../../plugin/src/own_touch.h"   /* the plugin's own-code build: its own TOUCH names, no FM-1 key path */
+#else
 #include "keyvel.h"     /* key velocity's interfaces: first, so the scan tick (platform.c) can reach its hooks */
+#endif
 #if FR_C1 && !defined(DINGHY_HOST)
 static int fr_wd_c1_ok(uint32_t now)            /* the watchdog (platform.c wd_poll): core 1's jobs move while it is on */
 {
@@ -233,7 +245,11 @@ static int fr_wd_c1_ok(uint32_t now)            /* the watchdog (platform.c wd_p
 #endif
 #define APP_TAIL_EARLY FR_TAIL_EARLY
 #endif
+#if FR_OWN_HAL
+#include "../../plugin/src/own_hal.c"       /* the plugin's own-code build: its own hardware layer */
+#else
 #include "platform.c"
+#endif
 #if defined(DINGHY_HOST) && !defined(HOST_FL_CHECK)
 /* (the web build: no flash log; a place the firmware's allow-list refuses fails as on the device) */
 FR_COLD static int host_fl_check(const char *what, uint32_t at, uint32_t n) { (void)what; return FL_GUARD(at, n) ? 0 : -1; }
@@ -292,7 +308,9 @@ static volatile uint32_t prof_st_max[PROF_NST] __attribute__((section(".bss.prof
 #include "fx.c"
 #include "rev_types.c"  /* the REVERB's TYPEs: the framework (fx.c's fx_reverb), rev_plate.c, rev_inf.c */
 #include "params.c"
+#if !FR_OWN_HAL
 #include "keyvel.c"     /* the FM-1 keys' velocity (TOUCH, keyvel.h) */
+#endif
 #if KV_FM1KA
 #include "fm1_keyadc.h" /* and its part of the scan tick (the hooks keyvel.h maps) */
 #endif
@@ -1681,14 +1699,18 @@ FR_COLD static void app_main(void)
     chord_sanitize();
     seq_sanitize();
     if (set.usb_fixed > 1u) set.usb_fixed = 0;
+#if !FR_OWN_HAL
     if (set.palette >= COLOR_N) set.palette = 0;   /* AMBER (ui.c S_COLOR) */
     if (set.dim >= DIM_N) set.dim = 0;
+#endif
     if (set.leds > 4u) set.leds = 0;                /* (ui.c LEDS_N: 0 ROOTS 1 OFF 2 PLAYED 3 ALL 4 SCALE) */
     if (set.play_off > 1u) set.play_off = 0;        /* (DISPLAY PLAY LED: 0 BEAT 1 OFF) */
     usb_pre_master = set.usb_fixed;
     uart_midi_on = !set.trs_off;
+#if !FR_OWN_HAL
     fm1_led_group_ids(KEY_LED(0), KEY_LED(26));     /* BRIGHTNESS: the keys' LEDs are their own group */
     dim_apply();                                    /* the palette and the LEDs at BRIGHTNESS (set.color is Dinghy's, unused) */
+#endif
     params_apply_all();
     drv_boot();                                     /* (the DRIVE TYPEs' RAM tables, whole: never in an audio block) */
 #ifdef RH_PU_RAM
@@ -1781,6 +1803,7 @@ FR_COLD static void app_main(void)
             else if (ty == 0xC0u) preset_load(preset_of_pc(d1));
         }
 
+#if !FR_OWN_HAL                                 /* (the plugin has no key LEDs: lit stays 0) */
         for (k = 0; k < NKEYS; k++)             /* LEDs per key: held (the FM-1's key, or its note over MIDI), or its
                                                  * note still rings under the sustain (0.9.4: MIDI notes too; only
                                                  * a note the pedal holds, not one let go before it went down).
@@ -1791,6 +1814,7 @@ FR_COLD static void app_main(void)
                 uint32_t n = scale_key_note(k);
                 if ((n < 128u && src_active[SRC_MIDI + n]) || (note_sustained(n) && !leds_sus_lit())) lit |= 1u << k;
             }
+#endif
 #if FR_LAT
         if (!lat_mid()) tempo_lock_poll();
         src_poll();
@@ -1825,7 +1849,7 @@ FR_COLD static void app_main(void)
     }
 }
 
-#ifdef DINGHY_WEB
+#if defined(DINGHY_WEB) && !FR_OWN_HAL
 /* the emulator (web/app.js): which page is shown, so the buttons' captions can say what they do there */
 EMSCRIPTEN_KEEPALIVE const char *web_page(void) { return PAGE_TITLE[ui_page]; }
 #endif

@@ -417,7 +417,7 @@ int main(int argc, char **argv)
     m.p[FRP_EQ_LO] = 74; m.p[FRP_EQ_MID] = 54; m.p[FRP_EQ_FREQ] = 50; m.p[FRP_EQ_HI] = 60; m.edited = 1;
     m.tab_l = FRT_EQ; m.tab_r = FRT_FILTER;
     render(&m, "tab-eq-filter", 960, 600);
-    load(&m, PR_F08, "F08", "SUIT TREM");                    /* DRIVE (FDRV) + TREM/WAH on PAN */
+    load(&m, PR_F08, "F08", "SUIT TREM");                    /* DRIVE (TYPE 1) + TREM/WAH on PAN */
     m.tab_l = FRT_DRIVE; m.tab_r = FRT_TREM;
     chord(&m, maj7, 5);
     render(&m, "tab-drive-tremwah", 960, 600);

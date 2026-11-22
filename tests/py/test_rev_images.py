@@ -28,8 +28,8 @@ def exe():
 
 
 def taps():
-    """RV_HB's odd taps (fx.c): (a1, a2, a3) at +-1, 3, 5 half-samples"""
-    src = open(os.path.join(rs.ROOT, "firmware", "src", "fx.c")).read()
+    """RV_HB's odd taps (fx_fel.c): (a1, a2, a3) at +-1, 3, 5 half-samples"""
+    src = open(os.path.join(rs.ROOT, "firmware", "src", "fx_fel.c")).read()
     m = re.search(r"#define RV_HB\(c, d\) \((\d+) \* .*? - (\d+) \* .*? \+ (\d+) \* ", src)
     return int(m.group(1)), -int(m.group(2)), int(m.group(3))
 
