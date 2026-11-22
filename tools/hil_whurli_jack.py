@@ -157,6 +157,9 @@ def main():
         ok &= not bad
     if a.reference:
         print("reference sweep: max |d| %.2f dB, mean %+.2f" % (rep["sweep_usb_vs_host_db"]["max_abs"], rep["sweep_usb_vs_host_db"]["mean"]))
+        print("reference jack re USB: median %+.2f dB, spread %.2f dB" % (rep["jack_minus_usb_db"]["median"], rep["jack_minus_usb_db"]["spread"]))
+        lv = sorted(((level(u, t), level(j, t) - level(u, t), k, v) for t, k, v in notes))[:3]
+        print("quietest notes (USB dBFS, jack-USB, key, vel):", [(round(a, 1), round(b, 1), k, v) for a, b, k, v in lv])
         return 0
     # F20..F23: a chord and single notes each
     for pc in (35, 36, 37, 38):
