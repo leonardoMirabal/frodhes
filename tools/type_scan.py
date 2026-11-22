@@ -35,7 +35,7 @@ The checks (codes; numbers calibrated on the existing TYPEs, see KNOWN for what 
   ALI  aliasing and inharmonic energy: the power off every harmonic band of the note (+-15 Hz or +-0.3 %), re H1,
        over the whole band (inh) and above 10 kHz (inh_hf): <= ALI_INH / ALI_HF dB, never under the path's white floor
        + 3 dB (tools/dry_dist.py's rule), 150..650 ms after the strike, v >= 64 (quieter notes are the 16-bit floor)
-  LEV  level evenness, LUFS (BS.1770 K-weighted, 0..1 s, v100): neighbour step <= 1.5 dB, deviation from the +-3 key
+  LEV  level evenness, LUFS (BS.1770 K-weighted, 0..1 s, v40 and v100): neighbour step <= 1.5 dB, deviation from the +-3 key
        median <= 1.5 dB over keys 53..89 and <= 3 dB outside
   CBL  the same on the critical-band loudness (tools/cb_loud.py, Zwicker bands, spread of masking, smoothed over 5
        bands): step <= 3 phon, deviation <= 2.5 / 4.5. A level that agrees in LUFS and not in the bands is a tone
@@ -144,11 +144,11 @@ PROFILES = {
     "smoke": dict(keys=[48, 60, 84], vels=[1, 127], alikeys=[48, 60, 84], knob_vals=[0, 127], knobs=["BARK", "DECAY"],
                   knob_keys=[60], knob_vels=[1, 127], sweep=False, zip_knobs=["BARK"], fx=["chorus", "hall"],
                   depths=[127], chords=["mid"], rep=["mid"], c1=False, nvoices=[1, 4], ped=True),
-    "quick": dict(keys=sorted(set(range(53, 90)) | set(range(21, 53, 3)) | set(range(90, 109, 3))), vels=[1, 64, 100, 127],
+    "quick": dict(keys=sorted(set(range(53, 90)) | set(range(21, 53, 3)) | set(range(90, 109, 3))), vels=[1, 40, 64, 100, 127],
                   alikeys=list(range(24, 106, 5)), knob_vals=[0, 127], knobs=KNOBS, knob_keys=[36, 60, 96],
                   knob_vels=[1, 64, 127], sweep=False, zip_knobs=KNOBS, fx=list(fxp.EFFECTS), depths=[127],
                   chords=["low", "mid", "high"], rep=["low", "mid", "high"], c1=True, nvoices=[1, 4, 8, 14], ped=True),
-    "full": dict(keys=list(range(21, 109)), vels=[1, 8, 16, 32, 48, 64, 80, 100, 115, 127], alikeys=list(range(21, 109)),
+    "full": dict(keys=list(range(21, 109)), vels=[1, 8, 16, 32, 40, 48, 64, 80, 100, 115, 127], alikeys=list(range(21, 109)),
                  knob_vals=[0, 32, 96, 127], knobs=KNOBS, knob_keys=[28, 36, 48, 60, 72, 84, 96, 105],
                  knob_vels=[1, 32, 64, 100, 127], sweep=True, zip_knobs=KNOBS, fx=list(fxp.EFFECTS), depths=[0, 64, 127],
                  chords=["low", "mid", "high"], rep=["low", "mid", "high"], c1=True, nvoices=[1, 2, 4, 6, 8, 10, 12, 14],
@@ -535,30 +535,32 @@ def case_keys(spec):
     return rows, data
 
 
-def spread_rows(data_by_vel, vel_ref=100, scoped=True):
-    """LEV CBL VEL from the key renders' data"""
+def spread_rows(data_by_vel, vel_refs=(40, 100), scoped=True):
+    """LEV CBL VEL from the key renders' data; LEV / CBL at each of vel_refs (2026-11-22: v40 as well as v100: EARLY
+    FELT's hammer-band steps were +1.3 .. +1.9 dB at v40 and under 0.9 at v100, the one velocity judged)"""
     rows = []
-    d = data_by_vel.get(vel_ref)
-    if d:
-        ks = sorted(d["keys"])
-        for code, field, st_lim, dm, do in (("LEV", "lufs", LEV_STEP, LEV_DEV_MID, LEV_DEV_OUT),
-                                            ("CBL", "phon", CBL_STEP, CBL_DEV_MID, CBL_DEV_OUT)):
-            ks = [k for k in sorted(d["keys"]) if k in range(LEV_KMIN, LEV_KMAX + 1)] if scoped else sorted(d["keys"])
-            lv = {k: d["keys"][k][field] for k in ks}
-            worst_step, worst_dev = 0.0, 0.0
-            for a, b in zip(ks, ks[1:]):
-                if b - a == 1:
-                    worst_step = max(worst_step, abs(lv[b] - lv[a]))
-            for k in ks:
-                nb = [lv[j] for j in ks if j != k and abs(j - k) <= 3]
-                if len(nb) >= 2:
-                    dev = abs(lv[k] - float(np.median(nb)))
-                    lim = dm if 53 <= k <= 89 else do
-                    worst_dev = max(worst_dev, dev - lim)
-            rows.append(row(code, f"neighbour step v{vel_ref}", worst_step, st_lim, worst_step <= st_lim,
-                            f"{field}, keys {ks[0]}..{ks[-1]}"))
-            rows.append(row(code, f"median deviation v{vel_ref}", worst_dev, 0, worst_dev <= 0,
-                            f"{field}, worst excess over {dm} (keys 53..89) / {do} (outside)"))
+    for vel_ref in vel_refs:
+        d = data_by_vel.get(vel_ref)
+        if d:
+            ks = sorted(d["keys"])
+            for code, field, st_lim, dm, do in (("LEV", "lufs", LEV_STEP, LEV_DEV_MID, LEV_DEV_OUT),
+                                                ("CBL", "phon", CBL_STEP, CBL_DEV_MID, CBL_DEV_OUT)):
+                ks = [k for k in sorted(d["keys"]) if k in range(LEV_KMIN, LEV_KMAX + 1)] if scoped else sorted(d["keys"])
+                lv = {k: d["keys"][k][field] for k in ks}
+                worst_step, worst_dev = 0.0, 0.0
+                for a, b in zip(ks, ks[1:]):
+                    if b - a == 1:
+                        worst_step = max(worst_step, abs(lv[b] - lv[a]))
+                for k in ks:
+                    nb = [lv[j] for j in ks if j != k and abs(j - k) <= 3]
+                    if len(nb) >= 2:
+                        dev = abs(lv[k] - float(np.median(nb)))
+                        lim = dm if 53 <= k <= 89 else do
+                        worst_dev = max(worst_dev, dev - lim)
+                rows.append(row(code, f"neighbour step v{vel_ref}", worst_step, st_lim, worst_step <= st_lim,
+                                f"{field}, keys {ks[0]}..{ks[-1]}"))
+                rows.append(row(code, f"median deviation v{vel_ref}", worst_dev, 0, worst_dev <= 0,
+                                f"{field}, worst excess over {dm} (keys 53..89) / {do} (outside)"))
     vels = sorted(data_by_vel)
     worst, rng = 0.0, []
     if len(vels) >= 2:
