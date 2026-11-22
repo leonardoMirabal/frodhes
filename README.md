@@ -82,7 +82,7 @@ Frodhes runs on the Move as a sound generator in Schwung, the community module h
 - The same instruments and effects, with 16 voices on every instrument and the higher-quality version of each.
 - The reverb runs at the full sample rate, so its tails keep their top octave.
 - Its own screen: the eight knobs as eight cards, a page at a time.
-- 61 factory presets (the FM-1's 23 plus 38 more) and 16 slots for your own.
+- 61 factory presets (the FM-1's 23 plus 38 more, the Move's variants) and 16 slots for your own.
 - The Move's sequencer, scales and tempo drive it. The arpeggiator is Frodhes' own.
 - One Frodhes on each track, up to four, each with its own sound. Three play without dropouts.
 

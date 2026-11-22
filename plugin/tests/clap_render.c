@@ -912,7 +912,9 @@ static int coretest(void)
     n0 = VT->preset_count(ca);
     CHECK(n0 >= 61, "61 factory presets at least (%d)", n0);
     CHECK(!VT->preset_info(ca, 0, &pi) && !strcmp(pi.tag, "F01") && pi.name[0] && !pi.user, "F01 '%s'", pi.name);
-    CHECK(!VT->preset_info(ca, 60, &pi) && !strcmp(pi.tag, "F61"), "F61 '%s'", pi.name);
+    CHECK(!VT->preset_info(ca, 56, &pi) && !strcmp(pi.tag, "F57"), "F57 '%s'", pi.name);
+    CHECK(!VT->preset_info(ca, 57, &pi) && !strcmp(pi.tag, "F58") && !strcmp(pi.name, "WHURLI"), "F58 WHURLI '%s'", pi.name);
+    CHECK(!VT->preset_info(ca, 60, &pi) && !strcmp(pi.tag, "F61") && !strcmp(pi.name, "REED SOFT"), "F61 '%s'", pi.name);
     VT->preset_load(ca, 4); run(a, 2);
     idx = VT->preset_current(ca, &pi, &ed);
     CHECK(idx == 4 && !ed && !strcmp(pi.tag, "F05"), "F05 loaded (%d %s %s edited %d)", idx, pi.tag, pi.name, ed);
@@ -957,8 +959,8 @@ static int coretest(void)
     CHECK(VT->preset_current(ca, &pi, &ed) == 4, "program change 4: F05 (%d)", VT->preset_current(ca, &pi, &ed));
     blk_n = 0; ev_midi(0, 0xC0, 40, 0); run(a, 3);
     CHECK(VT->preset_current(ca, &pi, &ed) == 24, "program change 40: F25 (%d)", VT->preset_current(ca, &pi, &ed));
-    {   /* the FM-1's map, on to F61: 0..15 F01..F16, 32 + k F17 + k (32..38 F17..F23 as the device, 39..76 F24..F61) */
-        static const int PC[][2] = { { 0, 0 }, { 15, 15 }, { 32, 16 }, { 34, 18 }, { 35, 19 }, { 50, 34 }, { 76, 60 } };
+    {   /* the FM-1's map, on to F61: 0..15 F01..F16, 32 + k F17 + k (32..34 F17..F19 as the device, 35..72 F20..F57 as before, 73..76 WHURLI F58..F61) */
+        static const int PC[][2] = { { 0, 0 }, { 15, 15 }, { 32, 16 }, { 34, 18 }, { 35, 19 }, { 50, 34 }, { 72, 56 }, { 73, 57 }, { 76, 60 } };
         for (k = 0; k < (int)(sizeof PC / sizeof PC[0]); k++) {
             blk_n = 0; ev_midi(0, 0xC0, (uint8_t)PC[k][0], 0); run(a, 3);
             CHECK(VT->preset_current(ca, &pi, &ed) == PC[k][1], "program change %d: F%02d (%d)", PC[k][0], PC[k][1] + 1,

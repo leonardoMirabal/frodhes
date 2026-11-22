@@ -27,7 +27,7 @@ the Move's controls and what is different.
 14. [Updating and removing](#updating-and-removing)
 15. [What differs from the FM-1](#what-differs-from-the-fm-1)
 16. [Troubleshooting](#troubleshooting)
-17. [Appendix: the factory presets F24-F61](#appendix-the-factory-presets-f24-f61)
+17. [Appendix: the factory presets F20-F57](#appendix-the-factory-presets-f20-f57)
 
 ## What you need
 
@@ -79,9 +79,9 @@ pads, the step buttons, Up and Down (the octave), Play and the other buttons sta
 
 ### Presets
 
-On the FRODHES page, turn **knob 5 (PRESET)**. **F01-F23** are the FM-1's factory sounds, **F24-F61** are two more
-versions of each of F01-F19, made for the Move, and **U01-U16** are your own. 0.9.10 changed the factory presets and some of their
-numbers (the [list](MANUAL.md#6-presets)); F24-F61 follow them (the appendix below).
+On the FRODHES page, turn **knob 5 (PRESET)**. **F01-F19** are the FM-1's factory sounds, **F20-F57** are two more
+versions of each, made for the Move, **F58-F61** are the four WHURLI presets (the FM-1's F20-F23), and **U01-U16** are your own. 0.9.10 changed the factory presets and some of their
+numbers (the [list](MANUAL.md#6-presets)); F20-F57 follow them (the appendix below).
 
 ### Saving a sound
 
@@ -340,13 +340,15 @@ back. SUS is not saved with it: a set that loads starts with SUS off and FX on, 
 
 PRESET on the first page turns through the factory sounds and the 16 user slots, in this order:
 
-- **F01-F23**, the FM-1's factory presets, the same sounds (described in the manual's [presets](MANUAL.md#6-presets)).
-- **F24-F61, on the Move only**: two more versions of each of F01-F19, made for the Move ([the
-  list](#appendix-the-factory-presets-f24-f61)).
+- **F01-F19**, the FM-1's factory presets, the same sounds (described in the manual's [presets](MANUAL.md#6-presets)).
+- **F20-F57, on the Move only**: two more versions of each of F01-F19, made for the Move ([the
+  list](#appendix-the-factory-presets-f20-f57)).
+- **F58-F61**: the four WHURLI presets, the FM-1's F20-F23 (WHURLI, REED GROWL, REED TREM, REED SOFT), after the others so
+  that no earlier preset or program change moved.
 - **U01-U16**, the user slots.
 
-Program change loads them as on the FM-1 (0-15 F01-F16, 16-31 U01-U16, 32-38 F17-F23). Program change 39-76 loads
-F24-F61: the preset number plus 15 (F24 is 39, F61 is 76).
+Program change loads them as on the FM-1 (0-15 F01-F16, 16-31 U01-U16, 32-34 F17-F19). Program change 35-76 loads
+F20-F61: the preset number plus 15 (F20 is 35, F57 is 72, F58 WHURLI is 73, F61 is 76).
 
 ## Sustain
 
@@ -466,7 +468,7 @@ and user presets stay on the Move. To remove them too, delete the folder
 - **Not on the Move**: the PERFORM, ASSIGN and DISPLAY pages (the Move has its own pads, knobs and screen); the
   sequencer, the chords and the scales (the Move has its own; their CCs do nothing); the BPM and CLOCK settings;
   KEY VEL, TOUCH, USB VOL, TRS, COLOR, BRIGHT and LEDS.
-- **Only on the Move**: the factory presets F24-F61 ([Presets and saving](#presets-and-saving)), the pressure
+- **Only on the Move**: the factory presets F20-F61 ([Presets and saving](#presets-and-saving)), the pressure
   [mappings](#lfosetup-mappings), SAVE TO USER from the menu, Schwung's own presets, and several Frodhes at once.
 - SPREAD and the compressor's RELEASE, set on the FM-1 by MIDI or a page of their own, are on the pages here.
 - The sound is part of the Move's set.
@@ -492,49 +494,49 @@ and user presets stay on the Move. To remove them too, delete the folder
 - **A slot is silent and its preset reads NO ENGINE**: its engine could not load. Install the module again
   (unload it from every track first).
 
-## Appendix: the factory presets F24-F61
+## Appendix: the factory presets F20-F57
 
 Two more versions (B and C) of each FM-1 preset, made for the Move.
 
 | Preset | Name | Version of: what changes |
 | --- | --- | --- |
-| F24 | STAGE77 ECHO | F01 B: a soft dark analog echo on the quarter note, a little more hall |
-| F25 | STAGE77 TAPE | F01 C: a tape echo on the dotted 1/8, a slightly bigger hall |
-| F26 | SUITCASE DRY | F02 B: dry, a touch less cabinet noise, the level re-set |
-| F27 | SUITCASE AMP | F02 C: the amp's warmth (BHLUE drive) and a short dark analog slap |
-| F28 | FELT HALL | F03 B: dry, a bigger and softer hall |
-| F29 | FELT ECHO | F03 C: the bigger hall and a soft dark analog echo on the quarter note |
-| F30 | BELL SOFT | F04 B: dry, the top edge softer, a little more plate |
-| F31 | BELL ECHO | F04 C: a short digital echo on the dotted 1/8, a little more plate |
-| F32 | WARM77 FAT | F05 B: a firmer compressor (3:1, faster attack, longer release), more hall |
-| F33 | WARM77 ECHO | F05 C: a soft dark analog echo on the quarter note, a little more hall |
-| F34 | VINTAGE 77 | F06 B: darker and softer: less bell and hammer, a gentle compressor, a plate |
-| F35 | PUNCH TAPE | F06 C: a tape echo on the dotted 1/8, a slightly bigger hall |
-| F36 | BALLAD TIGHT | F07 B: less boom in the long plate's tail (LOW CUT 80) |
-| F37 | BALLAD DARK | F07 C: a longer, darker analog echo tail, a slower chorus |
-| F38 | TREM ECHO | F08 B: a soft analog echo on the quarter note, the level re-set |
-| F39 | TREM DEEP | F08 C: a slower, deeper vibrato, more warmth and plate |
-| F40 | PHASER LVL | F09 B: as F09, the level re-set |
-| F41 | PHASER SLOW | F09 C: a slower, more liquid sweep, a longer analog echo |
-| F42 | FUNK WAH LVL | F10 B: as F10, the level re-set |
-| F43 | FUNK PLUCK | F10 C: less squash, more pluck (2:1, slower attack), a short dark slap |
-| F44 | RESO SPACE | F11 B: more echo and hall |
-| F45 | RESO SMOOTH | F11 C: a smoother peak (less resonance), a wider sweep |
-| F46 | LUSH SOFT | F12 B: a softer bark, a gentler compressor, a shorter decay |
-| F47 | LUSH DARK | F12 C: a slower chorus, a darker analog echo on the quarter note |
-| F48 | VIBES HALL | F13 B: dry, a little more hall |
-| F49 | VIBES MOTOR | F13 C: the slower, deeper motor, more hall |
-| F50 | VIBES CLEAN | F14 B: a cleaner echo (fewer repeats) |
-| F51 | VIBES DRIFT | F14 C: the motor on, slow and shallow, under the echo |
-| F52 | MARIMBA HALL | F15 B: dry, more hall and pre-delay |
-| F53 | MARIMBA ECHO | F15 C: a soft analog echo on the quarter note |
-| F54 | WOOD PLAIN | F16 B: the chorus off |
-| F55 | WOOD LIGHT | F16 C: a lighter chorus, less echo and hall |
-| F56 | TAPE WIDE | F17 B: tamer repeats and a touch of chorus |
-| F57 | TAPE DARK | F17 C: the echo on the quarter note, darker repeats |
-| F58 | DREAM CLEAR | F18 B: less chorus wobble under the hall |
-| F59 | DREAM DEEP | F18 C: a slower, deeper pan, the echo on the dotted 1/4 |
-| F60 | DRIVE SOFT | F19 B: a softer bark, a gentler compressor |
-| F61 | DRIVE BODY | F19 C: more drive and body, a longer tape slap |
+| F20 | STAGE77 ECHO | F01 B: a soft dark analog echo on the quarter note, a little more hall |
+| F21 | STAGE77 TAPE | F01 C: a tape echo on the dotted 1/8, a slightly bigger hall |
+| F22 | SUITCASE DRY | F02 B: dry, a touch less cabinet noise, the level re-set |
+| F23 | SUITCASE AMP | F02 C: the amp's warmth (BHLUE drive) and a short dark analog slap |
+| F24 | FELT HALL | F03 B: dry, a bigger and softer hall |
+| F25 | FELT ECHO | F03 C: the bigger hall and a soft dark analog echo on the quarter note |
+| F26 | BELL SOFT | F04 B: dry, the top edge softer, a little more plate |
+| F27 | BELL ECHO | F04 C: a short digital echo on the dotted 1/8, a little more plate |
+| F28 | WARM77 FAT | F05 B: a firmer compressor (3:1, faster attack, longer release), more hall |
+| F29 | WARM77 ECHO | F05 C: a soft dark analog echo on the quarter note, a little more hall |
+| F30 | VINTAGE 77 | F06 B: darker and softer: less bell and hammer, a gentle compressor, a plate |
+| F31 | PUNCH TAPE | F06 C: a tape echo on the dotted 1/8, a slightly bigger hall |
+| F32 | BALLAD TIGHT | F07 B: less boom in the long plate's tail (LOW CUT 80) |
+| F33 | BALLAD DARK | F07 C: a longer, darker analog echo tail, a slower chorus |
+| F34 | TREM ECHO | F08 B: a soft analog echo on the quarter note, the level re-set |
+| F35 | TREM DEEP | F08 C: a slower, deeper vibrato, more warmth and plate |
+| F36 | PHASER LVL | F09 B: as F09, the level re-set |
+| F37 | PHASER SLOW | F09 C: a slower, more liquid sweep, a longer analog echo |
+| F38 | FUNK WAH LVL | F10 B: as F10, the level re-set |
+| F39 | FUNK PLUCK | F10 C: less squash, more pluck (2:1, slower attack), a short dark slap |
+| F40 | RESO SPACE | F11 B: more echo and hall |
+| F41 | RESO SMOOTH | F11 C: a smoother peak (less resonance), a wider sweep |
+| F42 | LUSH SOFT | F12 B: a softer bark, a gentler compressor, a shorter decay |
+| F43 | LUSH DARK | F12 C: a slower chorus, a darker analog echo on the quarter note |
+| F44 | VIBES HALL | F13 B: dry, a little more hall |
+| F45 | VIBES MOTOR | F13 C: the slower, deeper motor, more hall |
+| F46 | VIBES CLEAN | F14 B: a cleaner echo (fewer repeats) |
+| F47 | VIBES DRIFT | F14 C: the motor on, slow and shallow, under the echo |
+| F48 | MARIMBA HALL | F15 B: dry, more hall and pre-delay |
+| F49 | MARIMBA ECHO | F15 C: a soft analog echo on the quarter note |
+| F50 | WOOD PLAIN | F16 B: the chorus off |
+| F51 | WOOD LIGHT | F16 C: a lighter chorus, less echo and hall |
+| F52 | TAPE WIDE | F17 B: tamer repeats and a touch of chorus |
+| F53 | TAPE DARK | F17 C: the echo on the quarter note, darker repeats |
+| F54 | DREAM CLEAR | F18 B: less chorus wobble under the hall |
+| F55 | DREAM DEEP | F18 C: a slower, deeper pan, the echo on the dotted 1/4 |
+| F56 | DRIVE SOFT | F19 B: a softer bark, a gentler compressor |
+| F57 | DRIVE BODY | F19 C: more drive and body, a longer tape slap |
 
 Building Frodhes for the Move, its tests and installing over ssh are in [MOVE-DEV.md](MOVE-DEV.md).

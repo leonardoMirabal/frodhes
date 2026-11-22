@@ -1092,16 +1092,36 @@ static void mb_user_save(uint32_t u)
     mb.usaves++;
 }
 
-/* ---- the Move-only factory presets (move/move_presets.h, tools/gen_move_presets.py): F24-F61, the factory preset
- * review's B and C variants of F01-F19 (the user, 2026-11-01); the FM-1 keeps presets.c as it is (Gate S). Their
- * index (set.preset, the "preset" key, a program change) comes after presets.c's: 0-22 F01-F23 and 23-38 U01-U16 as
- * on the FM-1, then 39-76 F24-F61 (a settings record from before F20..F23 WHURLI is moved up by 4: params.c flags2 bit 4).
- * Program change 39-76 loads them (presets.c preset_of_pc stops at 38); Frodhes' own screen browses F01-F61, then
- * U01-U16 (u_first) */
+/* ---- the Move-only factory presets (move/move_presets.h, tools/gen_move_presets.py): F20-F57, the factory preset
+ * review's B and C variants of F01-F19 (the user, 2026-11-01); the FM-1 keeps presets.c as it is (Gate S).
+ * Two index spaces. The app's (set.preset, store.bin, the settings migration): presets.c's F01-F23 (F20-F23 WHURLI) at 0-22,
+ * U01-U16 at 23-38, the variants at 39-76. The Move's, what the "preset" key, PRESET, preset_count, u_first and a program
+ * change say, and what a saved setlist holds, unchanged since F20-F57 were added: F01-F19 at 0-18, U01-U16 at 19-34,
+ * F20-F57 at 35-72 (program change = number + 15), and WHURLI as F58-F61 at 73-76 (after the others, so no earlier index
+ * moved). mb_e2i / mb_i2e map between them; the app's index never leaves this file. */
 #define MB_PX_BASE (PR_NF + PR_NU)
 #define MB_PR_N (MB_PX_BASE + MB_PX_N)
-_Static_assert(MB_PR_N <= 255u && MB_PX_FIRST == PR_NF + 1u, "the presets' index fits set.preset; F24 follows F23");
-_Static_assert(MB_PX_BASE == 16u + PR_NF, "program change 16 + PR_NF.. is the Move-only presets (preset_of_pc: 255)");
+#define MB_E_UFIRST 19u                  /* the Move's U01 */
+#define MB_E_VAR 35u                     /* the Move's first variant (F20) */
+#define MB_E_W (MB_E_VAR + MB_PX_N)      /* the Move's WHURLI F58 */
+#define MB_W_N (PR_NF - MB_E_UFIRST)     /* WHURLI presets (presets.c F20-F23) */
+_Static_assert(MB_PR_N <= 255u && MB_PX_FIRST == 20u && MB_W_N == 4u, "the presets' index fits set.preset; the variants are F20-F57");
+static uint32_t mb_e2i(uint32_t e)       /* the Move's preset index -> the app's (MB_PR_N: none) */
+{
+    if (e < MB_E_UFIRST) return e;
+    if (e < MB_E_UFIRST + PR_NU) return PR_NF + e - MB_E_UFIRST;
+    if (e < MB_E_W) return MB_PX_BASE + e - MB_E_VAR;
+    if (e < MB_E_W + MB_W_N) return MB_E_UFIRST + e - MB_E_W;
+    return MB_PR_N;
+}
+static uint32_t mb_i2e(uint32_t a)       /* the app's preset index -> the Move's (a value past the end: as it is) */
+{
+    if (a < MB_E_UFIRST) return a;
+    if (a < PR_NF) return MB_E_W + a - MB_E_UFIRST;
+    if (a < MB_PX_BASE) return MB_E_UFIRST + a - PR_NF;
+    if (a < MB_PR_N) return MB_E_VAR + a - MB_PX_BASE;
+    return a;
+}
 static int mb_pr_values(uint32_t idx, uint8_t *p)    /* preset_values, with the Move-only presets: -1 none there */
 {
     const uint8_t *d;
@@ -1115,6 +1135,7 @@ static int mb_pr_values(uint32_t idx, uint8_t *p)    /* preset_values, with the 
 }
 static void mb_pr_name(uint32_t idx, char *s)          /* preset_name: "F20 STAGE77 ECHO" */
 {
+    if (idx >= MB_E_UFIRST && idx < PR_NF) { snprintf(s, 20, "F%02u %s", (unsigned)(58u + idx - MB_E_UFIRST), PR_FNAME[idx]); return; }   /* WHURLI: F58.. */
     if (idx < MB_PX_BASE) { preset_name(idx, s); return; }
     if (idx >= MB_PR_N) { snprintf(s, 20, "FRODHES"); return; }
     snprintf(s, 20, "F%02u %s", (unsigned)(MB_PX_FIRST + idx - MB_PX_BASE), MB_PX_NAME[idx - MB_PX_BASE]);
@@ -1148,11 +1169,11 @@ static void mb_step(void)
         if (e->kind == MB_EV_MIDI) {
             if (mq_w - mq_r >= MB_HOST_RING) break;          /* the app's ring is full: the rest wait a millisecond */
             if ((e->st & 0xF0u) == 0xB0u && MB_CC_DROP(e->d1)) { mb.cc_drop++; mb_pop(e); continue; }
-            if ((e->st & 0xF0u) == 0xC0u && e->d1 >= MB_PX_BASE && e->d1 < MB_PR_N &&
-                (!set.midi_ch || (e->st & 0x0Fu) == set.midi_ch - 1u)) {   /* a program change to F20-F57 (the app's
+            if ((e->st & 0xF0u) == 0xC0u && e->d1 >= MB_E_VAR && e->d1 < MB_E_W + MB_W_N &&
+                (!set.midi_ch || (e->st & 0x0Fu) == set.midi_ch - 1u)) {   /* a program change to F20-F61 (the app's
                                                      * CHANNEL filter as frodhes.c's), after what the app's ring holds */
                 if (mq_w != mq_r) break;
-                mb_pr_load(e->d1); mb.rev++; mb.midi_out++;
+                mb_pr_load(mb_e2i(e->d1)); mb.rev++; mb.midi_out++;
                 mb_fx_note("preset");
                 mb_pop(e);
                 continue;
@@ -1450,10 +1471,10 @@ static int mb_get(const char *key, char *buf, int n)
     if ((i = mb_key_find(key)) >= 0) return mb_wire_text(&MOVE_KEYS[i], buf, n);
     if (!strcmp(key, MOVE_SCREEN_KEY)) return snprintf(buf, (size_t)n, "%s", MOVE_SCREEN_VALUE);   /* PAGES' value line */
     if (!strcmp(key, MOVE_GATE_KEY)) return snprintf(buf, (size_t)n, "%u", mb_engine());
-    if (!strcmp(key, "preset")) return snprintf(buf, (size_t)n, "%u", (unsigned)set.preset);
+    if (!strcmp(key, "preset")) return snprintf(buf, (size_t)n, "%u", (unsigned)mb_i2e(set.preset));
     if (!strcmp(key, "preset_count")) return snprintf(buf, (size_t)n, "%u", (unsigned)MB_PR_N);
     if (!strcmp(key, "preset_name")) { char s[20]; mb_pr_name(set.preset < MB_PR_N ? set.preset : 0u, s); return snprintf(buf, (size_t)n, "%s", s); }
-    if (!strcmp(key, "u_first")) return snprintf(buf, (size_t)n, "%u", (unsigned)PR_NF);   /* U01's index (U01-U16 one run) */
+    if (!strcmp(key, "u_first")) return snprintf(buf, (size_t)n, "%u", (unsigned)MB_E_UFIRST);   /* U01's index (U01-U16 one run) */
     if (!strcmp(key, MB_PAGES_KEY)) {   /* the sounding engine's pages (gen_move_module.py hier_for_engine) */
         unsigned e = mb_engine();
         if ((int)MOVE_UI_HIERARCHY_N[e] >= n) return -1;
@@ -1549,7 +1570,7 @@ static void mb_set(const char *key, const char *val)
         (void)mb_put(MB_EV_KEY, 0, 0, 0, 0, (uint16_t)i, x);
         return;
     }
-    if (!strcmp(key, "preset")) { int p = atoi(val); if (p >= 0 && p < (int)MB_PR_N) (void)mb_put(MB_EV_PRESET, 0, 0, 0, 0, 0, p); return; }
+    if (!strcmp(key, "preset")) { int p = atoi(val); if (p >= 0 && p < (int)MB_PR_N) (void)mb_put(MB_EV_PRESET, 0, 0, 0, 0, 0, (int32_t)mb_e2i((uint32_t)p)); return; }
     if (!strcmp(key, "u_save")) { int u = atoi(val); if (u >= 1 && u <= (int)PR_NU) (void)mb_put(MB_EV_USAVE, 0, 0, 0, 0, 0, u - 1); return; }
 #ifdef FR_HQ
     if (!strcmp(key, "p_hq")) { (void)mb_put(MB_EV_HQ, 0, 0, 0, 0, 0, atoi(val) != 0); return; }   /* dev / test only (no page):

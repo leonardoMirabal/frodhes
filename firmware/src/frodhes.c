@@ -2054,6 +2054,7 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "savemode")) snprintf(v, n, "%u", pr_save_mode);
     else if (!strcmp(key, "savepend")) snprintf(v, n, "%u", pr_save_pending);   /* a preset save waiting for silence */
     else if (!strcmp(key, "undo")) snprintf(v, n, "%u", set.undo_valid);
+    else if (!strcmp(key, "undo_preset")) snprintf(v, n, "%u", set.undo_preset);   /* the undo copy's preset, index + 1 */
     else if (!strcmp(key, "dirty")) snprintf(v, n, "%u", set_pend_new);   /* a setup change waits to be saved */
     else if (!strcmp(key, "sqdirty")) snprintf(v, n, "%u", (unsigned)(sq_dirty || sq_sv_step));   /* a pattern change waits to be saved (or its save runs) */
     else if (!strcmp(key, "saving")) snprintf(v, n, "%u", set_saving);   /* the settings' save runs (settings_poll) */
@@ -2092,7 +2093,7 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
 FR_COLD static void host_dump(void)
 {
     static const char *const K[] = {"header", "preset", "page", "vpage", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
-                                    "arpn", "arpv", "arpends", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
+                                    "arpn", "arpv", "arpends", "chord", "play", "rec", "notes", "savemode", "undo", "undo_preset", "dirty", "ledduty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "fxdrv", "label0", "card0", "label1", "card1", "label2", "card2",
                                     "label3", "card3", "bpm10", "setbpm", "vresp", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "sqdirty", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
     char key[24], v[128];                 /* (v: rowbox writes up to 72 + NUL: gcc -Wformat-truncation) */

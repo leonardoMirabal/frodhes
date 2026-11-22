@@ -55,7 +55,7 @@ def reads(out):
 @pytest.fixture(scope="module")
 def presets():
     """the engine of every preset (program change / set preset)"""
-    out = tms.run(sum((["set preset %d" % i, "render 4", "get ui_engine"] for i in range(39)), []))
+    out = tms.run(sum((["set preset %d" % i, "render 4", "get ui_engine"] for i in range(35)), []))
     return [int(v) for k, v in out if k == "ui_engine"]
 
 

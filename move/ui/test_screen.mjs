@@ -353,18 +353,18 @@ test("ARPEGGIO: the FM-1 page's cards (MODE RATE OCT GATE) and HOLD, after TEMPO
     assert.equal(titles.indexOf("ARPEGGIO"), titles.indexOf("TEMPO") + 1, titles.join(","));
 });
 
-test("PRESET: F01-F23, the Move-only F24-F61 (index 39..), then U01-U16 (index u_first 23..) (2026-11-01)", () => {
+test("PRESET: F01-F19, the Move-only F20-F57 (index 35..), WHURLI F58-F61 (73..), then U01-U16 (index u_first 19..) (2026-11-01)", () => {
     const s = new Screen().open();
     assert.equal(s.plugin.get("preset_count"), "77");
-    assert.equal(s.plugin.names[39], "F24 STAGE77 ECHO");
+    assert.equal(s.plugin.names[35], "F20 STAGE77 ECHO");
     const seen = [];
     for (let i = 0; i < 80; i++) { s.knob(4, 1); s.wait(50); s.plugin.apply(); seen.push(s.plugin.preset); }
     const want = [];
-    for (let i = 1; i < 23; i++) want.push(i);
-    for (let i = 39; i < 77; i++) want.push(i);
-    for (let i = 23; i < 39; i++) want.push(i);
+    for (let i = 1; i < 19; i++) want.push(i);
+    for (let i = 35; i < 77; i++) want.push(i);
+    for (let i = 19; i < 35; i++) want.push(i);
     assert.deepEqual(seen.slice(0, want.length), want);                  // the knob's order
-    assert.ok(seen.slice(want.length).every((v) => v === 38), "the last one stays");
+    assert.ok(seen.slice(want.length).every((v) => v === 34), "the last one stays");
     for (let i = 0; i < 20; i++) { s.knob(4, -1); s.wait(50); s.plugin.apply(); }
     assert.equal(s.plugin.preset, 72, "back from U16 through U01 to F57");
 });

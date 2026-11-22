@@ -252,8 +252,8 @@ def test_plugin_state_round_trip():
 
 @NO_GLUE
 def test_plugin_presets_and_hierarchy_per_type():
-    """preset / preset_count (77) / preset_name for every preset: F01-F23 (0-22), U01-U16 (23-38, empty in a new data
-    folder: nothing loads), the Move-only F24-F61 (39-76, move/move_presets.h); after each load the panel holds the
+    """preset / preset_count (77) / preset_name for every preset: F01-F19 (0-18), U01-U16 (19-34, empty in a new data
+    folder: nothing loads), the Move-only F20-F57 (35-72) and WHURLI F58-F61 (73-76, move/move_presets.h); after each load the panel holds the
     preset's full parameter list exactly as the review read it back (move/presets/proposed_records.txt: A for F01-F19,
     so the Move's F01-F19 are the FM-1's presets.c records; B / C for F20-F57); get_param("ui_hierarchy") is
     move_ui.h's text and ui_engine (the VOICE levels' gate) follows each TYPE (eng_pages.h TYPE_UI)"""
@@ -267,16 +267,18 @@ def test_plugin_presets_and_hierarchy_per_type():
     pv = {int(ln.split()[1]): [int(x) for x in ln.split()[2:]] for ln in out if ln.startswith("pv ")}
     assert len(pr) == 77 and len(pv) == 77
     rec = gp.records()
-    want = {i: rec[("F%02d" % (i + 1), "A")][1] for i in range(23)}
+    want = {i: rec[("F%02d" % (i + 1), "A")][1] for i in range(19)}
     for num, name, _, base, v, pairs in gp.table():
-        want[39 + num - gp.FIRST] = pairs
+        want[35 + num - gp.FIRST] = pairs
+    for k in range(4):                                             # WHURLI: presets.c's F20-F23, at 73-76 on the Move
+        want[73 + k] = rec[("F%02d" % (20 + k), "A")][1]
     prev = None
     for i, (_, idx, cur, name) in enumerate(pr):
         if cur == str(i):                                          # loaded: its own name
-            n = i + 1 if i < 23 else i - 23 + 1 if i < 39 else i - 39 + gp.FIRST
-            assert re.match(r"[FU]%02d " % n, name) and name[0] == ("U" if 23 <= i < 39 else "F"), (i, name)
+            n = i + 1 if i < 19 else i - 19 + 1 if i < 35 else i - 35 + gp.FIRST if i < 73 else i - 73 + 58
+            assert re.match(r"[FU]%02d " % n, name) and name[0] == ("U" if 19 <= i < 35 else "F"), (i, name)
         else:                                                      # an empty user slot: nothing loads
-            assert 23 <= i < 39 and cur == prev, (i, cur, prev)
+            assert 19 <= i < 35 and cur == prev, (i, cur, prev)
         prev = cur
         if i in want:
             assert cur == str(i), (i, cur)
@@ -284,9 +286,15 @@ def test_plugin_presets_and_hierarchy_per_type():
             bad = [(n, x, got[pid] if pid < len(got) else None) for n, pid, x in want[i] if pid >= len(got) or got[pid] != x]
             assert not bad, (i, name, bad)                         # (parameter, want, got)
     names = {i: name for i, (_, _, _, name) in enumerate(pr)}
+    old = [ln.split(" ", 1) for ln in open(os.path.join(ROOT, "tests", "baselines", "move_preset_index_0913.txt")).read().splitlines()
+           if not ln.startswith("#")]
+    assert len(old) == 73 and [(int(i), names[int(i)]) for i, n in old if not 19 <= int(i) < 35] == \
+        [(int(i), n) for i, n in old if not 19 <= int(i) < 35], \
+        "a Move preset index (a saved setlist, a program change) names another preset than on 0.9.13"
+    assert [names[i] for i in range(73, 77)] == ["F58 WHURLI", "F59 REED GROWL", "F60 REED TREM", "F61 REED SOFT"], names
     import gen_move_presets as gp                           # (the names follow presets.c's order: --sync by name)
     last = gp.table()[-1]
-    assert names[39] == "F24 STAGE77 ECHO" and names[76] == "F%02d %s" % (last[0], last[1]), (names[39], names[76])
+    assert names[35] == "F20 STAGE77 ECHO" and names[72] == "F%02d %s" % (last[0], last[1]), (names[35], names[72])
     ty = {int(ln.split()[1]): ln.split()[2] for ln in out if ln.startswith("type ")}
     assert [ty[t] for t in range(6)] == ["0", "0", "0", "0", "1", "2"]
     hl = [int(ln.split()[1]) for ln in out if ln.startswith("hierarchy ")]

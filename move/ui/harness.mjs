@@ -44,13 +44,16 @@ export class Plugin {
         const src = fs.readFileSync(path.join(ROOT, "firmware", "src", "presets.c"), "utf8");
         const fn = [...src.match(/PR_FNAME\[PR_NF\] = \{([^}]*)\}/)[1].matchAll(/"([^"]*)"/g)].map((m) => m[1]);
         const nm = (c, i, n) => (c + String(i + 1).padStart(2, "0") + " " + n).slice(0, 16).replace(/ +$/, "");
-        this.names = fn.map((n, i) => nm("F", i, n));
+        // the Move's own order (move_bridge.h mb_e2i): F01-F19, U01-U16, the variants F20-F57 (move_presets.h MB_PX_NAME), then
+        // WHURLI F58-F61 (presets.c's F20-F23): no index moved when WHURLI came
+        const F19 = 19;
+        this.names = fn.slice(0, F19).map((n, i) => nm("F", i, n));
         for (let i = 0; i < 16; i++) this.names.push(nm("U", i, "----"));
-        this.nf = fn.length;
-        // the Move-only factory presets after the user slots (move/move_presets.h MB_PX_NAME: F20..)
+        this.nf = F19;
         const px = fs.readFileSync(path.join(ROOT, "move", "move_presets.h"), "utf8");
         const pn = [...px.match(/MB_PX_NAME\[MB_PX_N\] = \{([^}]*)\}/)[1].matchAll(/"([^"]*)"/g)].map((m) => m[1]);
-        pn.forEach((n, i) => this.names.push(nm("F", fn.length + i, n)));
+        pn.forEach((n, i) => this.names.push(nm("F", F19 + i, n)));
+        fn.slice(F19).forEach((n, i) => this.names.push(nm("F", F19 + pn.length + i, n)));
         this.used = new Array(16).fill(false);        // (u_names: the used user slots by name, the rest empty)
         this.queue = [];
         this.reads = 0;

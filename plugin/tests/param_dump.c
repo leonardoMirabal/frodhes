@@ -36,7 +36,7 @@ int main(void)
         PV(id) = keep;
     }
     for (id = 0; id < PR_NF + MB_PX_N; id++) {
-        const char *nm = id < PR_NF ? PR_FNAME[id] : MB_PX_NAME[id - PR_NF];
+        const char *nm = id < 19u ? PR_FNAME[id] : id < 19u + MB_PX_N ? MB_PX_NAME[id - 19u] : PR_FNAME[id - MB_PX_N];   /* F01-F19, the variants F20-F57, WHURLI F58-F61 */
         int n = (int)strlen(nm);
         while (n > 0 && nm[n - 1] == ' ') n--;
         printf("F %u %.*s\n", (unsigned)id, n, nm);

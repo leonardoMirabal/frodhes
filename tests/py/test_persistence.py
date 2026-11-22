@@ -347,16 +347,20 @@ def test_0913_settings_record_preset_index():
     (23 factory presets): F01..F19 stay, U01..U16 move up by 4, once. The same record with flags2 bit 4 set (a record
     this build saved) is left as it is. The record stays 256 B at SET_VER 2: only a flags2 bit was added."""
     fl = flash_file("v0913")
-    for pre, flags2, want in ((0, 3, 0), (18, 3, 18), (19, 3, 23), (22, 3, 26), (30, 3, 34), (34, 3, 38),
-                              (23, 7, 23), (26, 7, 26), (18, 7, 18)):
+    # (preset, flags2, its undo copy's preset as saved: index + 1) -> (preset, undo) after the load
+    cases = (((0, 3, 0), (0, 0)), ((18, 3, 19), (18, 19)), ((19, 3, 20), (23, 24)), ((22, 3, 23), (26, 27)),
+             ((30, 3, 31), (34, 35)), ((34, 3, 35), (38, 39)), ((19, 3, 1), (23, 1)), ((5, 3, 35), (5, 39)),
+             ((23, 7, 24), (23, 24)), ((26, 7, 39), (26, 39)), ((18, 7, 19), (18, 19)))
+    for (pre, flags2, undo), (want, want_undo) in cases:
         img = bytearray(b"\xff" * 5 * SECTOR)
         r = v1_record({P["TYPE"]: 1, P["DRIVE"]: 20}, preset=pre)
-        r[O_VER], r[O_FLAGS], r[O_FLAGS2], r[O_UNDO_PRESET] = 2, 255, flags2, 20 if flags2 == 3 else 24
+        r[O_VER], r[O_FLAGS], r[O_FLAGS2], r[O_UNDO_PRESET] = 2, 255, flags2, undo
         put_settings(img, r)
         open(fl, "wb").write(img)
-        b = boot(f"v0913-{pre}-{flags2}", fl, check_preset=want < 23 + 9)   # (U10.. are empty: no starter)
+        b = boot(f"v0913-{pre}-{flags2}-{undo}", fl, check_preset=want < 23 + 9, lines=["100 dump"])   # (U10.. are empty: no starter)
         s = b.state(100)
         assert s["preset"] == str(want) and not b.fails, (pre, flags2, s["preset"], b.fails)
+        assert s["undo_preset"] == str(want_undo), (pre, flags2, undo, s["undo_preset"])   # the undo copy moves with it
         if want == NO_PRESET:
             assert (s["p.0"], s["p.1"]) == ("1", "20"), (pre, s["p.0"], s["p.1"])
 

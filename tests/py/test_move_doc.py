@@ -134,10 +134,10 @@ def test_dropped_ccs():
 
 
 def test_program_change_of_the_move_presets():
-    """F24-F61 are program change 39-76: the preset number plus 15 (move_bridge.h MB_PX_BASE = PR_NF + PR_NU)"""
+    """F20-F61 are program change 35-76: the preset number plus 15 (move_bridge.h: MB_E_VAR 35, the Move's index space, mb_e2i)"""
     br = _src("move", "move_bridge.h")
-    assert "#define MB_PX_BASE (PR_NF + PR_NU)" in br and "16u + PR_NF" in br
-    assert "Program change 39-76 loads\nF24-F61: the preset number plus 15 (F24 is 39, F61 is 76)." in DOC
+    assert "#define MB_E_VAR 35u" in br and "#define MB_E_UFIRST 19u" in br and "mb_e2i" in br
+    assert "Program change 35-76 loads\nF20-F61: the preset number plus 15 (F20 is 35, F57 is 72, F58 WHURLI is 73, F61 is 76)." in DOC
     assert "number less 15" not in DOC
 
 

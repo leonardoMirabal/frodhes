@@ -124,7 +124,7 @@ def test_programs(tmp_path):
         r = subprocess.run([HOST_SIM, LIB, "dump"], capture_output=True, text=True, env=env(tmp_path), cwd=tmp_path)
         d = json.loads(r.stdout[r.stdout.index("{"):])
         progs = d["programs"]
-        assert len(progs) == 61 and progs[0] == "F01 STAGE 77" and progs[60].startswith("F61"), progs
+        assert len(progs) == 61 and progs[0] == "F01 STAGE 77" and progs[56].startswith("F57") and progs[57] == "F58 WHURLI" and progs[60] == "F61 REED SOFT", progs
         assert len(d["params"]) == 72
 
 

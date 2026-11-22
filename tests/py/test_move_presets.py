@@ -22,7 +22,7 @@ def test_header_current():
 
 def test_every_variant_once_named():
     rows = gp.table()
-    assert len(rows) == 38 and [r[0] for r in rows] == list(range(24, 62))
+    assert len(rows) == 38 and [r[0] for r in rows] == list(range(20, 58))
     assert [(r[3], r[4]) for r in rows] == [("F%02d" % f, v) for f in range(1, 20) for v in "BC"]
     names = [r[1] for r in rows]
     assert len(set(names)) == len(names)

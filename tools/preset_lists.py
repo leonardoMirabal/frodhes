@@ -3,9 +3,9 @@
 """The three factory preset lists against presets.c: the FM-1's (firmware/src/presets.c, the source), the Move's and
 the plugin's, by name and by every parameter's value after the load.
 
-  F01-F23  presets.c's PR_FNAME / PR_FDATA (each record over params.c's defaults): the Move and the plugin compile
+  F01-F19  presets.c's (F20-F23, WHURLI, follow as F58-F61) PR_FNAME / PR_FDATA (each record over params.c's defaults): the Move and the plugin compile
            presets.c itself, so a new or changed factory preset reaches them with the build; this proves it did
-  F24-F61  the Move's variants (move/move_presets.h, tools/gen_move_presets.py): each B / C record as
+  F20-F57  the Move's variants (move/move_presets.h, tools/gen_move_presets.py): each B / C record as
            move/presets/proposed_records.txt has it (params.c's later ids at their defaults), the names NAMES; and
            every A record there must be presets.c's (tools/gen_move_presets.py --sync carries a change over)
 
@@ -56,9 +56,13 @@ def expected():
         if not a or diff:
             bad.append("records F%02d A: %s against presets.c (tools/gen_move_presets.py --sync)"
                        % (k + 1, ", ".join(diff[:6]) if a else "missing"))
+    first, tail = out[:gp.NMOVE_A], out[gp.NMOVE_A:]      # (presets.c's F20.. WHURLI follow the variants on the Move and the plugin)
+    out = first
     for num, name, _, base, v, pairs in gp.table():
         got = {n: x for n, _, x in pairs}
         out.append(("F%02d %s" % (num, name), [got.get(n, rows[n][0]) for n in ids]))
+    for k, (lab, vals) in enumerate(tail):
+        out.append(("F%02d %s" % (len(out) + 1, lab[4:]), vals))
     return ids, out, bad
 
 
@@ -113,8 +117,8 @@ def move_list(n):
     if r.returncode:
         raise SystemExit("move: test_bridge presets failed: %s" % (r.stdout + r.stderr)[-800:])
     names, vals = parse(r.stdout)
-    # (the Move's list: F01-F23 at 0-22, the user's U01-U16 at 23-38, F24-F61 from 39)
-    return [(" ".join(names[i][3:]), vals[i][:n]) for i in sorted(names) if i < 23 or i >= 39]
+    # (the Move's list: F01-F19 at 0-18, the user's U01-U16 at 19-34, F20-F57 at 35-72, WHURLI's F58-F61 at 73-76)
+    return [(" ".join(names[i][3:]), vals[i][:n]) for i in sorted(names) if i < 19 or i >= 35]
 
 
 def main():
@@ -125,7 +129,7 @@ def main():
     a = ap.parse_args()
     ids, want, bad = expected()
     print("presets.c: %d factory presets, the Move's variants %d, %d parameters each"
-          % (23, len(want) - 23, len(ids)))
+          % (19, len(want) - 19, len(ids)))
     print(("FAIL  " if bad else "ok    ") + "records: every A is presets.c's" + ("" if not bad else ": " + bad[0]))
     for what, get in (("plugin", None if a.no_plugin else lambda: plugin_list(a.plugin, len(ids))),
                       ("move", None if a.no_move else lambda: move_list(len(ids)))):

@@ -369,8 +369,8 @@ static int api_tests(const char *so)
             CHECK(api->get_param(in, "ui_hierarchy", gbuf, sizeof gbuf) < 0, "ui_hierarchy refused (own screen)");
     }
     CHECK(strstr(get(in, "chain_params"), "p_type") != NULL, "chain_params served");
-    CHECK(!strcmp(get(in, "preset_count"), "77"), "77 presets: F01-F23, U01-U16, the Move's F24-F61 (%s)", gbuf);
-    CHECK(!strcmp(get(in, "u_first"), "23"), "U01 is index 23, as on the FM-1 (%s)", gbuf);
+    CHECK(!strcmp(get(in, "preset_count"), "77"), "77 presets: F01-F19, U01-U16, the Move's F20-F57, WHURLI F58-F61 (%s)", gbuf);
+    CHECK(!strcmp(get(in, "u_first"), "19"), "U01 is index 19, as on the FM-1 (%s)", gbuf);
     CHECK(!strncmp(get(in, "preset_name"), "F01", 3), "preset name (%s)", gbuf);
     api->set_param(in, "p_tone", "-20"); render(in, 3);
     CHECK(!strcmp(get(in, "p_tone"), "-20"), "p_tone -20 (%s)", gbuf);
@@ -544,24 +544,30 @@ static int api_tests(const char *so)
         CHECK(lines > 100, "the timer ring has the callbacks (%u lines)", lines);
         CHECK(strstr(get(in, "dev_cpu"), "max_us=") != NULL, "dev_cpu");
     }
-    {   /* the Move-only factory presets (2026-11-01): F24-F61 at 39-76, by the key and by program change 39-76 */
-        uint8_t pc[3] = { 0xC0, 44, 0 };
-        api->set_param(in, "preset", "39"); render(in, 3);
-        CHECK(!strcmp(get(in, "preset"), "39") && !strcmp(get(in, "preset_name"), "F24 STAGE77 ECHO"), "preset 39: F24 (%s)", gbuf);
-        CHECK(!strcmp(get(in, "dev:pv13"), "2") && !strcmp(get(in, "dev:pv16"), "9"), "F24: F01 B's analog echo on 1/4 (DL_SW %s)", gbuf);
-        api->set_param(in, "preset", "76"); render(in, 3);
+    {   /* the Move-only factory presets (2026-11-01): F20-F57 at 35-72 and WHURLI F58-F61 at 73-76 (no earlier index moved), by the key and by program change */
+        uint8_t pc[3] = { 0xC0, 40, 0 };
+        api->set_param(in, "preset", "35"); render(in, 3);
+        CHECK(!strcmp(get(in, "preset"), "35") && !strcmp(get(in, "preset_name"), "F20 STAGE77 ECHO"), "preset 35: F20 (%s)", gbuf);
+        CHECK(!strcmp(get(in, "dev:pv13"), "2") && !strcmp(get(in, "dev:pv16"), "9"), "F20: F01 B's analog echo on 1/4 (DL_SW %s)", gbuf);
+        api->set_param(in, "preset", "72"); render(in, 3);
         /* (the last one's name follows presets.c's order: tools/preset_lists.py checks every name and value) */
-        CHECK(!strncmp(get(in, "preset_name"), "F61 ", 4) && strlen(gbuf) > 4, "preset 76: F61 (%s)", gbuf);
+        CHECK(!strncmp(get(in, "preset_name"), "F57 ", 4) && strlen(gbuf) > 4, "preset 72: F57 (%s)", gbuf);
+        api->set_param(in, "preset", "73"); render(in, 3);
+        CHECK(!strcmp(get(in, "preset"), "73") && !strcmp(get(in, "preset_name"), "F58 WHURLI"), "preset 73: F58 WHURLI, the FM-1's F20 (%s)", gbuf);
+        api->set_param(in, "preset", "76"); render(in, 3);
+        CHECK(!strcmp(get(in, "preset"), "76") && !strcmp(get(in, "preset_name"), "F61 REED SOFT"), "preset 76: F61 (%s)", gbuf);
         api->set_param(in, "preset", "77"); render(in, 3);
         CHECK(!strcmp(get(in, "preset"), "76"), "preset 77: none, F61 stays (%s)", gbuf);
         api->on_midi(in, pc, 2, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 3);
-        CHECK(!strcmp(get(in, "preset"), "44") && !strcmp(get(in, "preset_name"), "F29 FELT ECHO"), "program change 44: F29 (%s)", gbuf);
+        CHECK(!strcmp(get(in, "preset"), "40") && !strcmp(get(in, "preset_name"), "F25 FELT ECHO"), "program change 40: F25 (%s)", gbuf);
         pc[1] = 77; api->on_midi(in, pc, 2, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 3);
-        CHECK(!strcmp(get(in, "preset"), "44"), "program change 77: none (%s)", gbuf);
+        CHECK(!strcmp(get(in, "preset"), "40"), "program change 77: none (%s)", gbuf);
         pc[1] = 33; api->on_midi(in, pc, 2, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 3);
         CHECK(!strcmp(get(in, "preset"), "17") && !strncmp(get(in, "preset_name"), "F18 ", 4), "program change 33: F18, as on the FM-1 (%s)", gbuf);
-        pc[1] = 76; api->on_midi(in, pc, 2, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 3);
-        CHECK(!strcmp(get(in, "preset"), "76"), "program change 76: F61 (%s)", gbuf);
+        pc[1] = 72; api->on_midi(in, pc, 2, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 3);
+        CHECK(!strcmp(get(in, "preset"), "72"), "program change 72: F57 (%s)", gbuf);
+        pc[1] = 73; api->on_midi(in, pc, 2, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 3);
+        CHECK(!strcmp(get(in, "preset"), "73") && !strcmp(get(in, "preset_name"), "F58 WHURLI"), "program change 73: F58 WHURLI (%s)", gbuf);
     }
     api->set_param(in, "preset", "2"); render(in, 3);
     CHECK(!strcmp(get(in, "preset"), "2") && !strncmp(get(in, "preset_name"), "F03", 3), "preset F03 (%s)", gbuf);
@@ -775,7 +781,7 @@ static int presets(const char *so)
     if (!in) { printf("FAIL create\n"); return 1; }
     render(in, 400);
     printf("count %s\n", get(in, "preset_count"));
-    for (i = 0; i < atoi(get(in, "preset_count")) || i < 39; i++) {
+    for (i = 0; i < atoi(get(in, "preset_count")) || i < 35; i++) {
         snprintf(b, sizeof b, "%d", i); api->set_param(in, "preset", b); render(in, 3);
         printf("preset %d %s", i, get(in, "preset")); printf(" %s\n", get(in, "preset_name"));
         printf("pv %d", i);                                   /* the panel after the load: every parameter */
@@ -967,7 +973,7 @@ static int persist(const char *so, const char *dir, int save)
             CHECK(!strcmp(get(in, "p_spread"), "0"), "F01: SPREAD 0 (%s)", gbuf);
             api->set_param(in, "preset", "50"); render(in, 5);
             CHECK(!strncmp(get(in, "preset_name"), "F35 ", 4), "a Move-only preset between: F35 (%s)", gbuf);
-            api->set_param(in, "preset", "27"); render(in, 5);
+            api->set_param(in, "preset", "23"); render(in, 5);
             CHECK(!strcmp(get(in, "p_spread"), "77") && !strncmp(get(in, "preset_name"), "U05 ", 4), "U05: its SPREAD 77 back (%s)", gbuf);
             if (!fails) printf("ok    u_save 5: U05 saved and loaded, u_names lists it\n");
         }
