@@ -645,7 +645,7 @@ def help_json(m, levels, reach):
         pages.append({"title": lvl["name"][:HELP_MAX], "lines": lines})
     kids.append({"title": "Pages", "children": pages})
     midi = help_lines("Notes with velocity and release velocity, pitch bend (piano types), sustain CC 64 with half "
-                      "pedal, program change 0-15 F01-F16, 16-31 U01-U16, 32-34 F17-F19, MIDI clock. Every "
+                      "pedal, program change 0-15 F01-F16, 16-31 U01-U16, 32-72 F17-F57, 73-76 F58-F61 (WHURLI), MIDI clock. Every "
                       "parameter has its CC, as on the FM-1:")
     for p in m["pids"]:
         cc = m["params"][p]["cc"]
