@@ -124,7 +124,7 @@ names the Move (default `ableton@move.local`).
      from the working tree, writes `build/gate_m/update/report.md` and `report.json` (per changed render: the
      engines it plays, the RMS and peak change, the residual re REF, the largest octave-band change, the spectral
      centroid, the length) and then rewrites `move16.sha256`. The guard: a render may change only when its script
-     plays one of `--engines` (CC 79 0..95 VIBES, 96..127 MARIMBA, CC 80 a Rhodes type, a program change any engine).
+     plays one of `--engines` (CC 79 0..95 VIBES, 96..127 MARIMBA, CC 80 an electric piano type, a program change any engine).
      A Rhodes-only change that moves a VIBES or MARIMBA render, or one of their effect renders, stops it (exit 1,
      nothing written). `--engines vibes,marimba` for the bars, `--engines fx` for an effect change (every render may
      change). A render that changes at 16 voices while `renders.sha256` keeps REF's hash is listed: Gate R was not

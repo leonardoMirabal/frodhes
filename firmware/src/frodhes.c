@@ -1491,7 +1491,8 @@ FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == 79u) {                                   /* the bar types: each TYPE of the bar engine (TYPE_ENGINE 1) from
                                                         * its TYPE_CC79 value up to the next one's: VIBES 0..95 (every
                                                         * value 0.9.3 used for it up to 95, 0 and 64 included), MARIMBA
-                                                        * 96..127 (0.9.4). CC 80 keeps the four Rhodes types as before */
+                                                        * 96..127 (0.9.4). CC 80: the electric pianos, WHURLI included
+                                                        * (params.c TYPE_CC80) */
         uint32_t t, pick = 4u;
         for (t = 0; t < N_TYPE_N; t++) if (TYPE_ENGINE[t] == 1u && v >= TYPE_CC79[t]) pick = t;
         type_pick((int32_t)pick);                      /* (a TYPE change: the motor starts) */
@@ -1521,9 +1522,11 @@ FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
                                                         * TYPE, is the motor's own CC 47 now) */
             else if (id == P_DRV_SW) x = drv_cc84(v);   /* the drive TYPE by band (params.c DRV_CC84) */
             else if (PARAMS[id].hi == 2u) x = v < 43u ? 0 : v < 86u ? 1 : 2;
-            else if (id == P_TYPE) x = (int32_t)(v >> 5);   /* the Rhodes types, as before; bar types: CC 79 */
+            else if (id == P_TYPE) x = (int32_t)TYPE_CC80[(v & 127u) * 5u >> 7];   /* the electric pianos in five bands (params.c
+                                                        * TYPE_CC80); bar types: CC 79 */
             else if (PARAMS[id].hi < 127u) x = (int32_t)(v * (PARAMS[id].hi + 1u) >> 7);
             if (id == P_CMP_SW && x && !PV(P_CMP_SW)) cmp_wake(1);   /* CC 106 on: as the panel (ui.c cmp_wake) */
+            else if (id == P_TYPE) type_pick(x);        /* as ALGORITHM: WHURLI starts at its neutral voicing */
             else param_set(id, x);
             if (id == P_DL_SYNC || id == P_TW_SYNC || id == P_CP_SYNC || id == P_PH_SYNC || id == P_MOT_SYNC ||
                 id == P_LFO_SYNC) tempo_sync_publish();   /* (LFO SYNC by CC 77 kept its free rate: the audit) */

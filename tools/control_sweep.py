@@ -148,8 +148,8 @@ def _cases():
             if eng == "marimba":                 # struck again every 800 ms during the sweep, each strike latching the
                 sk |= {"jump", "stuck", "pitch"}  # knob's value then: the sweep's level and pitch follow the strikes
             add(Case(f"{eng} {lab}", cc, engine=eng, page="VOICE", skip=sk))
-    add(Case("rhodes TYPE", 80, kind="select", statics=[16, 48, 80, 112], page="FRODHES"))
-    add(Case("rhodes TYPE SPREAD", 80, [(105, 100)], kind="select", statics=[16, 48, 80, 112], page="FRODHES"))
+    add(Case("rhodes TYPE", 80, kind="select", statics=bands(4), page="FRODHES"))
+    add(Case("rhodes TYPE SPREAD", 80, [(105, 100)], kind="select", statics=bands(4), page="FRODHES"))
     for lab, cc in (("DEPTH", 48), ("SPEED", 49), ("SHAPE", 50)):
         add(Case(f"vibes MOTOR {lab}", cc, [(47, 127)], engine="vibes", kind="pitch" if lab == "SPEED" else "knob",
                  page="MOTOR"))

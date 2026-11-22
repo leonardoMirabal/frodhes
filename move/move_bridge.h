@@ -750,7 +750,7 @@ static void mb_pop(mb_ev_t *c)
 
 /* ---- parameters (M1-06): MOVE_KEYS[] (move/module/move_ui.h, generated) maps a key to a parameter id or a ui.c
  * slot. Writes go the panel's way (ui.c slot_turn: its side effects, cmp_wake, the motor's auto-on memory, the synced
- * rates), set to an absolute value; not as CCs (CC 80 is the Rhodes types only, CC 85 and 86 / 87 are combined) */
+ * rates), set to an absolute value; not as CCs (CC 80 is the electric pianos only, CC 85 and 86 / 87 are combined) */
 static int32_t mb_slot_get(uint32_t s) { int32_t hi; return slot_val(s, &hi); }
 static void mb_slot_abs(uint32_t s, int32_t x)
 {

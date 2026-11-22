@@ -18,8 +18,8 @@
 3600 midi 0x91 64 100
 4100 expect rms > -60
 4200 midi 0x81 64 0
-# CC 80 TYPE: 104 = DYNO (as before); CC 79 = the bar types (VIBES); both play
-4400 midi 0xB0 80 104
+# CC 80 TYPE: 96 = DYNO (77..102; 103..127 is WHURLI); CC 79 = the bar types (VIBES); both play
+4400 midi 0xB0 80 96
 4500 midi 0x90 60 100
 5000 expect rms > -60
 5100 midi 0x80 60 0

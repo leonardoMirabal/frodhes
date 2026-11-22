@@ -317,12 +317,12 @@ def _type():
 
 @case("TYPE-CC80-79")
 def _type_cc():
-    """CC 80 bands of 32 pick the Rhodes types, CC 79 0 VIBES (the first bar band starts at 0), CC 79 127 MARIMBA
-    (VIBES 0..95, MARIMBA 96..127: every value is test_bars_compat's)"""
-    w = R(CLEAN + [cc(30, 80, 70), "40 dump", cc(50, 79, 0), "60 dump", cc(70, 80, 127), "80 dump", cc(90, 79, 127),
-                   "100 dump", cc(110, 79, 64), "120 dump"], 140)
-    got = [w.state(t)["p.0"] for t in (40, 60, 80, 100, 120)]
-    assert got == ["2", "4", "3", "5", "4"], got
+    """CC 80's five bands pick the electric pianos (96 DYNO, 127 WHURLI), CC 79 0 VIBES (the first bar band starts at
+    0), CC 79 127 MARIMBA (VIBES 0..95, MARIMBA 96..127: every value is test_bars_compat's)"""
+    w = R(CLEAN + [cc(30, 80, 70), "40 dump", cc(50, 79, 0), "60 dump", cc(70, 80, 96), "80 dump", cc(90, 79, 127),
+                   "100 dump", cc(110, 79, 64), "120 dump", cc(130, 80, 127), "140 dump"], 160)
+    got = [w.state(t)["p.0"] for t in (40, 60, 80, 100, 120, 140)]
+    assert got == ["2", "4", "3", "5", "4", "6"], got
     return 1.0, 1.0, "ok"
 
 
