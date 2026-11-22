@@ -75,7 +75,7 @@ FR_COLD static void eng_set_type(uint32_t t) { rh_type = (uint8_t)(t < N_TYPE_N 
 FR_COLD static int eng_is_bars(void) { return 0; }       /* the engine plays bars for the TYPE last set (not the ISR latch) */
 FR_COLD static void eng_bar_knob(uint32_t k, uint32_t v) { (void)k; (void)v; }
 #endif
-#define PR_NF_SET 19u              /* presets.c PR_NF: the factory presets (12 before VIBES, 14 before MARIMBA, 16
+#define PR_NF_SET 23u              /* presets.c PR_NF: the factory presets (12 before VIBES, 14 before MARIMBA, 16
                                     * before F17..F19, 0.9.5) */
 static const char *const N_TW[] = {"OFF", "TRM", "WAH"};
 static const char *const N_CP[] = {"OFF", "CHO", "PHA"};   /* "PHA": records before 0.4 */
@@ -210,7 +210,8 @@ typedef struct {
     uint8_t panel4[16], undo4[16];             /* the EQ: ids 64..79 (flags2 bit 2: present; else their defaults) */
     uint8_t seq_rsv[13];
     uint8_t flags2;                            /* 0.9.5: 1 = the preset index in the 19-factory layout (U01 = 19);
-                                                * 2 = panel4 / undo4 present (the EQ) */
+                                                * 2 = panel4 / undo4 present (the EQ); 4 = the 23-factory layout
+                                                * (F20..F23 WHURLI: U01 = 23) */
 #if BOARD_SMK37
     uint8_t smk_mst[2];                        /* 0.9.6, SMK-37: K1's MASTER + 1, little endian (0, every record
                                                 * before: smk_input.h's 724; frodhes_smk.h smk_master_stored) */
@@ -347,7 +348,7 @@ FR_COLD static void params_defaults(void)
     set.ver = SET_VER;
     set.flags = 4u | 32u | 64u | 128u;   /* a fresh record: its preset index is already in today's layout (19 factory:
                                     * flags2 1), its PERFORM knobs today's defaults */
-    set.flags2 = 1u | 2u;
+    set.flags2 = 1u | 2u | 4u;
     set.preset = 0;
     set.bpm10 = 1200;
     set.clock = 1;                 /* EXT: follows MIDI clock when it comes (USB or TRS) */
@@ -414,7 +415,19 @@ FR_COLD static void params_sanitize(void)
                                    (set.undo_preset >= 17u + 9u && set.undo_preset < 17u + 12u));
         if (set.preset >= 16u && set.preset < 16u + 16u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 16u);
         if (set.undo_preset >= 17u && set.undo_preset < 17u + 16u) set.undo_preset = (uint8_t)(set.undo_preset + PR_NF_SET - 16u);
-        set.flags2 |= 1u;
+        set.flags2 |= 1u | 4u;                       /* (PR_NF_SET is today's layout: bit 4 is done too) */
+    }
+    if (!(set.flags2 & 4u)) {                        /* records with 19 factory presets (up to 0.9.13): U01 was 19; F20..F23
+                                                      * (WHURLI) come before the user bank now, so every user index moves
+                                                      * up by 4 (a factory index, below 19, stays) */
+#ifdef FR_HQ                                         /* the Move: its F20..F57 variants follow the user bank (35..72), they move too */
+        if (set.preset >= 19u && set.preset < 19u + 16u + 38u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 19u);
+        if (set.undo_preset >= 20u && set.undo_preset < 20u + 16u + 38u) set.undo_preset = (uint8_t)(set.undo_preset + PR_NF_SET - 19u);
+#else
+        if (set.preset >= 19u && set.preset < 19u + 16u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 19u);
+        if (set.undo_preset >= 20u && set.undo_preset < 20u + 16u) set.undo_preset = (uint8_t)(set.undo_preset + PR_NF_SET - 19u);
+#endif
+        set.flags2 |= 4u;
     }
     if (!(set.flags & 64u)) params_perf_update();     /* records up to 0.9.4: the PERFORM defaults (above) */
     if (!(set.flags & 128u)) {                        /* records before the reverb's TYPE: its ids at their defaults

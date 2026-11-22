@@ -40,7 +40,7 @@
 3900 midi 0xC0 13 0
 4000 expect led 5 0
 4000 expect state vcard.2.0 OFF
-# PRESETS after F14: F15, F16 (MARIMBA), F17..F19 (0.9.5), then U01 (the user presets follow the factory ones),
+# PRESETS after F14: F15, F16 (MARIMBA), F17..F19 (0.9.5), F20..F23 (WHURLI), then U01 (the user presets follow the factory ones),
 # back: F14, F13
 4100 turn 6 1
 4120 turn 6 1
@@ -48,6 +48,10 @@
 4160 turn 6 1
 4180 turn 6 1
 4200 turn 6 1
+4220 turn 6 1
+4240 turn 6 1
+4260 turn 6 1
+4280 turn 6 1
 4700 expect led 5 1
 4700 expect state header U01_SUIT_TRM
 4800 turn 6 -1
@@ -56,12 +60,16 @@
 4860 turn 6 -1
 4880 turn 6 -1
 4900 turn 6 -1
+4920 turn 6 -1
+4940 turn 6 -1
+4960 turn 6 -1
+4980 turn 6 -1
 5400 expect led 5 0
 5400 expect state header F14_VIBES_ECHO
 5500 turn 6 -1
 6000 expect led 5 0
 6000 expect state vcard.2.0 ON
-# F17..F19 by program change 32..34 (0.9.5: 0..15 F01..F16 and 16..31 U01..U16 as before); 35 is no preset
+# F17..F23 by program change 32..38 (0.9.5: 0..15 F01..F16 and 16..31 U01..U16 as before); 39 is no preset
 6100 midi 0xC0 32 0
 6200 expect state header F17_TAPE_ECHO
 6200 expect preset
@@ -73,13 +81,28 @@
 6600 expect state header F19_WARM_DRIVE
 6600 expect preset
 6600 expect sound
-6700 midi 0xC0 35 0
+6650 midi 0xC0 35 0
+6660 expect state header F20_WHURLI
+6660 expect state preset 19
+6670 midi 0xC0 38 0
+6680 expect state header F23_REED_SOFT
+6680 expect state preset 22
+6690 midi 0xC0 34 0
+6700 midi 0xC0 39 0
 6800 expect state header F19_WARM_DRIVE
 6800 expect state preset 18
-# PRESETS from F19: U01 (one detent), back: F19
+# PRESETS from F19: F20..F23 and U01 (five detents), back: F19
 6900 turn 6 1
+6920 turn 6 1
+6940 turn 6 1
+6960 turn 6 1
+6980 turn 6 1
 7400 expect state header U01_SUIT_TRM
-7400 expect state preset 19
+7400 expect state preset 23
 7500 turn 6 -1
+7520 turn 6 -1
+7540 turn 6 -1
+7560 turn 6 -1
+7580 turn 6 -1
 8000 expect state header F19_WARM_DRIVE
 8100 end

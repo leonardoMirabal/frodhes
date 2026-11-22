@@ -292,7 +292,7 @@ INSTALL
    Keep the folder's name exactly as it is: the MPC finds the plugin's pages by it.
 2. Insert the drive. If Frodhes does not appear, restart the MPC (a rescan happens at start).
 3. Make a Plugin program (or a plugin track) and pick Frodhes from the plugin browser under "External Plugins".
-   Play it from the pads or a keyboard. The presets F01-F57 are in the plugin's preset list.
+   Play it from the pads or a keyboard. The presets F01-F61 are in the plugin's preset list.
 
 REMOVE IT (also if it misbehaves)
 - Delete the folder "{folder}" from "VST2 Plugins" and restart the MPC. Projects that used it still open, without

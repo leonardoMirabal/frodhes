@@ -1357,7 +1357,7 @@ def stress(r, rep):
     return c == 0 and z == 0, f"clicks {c}, zero runs {z}, peak {rep['stress']['peak_db']:.1f} dBFS, clipped {rep['stress']['clipped']}"
 
 
-PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 MARIMBA, F17..F19 Rhodes (0.9.5)
+PR_COUNT = 23          # F01..F23 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 MARIMBA, F17..F19 Rhodes (0.9.5), F20..F23 WHURLI
 # each factory preset's loudness re F01 (LU) and its tolerance, the chord A3 C4 E4 v100 (CHORD): the Rhodes presets
 # 0 +- 1.5 (AGENTS.md); VIBES 2.5 dB above the Rhodes types (MANUAL), so F13 / F14 +2.5 +- 1.0; MARIMBA is set 2.5 dB
 # above too, but its strikes are held under -0.5 dBFS (the user's level decision "A", 2026-10-20): F16 WOOD ECHO (echo,
@@ -1384,7 +1384,13 @@ PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1
                  "VIBES": (-1.1, 1.0), "VIBES ECHO": (-0.9, 1.0), "MARIMBA": (-5.2, 1.0), "WOOD ECHO": (-8.1, 1.0),
                  "TAPE ECHO": (0.0, 1.0), "DREAM": (-2.1, 1.0), "U02": (-1.3, 1.0), "U03": (-1.6, 1.0),
                  "U04": (0.5, 1.0), "U05": (-1.2, 1.0), "U06": (-1.4, 1.0), "U07": (-1.2, 1.0), "U08": (-1.9, 1.0),
-                 "U09": (-1.1, 1.0)}
+                 "U09": (-1.1, 1.0),
+                 "WHURLI": (-2.7, 1.0), "REED GROWL": (-2.5, 1.0), "REED TREM": (-2.8, 1.0), "REED SOFT": (-3.0, 1.0)}
+# WHURLI F20..F23 (0.9.14): the reed type's velocity law is steeper than the pianos' (v127 about +8 dB over STAGE 77 at the
+# same LEVEL, v100 about +4 by critical-band loudness), so the LEVEL that keeps a v127 chord under the limiter-idle
+# ceiling (-3.0 dBFS: quick.py's peak check) reads -2.5..-3.0 LU re F01 on this v100 chord by LUFS and +1.1..+3.8 by
+# critical-band loudness (tests: build host, 4 chords A3 F3 C4 D4, 1.1 s after the onset), inside the factory range
+# (-2.4..+3.9 by critical band)
 # THRESHOLD (0.9.13, the chord-robust rows: presets on PR_CHORDS' mean, A3-C4-E4 alone until then): RESO SWEEP 1.2 ->
 # 2.3, BELL DYNO 0 -> -1.4 (+-1.5 as before), WARM DRIVE 0 -> 1.8 (+-1.5). Their level re F01 moves with the notes (a
 # resonant filter's sweep, the bell's register, a drive): host, one core / two cores, on the six chords F11 +2.48 /
@@ -1419,7 +1425,7 @@ PR_GAP_RETAKES = 2      # presets(): a take with a recording gap is taken again 
 
 def preset_pc(p):
     """the program change of row p (0-based: F01..F19, then U01..): presets.c preset_of_pc, PC 0..15 F01..F16,
-    16..31 U01..U16, 32..34 F17..F19"""
+    16..31 U01..U16, 32..38 F17..F23"""
     return p if p < 16 else p + 16 if p < PR_COUNT else p - PR_COUNT + 16
 
 

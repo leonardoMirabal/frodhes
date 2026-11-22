@@ -1092,14 +1092,15 @@ static void mb_user_save(uint32_t u)
     mb.usaves++;
 }
 
-/* ---- the Move-only factory presets (move/move_presets.h, tools/gen_move_presets.py): F20-F57, the factory preset
+/* ---- the Move-only factory presets (move/move_presets.h, tools/gen_move_presets.py): F24-F61, the factory preset
  * review's B and C variants of F01-F19 (the user, 2026-11-01); the FM-1 keeps presets.c as it is (Gate S). Their
- * index (set.preset, the "preset" key, a program change) comes after presets.c's: 0-18 F01-F19 and 19-34 U01-U16 as
- * on the FM-1 (store.bin and the states keep their meaning), then 35-72 F20-F57. Program change 35-72 loads them
- * (presets.c preset_of_pc stops at 34); Frodhes' own screen browses F01-F57, then U01-U16 (u_first) */
+ * index (set.preset, the "preset" key, a program change) comes after presets.c's: 0-22 F01-F23 and 23-38 U01-U16 as
+ * on the FM-1, then 39-76 F24-F61 (a settings record from before F20..F23 WHURLI is moved up by 4: params.c flags2 bit 4).
+ * Program change 39-76 loads them (presets.c preset_of_pc stops at 38); Frodhes' own screen browses F01-F61, then
+ * U01-U16 (u_first) */
 #define MB_PX_BASE (PR_NF + PR_NU)
 #define MB_PR_N (MB_PX_BASE + MB_PX_N)
-_Static_assert(MB_PR_N <= 255u && MB_PX_FIRST == PR_NF + 1u, "the presets' index fits set.preset; F20 follows F19");
+_Static_assert(MB_PR_N <= 255u && MB_PX_FIRST == PR_NF + 1u, "the presets' index fits set.preset; F24 follows F23");
 _Static_assert(MB_PX_BASE == 16u + PR_NF, "program change 16 + PR_NF.. is the Move-only presets (preset_of_pc: 255)");
 static int mb_pr_values(uint32_t idx, uint8_t *p)    /* preset_values, with the Move-only presets: -1 none there */
 {

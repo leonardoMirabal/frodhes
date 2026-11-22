@@ -39,7 +39,7 @@ def test_selftest_every_engine():
                     continue
             if b is None:
                 pytest.skip("no Chromium / Chrome for Playwright")
-            for q in ("selftest", "selftest&vibes", "selftest&marimba"):
+            for q in ("selftest", "selftest&vibes", "selftest&marimba", "selftest&whurli"):
                 pg = b.new_page()
                 errs = []
                 pg.on("pageerror", lambda e: errs.append(str(e)))

@@ -910,9 +910,9 @@ static int coretest(void)
 
     /* ---- presets: factory, browse, UNDO, user files, program changes */
     n0 = VT->preset_count(ca);
-    CHECK(n0 >= 57, "57 factory presets at least (%d)", n0);
+    CHECK(n0 >= 61, "61 factory presets at least (%d)", n0);
     CHECK(!VT->preset_info(ca, 0, &pi) && !strcmp(pi.tag, "F01") && pi.name[0] && !pi.user, "F01 '%s'", pi.name);
-    CHECK(!VT->preset_info(ca, 56, &pi) && !strcmp(pi.tag, "F57"), "F57 '%s'", pi.name);
+    CHECK(!VT->preset_info(ca, 60, &pi) && !strcmp(pi.tag, "F61"), "F61 '%s'", pi.name);
     VT->preset_load(ca, 4); run(a, 2);
     idx = VT->preset_current(ca, &pi, &ed);
     CHECK(idx == 4 && !ed && !strcmp(pi.tag, "F05"), "F05 loaded (%d %s %s edited %d)", idx, pi.tag, pi.name, ed);
@@ -937,7 +937,7 @@ static int coretest(void)
     /* a user preset */
     VT->param_set(ca, P_TONE_, 111); VT->param_set(ca, P_RV_DEPTH_, 99); run(a, 2);
     idx = VT->preset_save(ca, "Test \"One\"");
-    CHECK(idx >= 57 && VT->preset_count(ca) == n0 + 1, "saved as a user preset (%d)", idx);
+    CHECK(idx >= 61 && VT->preset_count(ca) == n0 + 1, "saved as a user preset (%d)", idx);
     run(a, 2);
     CHECK(VT->preset_current(ca, &pi, &ed) == idx && pi.user && !ed && !strcmp(pi.name, "Test _One_"),
           "the sound is that preset now (%s '%s' edited %d)", pi.tag, pi.name, ed);
@@ -957,25 +957,25 @@ static int coretest(void)
     CHECK(VT->preset_current(ca, &pi, &ed) == 4, "program change 4: F05 (%d)", VT->preset_current(ca, &pi, &ed));
     blk_n = 0; ev_midi(0, 0xC0, 40, 0); run(a, 3);
     CHECK(VT->preset_current(ca, &pi, &ed) == 24, "program change 40: F25 (%d)", VT->preset_current(ca, &pi, &ed));
-    {   /* the FM-1's map, on to F57: 0..15 F01..F16, 32 + k F17 + k (32..34 F17..F19 as the device, 35..72 F20..F57) */
-        static const int PC[][2] = { { 0, 0 }, { 15, 15 }, { 32, 16 }, { 34, 18 }, { 35, 19 }, { 50, 34 }, { 72, 56 } };
+    {   /* the FM-1's map, on to F61: 0..15 F01..F16, 32 + k F17 + k (32..38 F17..F23 as the device, 39..76 F24..F61) */
+        static const int PC[][2] = { { 0, 0 }, { 15, 15 }, { 32, 16 }, { 34, 18 }, { 35, 19 }, { 50, 34 }, { 76, 60 } };
         for (k = 0; k < (int)(sizeof PC / sizeof PC[0]); k++) {
             blk_n = 0; ev_midi(0, 0xC0, (uint8_t)PC[k][0], 0); run(a, 3);
             CHECK(VT->preset_current(ca, &pi, &ed) == PC[k][1], "program change %d: F%02d (%d)", PC[k][0], PC[k][1] + 1,
                   VT->preset_current(ca, &pi, &ed));
         }
-        blk_n = 0; ev_midi(0, 0xC0, 73, 0); run(a, 3);
-        CHECK(VT->preset_current(ca, &pi, &ed) == 56, "program change 73: no preset there, F57 stays");
+        blk_n = 0; ev_midi(0, 0xC0, 77, 0); run(a, 3);
+        CHECK(VT->preset_current(ca, &pi, &ed) == 60, "program change 77: no preset there, F61 stays");
     }
     blk_n = 0; ev_midi(0, 0xC0, 16, 0); run(a, 3);
-    CHECK(VT->preset_current(ca, &pi, &ed) == 57 && VT->param_get(ca, P_TONE_) == 111, "program change 16: U01 (%d)",
+    CHECK(VT->preset_current(ca, &pi, &ed) == 61 && VT->param_get(ca, P_TONE_) == 111, "program change 16: U01 (%d)",
           VT->preset_current(ca, &pi, &ed));
     VT->settings_get(ca, &s); s.pgm_change = 0; VT->settings_set(ca, &s); run(a, 2);
     blk_n = 0; ev_midi(0, 0xC0, 4, 0); run(a, 3);
-    CHECK(VT->preset_current(ca, &pi, &ed) == 57, "program changes off: ignored");
+    CHECK(VT->preset_current(ca, &pi, &ed) == 61, "program changes off: ignored");
     s.pgm_change = 1; VT->settings_set(ca, &s); run(a, 2);
-    printf("ok    presets: %d (57 factory + user), browse with wrap, UNDO both ways, a user file saved and loaded, "
-           "program changes (0..15 F01..F16, 32..72 F17..F57, U01; off)\n", VT->preset_count(ca));
+    printf("ok    presets: %d (61 factory + user), browse with wrap, UNDO both ways, a user file saved and loaded, "
+           "program changes (0..15 F01..F16, 32..76 F17..F61, U01; off)\n", VT->preset_count(ca));
 
     /* ---- SUSTAIN, FX BYPASS, the on-screen keyboard, the meters, velocity, MIDI CHANNEL */
     n_outs = 0;
@@ -1110,8 +1110,8 @@ static int coretest(void)
     /* the user preset seen by a new instance, deleted */
     CHECK((b = create()) != 0, "a third instance");
     cb = VT->core_of(b);
-    CHECK(VT->preset_count(cb) == n0 + 1 && !VT->preset_info(cb, 57, &pi) && pi.user, "the user preset in a new instance");
-    CHECK(VT->preset_delete(cb, 57) == 0 && VT->preset_count(cb) == n0 && VT->preset_delete(cb, 3) != 0, "deleted (a factory one cannot be)");
+    CHECK(VT->preset_count(cb) == n0 + 1 && !VT->preset_info(cb, 61, &pi) && pi.user, "the user preset in a new instance");
+    CHECK(VT->preset_delete(cb, 61) == 0 && VT->preset_count(cb) == n0 && VT->preset_delete(cb, 3) != 0, "deleted (a factory one cannot be)");
     b->destroy(b);
     a->destroy(a);
     entry->deinit();

@@ -12,7 +12,7 @@
 
 #define FRUI_W 960                 /* logical size */
 #define FRUI_H 600
-#define FRUI_PL_MAX 320            /* the PRESETS sheet's entries: the 57 factory presets and the first user ones */
+#define FRUI_PL_MAX 320            /* the PRESETS sheet's entries: the 61 factory presets and the first user ones */
 #define FRUI_PL_PAGER 100          /* the PRESETS sheet's pager (an FRW_PAGER id beside REVERB's) */
 
 /* the two effect panels' tabs */

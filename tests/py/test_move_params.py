@@ -146,7 +146,7 @@ def test_settings_options_match_the_cards():
 def test_every_preset_loads():
     """program change 0-15 = F01-F16, 32-34 = F17-F19 (a factory preset by its number on the header), 16-31 the user
     slots (U01.. when the slot holds one, else nothing changes); every parameter within its range after each"""
-    lines, t, pcs = ["50 dump"], 100, list(range(35))
+    lines, t, pcs = ["50 dump"], 100, list(range(39))
     for pc in pcs:
         lines += [f"{t} midi 0xC0 {pc} 0", f"{t + 40} dump"]
         t += 60
@@ -252,8 +252,8 @@ def test_plugin_state_round_trip():
 
 @NO_GLUE
 def test_plugin_presets_and_hierarchy_per_type():
-    """preset / preset_count (73) / preset_name for every preset: F01-F19 (0-18), U01-U16 (19-34, empty in a new data
-    folder: nothing loads), the Move-only F20-F57 (35-72, move/move_presets.h); after each load the panel holds the
+    """preset / preset_count (77) / preset_name for every preset: F01-F23 (0-22), U01-U16 (23-38, empty in a new data
+    folder: nothing loads), the Move-only F24-F61 (39-76, move/move_presets.h); after each load the panel holds the
     preset's full parameter list exactly as the review read it back (move/presets/proposed_records.txt: A for F01-F19,
     so the Move's F01-F19 are the FM-1's presets.c records; B / C for F20-F57); get_param("ui_hierarchy") is
     move_ui.h's text and ui_engine (the VOICE levels' gate) follows each TYPE (eng_pages.h TYPE_UI)"""
@@ -262,21 +262,21 @@ def test_plugin_presets_and_hierarchy_per_type():
     if r is None:
         pytest.skip("no Linux arm64 and no frodhes-move:bookworm image (make move-image)")
     out = r.stdout.splitlines()
-    assert "count 73" in out, r.stdout[-2000:]
+    assert "count 77" in out, r.stdout[-2000:]
     pr = [ln.split(" ", 3) for ln in out if ln.startswith("preset ")]
     pv = {int(ln.split()[1]): [int(x) for x in ln.split()[2:]] for ln in out if ln.startswith("pv ")}
-    assert len(pr) == 73 and len(pv) == 73
+    assert len(pr) == 77 and len(pv) == 77
     rec = gp.records()
-    want = {i: rec[("F%02d" % (i + 1), "A")][1] for i in range(19)}
+    want = {i: rec[("F%02d" % (i + 1), "A")][1] for i in range(23)}
     for num, name, _, base, v, pairs in gp.table():
-        want[35 + num - gp.FIRST] = pairs
+        want[39 + num - gp.FIRST] = pairs
     prev = None
     for i, (_, idx, cur, name) in enumerate(pr):
         if cur == str(i):                                          # loaded: its own name
-            n = i + 1 if i < 19 else i - 19 + 1 if i < 35 else i - 35 + gp.FIRST
-            assert re.match(r"[FU]%02d " % n, name) and name[0] == ("U" if 19 <= i < 35 else "F"), (i, name)
+            n = i + 1 if i < 23 else i - 23 + 1 if i < 39 else i - 39 + gp.FIRST
+            assert re.match(r"[FU]%02d " % n, name) and name[0] == ("U" if 23 <= i < 39 else "F"), (i, name)
         else:                                                      # an empty user slot: nothing loads
-            assert 19 <= i < 35 and cur == prev, (i, cur, prev)
+            assert 23 <= i < 39 and cur == prev, (i, cur, prev)
         prev = cur
         if i in want:
             assert cur == str(i), (i, cur)
@@ -286,7 +286,7 @@ def test_plugin_presets_and_hierarchy_per_type():
     names = {i: name for i, (_, _, _, name) in enumerate(pr)}
     import gen_move_presets as gp                           # (the names follow presets.c's order: --sync by name)
     last = gp.table()[-1]
-    assert names[35] == "F20 STAGE77 ECHO" and names[72] == "F%02d %s" % (last[0], last[1]), (names[35], names[72])
+    assert names[39] == "F24 STAGE77 ECHO" and names[76] == "F%02d %s" % (last[0], last[1]), (names[39], names[76])
     ty = {int(ln.split()[1]): ln.split()[2] for ln in out if ln.startswith("type ")}
     assert [ty[t] for t in range(6)] == ["0", "0", "0", "0", "1", "2"]
     hl = [int(ln.split()[1]) for ln in out if ln.startswith("hierarchy ")]

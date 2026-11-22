@@ -4,7 +4,7 @@
  * every value (params.c param_text; the enums' full names), so the plugin's value texts are the panel's, never typed in
  * twice.
  *   param_dump                    one "P id lab hi def fmt cc" line per parameter, then "T id v text" per value,
- *                                 then "F i name" per factory preset (F01..F19 presets.c, F20..F57 move_presets.h)
+ *                                 then "F i name" per factory preset (F01..F23 presets.c, F24..F61 move_presets.h)
  * Built by the generator with the plugin's engine flags (plugin/CMakeLists.txt FRP_ENGINE_DEFS). */
 #define main host_main_unused
 #include "../../firmware/src/frodhes.c"

@@ -98,7 +98,7 @@ The screen shows one page with four cards. **K1-K4** always change the four card
 - The buttons jump to pages: **HOME** to PERFORM (press again for the FRODHES page), **EDIT** to CHORD, **ENV** to
   PHASER, **LFO** to TREM/WAH, **SEL** to DELAY, **ARP** to ARPEGGIO, **SEQ** to SEQUENCER, **GLO** to TEMPO and
   the setup pages. On its own page, the button switches that effect or tool on and off.
-- **ALGORITHM** changes the instrument (TYPE) from any page: four electric pianos, VIBES and MARIMBA.
+- **ALGORITHM** changes the instrument (TYPE) from any page: five electric pianos (the last is WHURLI), VIBES and MARIMBA.
 - **FX** switches all effects but the compressor off and on, to compare with the dry instrument.
 
 On PERFORM the four knobs are DRIVE, FILTER, DELAY and REVERB. Turning one up switches that effect on. You can put
@@ -106,7 +106,7 @@ other controls on these knobs on the ASSIGN page.
 
 ### Presets
 
-Turn **PRESETS** to browse. **F01-F19** are the factory sounds; **U01-U16** are your own. A preset loads when you
+Turn **PRESETS** to browse. **F01-F23** are the factory sounds; **U01-U16** are your own. A preset loads when you
 stop turning.
 
 Loaded one by mistake? Hold **SAVE** for a moment to go back to the sound you had. Hold it again to return.
@@ -170,7 +170,7 @@ DELAY · REVERB · REVERB 2 · TEMPO · SCALE · CHORD · ARPEGGIO · LFO · SEQ
 DISPLAY · DISPLAY 2
 
 **The VOICE pages belong to the instrument.** Each TYPE brings its own controls, four to a page: the electric piano
-types have two (VOICE 1/3: TONE, BARK, BELL, HAMMER; VOICE 2/3: DECAY, RELEASE, NOISE, TUNE), VIBES three
+types (WHURLI too) have two (VOICE 1/3: TONE, BARK, BELL, HAMMER; VOICE 2/3: DECAY, RELEASE, NOISE, TUNE), VIBES three
 (VOICE 1/4: STRIKE, MALLET, TUBE, WEIGHT; 2/4: RING, DAMPER, NOISE, TUNE; 3/4: the motor), MARIMBA two (VOICE 1/3:
 STRIKE, MALLET, TUBE, WEIGHT; 2/3: RING, MUTE, NOISE, TUNE). The last VOICE page is the same on every TYPE: the
 [velocity page](#voice-33-velocity) (RESPONSE, TOUCH, KEY VEL). SELECT walks them in order; changing the TYPE
@@ -216,8 +216,8 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | --- | --- |
 | **SELECT** (knob) | Next / previous page |
 | **K1 K2 K3 K4** | The four cards on the current page |
-| **ALGORITHM** (knob) | The TYPE (the four electric pianos, VIBES and MARIMBA), from any page (on SEQUENCER: the step cursor) |
-| **PRESETS** (knob) | Browse the sounds F01–F19 and your U01–U16 (loads when you stop turning; on SEQUENCER: bar by bar) |
+| **ALGORITHM** (knob) | The TYPE (the five electric pianos, VIBES and MARIMBA), from any page (on SEQUENCER: the step cursor) |
+| **PRESETS** (knob) | Browse the sounds F01–F23 and your U01–U16 (loads when you stop turning; on SEQUENCER: bar by bar) |
 | **MASTER** (knob) | Volume (it glides as you turn it, without steps) |
 | **HOME** | PERFORM page; press again for the main page (titled FRODHES), and back |
 | **EDIT** | CHORD page; press again there to switch chord mode on / off (it comes back with the last chord type) |
@@ -279,7 +279,7 @@ The page after PERFORM (press **HOME** twice) carries the instrument's name as i
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **TYPE** | The instrument: **STAGE 77** (the classic stage piano), **SUITCASE** (clean and round, with no bark, through its own amp and four 12-inch speakers in a closed cabinet: warm lows, a rolled-off treble), **EARLY FELT** (early felt hammers: rounder, darker), **BELL DYNO** (a modified, bell-like voicing: glassy), **VIBES**, the vibraphone (see [VIBES](#vibes-the-vibraphone)), or **MARIMBA** (see [MARIMBA](#marimba)). Applies to the next notes. |
+| K1 | **TYPE** | The instrument: **STAGE 77** (the classic stage piano), **SUITCASE** (clean and round, with no bark, through its own amp and four 12-inch speakers in a closed cabinet: warm lows, a rolled-off treble), **EARLY FELT** (early felt hammers: rounder, darker), **BELL DYNO** (a modified, bell-like voicing: glassy), **WHURLI**, a reed piano with a growl (see [WHURLI](#whurli-the-reed-piano)), **VIBES**, the vibraphone (see [VIBES](#vibes-the-vibraphone)), or **MARIMBA** (see [MARIMBA](#marimba)). Applies to the next notes. |
 | K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE 1/3's TONE). On VIBES and MARIMBA: **MALLET** |
 | K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE 1/3's BELL). On VIBES: **MOTOR** on / off; on MARIMBA: **TUBE** |
 
@@ -338,6 +338,40 @@ presses, so they follow how you are playing (after 5 s without a press, KEY VEL 
 milliseconds after the key closes, while the reading comes in. The notes the keys send over USB-MIDI carry the same
 velocity. Each key learns how firmly you can press it: a press as firm as your firmest so far plays a little under 127 (119 at KEY VEL 96, 122 from KEY VEL 107 up), and only a clearly firmer one reaches 127, so velocity 127 stays for the hardest hits. TOUCH and KEY VEL belong to the FM-1, not to a preset (a preset does not change them). The browser
 emulator has no velocity: its keys play at KEY VEL.
+
+### WHURLI: the reed piano
+
+Turn **ALGORITHM** (or the TYPE card) to **WHURLI** and the FM-1 plays a reed electric piano. Where the other electric
+pianos strike a tine, each WHURLI key plucks a flat steel reed, and a pickup beside it turns the reed's motion into the
+sound: a thin, reedy, slightly hollow note when you play softly, and a throaty growl, a bark, when you strike hard. It
+is built from physics (the reed's own modes, the felt hammer, the pickup and the small amp and speaker around it) and
+plays no samples.
+
+![The main page on WHURLI](manual/img/piano-whurli.png?v=70637e38)
+
+![VOICE 1/3 on WHURLI: TONE, BARK, BELL and HAMMER](manual/img/voice1-whurli.png?v=846c210e)
+
+WHURLI uses the electric piano's own pages, so what you know carries over: VOICE 1/3 (TONE, BARK, BELL, HAMMER),
+VOICE 2/3 (DECAY, RELEASE, NOISE, TUNE) and the [velocity page](#voice-33-velocity). Its keys run from A1 to C7: a note
+outside that range plays nothing. Pitch bend works as on the other electric pianos.
+
+**How the growl works:**
+
+- **BARK** is how much growl there is: how far the reed swings into the pickup when you strike hard. At 0 the note
+  stays clean at every velocity; the higher it goes, the earlier in the velocity range the growl starts and the more of
+  it there is. Soft notes stay sweet at any setting, and the hardest strikes level off instead of overdriving.
+- **HAMMER** is the hardness of the felt: a harder hammer reaches the growl at a lower velocity and makes it brighter
+  and sharper; a softer one is rounder and takes more effort to growl.
+- **RESPONSE** (VOICE 3/3) sets how hard you have to play. **FULL** saves the growl for the top of the range and keeps
+  soft notes very soft; **LIGHT** lifts soft and medium notes, so the growl comes in with a lighter hand. The tone is
+  the same in both: only the level differs.
+
+BARK sets how much, HAMMER where it starts and how sharp it is, RESPONSE how hard you have to play. For a sweet, nearly
+clean reed piano take BARK down and HAMMER softer; for a growl on every chord, BARK up, HAMMER harder, RESPONSE LIGHT.
+
+**Presets:** **F20 WHURLI** (dry), **F21 REED GROWL** (bark and a hard hammer), **F22 REED TREM** (the tremolo
+piano) and **F23 REED SOFT** (soft and mellow). Over MIDI, a Program Change (35 to 38) loads them; the TYPE
+controller (CC 80) reaches the other four electric pianos only.
 
 ### COMPRESSOR
 
@@ -955,7 +989,7 @@ MARIMBA (0–95 VIBES); Program Change 14 / 15 loads F15 / F16. **Polyphony:** 1
 
 ![Browsing presets](manual/img/browse.png?v=0757e8ef)
 
-Turn **PRESETS** to browse: **F01–F19** are the factory sounds (F13 and F14 are VIBES, F15 and F16 MARIMBA), **U01–U16** your own, after F19. A preset loads when you stop
+Turn **PRESETS** to browse: **F01–F23** are the factory sounds (F13 and F14 are VIBES, F15 and F16 MARIMBA, F20 to F23 WHURLI), **U01–U16** your own, after F23. A preset loads when you stop
 turning (after 0.4 s). If you did not mean to, **hold SAVE** (0.7 s) to go back to the sound you had before the
 last load (the top line names it again); hold it again to return (redo). The first time Frodhes
 starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
@@ -966,7 +1000,8 @@ starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
 | F05 WARM 77 | F06 PUNCH 77 | F07 BALLAD | F08 SUIT TREM |
 | F09 70S PHASER | F10 FUNK WAH | F11 RESO SWEEP | F12 LUSH CHO |
 | F13 VIBES | F14 VIBES ECHO | F15 MARIMBA | F16 WOOD ECHO |
-| F17 TAPE ECHO | F18 DREAM | F19 WARM DRIVE | |
+| F17 TAPE ECHO | F18 DREAM | F19 WARM DRIVE | F20 WHURLI |
+| F21 REED GROWL | F22 REED TREM | F23 REED SOFT | |
 
 **New in 0.9.10: the factory presets changed, and so did some of their numbers.** Every electric piano preset was
 voiced again (its tone, bark, bell, hammer and decay, its compressor and its reverb), and four are new: F05 WARM 77,
@@ -1001,6 +1036,10 @@ the tail.
 | F17 TAPE ECHO | A bright piano (the bark low) into the tape echo, dotted 1/8 on the tempo, a plate |
 | F18 DREAM | Felt hammers, a slow stereo pan, chorus, a quarter-note analog echo and a long, dark, moving hall |
 | F19 WARM DRIVE | A warm KHLON drive under a chorus, a dotted-1/8 tape echo on the tempo and a plate |
+| F20 WHURLI | Dry: the reed piano as it is, a gentle compressor, a trace of hall |
+| F21 REED GROWL | More bark and a harder hammer, a brighter tone: the growl on every hard strike; a 3:1 compressor keeps it level, a short plate |
+| F22 REED TREM | The tremolo piano: the amplitude tremolo at about 5 Hz, a moderate bark and a plate |
+| F23 REED SOFT | A soft hammer, little bark, a darker tone, a slow chorus and a hall: the mellow reed piano |
 
 The echoes and sweeps marked "on the tempo" follow the TEMPO page's BPM (120 when you start; PLAY taps it), so they
 fit what you play. Each factory preset is as loud as 0.9.9's preset of the same name, measured by its loudness across
@@ -1035,7 +1074,7 @@ again to store it, or **HOME** (or **OCT−**) to cancel. The name is made from 
 ![Save mode](manual/img/save.png?v=9673d68e)
 
 The save waits for silence: the bottom line says **SAVING...** until the sound has died away, then **SAVED**. INFINITE's SUSTAIN and FREEZE hold their tail without end, so while one of them is on the save waits and the bottom line says **SAVE WAITS: SUSTAIN ON** or **SAVE WAITS: FREEZE ON**; turn DECAY down (or change the type, or switch the reverb OFF), let the tail die away, and the save goes through. The settings are saved the same way, once it is quiet. A user
-preset can be overwritten but not deleted, and browsing skips the empty ones. There is no factory reset: F01–F19 are
+preset can be overwritten but not deleted, and browsing skips the empty ones. There is no factory reset: F01–F23 are
 always there to start again from.
 
 **What is kept, and when:**
@@ -1169,7 +1208,7 @@ also send their notes to the computer.
 **MIDI out is USB only:** the FM-1's keys, chord mode, the arpeggiator and the sequencer send their notes on CHANNEL
 (channel 1 when ALL). Notes that come in over MIDI are not sent back, but what the arpeggiator or the sequencer
 makes from them is, so switch MIDI thru off in your computer's software. No clock, CCs or program changes are sent.
-The TRS jack is MIDI in only. **Program Change** 0–15 loads F01–F16, 16–31 loads U01–U16, and 32–34 loads F17–F19.
+The TRS jack is MIDI in only. **Program Change** 0–15 loads F01–F16, 16–31 loads U01–U16, and 32–38 loads F17–F23.
 
 **Pitch bend** (the pitch wheel, USB or TRS, on CHANNEL) bends the electric piano types ±2 semitones: every note that sounds
 glides with the wheel and a note struck while the wheel is moved starts at the bent pitch; every sounding note moves
@@ -1295,7 +1334,7 @@ an uneven stream record it cleanly.
 | **MIDI out** | USB only: notes from the keys, chord mode, arpeggiator and sequencer. No clock, CC or program change out |
 | **Clock** | CLOCK INT or EXT: 24 PPQN in from USB or TRS, 40–240 BPM; the synced effects, the arpeggiator and the sequencer locked to its pulses; Start plays from bar 1, Continue from where Stop left it, Stop stops |
 | **Tempo** | 40–240 BPM; tap tempo on PLAY |
-| **Presets** | 19 factory (F01–F19) + 16 user (U01–U16); Program Change 0–15 (F01–F16), 16–31 (U01–U16), 32–34 (F17–F19) |
+| **Presets** | 23 factory (F01–F23) + 16 user (U01–U16); Program Change 0–15 (F01–F16), 16–31 (U01–U16), 32–38 (F17–F23) |
 | **Effects** | COMP → EQ → DRIVE → FILTER → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter |
 | Compressor | Threshold 0 to −40 dB, ratio 1.5:1–20:1, attack 0.1–50 ms, release 20 ms–1.5 s (CC 109), makeup 0 to +24 dB |
 | EQ | LOW shelf 120 Hz, MID bell (Q 0.9) 200 Hz–5 kHz, HIGH shelf 5 kHz; each ±15 dB; CC 34–37 |

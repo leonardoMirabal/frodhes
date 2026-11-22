@@ -12,7 +12,7 @@ parameter in params.c without one fails the generator, and tests/py/test_plugin_
 The plugin's own parameters (not the app's) have ids from 0x10000 (append-only too). 0x10000 was ENGINE (the sound
 path, CLASSIC or HQ) until the plugin became HQ only (24 voices): its id stays reserved, never reused (FRP_ID_OWN0,
 the own ids' base: MIDI learn's codes count from it). Then TUNE (the
-app's setting, -50..+50 cents); PRESET (the factory presets F01..F57: a host's generic view can browse them); SUSTAIN
+app's setting, -50..+50 cents); PRESET (the factory presets F01..F61: a host's generic view can browse them); SUSTAIN
 (the latch, as a CC 64) and FX BYPASS (the FX button).
 
   tools/gen_plugin_params.py            write plugin/gen/params_map.h
@@ -157,7 +157,7 @@ def dump():
             q = ln.split(" ", 2)
             assert int(q[1]) == len(fact)
             fact.append(f"F{len(fact) + 1:02d} {q[2] if len(q) > 2 else ''}".strip())
-    assert n == len(params) and all(len(text[d["id"]]) == d["hi"] + 1 for d in params) and len(fact) == 57
+    assert n == len(params) and all(len(text[d["id"]]) == d["hi"] + 1 for d in params) and len(fact) == 61
     return params, text, fact
 
 

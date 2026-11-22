@@ -37,7 +37,7 @@ NEW_VARIANTS = os.path.join(SRC_DIR, "new_variants.json")   # B / C for a preset
 OUT = os.path.join(ROOT, "move", "move_presets.h")
 DOC = os.path.join(ROOT, "docs", "MOVE.md")                 # its appendix table of F20-F57 (doc_table below)
 FACT = os.path.join(ROOT, "plugin", "ui", "tools", "frui_fact.h")   # the plugin UI renderer's PRESETS sheet list
-FIRST = 20                                  # F20: the first Move-only preset (after presets.c's 19)
+FIRST = 24                                  # F24: the first Move-only preset (after presets.c's 23)
 NAME_MAX = 12                               # presets.c preset_t name[12]: "F20 " + 12 = the 16 the screen shows
 
 # Each variant's name and its line for docs/MOVE.md live in variants.json ("name", "line"), with the variant: --sync

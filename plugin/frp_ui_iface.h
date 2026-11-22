@@ -45,7 +45,7 @@ void frp_ui_param_begin(frp_core *c, uint32_t id);
 void frp_ui_param_set(frp_core *c, uint32_t id, int v);
 void frp_ui_param_end(frp_core *c, uint32_t id);
 
-/* ---- presets: the factory presets F01..F57 (F01..F19 the FM-1's, F20..F57 the Move's variants), then the user's own
+/* ---- presets: the factory presets F01..F61 (F01..F23 the FM-1's, F24..F61 the Move's variants), then the user's own
  * (files in frp_ui_preset_dir(), sorted by name). Indices run 0 .. count - 1 in that order; the factory ones never
  * move, a user preset's index can change when files are added or removed (frp_ui_rev bumps). */
 typedef struct {
@@ -54,7 +54,7 @@ typedef struct {
     int user;                                /* 1: a user file (it can be overwritten or deleted) */
 } frp_preset_info;
 int frp_ui_preset_count(const frp_core *c);
-int frp_ui_preset_factory_count(void);       /* 57 */
+int frp_ui_preset_factory_count(void);       /* 61 */
 int frp_ui_preset_info(const frp_core *c, int idx, frp_preset_info *out);    /* 0 ok, -1 no such index */
 /* what plays: its index (-1: a sound not in the list, e.g. a deleted user preset or a state from elsewhere), its
  * tag and name in *out, and *edited = 1 when the sound differs from the preset as stored */

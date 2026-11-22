@@ -25,14 +25,14 @@ the FM-1's screen, knobs and keys. Play it from your computer keyboard or a MIDI
 
 ## What you get
 
-- **Six instruments**: four electric pianos (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO), a vibraphone with its
-  motor (VIBES) and a marimba (MARIMBA).
+- **Seven instruments**: five electric pianos (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO and WHURLI, a reed piano with
+  a growl on hard strikes), a vibraphone with its motor (VIBES) and a marimba (MARIMBA).
 - **Effects**: compressor, 3-band EQ, drive with five overdrive types, resonant filter with its own LFO, tremolo /
   pan / wah, phaser, chorus, delay (digital, analog, tape) and reverb (hall, plate, infinite).
 - **For playing**: sustain pedal, velocity from the FM-1's own keys, chords, scales, arpeggiator, a pattern recorder
   (1-16 bars, overdub, undo, a chance per step), tap tempo or MIDI clock.
 - **Connections**: MIDI over USB and the TRS input, pitch bend, audio over USB (to a computer, phone or tablet) as well as the headphone jack.
-- **Presets**: 19 factory sounds and 16 slots for your own.
+- **Presets**: 23 factory sounds and 16 slots for your own.
 - **A screen you can read**: one page at a time, one card per knob.
 
 What is new in each version: [the release notes](https://github.com/leonardoMirabal/frodhes/releases).
@@ -82,7 +82,7 @@ Frodhes runs on the Move as a sound generator in Schwung, the community module h
 - The same instruments and effects, with 16 voices on every instrument and the higher-quality version of each.
 - The reverb runs at the full sample rate, so its tails keep their top octave.
 - Its own screen: the eight knobs as eight cards, a page at a time.
-- 57 factory presets (the FM-1's 19 plus 38 more) and 16 slots for your own.
+- 61 factory presets (the FM-1's 23 plus 38 more) and 16 slots for your own.
 - The Move's sequencer, scales and tempo drive it. The arpeggiator is Frodhes' own.
 - One Frodhes on each track, up to four, each with its own sound. Three play without dropouts.
 

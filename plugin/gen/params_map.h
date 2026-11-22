@@ -93,13 +93,13 @@ static const frp_param_t FRP_PARAMS[FRP_NPARAM] = {
     {65u, "EQ mid frequency", "EQ", 127u, 64u, 36u, 0u, 5904u},   /* P_EQ_FREQ (MIDF) */
     {66u, "EQ high", "EQ", 127u, 64u, 37u, 0u, 6032u},   /* P_EQ_HI (HIGH) */
     {0x10001u, "Tune", "Voice", 100u, 50u, 0u, 0u, 6160u},   /* FRP_ID_TUNE */
-    {0x10002u, "Preset", "Preset", 56u, 0u, 0u, 1u, 6261u},   /* FRP_ID_PRESET */
-    {0x10003u, "Sustain", "Performance", 1u, 0u, 0u, 1u, 6318u},   /* FRP_ID_SUSTAIN */
-    {0x10004u, "Effects bypass", "Performance", 1u, 0u, 0u, 1u, 6320u},   /* FRP_ID_FX_BYPASS */
-    {0x10005u, "Velocity response", "Voice", 1u, 0u, 0u, 1u, 6322u},   /* FRP_ID_VRESP */
+    {0x10002u, "Preset", "Preset", 60u, 0u, 0u, 1u, 6261u},   /* FRP_ID_PRESET */
+    {0x10003u, "Sustain", "Performance", 1u, 0u, 0u, 1u, 6322u},   /* FRP_ID_SUSTAIN */
+    {0x10004u, "Effects bypass", "Performance", 1u, 0u, 0u, 1u, 6324u},   /* FRP_ID_FX_BYPASS */
+    {0x10005u, "Velocity response", "Voice", 1u, 0u, 0u, 1u, 6326u},   /* FRP_ID_VRESP */
 };
 
-static const char *const FRP_TEXT[6324] = {
+static const char *const FRP_TEXT[6328] = {
     "STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "VIBES", "MARIMBA", "WHURLI", "0.0",
     "0.1", "0.2", "0.2", "0.3", "0.4", "0.5", "0.6", "0.6",
     "0.7", "0.8", "0.9", "0.9", "1.0", "1.1", "1.2", "1.3",
@@ -885,11 +885,11 @@ static const char *const FRP_TEXT[6324] = {
     "+46 c", "+47 c", "+48 c", "+49 c", "+50 c", "F01 STAGE 77", "F02 SUITCASE", "F03 EARLY FELT",
     "F04 BELL DYNO", "F05 WARM 77", "F06 PUNCH 77", "F07 BALLAD", "F08 SUIT TREM", "F09 70S PHASER", "F10 FUNK WAH", "F11 RESO SWEEP",
     "F12 LUSH CHO", "F13 VIBES", "F14 VIBES ECHO", "F15 MARIMBA", "F16 WOOD ECHO", "F17 TAPE ECHO", "F18 DREAM", "F19 WARM DRIVE",
-    "F20 STAGE77 ECHO", "F21 STAGE77 TAPE", "F22 SUITCASE DRY", "F23 SUITCASE AMP", "F24 FELT HALL", "F25 FELT ECHO", "F26 BELL SOFT", "F27 BELL ECHO",
-    "F28 WARM77 FAT", "F29 WARM77 ECHO", "F30 VINTAGE 77", "F31 PUNCH TAPE", "F32 BALLAD TIGHT", "F33 BALLAD DARK", "F34 TREM ECHO", "F35 TREM DEEP",
-    "F36 PHASER LVL", "F37 PHASER SLOW", "F38 FUNK WAH LVL", "F39 FUNK PLUCK", "F40 RESO SPACE", "F41 RESO SMOOTH", "F42 LUSH SOFT", "F43 LUSH DARK",
-    "F44 VIBES HALL", "F45 VIBES MOTOR", "F46 VIBES CLEAN", "F47 VIBES DRIFT", "F48 MARIMBA HALL", "F49 MARIMBA ECHO", "F50 WOOD PLAIN", "F51 WOOD LIGHT",
-    "F52 TAPE WIDE", "F53 TAPE DARK", "F54 DREAM CLEAR", "F55 DREAM DEEP", "F56 DRIVE SOFT", "F57 DRIVE BODY", "OFF", "ON",
-    "OFF", "ON", "FULL", "LIGHT",
+    "F20 WHURLI", "F21 REED GROWL", "F22 REED TREM", "F23 REED SOFT", "F24 STAGE77 ECHO", "F25 STAGE77 TAPE", "F26 SUITCASE DRY", "F27 SUITCASE AMP",
+    "F28 FELT HALL", "F29 FELT ECHO", "F30 BELL SOFT", "F31 BELL ECHO", "F32 WARM77 FAT", "F33 WARM77 ECHO", "F34 VINTAGE 77", "F35 PUNCH TAPE",
+    "F36 BALLAD TIGHT", "F37 BALLAD DARK", "F38 TREM ECHO", "F39 TREM DEEP", "F40 PHASER LVL", "F41 PHASER SLOW", "F42 FUNK WAH LVL", "F43 FUNK PLUCK",
+    "F44 RESO SPACE", "F45 RESO SMOOTH", "F46 LUSH SOFT", "F47 LUSH DARK", "F48 VIBES HALL", "F49 VIBES MOTOR", "F50 VIBES CLEAN", "F51 VIBES DRIFT",
+    "F52 MARIMBA HALL", "F53 MARIMBA ECHO", "F54 WOOD PLAIN", "F55 WOOD LIGHT", "F56 TAPE WIDE", "F57 TAPE DARK", "F58 DREAM CLEAR", "F59 DREAM DEEP",
+    "F60 DRIVE SOFT", "F61 DRIVE BODY", "OFF", "ON", "OFF", "ON", "FULL", "LIGHT",
 };
 #endif

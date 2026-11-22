@@ -18,7 +18,7 @@
  * The plugin's own parts live here too, so one published record and one state carry everything:
  *   MIDI       the velocity curve (TOUCH: MEDIUM = as played), the learned CCs before the default map (the app's own
  *              CC table), program changes on / off and the plugin's preset list for them
- *   presets    F01..F19 (presets.c), F20..F57 (move/move_presets.h, the Move's variants), the user's files (their
+ *   presets    F01..F23 (presets.c), F24..F61 (move/move_presets.h, the Move's variants), the user's files (their
  *              values come in through the mailbox, or for a program change from bridge.c's cache: frp_user_get);
  *              UNDO is the app's (presets.c preset_undo: the undo copy in the settings record), the names follow
  *   tempo      HOST (the DAW's tempo, 120 without one; a MIDI clock still leads, as CLOCK EXT), INTERNAL (the BPM
@@ -33,7 +33,7 @@
 #include <fenv.h>
 #include <stdatomic.h>
 #include "coro/coro.h"
-#include "../../move/move_presets.h"     /* F20..F57 (read only: the Move's generated table) */
+#include "../../move/move_presets.h"     /* F24..F61 (read only: the Move's generated table) */
 
 #define SB_STACK (256u * 1024u)          /* the coroutine's stack (app_main and what it calls; ui_draw is the deepest) */
 #define SB_FIFO 2048u                    /* frames (power of two); the instance never asks more than 1024 ahead */
@@ -42,12 +42,12 @@
 #define SB_CC_DROP(cc) (((cc) >= 43u && (cc) <= 46u) || ((cc) >= 52u && (cc) <= 63u))
 #define SB_BPM_FALLBACK10 1200u
 #define SB_MAP_DEFAULT_HEX "00007f00007f"   /* the Move state's "map" (move_bridge.h MB_MAP_DEFAULT: every mapping off) */
-#define SB_PX_BASE (PR_NF + PR_NU)       /* the app's index of F20 (move_bridge.h MB_PX_BASE) */
-#define SB_NFACT (PR_NF + MB_PX_N)       /* the factory presets: 57 */
+#define SB_PX_BASE (PR_NF + PR_NU)       /* the app's index of F24 (move_bridge.h MB_PX_BASE) */
+#define SB_NFACT (PR_NF + MB_PX_N)       /* the factory presets: 61 */
 #define SB_NOWN 6u                       /* the plugin's own parameters (params_map.h, ids 0x10000 + k) */
 #define SB_LEARN_OWN 200u                /* a learned own parameter's code: 200 + k (the app's ids are < P_COUNT) */
-_Static_assert(SB_NFACT == FRP_NFACTORY, "bridge.h FRP_NFACTORY: F01..F19 + F20..F57");
-_Static_assert(MB_PX_FIRST == PR_NF + 1u && SB_PX_BASE == 35u, "move_presets.h follows presets.c (F20 = index 35)");
+_Static_assert(SB_NFACT == FRP_NFACTORY, "bridge.h FRP_NFACTORY: F01..F23 + F24..F61");
+_Static_assert(MB_PX_FIRST == PR_NF + 1u && SB_PX_BASE == 39u, "move_presets.h follows presets.c (F24 = index 39)");
 _Static_assert(P_COUNT <= FRP_NPARAM_APP && P_COUNT < SB_LEARN_OWN, "the learn codes");
 
 typedef struct { uint8_t kind, x; uint32_t at, a; int32_t v; } sb_ev_t;   /* x: at is an app frame x 256 (exact) */
@@ -117,7 +117,7 @@ static void sb_entry(void *arg)
     for (;;) coro_yield(&sb.co);
 }
 
-/* ---- the presets: the plugin's index 0..56 = F01..F57; the app's: 0..18 F01..F19, 35..72 F20..F57 */
+/* ---- the presets: the plugin's index 0..60 = F01..F61; the app's: 0..22 F01..F23, 39..76 F24..F61 */
 static uint32_t sb_app_idx(uint32_t i) { return i < PR_NF ? i : SB_PX_BASE + (i - PR_NF); }
 static int sb_plug_idx(uint32_t a)       /* the app's index -> the plugin's, -1 (a user slot: not in the list) */
 {
@@ -614,10 +614,10 @@ static uint8_t sb_vel(uint32_t v)
     return tab[t == KV_LIGHT ? 0 : 1][v & 127u];
 }
 
-/* ---- program changes: 0..15 F01..F16, 32..34 F17..F19 through the app (presets.c preset_of_pc: as the FM-1),
+/* ---- program changes: 0..15 F01..F16, 32..38 F17..F23 through the app (presets.c preset_of_pc: as the FM-1),
  * 16..31 the first 16 user presets (bridge.c's files: frp_user_get; where there is no file, the app's own user bank
- * as on the FM-1: its starter sounds), 35..72 F20..F57: the FM-1's rule (32 + k loads F17 + k, presets.c) carried
- * on past its last preset, so every factory preset has a program change; 73..127 load nothing */
+ * as on the FM-1: its starter sounds), 39..76 F24..F61: the FM-1's rule (32 + k loads F17 + k, presets.c) carried
+ * on past its last preset, so every factory preset has a program change; 77..127 load nothing */
 static int sb_pc_mine(uint32_t ch, uint32_t pc)   /* 1: the plugin takes it (or drops it), 0: the app's */
 {
     uint8_t p[P_COUNT];

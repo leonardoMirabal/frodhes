@@ -39,7 +39,7 @@
 #define FRP_BASE_N 80u                   /* params.c P_SLOTS */
 #define FRP_STATE_MAX 2048               /* the state's JSON text (slot_bridge.h SB_STATE_N) */
 #define FRP_PNAME 32                     /* a preset name with its terminator */
-#define FRP_NFACTORY 57u                 /* F01..F19 (presets.c) + F20..F57 (move/move_presets.h) */
+#define FRP_NFACTORY 61u                 /* F01..F23 (presets.c) + F24..F61 (move/move_presets.h) */
 #ifndef FRP_VOICES                       /* (the Akai MPC port builds its slots at 16: mpc/build.py) */
 #define FRP_VOICES 24u                   /* every slot's voice count, every engine (slots.cmake FR_VOICES) */
 #endif

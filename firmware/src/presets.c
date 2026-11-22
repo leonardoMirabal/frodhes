@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Frodhes presets (IMPLEMENTATION-v3 §10.6, §12): 19 factory presets (const; F13 / F14 VIBES, F15 / F16 MARIMBA, the
+/* Frodhes presets (IMPLEMENTATION-v3 §10.6, §12): 23 factory presets (const; F13 / F14 VIBES, F15 / F16 MARIMBA, the
  * rest Rhodes; 0.9.10 reordered them: see PR_FDATA) and 16 user presets in a bank of two
  * flash sectors written alternately (A 0x97000, B 0x98000): erase the older sector, write the records, the header
  * last; load picks the valid copy with the higher sequence number, so a cut-off save never loses the bank.
@@ -10,8 +10,8 @@
  *   MIDI PC           0..15 -> F01..F16, 16..31 -> U01..U16 (as before 0.9.5), 32..34 -> F17..F19 (preset_of_pc) */
 #include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 
-#define PR_NF 19u                               /* 12 Rhodes (F01..F12), the bar types' F13..F16, then F17..F19
-                                                 * Rhodes (0.9.5: the starters U10..U12 before) */
+#define PR_NF 23u                               /* 12 Rhodes (F01..F12), the bar types' F13..F16, then F17..F19
+                                                 * Rhodes (0.9.5: the starters U10..U12 before), then F20..F23 WHURLI */
 #define PR_NU 16u
 _Static_assert(PR_NF == PR_NF_UI && PR_NF + PR_NU == PR_NALL_UI && PR_NF == PR_NF_SET, "ui.c / params.c preset counts");
 _Static_assert(PR_NF >= 16u && PR_NF <= 16u + 96u, "program changes 0..15: F01..F16, 16..31: U01..U16, 32..: F17..");
@@ -88,7 +88,7 @@ _Static_assert(sizeof pr_user == ST_TAIL_N, "the user presets are the store reco
 static const char *const PR_FNAME[PR_NF] = {
     "STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "WARM 77", "PUNCH 77", "BALLAD", "SUIT TREM", "70S PHASER",
     "FUNK WAH", "RESO SWEEP", "LUSH CHO", "VIBES", "VIBES ECHO", "MARIMBA", "WOOD ECHO", "TAPE ECHO", "DREAM",
-    "WARM DRIVE"};   /* (the header shows 14 characters: names up to 10) */
+    "WARM DRIVE", "WHURLI", "REED GROWL", "REED TREM", "REED SOFT"};   /* (the header shows 14 characters: names up to 10) */
 static const uint8_t PR_FDATA[] = {   /* the factory records, one after another: id / value pairs, 0xFF ends each */
     /* F01 STAGE 77: the clean stage piano (the boot sound and the level reference): a bright TONE, the bell full, the
      * bark lower, a trace of hall */
@@ -187,6 +187,23 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     P_RV_DEPTH, 16, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 64, P_DRIVE, 40, P_DRV_SW, 2, P_DRV_TONE, 70, P_CP_SW, 1,
     P_CP_DEPTH, 50, P_CP_SPEED, 36, P_DL_SW, 3, P_DL_DEPTH, 12, P_DL_SYNC, 8, P_DL_FDBK, 30, P_DL_TONE, 56,
     P_TONE, 64, P_BARK, 64, P_BELL, 64, P_HAMMER, 64, P_DECAY, 64, 0xFF,
+    /* F20 WHURLI: the reed piano dry (the type as it plays): the knobs at the middle, a gentle compressor, a trace of hall */
+    P_TYPE, 6, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 79, P_TONE, 64, P_BARK, 64, P_BELL, 64, P_HAMMER, 64,
+    P_DECAY, 64, 0xFF,
+    /* F21 REED GROWL: more bark and a harder hammer, a brighter TONE: the growl on every hard strike; a 3:1
+     * compressor holds it level, a short plate */
+    P_TYPE, 6, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 2, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_RV_DEPTH, 16, P_RV_TYPE, 2, P_RV_LOCUT, 70, P_LEVEL, 81, P_TONE, 72, P_BARK, 96, P_BELL, 64, P_HAMMER, 96,
+    P_DECAY, 64, 0xFF,
+    /* F22 REED TREM: the tremolo piano: the AM tremolo at about 5 Hz, the bark moderate, a plate */
+    P_TYPE, 6, P_NOISE, 44, P_TW_SW, 1, P_TW_MODE, 1, P_TW_DEPTH, 64, P_TW_RATE, 88, P_CMP_SW, 1, P_CMP_AMT, 36,
+    P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8, P_RV_DEPTH, 22, P_RV_TYPE, 2, P_RV_LOCUT, 70,
+    P_LEVEL, 80, P_TONE, 64, P_BARK, 56, P_BELL, 64, P_HAMMER, 64, P_DECAY, 64, 0xFF,
+    /* F23 REED SOFT: a soft hammer, little bark, a darker TONE, a slow chorus, a hall: the mellow reed piano */
+    P_TYPE, 6, P_NOISE, 40, P_CMP_SW, 1, P_CMP_AMT, 36, P_CMP_RATIO, 0, P_CMP_ATK, 40, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_CP_SW, 1, P_CP_DEPTH, 40, P_CP_SPEED, 30, P_RV_DEPTH, 30, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 82, P_TONE, 48,
+    P_BARK, 28, P_BELL, 56, P_HAMMER, 36, P_DECAY, 76, 0xFF,
 };
 /* factory record idx (< PR_NF): the records are stored back to back (0.9.6: no padding to 64 bytes, 423 B less) */
 FR_COLD static const uint8_t *pr_fdata(uint32_t idx)
