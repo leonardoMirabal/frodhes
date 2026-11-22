@@ -799,7 +799,7 @@ int frp_ui_preset_type(const frp_core *c, int idx)
     if (idx < 0) return -1;
     if (idx < (int)FRP_NFACTORY) { if (frp_fact_info((uint32_t)idx, 0, 0, v)) return -1; }
     else if (frp_user_values(idx - (int)FRP_NFACTORY, v)) return -1;
-    return v[0] <= 5u ? v[0] : 0;                    /* (params.c P_TYPE: id 0) */
+    return v[0] <= 6u ? v[0] : 0;                    /* (params.c P_TYPE: id 0) */
 }
 int frp_ui_win_w(const frp_core *c) { return c->win_w; }
 void frp_ui_win_w_set(frp_core *c, int w) { c->win_w = w <= 0 ? 0 : w < 720 ? 720 : w > 1920 ? 1920 : w; }
