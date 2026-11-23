@@ -61,7 +61,7 @@ def test_install_through_schwung_manager():
     assert "http://<move-ip>:7700" in inst and "**Global Settings > System > Web Manager**" in inst
     assert "**Install Custom Module**" in inst and "**From GitHub URL**" in inst and "From Tarball**" in inst
     assert "`leonardoMirabal/frodhes`" in inst and "https://github.com/leonardoMirabal/frodhes" in inst
-    assert inst.index("**From GitHub URL**") < inst.index("[Schwung's module catalog](https://schwung.dev/catalog.html)")
+    assert inst.index("**From GitHub URL**") < inst.index("[Schwung's module catalog](https://schwung.dev/catalog.html?filter=sound_generator)")
     upd = DOC[DOC.index("## Updating and removing"):DOC.index("## What differs from the FM-1")]
     assert "**Uninstall**" in upd and "**Update**" in upd
     assert "move_install.py" not in DOC and "ssh ableton@move.local" not in DOC

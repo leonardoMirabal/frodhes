@@ -36,7 +36,7 @@ zip's `INSTALL.txt` and [below](#what-to-report-back)).
 
 ## Install and remove
 
-**From the catalogue:** Frodhes is listed in the community's [Open MPC plugin catalogue](https://open-mpc.github.io).
+**From the catalogue:** Frodhes is listed in the community's [Open MPC plugin catalogue](https://open-mpc.github.io/#q=frodhes).
 With its Plugin Manager on the MPC ([how to set it up](https://open-mpc.github.io/install.html)), find Frodhes in the
 catalogue and install or update it from there, on the MPC's screen or from a phone or computer; the Plugin Manager
 picks the build for your MPC (32-bit or 64-bit ARM) and puts it in `VST2 Plugins` for you. Then go on at step 3 below.

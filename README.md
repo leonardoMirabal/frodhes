@@ -70,8 +70,8 @@ firmware:
 | [mutant.cloud](https://mutant.cloud/#/p/frodhes) | Install over USB-MIDI in the browser, no account needed |
 | [fm1-editor.com](https://fm1-editor.com/firmware/#frodhes) | The community's firmware list with pictures |
 | altstrument: [FM-1 and SMK-37](https://altstrument.org/firmware/m-vave-fm-1/frodhes), [Move](https://altstrument.org/firmware/ableton-move/frodhes) | The community catalogue of alternative firmware and modules, with every Frodhes version |
-| [Schwung catalog](https://schwung.dev/catalog.html) | The Move's module catalog: install and update Frodhes on the Move with Schwung Manager |
-| [Open MPC](https://open-mpc.github.io) | The community's Akai MPC plugin catalogue: install and update Frodhes on the MPC with its Plugin Manager |
+| [Schwung catalog](https://schwung.dev/catalog.html?filter=sound_generator) | The Move's module catalog: install and update Frodhes on the Move with Schwung Manager |
+| [Open MPC](https://open-mpc.github.io/#q=frodhes) | The community's Akai MPC plugin catalogue: install and update Frodhes on the MPC with its Plugin Manager |
 | [Web emulator](https://leonardomirabal.github.io/frodhes/) | Play Frodhes in the browser before you install it |
 
 Questions, bugs or ideas: [issues](https://github.com/leonardoMirabal/frodhes/issues). The community's own place is
@@ -90,7 +90,7 @@ Frodhes runs on the Move as a sound generator in Schwung, the community module h
 
 Install it with Schwung Manager in a web browser: **Install Custom Module > From GitHub URL**, then
 `leonardoMirabal/frodhes`, or the downloaded `frodhes-module.tar.gz` under **From Tarball**. Frodhes is also in
-[Schwung's module catalog](https://schwung.dev/catalog.html), so you can install and update it from there. The steps, and every page:
+[Schwung's module catalog](https://schwung.dev/catalog.html?filter=sound_generator), so you can install and update it from there. The steps, and every page:
 [docs/MOVE.md](docs/MOVE.md).
 
 <p align="center">
@@ -161,7 +161,7 @@ To remove it, delete the `Frodhes.*` files again. More:
 Frodhes runs on Akai MPC standalone hardware as a plugin (checked by a tester on an MPC): the desktop plugin's engine,
 16 voices on every instrument, the factory presets as programs, and the plugin's look on the MPC's screen: eight
 pages of large knobs in panels of four, one Q-Link group each. It needs MPC OS 3.10.1 or later with External Plugin
-Support on. Download [`frodhes-mpc.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-mpc.zip) (or build it with `make mpc`), or install it from the [Open MPC catalogue](https://open-mpc.github.io) with its Plugin
+Support on. Download [`frodhes-mpc.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-mpc.zip) (or build it with `make mpc`), or install it from the [Open MPC catalogue](https://open-mpc.github.io/#q=frodhes) with its Plugin
 Manager; how to install it and what to report:
 [docs/MPC.md](docs/MPC.md).
 
