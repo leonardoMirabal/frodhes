@@ -254,15 +254,20 @@ static void chevron(frui *u, float cx, float cy, float sz, int dir, uint32_t col
         frui_line(u->c, X(cx - b * d), X(cy), X(cx + b * d), X(cy + a), lw, col);
     }
 }
-static void lamp(frui *u, float cx, float cy, float r, int on)     /* an effect's lamp: a small amber jewel */
+/* an effect's lamp: a small amber jewel; hov: the mouse is on it (a click switches it): a wider glow when lit, a
+ * lighter glass when out */
+static void lamp_h(frui *u, float cx, float cy, float r, int on, int hov)
 {
     if (on) {
-        frui_circle_shadow(u->c, X(cx), X(cy), X(r), X(r * 1.4f), FRUI_RGBA(255, 140, 20, 110));
+        frui_circle_shadow(u->c, X(cx), X(cy), X(r), X(r * (hov ? 2.2f : 1.4f)), FRUI_RGBA(255, 140, 20, hov ? 190 : 110));
         frui_circle_grad(u->c, X(cx), X(cy), X(r), FRUI_RGB(255, 206, 120), C_ACC);
+    } else if (hov) {
+        frui_circle_grad(u->c, X(cx), X(cy), X(r), FRUI_RGB(84, 84, 90), FRUI_RGB(124, 124, 132));
     } else {
         frui_circle_grad(u->c, X(cx), X(cy), X(r), FRUI_RGB(30, 30, 32), FRUI_RGB(52, 52, 56));
     }
 }
+static void lamp(frui *u, float cx, float cy, float r, int on) { lamp_h(u, cx, cy, r, on, 0); }
 /* brushed aluminium plate with machined edges: a lit top hairline and a dark bottom one */
 static void alu(frui *u, float x, float y, float w, float h, float r, uint32_t seed)
 {
@@ -814,11 +819,15 @@ static void tabs(frui *u, int right, float x, float y, float w)
             frui_rect(u->c, X(kx + R_CTRL), X(ky) + 1.f, X(kw - 2.f * R_CTRL), 1.f, FRUI_RGBA(255, 255, 255, 46));
         }
         /* (BYPASS: every effect's lamp out; MOTOR is the instrument's own, never bypassed) */
-        lamp(u, cx + 2.5f, cy, 2.5f, eff_on(m, i, right) && (!m->fx_bypass || (!right && i == FRT_MOTOR)));
+        lamp_h(u, cx + 2.5f, cy, 2.5f, eff_on(m, i, right) && (!m->fx_bypass || (!right && i == FRT_MOTOR)),
+               right && is_hover(u, FRW_LAMP, i));
         anchor(u, FRA_TAB, i, cx, mid(u, cy, 10.5f));
         tx(u, cx + 11.f, mid(u, cy, 10.5f), T_TAB, 0, names[i],
            i == sel ? C_TEXT : is_hover(u, kind, i) ? frui_mix(C_TEXT2, C_TEXT, 0.5f) : C_TEXT2);
         reg(u, kind, i, cx - gap * 0.5f, y, cw + gap, 44.f);
+        /* the effects' lamps are switches: a 20 px square round the lamp, over the tab's area (registered after it, so
+         * it is hit first), ending where the name starts */
+        if (right) reg(u, FRW_LAMP, i, cx - 9.f, cy - 10.f, 20.f, 20.f);
         cx += cw + gap;
     }
     hair_h(u, x + 1.f, x + w - 1.f, y + 44.f, FRUI_RGB(32, 32, 34));

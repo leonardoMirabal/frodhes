@@ -1382,8 +1382,9 @@ Frodhes also runs in your music software as an instrument plugin: CLAP and VST3 
 Audio Unit on macOS. It has the same instruments, effects and factory sounds as the FM-1, computed by the same code,
 in the higher-quality version, with 24 voices. Everything in this manual applies to the sound, except that the
 DRIVE's first type is **WARM**, the plugin's own drive, in place of FDRV ([DRIVE](#drive)). Its own window shows the pages as cards
-with knobs, with the presets, MIDI learn, the effects' bypass and the sustain latch; your host saves everything with
-the project. The host's tempo drives the synced effects; the FM-1's sequencer, arpeggiator and chord mode are not in
+with knobs, with the presets, MIDI learn, the effects' bypass and the sustain latch; a click on an effect's lamp, on
+its tab, switches that effect on or off. Your host saves everything with the project. The host's tempo drives the
+synced effects; the FM-1's sequencer, arpeggiator and chord mode are not in
 the plugin. When a newer Frodhes is out, the plugin downloads its package into Downloads and shows an INSTALL key on
 the window that opens it; close your music software, then install (it asks GitHub at most once a day; SETTINGS >
 UPDATES OFF turns it off:

@@ -51,7 +51,7 @@ the FM-1.
 ![The plugin's window: the VOICE knobs, two effect sections and a keyboard](manual/img/plugin/plugin-main.png?v=a6729600)
 
 <p align="center">
-  <img src="manual/img/plugin/plugin-presets.png?v=cec41ef5" width="384" alt="PRESETS: every factory and user sound, grouped by instrument">
+  <img src="manual/img/plugin/plugin-presets.png?v=6d4d2636" width="384" alt="PRESETS: every factory and user sound, grouped by instrument">
   <img src="manual/img/plugin/plugin-save.png?v=96849c7d" width="384" alt="SAVE: the name field in place of the preset's name">
 </p>
 
@@ -65,7 +65,7 @@ uncached draw.
 | | |
 | --- | --- |
 | Knobs | drag up / down (200 points for the whole range), Shift for ten times finer, the wheel, double-click the value text to type a value (Enter sets the value whose text is nearest the number, Esc or a click elsewhere leaves it), double-click the knob itself (or Command-click; Control-click on Windows and Linux) for the default, right-click (or Control-click on macOS) for MIDI LEARN, FORGET and DEFAULT VALUE |
-| Switches, menus, tabs | click; the wheel steps a switch or a menu |
+| Switches, menus, tabs | click; the wheel steps a switch or a menu. Click an effect's lamp on its tab (FILTER to REVERB) to switch the effect on or off; back on, it has the setting it had before |
 | Keyboard focus | click a control or Tab / Shift-Tab; the arrows step the value (Shift: by 10), Page Up / Down by 10, Home / End, Delete the default, Enter opens a menu, Esc closes a menu, SETTINGS or the focus. Other keys go to the host |
 | The keys | play notes (lower on the key: louder); held notes light up, the host's too |
 | SUSTAIN, EFFECTS | latch the sustain (CC 64); bypass every effect (the app's FX button, CC 111). An effect that is off, and every effect under BYPASS, draws its knobs inactive (dimmed; they still answer) and its tab's lamp out; MOTOR, the instrument's own, is never bypassed |

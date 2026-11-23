@@ -54,6 +54,7 @@ struct frp_gui {
     float lvl[2], pk[2];
     double pk_t[2];
     uint8_t own_notes[128];          /* the keyboard's own notes (shown at once, before the app reports them) */
+    uint8_t fx_last[FRT_NR];         /* each right-panel effect's last setting other than OFF (0: none seen yet) */
     /* the platform view (frp_gui_client) */
     frg_client cl;
     const uint32_t *tpx;             /* the view's buffer the canvas was last copied into */
@@ -121,6 +122,22 @@ static void set_once(frp_gui_t *g, int id, int v)
     gesture(g, id, 1);
     set_value(g, id, v);
     gesture(g, id, 0);
+}
+/* a right-panel effect's lamp: its switch (the parameter whose 0 is OFF: a TYPE or an on / off), and a click on it */
+static int fx_switch(int tab)
+{
+    static const int sw[FRT_NR] = {FRP_FL_TYPE, FRP_TW_SW, FRP_PH_SW, FRP_CP_SW, FRP_DL_SW, FRP_RV_TYPE};
+    return tab >= 0 && tab < FRT_NR ? sw[tab] : -1;
+}
+/* on -> OFF; OFF -> the setting it had before (TREM/WAH: its switch; PAN or TREM is TW_MODE, which OFF keeps), or
+ * the page's first one when none was seen */
+static void fx_toggle(frp_gui_t *g, int tab)
+{
+    int id = fx_switch(tab), v;
+    if (id < 0) return;
+    v = g->m.p[id];
+    if (v) { g->fx_last[tab] = (uint8_t)v; set_once(g, id, 0); }
+    else set_once(g, id, g->fx_last[tab] ? g->fx_last[tab] : 1);
 }
 static int default_of(frp_gui_t *g, int id)
 {
@@ -254,6 +271,8 @@ int frp_gui_tick(frp_gui_t *g, double now)
         }
         m->p[i] = (uint8_t)iv;
     }
+    for (i = 0; i < FRT_NR; i++)                     /* the lamps' memory: what each effect was set to while on */
+        if (m->p[fx_switch(i)]) g->fx_last[i] = m->p[fx_switch(i)];
     m->tune = clampi(setting_get(g, FRP_UI_TUNE, g->loc_tune), -50, 50);
     m->fx_bypass = setting_get(g, FRP_UI_FX_BYPASS, g->loc_fx) != 0;
     m->midi_ch = setting_get(g, FRS_CHANNEL, g->loc_set[FRS_CHANNEL - FRS_CHANNEL]);
@@ -673,6 +692,7 @@ static void mouse(frp_gui_t *g, int ev, float x, float y, int mods, int clicks)
             return;
         case FRW_TAB_L: m->tab_l = w.id; return;
         case FRW_TAB_R: m->tab_r = w.id; return;
+        case FRW_LAMP: fx_toggle(g, w.id); return;   /* (the page shown stays) */
         case FRW_PAGER:
             if (w.id == FRUI_PL_PAGER) m->pl_page = clampi(m->pl_page + (x >= w.x + w.w * 0.5f ? 1 : -1), 0, frui_preset_pages(m) - 1);
             else m->page_rv = x >= w.x + w.w * 0.5f;
