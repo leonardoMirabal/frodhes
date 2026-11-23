@@ -189,24 +189,39 @@ def fake_rig(sd):
 
 def test_rig_takes_are_slices_on_the_event_clock():
     """two devices at their own rates (the USB opened at FS, the jack at its 44.1 kHz), the USB with 6 ms latency,
-    the jack with 2 ms: in every take (one stream for all of them) the note sits at its event time + latency on both, at FS"""
+    the jack with 2 ms: in every take (one stream for all of them) the note sits at its event time + latency on both, at FS.
+    Measured on the event clock: the note's place is judged against the moment it was really sent (sd.sent, on the
+    streams' own clock) and the moment the take's slice starts (Capture.now() in Rig.both), so a loaded machine that
+    sends late (2026-11-23: a CI container, 73 ms) moves the expectation with it and the check tests the recorder alone"""
     sd = FakeSD({0: 44100, 1: 44100}, {0: 0.006, 1: 0.002})
     r = fake_rig(sd)
     r.add_jack(1, 4)
+    starts = []
+    now = r.cap.now
+
+    def now_rec():                                   # the take's start on every stream's clock (Rig.both's st)
+        v = now()
+        starts.append(v)
+        return v
+    r.cap.now = now_rec
     try:
         for k in range(3):
+            starts.clear()
             d = r.both(0.5, [(0.1, "on", 60, 100), (0.4, "off", 60, 0)], jack=True)
             assert d["usb"].shape == (int(0.5 * h.FS), 2) and d["jack"].shape == (int(0.5 * h.FS), 1)
+            assert len(starts) == 1 and len(sd.sent) == 1, (starts, sd.sent)
             at = {key: int(np.argmax(np.abs(d[key][:, 0]) > 0.01)) / h.FS for key in ("usb", "jack")}
-            # both devices saw the same note-on: their offset is the latency difference (4 ms), exactly, whatever
-            # the sender's own lateness (a busy machine sends a few ms late: that is not the recorder's error)
+            # both devices saw the same note-on: their offset is the latency difference (4 ms), exactly
             assert abs((at["usb"] - at["jack"]) - 0.004) < 0.001, (k, at)
-            # and at the event time + latency, never early; a busy machine may send up to some ms late (the fake note
-            # is stamped at the real send time). A rate mix-up (44.1 / 48 kHz) would misplace it by tens of SECONDS
-            # (the fake streams' clocks start 500 s before the take), so a 50 ms window still catches it
+            # and at the event time + latency on the event clock (when the note really went out, re the slice's start),
+            # never early. A rate mix-up (44.1 / 48 kHz) would misplace it by tens of SECONDS (the fake streams' clocks
+            # start 500 s before the take), so the 50 ms window still catches it; the recorder itself is within 2 ms
             for key, lat in (("usb", 0.006), ("jack", 0.002)):
-                late = at[key] - (0.1 + lat)
-                assert -0.001 < late < 0.050, (k, key, at[key])
+                ev = sd.sent[0] - starts[0][key]
+                assert ev >= 0.1 - 0.001, (k, key, ev)                             # the event clock never runs early
+                late = at[key] - (ev + lat)
+                assert -0.001 < late < 0.050, (k, key, at[key], ev)
+                assert abs(late) < 0.002, (k, key, at[key], ev)
             assert len(r.cap.streams) == 2                                          # no stream opened per take
             sd.sent.clear()
             assert r.wait_silence(2.0)                                              # the polls: slices too
