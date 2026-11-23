@@ -375,7 +375,7 @@ controller selects WHURLI at CC 80 values 103 to 127.
 
 ### COMPRESSOR
 
-![COMPRESSOR](manual/img/comp.png?v=bcdebf1d)
+![COMPRESSOR](manual/img/comp.png?v=81973be3)
 
 | Knob | Card | What it does |
 | --- | --- | --- |

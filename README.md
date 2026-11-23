@@ -173,7 +173,7 @@ Manager; how to install it and what to report:
 
 **[The user manual](docs/MANUAL.md)**: every page, knob and button, the presets, the effects and the MIDI map.
 
-![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=d74540c8)
+![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=2dd409b4)
 
 ## Other keyboards
 
