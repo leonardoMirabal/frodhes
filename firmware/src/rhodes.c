@@ -45,7 +45,7 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #include "rhodes_tables.h"
 _Static_assert(RH_NM == 4, "rh_key_t holds RH_NM modes");
 /* WHURLI (TYPE 6, rh_type 4): its own tables (tools/gen_reed_stub.py until the physics generator's), in the interface of
- * private/plans/whurli-interface.md. Read only by the reed paths below (rh_init_rd, rh_load_pulse_rd, rh_pickup_rd, the
+ * the reed tables (rhodes_tables.h). Read only by the reed paths below (rh_init_rd, rh_load_pulse_rd, rh_pickup_rd, the
  * chain of TYPE 4): every other TYPE takes exactly the path it always did */
 typedef struct { int32_t bark_max, off_max; uint16_t pamp_max, pad; } rd_lim_t;
 #include "reed_tables.h"
