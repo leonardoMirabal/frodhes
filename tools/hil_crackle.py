@@ -119,6 +119,12 @@ OUT = os.path.join(ROOT, "build", "hil", "stress_max")
 FS_HOST = 44100
 FS_JACK = 48000
 ENGINES = ("rhodes", "vibes", "marimba")
+ALL_ENGINES = ENGINES + ("whurli",)           # whurli (the reed TYPE, no CC: program change 35 = F20) only by name, never in "all"
+PC_WHURLI = 35
+REG_WHURLI = dict(bass=[33, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52, 53, 55, 57, 59],   # (its keys are 33..96: a note outside has no voice)
+                  mid=[48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83, 86, 88, 91, 95],
+                  high=[72, 76, 79, 83, 86, 88, 91, 95, 96, 93, 90, 84, 60, 64, 67, 69],
+                  spread=[33, 40, 52, 59, 64, 71, 76, 83, 88, 95, 96, 55, 35, 47, 67, 91])
 LAT_SCALE = fm1_ports.lat_half() / 256.0   # (a frodhes.c FR_LAT_HALF build: per interrupt,
 CPU_TARGET_US, SHEDDER_US = round(4500 * LAT_SCALE), round(5000 * LAT_SCALE)   # as hil_cpu.py / hil_c1_soak.py)
 CEIL = 24100                                  # fx.c LIM_T 24000 (+ rounding): information
@@ -158,14 +164,15 @@ LEDS = (("OFF", 1), ("PLAYED", 2), ("ALL", 3))                         # ui.c LE
 def voices(eng):
     """the firmware's voice count for an engine (rhodes.c RH_VOICES / BAR_VOICES)"""
     src = open(os.path.join(ROOT, "firmware", "src", "rhodes.c")).read()
-    key = "RH_VOICES" if eng == "rhodes" else "BAR_VOICES"
+    key = "RH_VOICES" if eng in ("rhodes", "whurli") else "BAR_VOICES"
     return fm1_ports.image_voices(int(re.search(r"#define " + key + r" (\d+)u", src).group(1)))
 
 
 # ---------------------------------------------------------------------------------------------------- the stimulus
 def engine_ccs(eng, fx):
     """(cc, v) after the defaults: the engine, the effects, USB VOL FIXED; CC 85 before the phaser's CCs"""
-    out = [(c, v) for c, v in param_defaults()]
+    out = [(-1, PC_WHURLI)] if eng == "whurli" else []   # (c < 0: a program change, its value the program; first: it loads 400 ms later)
+    out += [(c, v) for c, v in param_defaults() if not (eng == "whurli" and c == CC["TYPE"])]
     d = dict(DRY)
     d.update(fx)
     if "CP_SW" in d:
@@ -179,7 +186,8 @@ def engine_ccs(eng, fx):
     return out
 
 
-def worst_events(nv, dur, rng):
+def worst_events(nv, dur, rng, reg=None):
+    reg = reg or REG
     ev = [(0.2, "cc", 64, 127)]
     every = min(20.0, dur / 3)                             # (a short take, the self-test's: three times too; each
     t, k, held, ped = 0.4, 0, [], every                    # chord after it starts from the dampers' quiet: clock_fit's
@@ -188,7 +196,7 @@ def worst_events(nv, dur, rng):
             ev += [(t, "cc", 64, 0), (t + 0.12, "cc", 64, 127)]
             ped += every
             t += 0.2
-        notes = REG[("bass", "mid", "high", "spread")[k % 4]][:nv]
+        notes = reg[("bass", "mid", "high", "spread")[k % 4]][:nv]
         vel = (100, 127)[(k // 4) % 2]
         ev += [(t - 0.005, "off", n, 0) for n in held]    # let go (the pedal holds them)
         ev += [(t, "on", n, vel) for n in notes]
@@ -215,7 +223,7 @@ def recipe_events(nv, dur, rng):
 def takes(eng, worst_s=180.0, recipe_s=120.0, seed=0, nv=None):
     """[(name, ccs, events, dur)] for one engine"""
     nv = nv or voices(eng)
-    rng = np.random.default_rng(seed + ENGINES.index(eng))
+    rng = np.random.default_rng(seed + ALL_ENGINES.index(eng))
     out = []
 
     def split(total, name, fxs, gen):
@@ -224,7 +232,8 @@ def takes(eng, worst_s=180.0, recipe_s=120.0, seed=0, nv=None):
             ev, dur = gen(nv, total / n, rng)
             out.append((f"{eng}-{name}{i + 1}", engine_ccs(eng, fxs[i % len(fxs)]), sorted(ev, key=lambda e: e[0]),
                         dur))
-    split(worst_s, "worst", [dict(HEAVY, LEVEL=0), HEAVY], worst_events)
+    split(worst_s, "worst", [dict(HEAVY, LEVEL=0), HEAVY],
+          (lambda n_, d_, r_: worst_events(n_, d_, r_, REG_WHURLI)) if eng == "whurli" else worst_events)
     split(recipe_s / 2, "recipe-dry", [{}], recipe_events)
     split(recipe_s / 2, "recipe-fx", [MODERATE], recipe_events)
     return out
@@ -1116,8 +1125,9 @@ def host_take(name, ccs, events, dur, tag="stress_max", clock=(0.0, 0.0)):
     events played at lag + t (1 + rate) of the recording, as the FM-1's USB stream has them (the self-test's device
     timing)"""
     H = hil_scan.hr()
-    lines = [f"{5 + k // 16} midi 0xB0 {c} {v}" for k, (c, v) in enumerate(ccs)]
-    R = 5 + len(ccs) // 16 + 300                          # (the settings, then the reset and 300 ms)
+    pre = 1000 if any(c < 0 for c, v in ccs) else 0       # (a program change loads its preset 400 ms later: the settings follow it)
+    lines = [f"{5 + k // 16 + (pre if c >= 0 else 0)} midi " + (f"0xB0 {c} {v}" if c >= 0 else f"0xC0 {v}") for k, (c, v) in enumerate(ccs)]
+    R = pre + 5 + len(ccs) // 16 + 300                    # (the settings, then the reset and 300 ms)
     lines.append(f"{R - 60} midi 0xB0 {hil_scan.RESET_CC} 127")
     dur = dur * (1.0 + clock[1]) + max(0.0, clock[0])
     for t, kind, a, b in events:
@@ -1133,7 +1143,7 @@ def host_voices(txt, eng):
     m = re.search(r"voices max rhodes (\d+) of (\d+) bars (\d+) of (\d+)", txt)
     if not m:
         return None
-    return (int(m.group(1)), int(m.group(2))) if eng == "rhodes" else (int(m.group(3)), int(m.group(4)))
+    return (int(m.group(1)), int(m.group(2))) if eng in ("rhodes", "whurli") else (int(m.group(3)), int(m.group(4)))
 
 
 JACK_GAIN = 0.25                              # the FM-1's jack on the MOTU: 10-15 dB under USB (2026-10-24 snippets)
@@ -1544,7 +1554,11 @@ class Device:
         polled), rig problems)"""
         self.send("cc", 120, 0)
         for c, v in ccs:
-            self.send("cc", c, v)
+            if c < 0:                                        # the program change (WHURLI): its preset loads 400 ms later
+                self.send("pc", v)
+                time.sleep(0.9)
+            else:
+                self.send("cc", c, v)
         time.sleep(0.3)
         self.send("cc", hil_scan.RESET_CC, 127)
         time.sleep(0.4)
@@ -1938,7 +1952,7 @@ def report_text(rep):
 
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--engine", default="all", choices=ENGINES + ("all",))
+    ap.add_argument("--engine", default="all", choices=ALL_ENGINES + ("all",))
     ap.add_argument("--rate", type=int, default=44100, choices=(44100, 48000))
     ap.add_argument("--blocksize", type=int, default=0, help="the computer's input blocksize (0: PortAudio's)")
     ap.add_argument("--source", default="both", choices=("both", "usb"))
