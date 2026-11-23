@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""tools/bartube.py (PLAN §11 P1 step 4): the V1 <-> tube pair must reduce to two resonators without coupling, agree
+"""tools/bartube.py: the V1 <-> tube pair must reduce to two resonators without coupling, agree
 with a direct simulation, put V1 on f0 after the retune, shorten V1 (and move the tube peak earlier) as the coupling
 grows, ring longer with the discs closed, follow the weak-regime formula, and its integer map must be stable and
 match the design (§4.5). The motor law (§7) must be the single-leakage law with one AM period per phase cycle."""

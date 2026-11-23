@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""VIBES sample-back (PLAN P7.5): play the FM-1's own VIBES over MIDI, record its USB audio, measure every note with
+"""VIBES sample-back: play the FM-1's own VIBES over MIDI, record its USB audio, measure every note with
 the SAME procedure as the reference recordings (tools/vib_ref_measure.py), and compare the device with the model's
 targets (docs/model/data/bars_spec.json) and with the reference set (measured in place, numbers only). The same
 loop the Rhodes was tuned with: a difference is fixed in the data / generator, never by hand in the tables.
@@ -8,17 +8,17 @@ loop the Rhodes was tuned with: a difference is fixed in the data / generator, n
     python3 tools/vib_sampleback.py [--round N] [--keys 53-89] [--step 1] [--vel 100] [--ref DIR] [--dry-run]
     python3 tools/vib_sampleback.py --engine marimba [--round N] [--keys 36-96] [--hold 2.5] [--dry-run]
 
---engine marimba (MARIMBA PLAN §12 step 4, Gate VD-M): CC 79 127 (no motor), every key 36..96 at v100, 2.5 s, the
+--engine marimba (Gate VD-M): CC 79 127 (no motor), every key 36..96 at v100, 2.5 s, the
 pedal down; each take measured by tools/mrb_ref_measure.measure (f0, t60_v1_30db, lufs, f0_peak_ms, v2_db, v3_db) and
 compared with the host build playing the same events (hil_scan.HostRig) and with the golden model; the table goes to
-private/marimba/research/P5-sampleback.md, the takes to build/mrb_sampleback/rN/.
+a gitignored notes file, the takes to build/mrb_sampleback/rN/.
 --dry-run (either engine): the host build plays in the device's place (no FM-1, no CoreAudio); everything goes under
 build/ (the private tables are not touched).
 
 Writes build/vib_sampleback/rN/*.wav (the FM-1's own output) and appends a table to
-private/vibraphone/research/P7-sampleback.md. Gate VD (PLAN §10): pitch +-1 c, V1 T60 +-10 % (pedal down), level
+a gitignored notes file. Gate VD: pitch +-1 c, V1 T60 +-10 % (pedal down), level
 per key +-1 dB re its neighbours' trend, all **device vs the host render** of the same events measured the same way
-(PLAN §10; the spec's modal T60 is not what a band fit of the fundamental reads, since the tube shares that
+(the spec's modal T60 is not what a band fit of the fundamental reads, since the tube shares that
 frequency: about 5 % apart on the host too). Needs the FM-1 on USB (sandbox off for CoreAudio).
 """
 import argparse
@@ -132,7 +132,7 @@ def dry_rig():
 
 
 # ---------------------------------------------------------------------------------------------------- MARIMBA
-MRB_GATE = dict(cents=1.0, t60_rel=0.10, pk_ms=10.0, pk_rel=0.15, lufs_db=1.0, v_db=2.0)   # Gate VD-M (PLAN §12.4)
+MRB_GATE = dict(cents=1.0, t60_rel=0.10, pk_ms=10.0, pk_rel=0.15, lufs_db=1.0, v_db=2.0)   # Gate VD-M
 
 
 def mrb_take(rig, m, vel, hold):
@@ -178,10 +178,10 @@ def mrb_gate(d, h, m):
 
 
 def main_marimba(a):
-    """PLAN §12 step 4 (Gate VD-M): every key at v100, a.hold s each, the device vs the host render of the same events
+    """Gate VD-M: every key at v100, a.hold s each, the device vs the host render of the same events
     (HostRig: the same panel state, the same MIDI), both measured by mrb_ref_measure.measure; the golden model's numbers
     (tools/bars_model.py, the DEFAULT cards) beside them for information. Table appended to
-    private/marimba/research/P5-sampleback.md (a dry run: build/mrb_sampleback/dry-P5-sampleback.md)"""
+    a gitignored notes file (a dry run: build/mrb_sampleback/dry-P5-sampleback.md)"""
     import mrb_ref_measure as mr
     lo, hi = (int(v) for v in a.keys.split("-"))
     keys = list(range(lo, hi + 1, a.step))

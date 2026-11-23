@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""tools/marimba_scan.py: the MARIMBA scan profile, its stress cases and the musicality gate M1-M7 (MARIMBA PLAN §10).
+"""tools/marimba_scan.py: the MARIMBA scan profile, its stress cases and the musicality gate M1-M7.
 
 The plumbing is judged now: the stub detection, MARIMBA selected by CC 79 127 and by PC 14 / 15 (F15 / F16), the
 pristine checks of the stress cases (clicks, sat28, the exact end, the gate's fade, steals, the swap), the report's

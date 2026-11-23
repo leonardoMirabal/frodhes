@@ -43,7 +43,7 @@ needs_types = pytest.mark.skipif(not HAS, reason="the reverb TYPEs' interface is
 T = rs.TYPES
 NEW = ("PLATE", "INFINITE")
 SOUNDING = ("HALL",) + NEW
-BASE_REF = "c82dc87"                                     # sonic-int before the reverb TYPEs (private/reverb/BRIEF)
+BASE_REF = "c82dc87"                                     # sonic-int before the reverb TYPEs
 
 
 def p_ids():

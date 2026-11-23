@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""The SCAN of a bar TYPE (PLAN §9): every key, velocity, card, pedal, motor, effect, polyphony, sequencer / arp,
+"""The SCAN of a bar TYPE: every key, velocity, card, pedal, motor, effect, polyphony, sequencer / arp,
 engine-swap and long-run case rendered by the host build (build/host/frodhes, tests/host.c scripts), each render
 judged by the checks S1..S13 with their pass numbers. A type is done when --full reports 0 failures on S1..S10,
 S12, S13 (and S11 flags nothing the FM-1 does not clear) and the user has listened.
@@ -13,7 +13,7 @@ S12, S13 (and S11 flags nothing the FM-1 does not clear) and the user has listen
   --checks S1,S9   only these   --jobs N   parallel renders
   -> build/bar_scan/report.txt, scan.json, summary.png, worst/<check>/*.wav (the 20 worst renders per check)
 
-The checks (numbers from PLAN §9.2):
+The checks:
   S1  clicks: hil_scan's second-difference detector = 0, and HP bursts = 0: 1 ms windows whose energy above 8 kHz is
       > -40 dB re the window, > 10 dB over the HF energy 3 ms either side (a transient, not a high partial) and
       above -90 dBFS (not the last bit's rounding),
@@ -67,7 +67,7 @@ VELS = [1, 8, 24, 40, 64, 88, 104, 120, 127]
 CARD_VALS = [0, 32, 64, 96, 127]
 FX_ALL_US = 1080                        # fx.c FX_US_*: tools/hil_cpu.py's heavy set (the trem slot = MOTOR)
 S11_FLAG_US = 4500
-# S9 card sweeps: the 0..300 ms level a card may move over 0..127 (PLAN 9.2: <= 6 LU "unless that is its job"). Since the
+# S9 card sweeps: the 0..300 ms level a card may move over 0..127 (<= 6 LU "unless that is its job"). Since the
 # cards-audible pass (2026-10-17) TUBE's level is its job (vibes.json card_level bell_span_db 12: the bare bar is the
 # quieter one), WEIGHT's partly (the heavier mallet's body: T7b level_comp 0.6, ~5..7 LU), STRIKE's a little (the fuller
 # centre, tone_span_db 3); an unintended jump on any other card still fails at 6

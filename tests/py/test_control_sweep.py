@@ -3,7 +3,7 @@
 DIFFERENTIAL detector: the moved render against the renders held at the start and the end value), no level jump, no
 pitch drift, no dropout or burst after a move, no control that does nothing, none that leaves a state behind.
 
-The cases that fail on 0.9.5 are expected failures, each with its finding (private/BUGHUNT-095.md, or the branch that
+The cases that fail on 0.9.5 are expected failures, each with its finding (the bug list, or the branch that
 fixes it); strict=False, so a fix makes them XPASS (then take the line out). The renders are cached by the binary's
 hash (build/host/ctl_sweep/): about a minute cold for all 115 cases."""
 import os

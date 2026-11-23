@@ -11,7 +11,7 @@ flags, through Docker as build.sh does): an estimate of the CPU before the FM-1 
 
 Every loop of each function is split into its paths (the back edge cut); each path's instructions are counted (a
 hardware divide counts 1, its latency is not known; a 64-bit multiply too). us per block ~ 1.6 x instructions per
-sample (private FX-CPU-STUDY: the classic drive, 54 instructions, measured ~85 us).
+sample (the effects' CPU study: the classic drive, 54 instructions, measured ~85 us).
 """
 import argparse
 import os

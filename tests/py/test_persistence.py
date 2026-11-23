@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""Power cycles on the host (PLAN P11.4): the host build keeps its flash in a file (FRODHES_FLASH), so a second run
+"""Power cycles on the host: the host build keeps its flash in a file (FRODHES_FLASH), so a second run
 is the FM-1 switched on again with exactly what the firmware saved. The settings (the system setup and the preset
 last loaded or saved, which plays again as it is stored: knobs turned after it are not kept, test_autosave_setup.py),
 the user presets and the sequencer's pattern survive; the saves wait 2 s after the last change (1.5 s for the pattern) and for silence; a

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""MARIMBA's short top tails (TEST-PLAN A5, the FM-1 jack's "C7 v8 MUTE 0" take, 2026-10-19): a top note ends by its
+"""MARIMBA's short top tails (the FM-1 jack's "C7 v8 MUTE 0" take, 2026-10-19): a top note ends by its
 own decay (C7's V1 T60 is 0.11 s: a v8 note is at exact zero ~0.1 s after the strike, before the silence gate's
 203 ms), never by its voice being freed while it still sounds. On the host build, every MARIMBA key 84..108 at v8..127,
 MUTE 0 and 127, RAW and through the effects (the gate), and C7 / C8 at the cards' extremes: the last 1 ms before

@@ -285,7 +285,7 @@ def main():
             if not ok:
                 t1_ok = False
     five = [n for n in names if re.fullmatch(r"keyadc_(\w+)5", n) and n != "keyadc_gate"]
-    if "keyadc_gate" in names and five:     # TEST-PLAN 3b: an engine's 5 runs before its FAIL counts (0.9.7: every engine)
+    if "keyadc_gate" in names and five:     # an engine's 5 runs before its FAIL counts (0.9.7: every engine)
         g = rows[names.index("keyadc_gate")]
         glog = read(os.path.join(OUT, "keyadc_gate.log"))
         bad = set(re.findall(r"^  (\w+)\s+OFF.*FAIL", glog, re.M))
@@ -294,7 +294,7 @@ def main():
         if g[1] == "FAIL" and bad and bad <= passed5 and not own:
             who = ", ".join(e.capitalize() if e == "rhodes" else e.upper() for e in sorted(bad))
             rows[names.index("keyadc_gate")] = (g[0], "PASS", g[2] + f"; {who} FAILed on 3 runs, PASSed on 5 ("
-                                                + ", ".join(f"keyadc_{e}5" for e in sorted(bad)) + "; TEST-PLAN 3b)",
+                                                + ", ".join(f"keyadc_{e}5" for e in sorted(bad)) + ")",
                                                 g[3])
         for n in five:
             r5 = rows[names.index(n)]
@@ -334,7 +334,7 @@ def main():
            f"{re.sub(r' *[|] *', ' / ', k.strip()).strip(' /')} | {s} |" for n, r, k, s in rows]
     md += ["", "## Ranges and notes", ""] + [f"- {n}" for n in notes]
     md += ["", "## By hand (the user / the coordinator; never reported as passed here)", "",
-           "- Before the run: the sustain preflight (TEST-PLAN §3; not in the tools yet): REC sustain latch off, no "
+           "- Before the run: the sustain preflight (not in the tools yet): REC sustain latch off, no "
            "pedal down; the MOTU M6 on input 5 for the jack; MASTER and the MOTU gain untouched.",
            "- S5's MANUAL rows: user presets (U01) and the pattern after the update (no MIDI read-back), the update "
            "loader's screen, the OCT- rescue (once per release).",

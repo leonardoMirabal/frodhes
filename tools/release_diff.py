@@ -3,7 +3,7 @@
 """The release diff: the candidate's sound against the last release, cell by cell, with pristine ceilings.
 
 Why (2026-11-08): the 0.9.10 Rhodes distorted heavily at v110..127 with the effects off and 3285 passing tests did not
-flag it (private/plans/dist-gate-audit.md). Every sound test was relative (A vs B in one build), a lower bound (a
+flag it. Every sound test was relative (A vs B in one build), a lower bound (a
 control must change something) or a target that asked for more harmonics; nobody compared the candidate with the last
 release as a whole. This does, in two sizes:
 

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Which targets a file is part of: the FM-1, the SMK-37, the host tests, the web emulator, the Move, the Move's HQ
 code, the docs. Computed from the code (the preprocessor's dependency list, -M -MG, with each target's defines), so
-the table in private/plans/05-move-implementation.md section 3.3 cannot go stale.
+a hand-kept table of them cannot go stale.
 
     tools/target_closure.py [--json] FILE ...     the targets each file affects
     tools/target_closure.py --table [--json]      every target's files

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""Every MARIMBA control outside VOICE 1/2 changes the sound by its stated job (MARIMBA PLAN §9.5, §10.2 B2, §3.4),
+"""Every MARIMBA control outside VOICE 1/2 changes the sound by its stated job (B2),
 on the host build, MARIMBA by CC 79 127, RAW unless the effects are the subject:
 
 - RING (VOICE 2/2 K1, CC 102): 0 < 64 < 127 in the V1 T60 (30 dB fit), 127 / 0 >= 2x, on C2 / C4 / C6.

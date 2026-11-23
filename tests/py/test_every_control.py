@@ -303,7 +303,7 @@ def _type():
     """TYPE (ALGORITHM, from any page): six different instruments. The closest two (STAGE 77 / SUITCASE) are 0.84 dB
     apart in 1/3-octave timbre, VIBES 22+ dB from every Rhodes, MARIMBA 29.2 dB from VIBES and 17.8+ dB from every
     Rhodes; each Rhodes pair at least 0.4, VIBES at least 8 from a Rhodes, MARIMBA at least 6 from VIBES and 8 from a
-    Rhodes (MARIMBA PLAN §9.5)"""
+    Rhodes"""
     ws = []
     for t in range(6):
         w = R(CLEAN + detents(1, 1, TYPE_POS[t], 40) + ["100 dump"] + PROBE3, 1800)

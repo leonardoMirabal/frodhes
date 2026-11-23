@@ -22,7 +22,7 @@ D = {d["midi"]: d for d in SPEC["design"]}
 KEYS = list(range(21, 109))
 AUTH = list(range(53, 90))
 
-# Gate VA checks that fail on the present data, with the reason (PLAN §10 vs the measurements and the bounds). Empty
+# Gate VA checks that fail on the present data, with the reason (the gate vs the measurements and the bounds). Empty
 # since 2026-10-17 (the tube tuned within a few cents, T4b; the T60-first zeta_r trade, T4a; sigma up to 0.007, T5a).
 KNOWN = {}
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""The MARIMBA scan profile and the musicality gate (MARIMBA PLAN §10; the shared harness does not exist, so this is
+"""The MARIMBA scan profile and the musicality gate (the shared harness does not exist, so this is
 the profile and tools/bar_scan.py --type 5 runs the generic S-checks, as AGENTS.md §5 says).
 
   tools/marimba_scan.py --smoke     the plumbing: the stub check, the selector, three stress renders (seconds; pytest)
@@ -17,7 +17,7 @@ i.e. MARIMBA plays VIBES), every MARIMBA-specific number is reported as AWAIT (a
 FAIL: the thresholds are the plan's and are never relaxed; only the verdict waits. The plumbing (the selection, the
 renders, the report) is judged now. MARIMBA_STUB=0 / 1 overrides the detection.
 
-The musicality gate (PLAN §10.3), host part (D = the FM-1 part: tools/hil_scan.py --marimba):
+The musicality gate, host part (D = the FM-1 part: tools/hil_scan.py --marimba):
   M1 even loudness   v100 LUFS 0..1 s per key: neighbour step <= 1.0 dB in C2..C7; off the +-3-key median <= 1.0 dB
                      (<= 2 dB outside C2..C7)
   M2 even timbre     the attack centroid (0..0.3 s, MED = MALLET 42, v100): neighbour change <= 10 % except at the
@@ -38,7 +38,7 @@ The musicality gate (PLAN §10.3), host part (D = the FM-1 part: tools/hil_scan.
                      from C6 up; C2-E2 with SOFT / MED: V2 <= -10 dB re V1 at the onset (5..100 ms); TUBE 64 vs 0: V1
                      T60 x1.3 or more on C2 / C3; C6-C7: TUBE 0 vs 127 V1 T60 within 10 %, level +1..+3 LU
   M8 listening       the packs (the user): not a host check
-The stress cases (PLAN §10.1 'stress', §10.2): A1 clicks 0 (tools/bar_scan.py click_count), H1 sat28 0, A3 exact zero
+The stress cases: A1 clicks 0 (tools/bar_scan.py click_count), H1 sat28 0, A3 exact zero
 by tail_bound_s 3 s after the last event (RAW), A5 the gate's fade at <= -70 dBFS, S4 the last non-zero sample <= 2 LSB (1 + the cut's dither).
 """
 import argparse
@@ -123,14 +123,14 @@ def known(check, case):
 
 TYPE = 5
 CC79 = 127                                  # CC 79 96..127 = MARIMBA (bar_measure.type_cc(5))
-AUTH = (36, 96)                             # C2..C7, the authentic range (PLAN §2.5)
+AUTH = (36, 96)                             # C2..C7, the authentic range
 VELS = (8, 24, 40, 64, 88, 100, 117, 127)   # the velocity anchors
 SOFT, MED, DEF, HARD, RUBBER = 0, 42, 64, 85, 127   # MALLET detents (KN_FAM; the card: SOFT MED (64) HARD RUBBER)
-KNEES = {84: "V3 untuned by the FE from key 84 (PLAN §2.1)"}   # documented M2 knees (+ the spec's 'knees', if any)
+KNEES = {84: "V3 untuned by the FE from key 84"}   # documented M2 knees (+ the spec's 'knees', if any)
 LIM_DBFS = 20 * math.log10(24000 / 32767)   # fx.c LIM_T: the limiter's ceiling
 LK = 32                                     # fx.c: the look-ahead limiter's sub-block (the master's delay, samples)
 
-# the profile (PLAN §10.1), with today's selector (CC 79 127) and the PCs of F15 / F16
+# the profile, with today's selector (CC 79 127) and the PCs of F15 / F16
 PROFILE = dict(
     name="MARIMBA", file="bars.c",
     types=[dict(type=TYPE, name="MARIMBA", select=[("cc", 79, CC79)], pc=14, pc_soft=15)],
@@ -216,7 +216,7 @@ def spec_source():
 
 def freqs(n):
     """{mode: Hz} for key n: the marimba spec when lane A has written it, VIBES's under the stub, else 1 : 4 : 9.8 on
-    the equal-tempered pitch (PLAN §2.1)"""
+    the equal-tempered pitch"""
     global _SPEC
     if _SPEC is None:
         p = spec_source()
@@ -371,7 +371,7 @@ def partial_trace(x, f, hop=441):
 
 
 def t60(x, f, hi=5.0, lo=35.0):
-    """the partial's T60 (s) by a 30 dB fit, 5..35 dB under its peak (PLAN §10.2 B1: the 60 dB fit runs into the floor)"""
+    """the partial's T60 (s) by a 30 dB fit, 5..35 dB under its peak (B1: the 60 dB fit runs into the floor)"""
     e, t = partial_trace(x, f)
     ip = int(np.argmax(e))
     a = np.flatnonzero((np.arange(len(e)) > ip) & (e < e[ip] - hi))
@@ -414,7 +414,7 @@ def release_rate(x, f, t_off):
 
 
 def sliding_lu(m, t0, t1, win=0.5, hop=0.1):
-    """LUFS over sliding windows (PLAN M5: 0.5 s, hop 0.1 s) between t0 and t1 (s)"""
+    """LUFS over sliding windows (M5: 0.5 s, hop 0.1 s) between t0 and t1 (s)"""
     out, t = [], t0
     while t + win <= t1 + 1e-9:
         out.append(float(bm.lufs(m[int(t * FS):int((t + win) * FS)])))
@@ -448,7 +448,7 @@ def last_nonzero(m):
     return int(nz[-1]) if len(nz) else -1
 
 
-# ---------------------------------------------------------------- the stress cases (PLAN §10.1 'stress')
+# ---------------------------------------------------------------- the stress cases
 def roll_ev(keys, rate, vel, t0, dur):
     """a roll: strikes alternating over keys at rate per second, each let go halfway to the next"""
     ev, k, dt = [], 0, 1000.0 / rate

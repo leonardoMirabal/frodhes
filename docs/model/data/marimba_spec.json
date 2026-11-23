@@ -502392,7 +502392,7 @@
 },
 "R1b":{
 "_doc":"radiation trims of V2, V3, V4 PER KEY: the generator puts each slot's onset peak re V1's (the slots' max |x| over window_s, after the contact; the DEFAULT mallet, v100, the default cards) on these lines (dB, semitone interpolation). No measured level table exists (D10 = no): the lines are the pulse spectrum of a medium mallet (f tau) with the upper modes' weaker radiation, flat-ish for V2 and falling with key. Per key because one constant per mode cannot hold the Rayleigh law's register spread: with VIBES's one constant V4 (17.5 f0) came out 20 dB over V1 on every key",
-"_doc_2026_10_19_p4":"V2 at key 36 -12 (was -10): the plan's low-register thud (PLAN \u00a72.4, scan M7: C2-E2 with SOFT / MED, V2 <= -10 dB re V1 at the onset, 5..100 ms of the output) read -8.7 dB with MED on C2, golden and C alike: this line is the bar slot's peak, while the output's f0 band at the onset is still short of the tube's build-up (the bloom), so -10 here was ~-8.7 there",
+"_doc_2026_10_19_p4":"V2 at key 36 -12 (was -10): the low-register thud (scan M7: C2-E2 with SOFT / MED, V2 <= -10 dB re V1 at the onset, 5..100 ms of the output) read -8.7 dB with MED on C2, golden and C alike: this line is the bar slot's peak, while the output's f0 band at the onset is still short of the tube's build-up (the bloom), so -10 here was ~-8.7 there",
 "_doc_point":"each mode measured at its own loudest strike point (the band table BAR_POS argmax, TONE raw on that point): the line is the mode's most at any STRIKE value, so no STRIKE setting lifts it over (at TONE 64 V3 sits near a node, and a trim made there put V3 24 dB over V1 at TONE 16 with RUBBER)",
 "_doc_smooth":"the trim follows the median over +-smooth_keys keys (the trend; a key whose mode sits near a node of the strike point stays weak), bounded to trim_db in total: attenuation only (a radiation efficiency under the R1 law): where the DEFAULT mallet's pulse rolls a mode off under its line, lifting it made a hard mallet's V3 / V4 30 dB over V1 (RUBBER's pulse is 30 dB flatter at 5 kHz)",
 "level_db":{
@@ -502417,7 +502417,7 @@
 },
 "settle":"listening pack C",
 "smooth_keys":6,
-"src":"MARIMBA PLAN \u00a75 R1b (EST from the pulse spectrum)",
+"src":"R1b (EST from the pulse spectrum)",
 "status":"ESTIMATE",
 "trim_db":[
 -40.0,
@@ -502595,7 +502595,7 @@
 ]
 },
 "settle":"listening pack A (D10 = no recordings)",
-"src":"the Rayleigh law + the tube (MARIMBA PLAN \u00a72.2-2.3); LHS p. 25 (low notes 1-2 s tuned); Roper (2 s low, 1/50 s to inaudibility at the top)",
+"src":"the Rayleigh law + the tube; LHS p. 25 (low notes 1-2 s tuned); Roper (2 s low, 1/50 s to inaudibility at the top)",
 "status":"ESTIMATE",
 "t60_s":{
 "36":1.6,
@@ -502642,7 +502642,7 @@
 "has_damper":false,
 "ramp_sub":7,
 "settle":"listening pack D (MUTE 127 on short notes: a hand stop in ~0.1 s)",
-"src":"MARIMBA PLAN \u00a73.4 (a hand stops a bar in a few tens of ms)",
+"src":"a hand stops a bar in a few tens of ms",
 "status":"ESTIMATE",
 "tube_s":0.06,
 "upper_mult":0.6,
@@ -502742,7 +502742,7 @@
 "regime":"auto",
 "settle":"listening packs A / B",
 "split_max_hz":0.8,
-"src":"MARIMBA PLAN \u00a72.3 (E1), \u00a73.8; SDA23 eq. 41 (strong coupling: both modes at (zeta_r + zeta_n) / 2)",
+"src":"E1; SDA23 eq. 41 (strong coupling: both modes at (zeta_r + zeta_n) / 2)",
 "status":"ESTIMATE",
 "weak_margin":0.9
 },
@@ -502943,7 +502943,7 @@
 "src":"VIBES T9d",
 "status":"ESTIMATE"
 },
-"_comment":"MARIMBA bar type (bar TYPE 1 of firmware/src/bars.c, panel TYPE MARIMBA): the physics data tools/gen_bars.py builds the tables from (MARIMBA PLAN \u00a75). The VIBES schema (gen_bars.check_vibes): every T-row has src and status (CONFIRMED / CORRECTED / DERIVED / MEASURED-REF / ESTIMATE), every ESTIMATE a settle entry. No samples and no recordings: the numbers are papers, physics derivations, the FE / contact / pair tools of the tree and listening (D10 = no). Sources: ISMA = Beaton & Scavone ISMA 2019 (bar measurements); BEATON = Beaton PhD 2022; SERRA = Serra et al. (marimba C4 analysis); RUCZ = Rucz et al. JASA (mallet-bar contact); SDA23 = Soares et al. JSV 2023 (bar-tube coupling); D98 = Doutaut et al. 1998; LHS = the Malletech resonator notes; LAFAVRE = La Favre's marimba resonator tables; E-VAL / D-VAL / F-VAL = the VIBES research validations (private/vibraphone).",
+"_comment":"MARIMBA bar type (bar TYPE 1 of firmware/src/bars.c, panel TYPE MARIMBA): the physics data tools/gen_bars.py builds the tables from. The VIBES schema (gen_bars.check_vibes): every T-row has src and status (CONFIRMED / CORRECTED / DERIVED / MEASURED-REF / ESTIMATE), every ESTIMATE a settle entry. No samples and no recordings: the numbers are papers, physics derivations, the FE / contact / pair tools of the tree and listening (D10 = no). Sources: ISMA = Beaton & Scavone ISMA 2019 (bar measurements); BEATON = Beaton PhD 2022; SERRA = Serra et al. (marimba C4 analysis); RUCZ = Rucz et al. JASA (mallet-bar contact); SDA23 = Soares et al. JSV 2023 (bar-tube coupling); D98 = Doutaut et al. 1998; LHS = the Malletech resonator notes; LAFAVRE = La Favre's marimba resonator tables; E-VAL / D-VAL / F-VAL = the VIBES research validations.",
 "bands":{
 "_doc":"position bands (BAR_POS / BAR_POSG / BAR_TUBEG rows of this type, nband, 612 B each) and the pulse shapes: runs of consecutive position bands share one shape within pulse_tol_db (gen_bars.share_pulses: a VIBES pulse band when one is within it, no flash; else a key of its own, appended, 5280 B each). The plan's 0.45 dB (the VIBES bands' tolerance) is out of reach: the marimba's own shapes need 24 bands for 0.76 dB, 17 for 1.3 dB (build/marimba/pg.py); the VIBES shapes stand for the marimba's only within 1-11 dB (other contact laws: no family is the same). pulse_tol_db trades flash against the attack's evenness, which VA-M / M2 measure",
 "_doc_pins":"first_key / rep: the position bands gen_bars.assign_bands found (pinned: pinned_bands, never split for this type); pulse_runs: [first band, last band, V (a VIBES pulse band) / K (a key's own, appended), index] as share_pulses solved them (pinned; test_marimba_calib checks each is the solve within 1e-6 dB)",
@@ -503026,7 +503026,7 @@
 106
 ],
 "settle":"the flash budget (the user) and listening pack C (the attack across the keyboard)",
-"src":"MARIMBA PLAN \u00a73.2 (E2: rosewood vs aluminium contacts within 2 %); build/marimba/pg.py",
+"src":"E2 (rosewood vs aluminium contacts within 2 %); build/marimba/pg.py",
 "status":"ESTIMATE"
 },
 "calib":{
@@ -503087,7 +503087,7 @@
 96
 ],
 "npt":33,
-"src":"MARIMBA PLAN 10.2 B4 (the S10 lesson 89e18a8); bar_scan S10 steps BARK",
+"src":"B4 (the S10 lesson 89e18a8); bar_scan S10 steps BARK",
 "status":"DERIVED",
 "vels":[
 100,
@@ -503143,7 +503143,7 @@
 127
 ],
 "margin_db":0.1,
-"src":"MARIMBA PLAN VA-M10 (the single-strike ceiling at every grid corner); bar_scan S2 corners (DECAY 127)",
+"src":"VA-M10 (the single-strike ceiling at every grid corner); bar_scan S2 corners (DECAY 127)",
 "status":"DERIVED",
 "tone":[
 0,
@@ -503190,7 +503190,7 @@
 "kn_tube_top":1.2,
 "nbody":0,
 "sleep_rel":9,
-"src":"MARIMBA PLAN \u00a75, \u00a73.8",
+"src":"the pulse design",
 "status":"DERIVED",
 "tors_q15":32767
 },

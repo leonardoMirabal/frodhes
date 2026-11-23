@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Gate VA-M (MARIMBA PLAN §7): the golden model (tools/bars_model.py) on the generated, quantised marimba spec
+"""Gate VA-M: the golden model (tools/bars_model.py) on the generated, quantised marimba spec
 (docs/model/data/marimba_spec.json) against the numbers of the plan's §0 / §2 and the data (marimba.json), BEFORE any
 C (the cards audible in the model first: the VIBES lesson 7046af2 / d3e61f1).
 
@@ -532,7 +532,7 @@ def capped(spec, n, v, q):
 
 
 def cards(spec):
-    """VA-M9: every card moves the sound by its job and threshold (MARIMBA PLAN §10.2) in the golden model, at
+    """VA-M9: every card moves the sound by its job and threshold in the golden model, at
     v100 / v117 / v127 on 48 / 60 / 84 (the panel path's values; NOISE in bars.c's emulated path)"""
     out = []
     D = {d["midi"]: d for d in spec["design"]}

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""tools/gen_bars.py (VIBES PLAN §4.4, P2): the header is the §4.4 contract with bars.c, deterministic and up to date,
+"""tools/gen_bars.py: the header is the contract with bars.c, deterministic and up to date,
 every word out of the ROM window and in int32, the Q-format bounds and the stability grid hold, one clean mallet
 contact, the band pulse shapes stand for every key, the vibes.json schema and --strict."""
 import copy
@@ -24,8 +24,8 @@ SPEC = json.load(open(os.path.join(ROOT, "docs", "model", "data", "bars_spec.jso
 D = {d["midi"]: d for d in SPEC["design"]}
 K = {k["midi"]: k for k in SPEC["keys"]}
 FS = 44100.0
-# the VIBES-only header (tools/gen_bars.py --vibes-only, BAR_NTYPE 1): the 0.9.3 tables, byte for byte (Gate V, MARIMBA
-# PLAN §8.1 item 1). Never changes: VIBES's tables are frozen.
+# the VIBES-only header (tools/gen_bars.py --vibes-only, BAR_NTYPE 1): the 0.9.3 tables, byte for byte (Gate V).
+# Never changes: VIBES's tables are frozen.
 VIBES_ONLY_SHA = "8d2ee43dcc41a608384c77a5226beafe616854a892b964b93048ad144229349e"
 
 
@@ -56,7 +56,7 @@ BANDED = ("BAR_PULSE", "BAR_POS", "BAR_POSG", "BAR_TUBEG")
 
 
 def check_vibes_rows(multi, single):
-    """MARIMBA PLAN §8.1 item 1: type 0 of the multi-type header is the VIBES-only header, field by field: BAR_KEYS[0],
+    """Type 0 of the multi-type header is the VIBES-only header, field by field: BAR_KEYS[0],
     BAR_PRATE[0], BAR_PAMP[0], KN_FAM / KN_MASS / KN_MASSI / KN_TUBE / KN_NZ [0], BAR_BODY[0], BAR_TYPE[0] (its first
     seven fields; flags = motor + damper), bands 0..16 of BAR_PULSE / BAR_POS / BAR_POSG / BAR_TUBEG (BAR_PBAND the
     identity there), NZ_BQ, BAR_MOT_COS and every define but the counts; every type's KN_FAM at the MALLET detents.

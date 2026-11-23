@@ -28,7 +28,7 @@ then the bypass off again. The gates, per take:
             with --old-48k (a firmware before it: the resampler overshoots a loud high passage to full scale, #38)
             full scale is information at 48 kHz and it fails on a clamp that could be heard (clamp_rows: a run > 3
             samples, > 8 in 10 ms, or an isolated spike). Clicks are not gated: a random stream makes the parameter changes 0.9.5 still
-            clicks on (private/BUGHUNT-095.md); hil_crackle's click detector counts them as information
+            clicks on (the bug list); hil_crackle's click detector counts them as information
   alive     the FM-1 answers a CC 116 query after the probe; the probe sounds on USB (> -50 dBFS, judged from the
             recorder's mark); the stream kept running (the frames recorded >= 98 % of the take's length)
 Every take runs (--stop-on-fail: stop after the first failing one; a device that no longer answers stops the run

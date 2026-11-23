@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Which release tests a change needs: every tracked file -> its test tiers (private/TEST-PLAN.md v2).
+"""Which release tests a change needs: every tracked file -> its test tiers (the release test plan v2).
 
     tools/test_map.py [--since TAG] [--json] [FILE ...]
 
