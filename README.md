@@ -70,6 +70,7 @@ firmware:
 | [mutant.cloud](https://mutant.cloud/#/p/frodhes) | Install over USB-MIDI in the browser, no account needed |
 | [fm1-editor.com](https://fm1-editor.com/firmware/#frodhes) | The community's firmware list with pictures |
 | altstrument: [FM-1 and SMK-37](https://altstrument.org/firmware/m-vave-fm-1/frodhes), [Move](https://altstrument.org/firmware/ableton-move/frodhes) | The community catalogue of alternative firmware and modules, with every Frodhes version |
+| [Schwung catalog](https://schwung.dev/catalog.html) | The Move's module catalog: install and update Frodhes on the Move with Schwung Manager |
 | [Open MPC](https://open-mpc.github.io) | The community's Akai MPC plugin catalogue: install and update Frodhes on the MPC with its Plugin Manager |
 | [Web emulator](https://leonardomirabal.github.io/frodhes/) | Play Frodhes in the browser before you install it |
 
@@ -88,8 +89,8 @@ Frodhes runs on the Move as a sound generator in Schwung, the community module h
 - One Frodhes on each track, up to four, each with its own sound. Three play without dropouts.
 
 Install it with Schwung Manager in a web browser: **Install Custom Module > From GitHub URL**, then
-`leonardoMirabal/frodhes`, or the downloaded `frodhes-module.tar.gz` under **From Tarball**. Once Frodhes is listed in
-Schwung's module catalog, you can also install and update it from there. The steps, and every page:
+`leonardoMirabal/frodhes`, or the downloaded `frodhes-module.tar.gz` under **From Tarball**. Frodhes is also in
+[Schwung's module catalog](https://schwung.dev/catalog.html), so you can install and update it from there. The steps, and every page:
 [docs/MOVE.md](docs/MOVE.md).
 
 <p align="center">

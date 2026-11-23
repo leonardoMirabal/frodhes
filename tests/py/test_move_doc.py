@@ -54,14 +54,14 @@ def test_no_test_report_in_the_manual():
 
 
 def test_install_through_schwung_manager():
-    """the user's install is Schwung Manager's, the GitHub URL first (the catalog only once Frodhes is listed); ssh
+    """the user's install is Schwung Manager's, the GitHub URL first, then Schwung's catalog (Frodhes is listed); ssh
     and move_install.py are the developers' (MOVE-DEV.md)"""
     dev = DEV
     inst = DOC[DOC.index("### Install\n"):DOC.index("### Put Frodhes on a track")]
     assert "http://<move-ip>:7700" in inst and "**Global Settings > System > Web Manager**" in inst
     assert "**Install Custom Module**" in inst and "**From GitHub URL**" in inst and "From Tarball**" in inst
     assert "`leonardoMirabal/frodhes`" in inst and "https://github.com/leonardoMirabal/frodhes" in inst
-    assert inst.index("**From GitHub URL**") < inst.index("Once Frodhes is listed in Schwung's module catalog")
+    assert inst.index("**From GitHub URL**") < inst.index("[Schwung's module catalog](https://schwung.dev/catalog.html)")
     upd = DOC[DOC.index("## Updating and removing"):DOC.index("## What differs from the FM-1")]
     assert "**Uninstall**" in upd and "**Update**" in upd
     assert "move_install.py" not in DOC and "ssh ableton@move.local" not in DOC

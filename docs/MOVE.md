@@ -47,8 +47,8 @@ the Move's controls and what is different.
 
 Schwung Manager downloads the latest release. To install from a file instead, download **`frodhes-module.tar.gz`**
 from the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest) and upload it under **Install
-Custom Module > From Tarball**. Once Frodhes is listed in Schwung's module catalog, you can also install and update it
-from there.
+Custom Module > From Tarball**. Frodhes is also in [Schwung's module catalog](https://schwung.dev/catalog.html), so you
+can install and update it from there.
 
 ### Put Frodhes on a track
 
@@ -443,7 +443,7 @@ them.
 ## Updating and removing
 
 **Updating.** Unload Frodhes from every track first: a module that plays must not be replaced under it. Then install
-the new version the same way as the first (From GitHub URL or From Tarball). Once Frodhes is in the catalog, Schwung
+the new version the same way as the first (From GitHub URL or From Tarball). As Frodhes is in the catalog, Schwung
 Manager shows a new version next to it (**Update**, or **Update All**). If the manager asks for a restart, restart.
 An update keeps your settings and user presets.
 
