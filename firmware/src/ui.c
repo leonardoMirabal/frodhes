@@ -670,6 +670,7 @@ FR_COLD static void color_text(char *v, uint32_t i) { p_strcpy(v, COLOR_NAME[i <
 #endif
 FR_COLD static int32_t slot_val(uint32_t s, int32_t *hi)
 {
+    if (s == P_TYPE) { *hi = PARAMS[s].hi; return PV(s) < N_TYPE_N ? TYPE_POS[PV(s)] : 0; }   /* the TYPE card: its position in the scroll order */
     if (s < P_COUNT) { *hi = PARAMS[s].hi; return PV(s); }
     switch (s) {
     case S_KVEL: *hi = 127; return set.key_vel;
@@ -836,10 +837,10 @@ FR_COLD static void slot_turn(uint32_t s, int32_t d)
         int32_t step = PARAMS[id].fmt == F_ENUM || PARAMS[id].fmt == F_DIV ? sgn(d) : d, v;
         /* a synced rate / time knob steps the note value (clockwise: longer time, faster rate); never unsyncs */
         if (slot_synced(id)) { step = id == P_DL_TIME ? sgn(d) : -sgn(d); id = slot_sync_id(id); }
-        v = PV(id) + step;
+        v = id == P_TYPE ? (int32_t)TYPE_POS[PV(id) < N_TYPE_N ? PV(id) : 0u] + step : PV(id) + step;   /* TYPE: by position */
         if (id != s && v < 1) v = 1;
         if (id == P_MOT_RATE && v > 120) v = 120;       /* the motor's top speed (10 Hz) */
-        if (id == P_TYPE) type_pick(clampi(v, 0, PARAMS[id].hi));   /* a TYPE change (bar types: the motor on) */
+        if (id == P_TYPE) type_pick(TYPE_ORDER[clampi(v, 0, PARAMS[id].hi)]);   /* a TYPE change (bar types: the motor on) */
         else param_set(id, clampi(v, 0, PARAMS[id].hi));
         if (id == P_MOT_ON) set.mot_user_off = !PV(P_MOT_ON);        /* off by hand: no auto-on at TYPE VIBES */
         fx_wake(id);

@@ -98,7 +98,7 @@ The screen shows one page with four cards. **K1-K4** always change the four card
 - The buttons jump to pages: **HOME** to PERFORM (press again for the FRODHES page), **EDIT** to CHORD, **ENV** to
   PHASER, **LFO** to TREM/WAH, **SEL** to DELAY, **ARP** to ARPEGGIO, **SEQ** to SEQUENCER, **GLO** to TEMPO and
   the setup pages. On its own page, the button switches that effect or tool on and off.
-- **ALGORITHM** changes the instrument (TYPE) from any page: five electric pianos (the last is WHURLI), VIBES and MARIMBA.
+- **ALGORITHM** changes the instrument (TYPE) from any page: five electric pianos (the last is WHURLI), VIBES and MARIMBA. It scrolls STAGE 77, SUITCASE, EARLY FELT, BELL DYNO, WHURLI, VIBES, MARIMBA.
 - **FX** switches all effects but the compressor off and on, to compare with the dry instrument.
 
 On PERFORM the four knobs are DRIVE, FILTER, DELAY and REVERB. Turning one up switches that effect on. You can put
@@ -347,7 +347,7 @@ sound: a thin, reedy, slightly hollow note when you play softly, and a throaty g
 is built from physics (the reed's own modes, the felt hammer, the pickup and the small amp and speaker around it) and
 plays no samples.
 
-![The main page on WHURLI](manual/img/piano-whurli.png?v=70637e38)
+![The main page on WHURLI](manual/img/piano-whurli.png?v=0cf3f438)
 
 ![VOICE 1/3 on WHURLI: TONE, BARK, BELL and HAMMER](manual/img/voice1-whurli.png?v=846c210e)
 
@@ -840,7 +840,7 @@ times higher), the tube that takes a moment to build up under the bar, and the m
 electric piano type and VIBES fades out what is still ringing, held notes too; a note still held plays again on the new type
 the next time it is struck (a MIDI note-on, or a key on the same note).
 
-![The main page on VIBES](manual/img/piano-vibes.png?v=68faeda8)
+![The main page on VIBES](manual/img/piano-vibes.png?v=f36967b1)
 
 The main page's middle cards belong to the engine: on VIBES they are **MALLET** (the same as VOICE 1/4's MALLET)
 and **MOTOR** (on / off, the same as VOICE 3/4's first card); on an electric piano type they are **TONE** and **BELL** (DRIVE
@@ -940,7 +940,7 @@ C5 up the note starts at its loudest. A marimba has **no damper and no motor**: 
 player stops it with a hand. Switching between VIBES and MARIMBA (or an electric piano type) fades out what is still ringing,
 held notes too; a note still held plays again on the new type the next time it is struck.
 
-![The main page on MARIMBA](manual/img/piano-marimba.png?v=5402b7e0)
+![The main page on MARIMBA](manual/img/piano-marimba.png?v=7c1cef9c)
 
 The main page's middle cards on MARIMBA are **MALLET** (the same as VOICE 1/3's MALLET) and **TUBE** (VOICE 1/3's
 TUBE). MARIMBA has two VOICE pages, **VOICE 1/3** (the strike) and **VOICE 2/3** (how the bars ring and stop), and no

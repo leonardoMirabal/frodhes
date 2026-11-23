@@ -203,7 +203,7 @@ def resolve_type(arg, cc=None, partials=()):
     if str(arg).isdigit():
         i = int(arg)
         if i == 6:
-            return Type(6, "WHURLI", -1, 6, partials)          # no CC: encoder 1 six steps from STAGE 77 (tests/scripts/whurli.txt)
+            return Type(6, "WHURLI", -1, 4, partials)          # no CC: encoder 1 four steps from STAGE 77 (the scroll order: WHURLI after BELL DYNO) (tests/scripts/whurli.txt)
         if i > 6:
             raise SystemExit(f"TYPE {i}: the tool does not know its selecting CC yet, pass --type-cc CC:VALUE")
     else:

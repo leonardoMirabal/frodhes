@@ -1,0 +1,37 @@
+# ALGORITHM scrolls STAGE 77, SUITCASE, EARLY FELT, BELL DYNO, WHURLI, VIBES, MARIMBA (the ids 0 1 2 3 6 4 5).
+# The stored TYPE id (p.0) is the same as before; CC 80 (bands) and program changes still select by id.
+50 midi 0xB0 119 127
+100 expect state p.0 0
+110 turn 1 1
+120 expect state p.0 1
+130 turn 1 1
+140 expect state p.0 2
+150 turn 1 1
+160 expect state p.0 3
+170 turn 1 1
+180 expect state p.0 6
+190 turn 1 1
+200 expect state p.0 4
+210 turn 1 1
+220 expect state p.0 5
+230 turn 1 1
+240 expect state p.0 5
+250 turn 1 -1
+260 expect state p.0 4
+270 turn 1 -1
+280 expect state p.0 6
+290 turn 1 -1
+300 expect state p.0 3
+310 turn 1 -1
+320 expect state p.0 2
+330 turn 1 -1
+340 expect state p.0 1
+350 turn 1 -1
+360 expect state p.0 0
+370 turn 1 -1
+380 expect state p.0 0
+# CC 80 by id bands, unchanged: 0..25 ST77, 26..51 SUIT, 52..76 FELT, 77..102 DYNO, 103..127 WHURLI
+400 midi 0xB0 80 110
+410 expect state p.0 6
+420 midi 0xB0 80 90
+430 expect state p.0 3

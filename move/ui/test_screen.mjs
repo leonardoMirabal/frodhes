@@ -113,7 +113,7 @@ test("the VOICE pages follow TYPE (a knob here, or elsewhere)", () => {
     assert.equal(s.api.visiblePages(0).length, 14);                  // (CHORUS and DELAY apart, ARPEGGIO: 2026-10-30;
     assert.equal(s.api.visiblePages(1).length, 15);                  //  the EQ: 0.9.9; VELOCITY: 0.9.10)
     assert.equal(s.api.visiblePages(2).length, 14);
-    for (let i = 0; i < 4; i++) { s.knob(0, 1); s.wait(200); }        // TYPE ST77 -> VIBE
+    for (let i = 0; i < 5; i++) { s.knob(0, 1); s.wait(200); }        // TYPE ST77 -> VIBE
     s.live();
     assert.equal(s.st().engine, 1);
     goto(s, "VIBES MOTOR");
@@ -568,6 +568,19 @@ test("every overview label fits its card with a gap: its width at most the card'
             assert.ok(w(lab) <= cell - 1, `${p.title} ${lab}: ${w(lab)} px in a ${cell} px card`);
             assert.ok(!k.short || k.short.length >= 2, `${p.title} ${k.short}`);
         });
+    }
+});
+
+test("TYPE scrolls STAGE 77, SUITCASE, EARLY FELT, BELL DYNO, WHURLI, VIBES, MARIMBA; the stored id stays", () => {
+    const s = new Screen().open();
+    const ids = [0, 1, 2, 3, 6, 4, 5];                               // the p_type ids in scroll order
+    for (let i = 1; i < ids.length; i++) {
+        s.knob(0, 1); s.wait(200); s.live();
+        assert.equal(Number(s.plugin.get("p_type")), ids[i]);
+    }
+    for (let i = ids.length - 2; i >= 0; i--) {
+        s.knob(0, -1); s.wait(200); s.live();
+        assert.equal(Number(s.plugin.get("p_type")), ids[i]);
     }
 });
 

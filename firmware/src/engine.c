@@ -31,6 +31,11 @@
 #define ENG_NTYPE 7u
 static const uint8_t ENG_TYPE_ENG[ENG_NTYPE] = {0, 0, 0, 0, 1, 1, 0};
 static const uint8_t ENG_TYPE_SUB[ENG_NTYPE] = {0, 1, 2, 3, 0, 1, RH_T_REED};
+/* the order a player scrolls the TYPEs in (ALGORITHM, the plugin's and the Move's lists, the TYPE card's segments): the four pianos,
+ * WHURLI, VIBES, MARIMBA. Display only: the stored TYPE (presets, settings, CC 79 / 80, program changes, the plugin's and the Move's
+ * state) keeps its id: WHURLI is 6. TYPE_ORDER[position] = id, TYPE_POS[id] = position */
+static const uint8_t TYPE_ORDER[ENG_NTYPE] = {0, 1, 2, 3, 6, 4, 5};
+static const uint8_t TYPE_POS[ENG_NTYPE] = {0, 1, 2, 3, 5, 6, 4};
 
 /* the effects' view of the running engine's level (fx.c; a block's settings, read where each block's are worked out):
  * the bars into the effects at BAR_MIX_G (bars.h), lifted back by BAR_FX_K (a gain, Q15) / BAR_FX_DT (log2 Q12) where

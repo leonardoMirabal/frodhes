@@ -3,6 +3,7 @@
 - **WHURLI**, a reed electric piano, joins the electric pianos: a thin steel reed, a bright and slightly hollow tone, and a
   throaty growl when you strike hard. BARK sets how much growl, HAMMER how soon it starts and how sharp it is, and RESPONSE
   how hard you have to play to get it. Built from physics, no samples. Its keys run from A1 to C7.
+  ALGORITHM scrolls to it right after BELL DYNO, before VIBES and MARIMBA; saved sounds and MIDI keep their meaning.
 - Four factory presets for it: **F20 WHURLI** (dry), **F21 REED GROWL**, **F22 REED TREM** (the tremolo piano) and
   **F23 REED SOFT**. On the FM-1, program changes 35 to 38 load them.
 

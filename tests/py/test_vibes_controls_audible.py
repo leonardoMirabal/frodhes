@@ -117,7 +117,7 @@ def test_pedal_holds_and_half_pedals(note):
 
 def test_tune_by_the_panel():
     """the DECAY page's K4 (the panel; TUNE has no CC): -50 / +50 cents"""
-    pre = ["100 turn 1 1", "120 turn 1 1", "140 turn 1 1", "160 turn 1 1", "300 turn 0 1", "350 turn 0 1", "400 turn 0 1",
+    pre = ["100 turn 1 1", "120 turn 1 1", "140 turn 1 1", "160 turn 1 1", "180 turn 1 1", "300 turn 0 1", "350 turn 0 1", "400 turn 0 1",
            "450 expect state vlabel.1.3 TUNE"]
     got = {}
     for tu in (-50, 0, 50):
@@ -241,7 +241,7 @@ def test_velocity_brightens(note):
 
 def test_key_vel_card_is_heard():
     """KEY VEL (the velocity page's K3, VIBES VOICE 4/4) is the keys' velocity: 40 vs 117 (the user's) on the A4 key"""
-    pre = ["100 turn 1 1", "120 turn 1 1", "140 turn 1 1", "160 turn 1 1", "200 btn 8", "210 turn 0 1", "220 turn 0 1",
+    pre = ["100 turn 1 1", "120 turn 1 1", "140 turn 1 1", "160 turn 1 1", "180 turn 1 1", "200 btn 8", "210 turn 0 1", "220 turn 0 1",
            "230 turn 0 1", "240 turn 0 1"] + RAW + MOTOR_OFF
     lv = {}
     for kv in (40, 117):

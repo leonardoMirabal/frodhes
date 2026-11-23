@@ -506,8 +506,8 @@ static void button(frp_gui_t *g, int id)
             g->h.preset_cmd(g->h.ctx, id == FRB_PREV ? FRP_UI_PRESET_PREV : id == FRB_NEXT ? FRP_UI_PRESET_NEXT :
                                       id == FRB_SAVE ? FRP_UI_PRESET_SAVE : FRP_UI_PRESET_UNDO);
         break;
-    case FRB_TYPE_PREV: set_once(g, FRP_TYPE, (m->p[FRP_TYPE] + 5) % 6); break;
-    case FRB_TYPE_NEXT: set_once(g, FRP_TYPE, (m->p[FRP_TYPE] + 1) % 6); break;
+    case FRB_TYPE_PREV: set_once(g, FRP_TYPE, frn_type_step(m->p[FRP_TYPE], -1, 1)); break;   /* (the scroll order, WHURLI after BELL DYNO) */
+    case FRB_TYPE_NEXT: set_once(g, FRP_TYPE, frn_type_step(m->p[FRP_TYPE], 1, 1)); break;
     case FRB_GEAR: m->settings = !m->settings; m->presets = 0; close_popups(g); break;
     case FRB_CLOSE: m->settings = 0; m->presets = 0; close_popups(g); break;
     case FRB_SUSTAIN:                                /* latching, as the device's REC: CC 64 down / up */
@@ -536,6 +536,7 @@ static void step_value(frp_gui_t *g, int id, int dir, int mods)
 {
     int hi = hi_of(id), st = hi >= 100 && (mods & FRG_SHIFT) ? 10 : 1;
     if (id == FRS_BPM) { if (g->m.tempo_src == 1) setting_set(g, FRS_BPM, clampi(bpm_step(g->m.bpm10, dir * st), BPM_LO, BPM_HI)); return; }
+    if (id == FRP_TYPE) { set_once(g, id, frn_type_step(frui_value(&g->m, id), dir * st, 0)); return; }
     set_once(g, id, clampi(frui_value(&g->m, id) + dir * st, 0, hi));
 }
 
@@ -634,7 +635,7 @@ static void mouse(frp_gui_t *g, int ev, float x, float y, int mods, int clicks)
         }
         if (m->menu >= 0) {                          /* an open menu: an item, or a click anywhere closes it */
             int id = m->menu & 0xFF, kind = m->menu >> 8;
-            if (on && w.kind == FRW_ITEM && kind == FRW_MENU) set_once(g, id, w.id);
+            if (on && w.kind == FRW_ITEM && kind == FRW_MENU) set_once(g, id, id == FRP_TYPE ? FRN_TYPE_ORDER[w.id] : w.id);
             m->menu = -1;
             return;
         }
@@ -763,7 +764,7 @@ static void wheel(frp_gui_t *g, float x, float y, float notches, int mods)
         gesture(g, id, 1);
     }
     g->wheel_t = g->now;
-    set_value(g, id, clampi(frui_value(&g->m, id) + steps, 0, hi));
+    set_value(g, id, id == FRP_TYPE ? frn_type_step(frui_value(&g->m, id), steps, 0) : clampi(frui_value(&g->m, id) + steps, 0, hi));
 }
 static int on_key(frp_gui_t *g, int key, int mods)
 {
@@ -797,7 +798,7 @@ static int on_key(frp_gui_t *g, int key, int mods)
         step_value(g, fid, key == FRK_PGUP ? 1 : -1, hi_of(fid) >= 100 ? FRG_SHIFT : 0);
         return 1;
     case FRK_HOME: set_once(g, fid, 0); return 1;
-    case FRK_END: set_once(g, fid, hi_of(fid)); return 1;
+    case FRK_END: set_once(g, fid, fid == FRP_TYPE ? FRN_TYPE_ORDER[hi_of(fid)] : hi_of(fid)); return 1;
     case FRK_DELETE: case FRK_BACKSPACE: set_once(g, fid, default_of(g, fid)); return 1;
     case FRK_RETURN:
         if ((m->focus >> 8) == FRW_MENU) { m->menu = m->menu == m->focus ? -1 : m->focus; return 1; }

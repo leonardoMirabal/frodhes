@@ -751,10 +751,11 @@ static void mb_pop(mb_ev_t *c)
 /* ---- parameters (M1-06): MOVE_KEYS[] (move/module/move_ui.h, generated) maps a key to a parameter id or a ui.c
  * slot. Writes go the panel's way (ui.c slot_turn: its side effects, cmp_wake, the motor's auto-on memory, the synced
  * rates), set to an absolute value; not as CCs (CC 80 is the electric pianos only, CC 85 and 86 / 87 are combined) */
-static int32_t mb_slot_get(uint32_t s) { int32_t hi; return slot_val(s, &hi); }
+static int32_t mb_slot_get(uint32_t s) { int32_t hi; return s == P_TYPE ? (int32_t)PV(P_TYPE) : slot_val(s, &hi); }   /* (the key reads the TYPE's id) */
 static void mb_slot_abs(uint32_t s, int32_t x)
 {
     int32_t hi, cur = slot_val(s, &hi), n;
+    if (s == P_TYPE) x = TYPE_POS[x < 0 ? 0 : x >= (int32_t)N_TYPE_N ? (int32_t)N_TYPE_N - 1 : x];   /* the TYPE's slot value is its place in the scroll order (WHURLI 4), the key's its id */
     if (x < 0) x = 0;
     if (x > hi) x = hi;
     if (s < P_COUNT) {
@@ -767,7 +768,7 @@ static void mb_slot_abs(uint32_t s, int32_t x)
         slot_turn(s, x - cur);
         { int32_t now = slot_val(s, &hi); if (now == cur) break; cur = now; }
     }
-    if (s < P_COUNT && PV(s) != (uint8_t)x && x <= PARAMS[s].hi) param_set(s, x);   /* past a panel stop (MOTOR
+    if (s < P_COUNT && s != P_TYPE && PV(s) != (uint8_t)x && x <= PARAMS[s].hi) param_set(s, x);   /* past a panel stop (MOTOR
                                                      * RATE: the panel stops at 120, the parameter goes to 127) */
     if (s < P_COUNT) ui_mark_param(s);
     ui_mark(E_CARDS); ui_mark(E_FOOTER);
