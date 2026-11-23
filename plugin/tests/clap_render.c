@@ -1108,6 +1108,38 @@ static int coretest(void)
         printf("ok    older and broken states: version 1 loads (defaults for the new keys), garbage and a cut state "
                "refused, a bad learn map dropped, a CLASSIC state loads on HQ (24 voices) and saves as HQ\n");
     }
+    {   /* the effect lamps' memory (version 6): each effect's last setting other than OFF, kept by the instance (it
+         * outlives the window), saved with the project; a state without it (older, or none seen) loads with none, and
+         * saves as before */
+        char old[4096], *pv;
+        mem_t m3 = { 0 };
+        CHECK(VT->version >= 6u && VT->fx_last && VT->fx_last_set, "the UI extension has fx_last (version %u)", VT->version);
+        CHECK(state_of(a, &m3) == 0 && !strstr(m3.b, "\"lamp\""), "no lamp memory yet: the state has no \"lamp\" key");
+        VT->fx_last_set(ca, 1, 2); VT->fx_last_set(ca, 5, 3); VT->fx_last_set(ca, 7, 4); VT->fx_last_set(ca, 0, 300);
+        CHECK(VT->fx_last(ca, 1) == 2 && VT->fx_last(ca, 5) == 3 && VT->fx_last(ca, 7) == 0 && VT->fx_last(ca, 0) == 0,
+              "kept per effect (TREM/WAH %d, REVERB %d), a tab or value out of range dropped", VT->fx_last(ca, 1),
+              VT->fx_last(ca, 5));
+        CHECK(state_of(a, &m3) == 0 && strstr(m3.b, "\"lamp\":\"0,2,0,0,0,3\""), "saved with the state:\n%s", m3.b);
+        CHECK(state_load(b, m3.b) == 0 && VT->fx_last(cb, 1) == 2 && VT->fx_last(cb, 5) == 3 && VT->fx_last(cb, 0) == 0,
+              "loaded in a second instance (%d %d)", VT->fx_last(cb, 1), VT->fx_last(cb, 5));
+        CHECK(state_of(b, &m2) == 0 && !strcmp(m3.b, m2.b), "the lamp state round trip:\n%s\n%s", m3.b, m2.b);
+        snprintf(old, sizeof old, "%s", m3.b);     /* a state from before: no "lamp" key */
+        pv = strstr(old, ",\"lamp\":\"");
+        {
+            char *e = strchr(pv + 9, '"') + 1;
+            memmove(pv, e, strlen(e) + 1);
+        }
+        CHECK(state_load(b, old) == 0 && VT->fx_last(cb, 1) == 0 && VT->fx_last(cb, 5) == 0 && VT->param_get(cb, P_TONE_) == 100,
+              "an older state loads: the sound, no lamp memory");
+        CHECK(state_of(b, &m2) == 0 && !strcmp(old, m2.b), "and saves as it was:\n%s\n%s", old, m2.b);
+        snprintf(old, sizeof old, "%s", m3.b);
+        pv = strstr(old, "\"lamp\":\"");
+        pv[8] = 'Z';
+        CHECK(state_load(b, old) == 0 && VT->fx_last(cb, 1) == 0 && VT->fx_last(cb, 5) == 0, "a bad lamp memory loads empty");
+        VT->fx_last_set(ca, 1, 0); VT->fx_last_set(ca, 5, 0);
+        free(m3.b);
+        printf("ok    the lamps' memory: kept by the instance, saved and loaded, an older or bad state loads with none\n");
+    }
     b->destroy(b);
     /* the user preset seen by a new instance, deleted */
     CHECK((b = create()) != 0, "a third instance");

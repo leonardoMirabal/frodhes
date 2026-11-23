@@ -54,7 +54,7 @@ struct frp_gui {
     float lvl[2], pk[2];
     double pk_t[2];
     uint8_t own_notes[128];          /* the keyboard's own notes (shown at once, before the app reports them) */
-    uint8_t fx_last[FRT_NR];         /* each right-panel effect's last setting other than OFF (0: none seen yet) */
+    int loc_fxl[FRT_NR];             /* the lamps' memory when the host keeps none (FRP_UI_FX_LAST: the instance's) */
     /* the platform view (frp_gui_client) */
     frg_client cl;
     const uint32_t *tpx;             /* the view's buffer the canvas was last copied into */
@@ -81,6 +81,7 @@ static int *loc_setting(frp_gui_t *g, int key)
     if (key >= FRS_CHANNEL && key <= FRS_UPDCHK) return &g->loc_set[key - FRS_CHANNEL];
     if (key == FRP_UI_TUNE) return &g->loc_tune;
     if (key == FRP_UI_FX_BYPASS) return &g->loc_fx;
+    if (key >= FRP_UI_FX_LAST && key < FRP_UI_FX_LAST + FRT_NR) return &g->loc_fxl[key - FRP_UI_FX_LAST];
     return 0;
 }
 static void setting_set(frp_gui_t *g, int key, int v)
@@ -129,15 +130,23 @@ static int fx_switch(int tab)
     static const int sw[FRT_NR] = {FRP_FL_TYPE, FRP_TW_SW, FRP_PH_SW, FRP_CP_SW, FRP_DL_SW, FRP_RV_TYPE};
     return tab >= 0 && tab < FRT_NR ? sw[tab] : -1;
 }
+/* the lamp's memory of effect tab's last setting other than OFF (0: none seen), kept by the instance (it outlives the
+ * window and is saved with the project), else by the window */
+static int fx_last(frp_gui_t *g, int tab) { return setting_get(g, FRP_UI_FX_LAST + tab, g->loc_fxl[tab]); }
+static void fx_last_note(frp_gui_t *g, int tab, int v)
+{
+    if (v && v != fx_last(g, tab)) setting_set(g, FRP_UI_FX_LAST + tab, v);
+}
 /* on -> OFF; OFF -> the setting it had before (TREM/WAH: its switch; PAN or TREM is TW_MODE, which OFF keeps), or
  * the page's first one when none was seen */
 static void fx_toggle(frp_gui_t *g, int tab)
 {
-    int id = fx_switch(tab), v;
+    int id = fx_switch(tab), v, last;
     if (id < 0) return;
     v = g->m.p[id];
-    if (v) { g->fx_last[tab] = (uint8_t)v; set_once(g, id, 0); }
-    else set_once(g, id, g->fx_last[tab] ? g->fx_last[tab] : 1);
+    if (v) { fx_last_note(g, tab, v); set_once(g, id, 0); return; }
+    last = fx_last(g, tab);
+    set_once(g, id, last > 0 && last <= hi_of(id) ? last : 1);
 }
 static int default_of(frp_gui_t *g, int id)
 {
@@ -272,7 +281,7 @@ int frp_gui_tick(frp_gui_t *g, double now)
         m->p[i] = (uint8_t)iv;
     }
     for (i = 0; i < FRT_NR; i++)                     /* the lamps' memory: what each effect was set to while on */
-        if (m->p[fx_switch(i)]) g->fx_last[i] = m->p[fx_switch(i)];
+        fx_last_note(g, i, m->p[fx_switch(i)]);
     m->tune = clampi(setting_get(g, FRP_UI_TUNE, g->loc_tune), -50, 50);
     m->fx_bypass = setting_get(g, FRP_UI_FX_BYPASS, g->loc_fx) != 0;
     m->midi_ch = setting_get(g, FRS_CHANNEL, g->loc_set[FRS_CHANNEL - FRS_CHANNEL]);

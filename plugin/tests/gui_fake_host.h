@@ -21,6 +21,7 @@ typedef struct {
     char upd[16];                        /* CHECK FOR UPDATES: the newer release the stand-in knows ("": none) */
     int upd_ready;                       /* its package downloaded (INSTALL) */
     int upd_opens;                       /* the UPDATE key's clicks */
+    int fxl[FRT_NR];                     /* the lamps' memory the instance keeps (FRP_UI_FX_LAST + tab) */
 } fake_host;
 
 static int fh_get(void *ctx, uint32_t id, double *v) { *v = ((fake_host *)ctx)->v[id]; return 0; }
@@ -90,6 +91,7 @@ static int fh_setting_get(void *ctx, int key, int *v)
     if (key == FRP_UI_TUNE) { *v = h->v[FRP_TUNE] - 50; return 0; }
     if (key == FRP_UI_HOST_BPM10) { *v = 1200; return 0; }
     if (key >= FRS_CHANNEL && key <= FRS_UPDCHK) { *v = h->v[key]; return 0; }
+    if (key >= FRP_UI_FX_LAST && key < FRP_UI_FX_LAST + FRT_NR) { *v = h->fxl[key - FRP_UI_FX_LAST]; return 0; }
     return -1;
 }
 static void fh_setting_set(void *ctx, int key, int v)
@@ -97,6 +99,7 @@ static void fh_setting_set(void *ctx, int key, int v)
     fake_host *h = ctx;
     if (key == FRP_UI_TUNE) h->v[FRP_TUNE] = v + 50;
     else if (key >= FRS_CHANNEL && key <= FRS_UPDCHK) h->v[key] = v;
+    else if (key >= FRP_UI_FX_LAST && key < FRP_UI_FX_LAST + FRT_NR) h->fxl[key - FRP_UI_FX_LAST] = v;
 }
 static int fh_update(void *ctx, char ver[16]) { fake_host *h = ctx; snprintf(ver, 16, "%s", h->upd); return h->upd[0] ? 1 + (h->upd_ready != 0) : 0; }
 static void fh_update_open(void *ctx) { ((fake_host *)ctx)->upd_opens++; }

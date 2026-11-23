@@ -495,10 +495,28 @@ int main(void)
         ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
         CHECK(h.v[FRP_TW_SW] == 2, "TREM/WAH: off and on, WAH restored (%d)", h.v[FRP_TW_SW]);
         cl->tick(cl->ctx); paint();
-        {                                              /* a new window that never saw FILTER on */
+        {   /* the memory is the instance's: REVERB off with the lamp, the window closed, a new one opened while it is OFF
+             * (it never saw PLATE): its lamp turns PLATE back on, not the page's first type */
             frp_gui_t *c0 = ctl;
             const frg_client *l0 = cl;
-            h.v[FRP_FL_TYPE] = 0;
+            fh_find(u, FRW_LAMP, FRT_REVERB, &x, &y);
+            ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+            CHECK(h.v[FRP_RV_TYPE] == 0 && h.fxl[FRT_REVERB] == 2, "REVERB off by the lamp, PLATE kept by the instance (%d)",
+                  h.fxl[FRT_REVERB]);
+            ctl = frp_gui_new(&ch); cl = frp_gui_client(ctl);
+            paint();
+            fh_find(frp_gui_frui(ctl), FRW_LAMP, FRT_REVERB, &x, &y);
+            ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+            CHECK(h.v[FRP_RV_TYPE] == 2 && h.gestures_open == 0, "a reopened window: the lamp turns PLATE back on (%d)",
+                  h.v[FRP_RV_TYPE]);
+            frp_gui_free(ctl);
+            ctl = c0; cl = l0;
+            cl->tick(cl->ctx); paint();
+        }
+        {                                              /* a new instance and window that never saw FILTER on */
+            frp_gui_t *c0 = ctl;
+            const frg_client *l0 = cl;
+            h.v[FRP_FL_TYPE] = 0; h.fxl[FRT_FILTER] = 0;
             ctl = frp_gui_new(&ch); cl = frp_gui_client(ctl);
             paint();
             fh_find(frp_gui_frui(ctl), FRW_LAMP, FRT_FILTER, &x, &y);
