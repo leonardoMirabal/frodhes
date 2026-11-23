@@ -12,7 +12,7 @@
  * TYPE starts with its lines reading as empty (O(1): no memset in the audio interrupt; HALL's lines, left full, are
  * cleared by the main loop, rev_poll, before HALL may run again). From silence the new TYPE starts at once.
  *
- * ---- The kernel API (one file per TYPE: rev_plate.c, rev_inf.c; private/reverb/CONTRACT.md) ----
+ * ---- The kernel API (one file per TYPE: rev_plate.c, rev_inf.c) ----
  * Half rate (22.05 kHz), one control block = HL_NC = 16 samples a call.
  *   typedef struct { int32_t decay, damp, size, mod, freeze; } rev_ctl_t;      (below; filled once a control block)
  *   static void rev_<t>_start(rev_<t>_t *s);  O(1): no memset > 2 KB; stale buffer content must read as 0

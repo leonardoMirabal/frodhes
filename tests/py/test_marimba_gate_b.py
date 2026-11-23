@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""Gate VB-M (MARIMBA PLAN §8.2): the bar engine playing MARIMBA (firmware/src/bars.c on the host build, TYPE 5 by
+"""Gate VB-M: the bar engine playing MARIMBA (firmware/src/bars.c on the host build, TYPE 5 by
 CC 79 127) against the float golden model with the marimba spec (tools/bars_model.py, docs/model/data/
 marimba_spec.json), note for note, as Gate VB does for VIBES (tests/py/test_bars_gate_b.py): residual energy <= -60 dB
 of the signal (or an RMS under half an LSB). RAW (no effects), NOISE 0, the budget off (FRODHES_NOBUDGET: the golden

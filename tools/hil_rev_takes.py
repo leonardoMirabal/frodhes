@@ -8,7 +8,7 @@ every 0.5 s as in the cracks test (tools/hil_crackle.py Device: CPU, USB underru
   tools/hil_rev_takes.py [--engine rhodes|vibes|marimba] [--out DIR] [--only NAME,..] [--rate 48000]
                          [--source both|usb] [--jack-dev M6] [--jack-ch 5] [--dry-run] [--host] [--list]
 
-  --out DIR   where the WAVs go (default private/reverb/takes/<engine>/): <take>-usb.wav (stereo, the USB rate) and
+  --out DIR   where the WAVs go (default: a gitignored folder of the checkout, per <engine>): <take>-usb.wav (stereo, the USB rate) and
               <take>-jack.wav (mono, 48 kHz), and takes.json (each take's settings, events, counters, peaks)
   --only      the takes to play (names from --list)
   --host      the host build in the FM-1's place (USB only, 44.1 kHz): a check of the script, no device
@@ -18,7 +18,7 @@ developer reset), then the reverb's own CCs (from params.c: TYPE CC 95's bands, 
 
 The ready-to-run command (FM-1, sandbox off, build/hil/DEVICE.lockdir held; MASTER fully up and untouched):
   tools/hil_rev_takes.py --dry-run                                     the plan (~6 min on the Rhodes)
-  tools/hil_rev_takes.py                                               the Rhodes -> private/reverb/takes/rhodes/
+  tools/hil_rev_takes.py                                               the Rhodes takes
   tools/hil_rev_takes.py --engine vibes; tools/hil_rev_takes.py --engine marimba   (~6 min each)
 """
 import argparse

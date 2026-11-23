@@ -1175,7 +1175,7 @@ def check_jack_marimba(rep):
     if not rep["idle_ok"]:
         bad.append(f"idle: {rep['idle']}")
     if bad:
-        raise Stop("hil_jack marimba (TEST-PLAN A5, the idle floor):\n" + "\n".join(bad))
+        raise Stop("hil_jack marimba (the idle floor):\n" + "\n".join(bad))
     return (f"hil_jack marimba: SNR {m['snr_db']:.1f} dB ({rep['snr_vs_st77_db']:+.1f} re ST77 in the same session, "
             f"information: MARIMBA's chord is quieter), loud chord jack peak {peak:.1f} dBFS; {len(rep['tails'])} "
             "tails and the idle floor ok")

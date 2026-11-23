@@ -19,7 +19,7 @@
 #   monkey     hil_monkey 20 min at 48 kHz, seeds 3000, 3100, 3200, 3300 (each take opens the USB stream again:
 #              with s3 this is the "USB missed" soak)
 #   s3         T1's S3 (preset and TYPE switching, the first 0.9.9 candidate's "USB missed 1") 3 more times
-#   t2         private/release-095/t2_run.py (release.py's T2) on the package
+#   t2         release.py's T2 (a script outside git) on the package
 #   autosave   hil_autosave --rate both --rounds 10
 #
 # Logs: the main checkout's build/rc-VERSION/ (or RC_OUT=DIR): <step>.log, gate-summary.txt (step, exit code,
@@ -40,7 +40,7 @@ done
 R=$(cd "$(dirname "$0")/.." && pwd)
 PY=${PY:-python3}
 [ -x "$R/.local/venv/bin/python" ] && PY=$R/.local/venv/bin/python
-MAIN=$(dirname "$(git -C "$R" rev-parse --path-format=absolute --git-common-dir)")   # (the main checkout: private/, the logs)
+MAIN=$(dirname "$(git -C "$R" rev-parse --path-format=absolute --git-common-dir)")   # (the main checkout: the T2 script, the logs)
 PKG=${PKG:-$R/build/frodhes-$V.fwsc}
 OUT=${RC_OUT:-$MAIN/build/rc-$V}
 SUM=$OUT/gate-summary.txt

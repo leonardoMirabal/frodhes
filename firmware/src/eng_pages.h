@@ -34,7 +34,7 @@ typedef struct {
 
 /* the Rhodes (TYPE 0..3): the tine's voicing, then how notes die away */
 static const ectl_t ENG_RHODES_C[] = {
-    {P_TONE, "TONE", EK_AMT, EU_NONE, 1},    /* FRODHES K2 (PLAN rev. 12: TONE + BELL; DRIVE / REVERB have pages) */
+    {P_TONE, "TONE", EK_AMT, EU_NONE, 1},    /* FRODHES K2 (TONE + BELL; DRIVE / REVERB have pages) */
     {P_BARK, "BARK", EK_AMT, EU_NONE},
     {P_BELL, "BELL", EK_AMT, EU_NONE, 2},    /* FRODHES K3 */
     {P_HAMMER, "HAMMER", EK_AMT, EU_NONE},

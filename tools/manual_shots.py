@@ -21,7 +21,7 @@ conflict on a PNG is resolved by re-running it, never by hand).
 The device look. The FM-1's ST7789 panel, behind its window, lifts the dark tones a lot and shifts the hue towards
 yellow: the AMBER palette's darkest step C_LINE = RGB(60,26,0) (frames) reads light khaki, the title UI_ACC =
 RGB(225,120,8) yellow, the values C_HI = RGB(255,166,40) near-white yellow, black a dark blue-grey. The transfer was
-measured by tools/display_cal.py from two photos of the FM-1 taken 2026-10-17 (private/display/, not in git):
+measured by tools/display_cal.py from two photos of the FM-1 taken 2026-10-17 (not in git):
   1. the colour test pattern (developer CC 3): 39 flat swatches (the 6 palettes, a grey ramp, R G B Y K W), which
      fix the panel's shape: per input channel x ** gamma, a 3 x 3 crosstalk matrix, a flare (rms 15 / 255 over
      the swatches; that photo is exposed for its bright swatches);

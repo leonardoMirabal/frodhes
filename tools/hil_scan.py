@@ -4077,13 +4077,13 @@ def _jump(V, S, jumps, ch=None, extra=()):
 
 # ==================================================================================================================
 # MARIMBA (TYPE 5, CC 79 = 127): the same rig and report as the VIBES suites (USB and the jack side by side, the jack
-# decides), the thresholds of MARIMBA PLAN §10.2 / §10.3 (the D rows) as tests/py/test_marimba_cards_audible.py,
+# decides), the thresholds (the D rows) as tests/py/test_marimba_cards_audible.py,
 # test_marimba_controls_audible.py and tools/marimba_scan.py judge them on the host. Not in the default run:
 # --marimba, or --only marimba_*; report build/hil/marimba-report.md (+ .json). Written for P5 (the coordinator's FM-1
 # session); --dry-run and --host run them without a device. No MOTOR suite: MARIMBA has no motor (marimba_decay checks
 # that CC 47-51 change nothing). MUTE (CC 103) is the hand at key-up: 0 rings out.
 # ==================================================================================================================
-MKEYS = (48, 60, 84)                      # C3 C4 C6 (PLAN §12 step 2)
+MKEYS = (48, 60, 84)                      # C3 C4 C6
 MFAMS = (("SOFT", 0), ("MED", 42), ("HARD", 85), ("RUBBER", 127))
 MVELS = (8, 24, 40, 64, 88, 100, 117, 127)
 # MARIMBA's chord re ST77 (the user's level decision "A", 2026-10-20: marimba.json calib.st77_offset_db stays +2.5 dB,
@@ -4160,7 +4160,7 @@ def m_known(check, setting, suite="marimba_", vals=None):
 
 
 def mt60(x, f):
-    """the V1 T60 by a 30 dB fit (5..35 dB under the peak; PLAN §10.2 B1)"""
+    """the V1 T60 by a 30 dB fit (5..35 dB under the peak; B1)"""
     return t60(x, f, 5.0, 35.0)
 
 
@@ -4654,7 +4654,7 @@ def marimba_vel(V, S):
     keys_st = S.usb(lambda q: np.array([lu(cut(t.usb, i, 0, 1.0)) for i in t.on(q)]))
     S.check("keys C2..C7: neighbour step", "every key, v100, USB stereo (as heard)",
             {s_: None if v is None else float(np.abs(np.diff(v)).max()) for s_, v in keys_st.items()},
-            lambda d: d <= 1.5, "<= 1.5 dB (PLAN M1, D)", fmt=lambda d: f"{d:.2f} dB")
+            lambda d: d <= 1.5, "<= 1.5 dB (M1, D)", fmt=lambda d: f"{d:.2f} dB")
     S.check("keys C2..C7: neighbour step, one channel", "every key, v100, USB L vs jack (the dry width's comb)",
             {s_: v and float(np.abs(np.diff(v[0])).max()) for s_, v in vals.items()}, lambda d: True,
             "information (one channel: the width's +1.6 / -1.9 dB comb)", level=True, info=True,
@@ -4662,7 +4662,7 @@ def marimba_vel(V, S):
     # (information, as tools/marimba_scan.py's M1 row, the user 2026-11-05: the 1 s loudness falls 8.6 dB C2 -> C7
     # because the high bars die in ~0.3 s; the peaks are within 4 dB, the neighbour step above gates the evenness)
     S.check("keys C2..C7: level span", "", {s_: v and float(v[0].max() - v[0].min()) for s_, v in vals.items()},
-            lambda d: True, "information (PLAN M1: the neighbour step gates)", fmt=lambda d: f"{d:.1f} dB", info=True)
+            lambda d: True, "information (M1: the neighbour step gates)", fmt=lambda d: f"{d:.1f} dB", info=True)
     S.check("keys C2..C7: tuning re the spec", "", {s_: v and float(np.abs(v[1]).max()) for s_, v in vals.items()},
             lambda d: d <= 3, "|cents| <= 3", fmt=lambda d: f"{d:.2f} c")
 
@@ -4677,7 +4677,7 @@ def m_roll(keys, rate, vel, t0=0.2, dur=4.0):
 
 
 def pumping(x, i0, dur=4.0):
-    """the LUFS span over sliding 0.5 s windows (hop 0.1 s) from 0.5 s into the roll to its end (PLAN M5)"""
+    """the LUFS span over sliding 0.5 s windows (hop 0.1 s) from 0.5 s into the roll to its end (M5)"""
     v = [lu(cut(x, i0, a, a + 0.5)) for a in np.arange(0.5, dur - 0.5 + 1e-9, 0.1)]
     return float(max(v) - min(v))
 

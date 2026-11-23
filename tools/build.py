@@ -354,7 +354,7 @@ def hot_loops(dis, fn="app_audio"):
     return loops
 
 
-MODE_MAX = 32       # the Rhodes MC3 mode loops (RHODES-CPU-PLAN R1: 39 -> 29 insns); a spill there cost ~35 us
+MODE_MAX = 32       # the Rhodes MC3 mode loops (39 -> 29 insns); a spill there cost ~35 us
 # the bar engine's loops (bars.c, 0.9.5 bars-10): function, the most instructions its inner loop may take (a turn: 4
 # samples for the upper slots, 2 for the pair, 1 for the output and the pulse), what it is. bars.c's cost model
 # (BAR_NS_*) is derived from these counts: a loop that grows past its limit fails the build
@@ -509,7 +509,7 @@ def check(img, syms, dis, rt):
                 errors.append(f"--c1: {hot.name}: {len(gone)} name(s) not in the hot block: {gone[:6]}")
             else:
                 notes.append(f"--c1: {len(names)} hot functions from {sym('rh_hermite'):#x}")
-    # the fonts' tables in the image (UI-SIMPLIFY: the flash they take; a face the code no longer uses is gone):
+    # the fonts' tables in the image (the flash they take; a face the code no longer uses is gone):
     # AF_<N>* (aa_font.h, gen_aa_font.py) and FONT_<N>* (felucca_font.h, gfx.c), by objdump -t sizes
     font = {}
     for mm in re.finditer(r"^[0-9a-f]+ .*\s([0-9a-f]{8})\s+((?:AF|FONT)_[A-Z]\d*)(?:_\w+)?$", syms, re.M):

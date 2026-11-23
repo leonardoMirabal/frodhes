@@ -263,7 +263,7 @@ static uint32_t ui_msg_t, ui_hot_t, ui_last_draw;
 static uint8_t ui_hot_card = 0xFF;
 static char ui_msg[32];
 
-/* ---- the look (METERS, the user's choice 2026-10-18; private/UI-SIMPLIFY-PLAN.md): a header, the page's title, four
+/* ---- the look (METERS, the user's choice 2026-10-18): a header, the page's title, four
  * horizontal rows = K1..K4 (an amount fills its row from the left: a dim fill + a 2 px accent edge, the number large
  * at the right with its unit small; a choice has no fill, its whole name in the same large face: 2026-10-18, it
  * replaced one segment per option), a hint. Two faces: AF_S for all small text, AF_L for values and choice names.
@@ -295,7 +295,7 @@ static const mt_look_t MT_LOOKS[] = {
 };
 #define MT_NLOOKS (sizeof MT_LOOKS / sizeof MT_LOOKS[0])
 static uint8_t ui_look;                                 /* developer CC 2 (not saved) */
-/* the design pass (2026-10-18, private/ui-simplify/design-pass/): the rows' typography and meter, three variants for
+/* the design pass (2026-10-18): the rows' typography and meter, three variants for
  * the user to choose from; developer CC 11 (not saved), the default by build (APP_DEFS=-DUI_CARDS_DEF=n):
  *   0 TODAY   the rows before the design pass (kept for comparing on the FM-1);
  *   1 FADER   the row's amber fill (the METERS look) on every card, a choice's too (its option's place in its list,

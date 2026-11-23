@@ -1,4 +1,4 @@
-# The FRODHES page's K2 / K3 belong to the engine: the Rhodes TONE / BELL (PLAN rev. 12), VIBES MALLET (VOICE's) and
+# The FRODHES page's K2 / K3 belong to the engine: the Rhodes TONE / BELL, VIBES MALLET (VOICE's) and
 # MOTOR (on / off, the MOTOR page's ON card). K1 TYPE and K4 KEY VEL on both. (turn 3 = K2, turn 4 = K3)
 # ---- the Rhodes (F01): TONE, BELL
 # (2026-11-10) the boot preset's voicing, compressor, reverb and LEVEL as this script was written for (F01 before the

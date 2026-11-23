@@ -3,7 +3,7 @@
 TYPEs (STAGE 77, EARLY FELT, VIBES), at their defaults and with every knob turned, at the large face's sizes (host
 builds with -DUI_VAL_PX=28 / 25 / 24). Variants: 1 FADER, 2 LINE (one meter for every card); 3 A, 4 B, 5 C (the card
 kinds told apart: an amount the FADER fill; a selector SEGMENTS (A, C) or PIPS (B); a toggle LED (A, B) or BACK (C)).
-The rules (private/ui-simplify/design-pass; the user 2026-10-18: "a clean, solid and elegant ui", "not clear what is
+The rules (the design pass; the user 2026-10-18: "a clean, solid and elegant ui", "not clear what is
 a toggle or selector and what is a fader", "some margin is needed, maybe 10 % smaller"):
 
   - one value size: every value's ink starts on the same row and is the large face's cap height (measured on the

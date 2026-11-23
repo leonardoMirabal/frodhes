@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """stress_max, the cracks test: the worst case played for minutes on the FM-1, recorded on USB and the headphone
-jack at once, every glitch counted (private/plans/final/B-cracks-test-8-voices.md). A must-pass of the release
+jack at once, every glitch counted. A must-pass of the release
 (tools/release.py step 4: every engine, USB at 44.1 and 48 kHz); also `tools/hil_scan.py --only stress_max`.
 
     tools/hil_crackle.py [--engine rhodes|vibes|marimba|all] [--rate 44100|48000] [--blocksize N] [--source both|usb]
@@ -16,10 +16,10 @@ jack at once, every glitch counted (private/plans/final/B-cracks-test-8-voices.m
                                         kind, KINDS); each must be found by its own detector, and the clean renders give
                                         0 events. A device run does this first and stops if it fails.
 
-Why (ISSUES.md 1): 0.9.4 (and 0.9.3) crack on USB with every voice under the pedal, with or without effects, and no
+Why: 0.9.4 (and 0.9.3) crack on USB with every voice under the pedal, with or without effects, and no
 test saw it: hil_cpu never opened the USB stream nor looked at the audio, hil_scan's stress take is 4 s with moderate
 effects, its click detector (the second difference over 6 x the local level + 2000) goes blind on loud chords, and
-nobody read uac.underruns. The cause found on the FM-1 (private/plans/final/A-usb-cracks-fix.md): the USB IN ring runs
+nobody read uac.underruns. The cause found on the FM-1: the USB IN ring runs
 dry late in a long render and uac_packet() repeats the last frame, at most about once per ~29 ms beat (5 render blocks
 against 29 packets), exact at both rates (after the resampler).
 

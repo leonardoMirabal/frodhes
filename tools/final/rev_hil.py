@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""The reverb TYPEs on the FM-1 (run_final_rev.sh; private/reverb/PLAN.md section 6 test 9, FM-1 wave 3):
+"""The reverb TYPEs on the FM-1 (run_final_rev.sh, FM-1 wave 3):
 
   stress   stress_max (tools/hil_crackle.py, unchanged: its rig, the CC 116 counters every 0.5 s and every detector:
            repeat, stale, zero, clip, click, step and the jack-vs-USB track) with the reverb TYPE INFINITE in every
@@ -13,13 +13,13 @@
            LOW CUT wherever the take has that effect on; its report in build/hil/stress_max/<rate>/ (run_final_rev.sh
            stress_48000 / stress_44100). The report in build/hil/stress_rev/<rate>/.
   jack     takes on the jack + USB at once, judged by the same detectors, every take saved whole (USB and jack WAVs)
-           in --out (default <main checkout>/private/reverb/takes/<rate>/): each reverb TYPE x 3 settings (short /
+           in --out (default: a gitignored folder of the main checkout, per <rate>): each reverb TYPE x 3 settings (short /
            default / long), INFINITE frozen and held 60 s (its level per 5 s: +-1 dB, no growth; its DC), and the TYPE
            switched while playing (HALL, PLATE, INFINITE, OFF in turn, every 3 s). The hiss check per take, as
            hil_jack's: the jack's 8-20 kHz band against USB's in the take's last 1.5 s (the tail) and the jack's
            level re USB from the loud part (the jack's own hiss = jack 8-20k - (USB 8-20k + that gain)); compare
            by hand with 0.9.4's build/hil/jack.json (idle floor -99.8 dBFS, SNR 74 dB). The report: rev_jack.txt /
-           .json there. The listening round (PLAN section 7 wave 4) uses these WAVs.
+           .json there. The listening round uses these WAVs.
 
     TREE=<release tree> rev_hil.py stress|jack [--rate 48000] [--engine rhodes] [--type T] [--quick] [--jack-dev M6] [--jack-ch 5]
                                     [--out DIR] [--seconds 20] [--dry-run] [--host]
@@ -559,7 +559,7 @@ def main():
                     "no jack-alone take (the 44.1 kHz run)")
     ap.add_argument("--jack-dev", default="M6")
     ap.add_argument("--jack-ch", type=int, default=5)
-    ap.add_argument("--out", default=None, help="jack: the takes' folder (default <main>/private/reverb/takes)")
+    ap.add_argument("--out", default=None, help="jack: the takes' folder (default: a gitignored folder of the main checkout)")
     ap.add_argument("--dry-run", action="store_true", help="the takes and their time; no MIDI, no audio")
     ap.add_argument("--host", action="store_true", help="the host build plays (the jack simulated)")
     a = ap.parse_args()

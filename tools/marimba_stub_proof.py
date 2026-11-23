@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""The stub proof (MARIMBA PLAN §8.1 item 4), re-runnable: the per-type plumbing in bars.c cannot alter a sample.
+"""The stub proof, re-runnable: the per-type plumbing in bars.c cannot alter a sample.
 
     tools/marimba_stub_proof.py
 

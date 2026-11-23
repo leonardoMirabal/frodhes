@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Gate VA-M (PLAN §10, §7, T6d): the vibraphone motor rendered through the bar-tube model.
+"""Gate VA-M (T6d): the vibraphone motor rendered through the bar-tube model.
 
 The V1 <-> tube pair of tools/bartube.py is rendered sample by sample in the bars.c order, from its integer words
 (pair_words: G, kc, the discrete retune), with the motor gain of bar_motor_block (mot_gains: the Q15 edge gains and

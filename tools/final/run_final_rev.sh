@@ -1,8 +1,8 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-3.0-only
 # The whole final FM-1 pass on the release binary with the reverb TYPEs, unattended: run_final.sh's steps and options
-# (private/plans/final/FINISH-PLAN-max-agents.md; private/TEST-PLAN.md section 3, T1) + the reverb's FM-1 wave 3
-# (private/reverb/PLAN.md sections 6-8, INTEGRATION.md section 5): one run for both.
+# (T1) + the reverb's FM-1 wave 3:
+# one run for both.
 #
 #   run_final_rev.sh PACKAGE.fwsc         run it from the release tree (its tools/ are used)
 #   run_final_rev.sh --help               the steps with their durations
@@ -18,7 +18,7 @@
 #   PY=<python>             default <main checkout>/.local/venv/bin/python (mido, sounddevice, numpy)
 #   TREE=<release tree>     default: the git top level of the current directory
 #   OUT=<dir>               default <main checkout>/build/final-rev (archived at the start: never the .fwsc's folder)
-#   TAKES=<dir>             the reverb's jack takes, default <main checkout>/private/reverb/takes
+#   TAKES=<dir>             the reverb's jack takes, default: a gitignored folder of the main checkout
 #   JACK_DEV=M6 JACK_CH=5   the interface recording the headphone jack
 #   QUICK=1                 stress_max 48k / 44.1k with --quick (20 s worst + 24 s recipe per engine): ~30 min less
 #   REV_TYPE=NAME           the reverb TYPE for "every effect" (default: the heaviest by the compiled estimate);
@@ -55,7 +55,7 @@ set -u
 
 steps_help() {
     cat <<'EOF'
-Steps, in order: what fails fastest first (private/plans/test-speed/PLAN.md 3.3, 3.4, 3.10; P2). Minutes measured
+Steps, in order: what fails fastest first. Minutes measured
 on the FM-1 where marked m, else estimated. ~79 min in all (the CPU steps' 3 takes: +13): ~53 for the release's own steps (the plan's 48 + the
 SPREAD steps, the fold's takes, the jack_rhodes cross-check) + ~12 for the reverb's own (other TYPEs' CPU, its stress,
 its jack takes); -4 when INFINITE is the heaviest TYPE; CROSSCHECK=0 -2; QUICK=1 ~40. Each step's timeout: its estimate x 2 + 2 min (TIMEOUT_SCALE).
@@ -105,7 +105,7 @@ its jack takes); -4 when INFINITE is the heaviest TYPE; CROSSCHECK=0 -2; QUICK=1
                                   cpu_rhodes_spread_bend, cpu_vibes: over the margin before): 3 good takes in a row;
                                   SUMMARY.md: min-max per step. ~22 min of CPU steps (CPU_TAKES=1: ~8)
   keyadc_gate              10     hil_cpu --keyadc gate --worst --runs 5 --scenario pedal: each engine's worst
-                                  scenarios only (PLAN 3.4), the median of 5 runs per mode (0.9.8); the whole gate
+                                  scenarios only, the median of 5 runs per mode (0.9.8); the whole gate
                                   (30m) when the tree's hil_cpu has no --scenario
   stress_rev_48000         4      stress_max with INFINITE in every take (frozen in the worst), every engine; a
                                   COVERED row when stress_48000's heaviest TYPE is INFINITE already
@@ -465,7 +465,7 @@ if [ "$EARLY" = "1" ]; then
     finish
 fi
 
-# ---- the full run, v2 (private/plans/test-speed/PLAN.md 3.3, 3.4, 3.10; P2): fail-fast order, resumable, timeouts --
+# ---- the full run, v2: fail-fast order, resumable, timeouts --
 # 1. the release on the FM-1 (always, also on RESUME: S5, or a hand, may have left another build on it)
 ALWAYS=1 step install info "${INST[@]}"
 if [ "$DRY" != "1" ] && want install && [ "$(last_code install)" != "0" ]; then
@@ -530,7 +530,7 @@ else
     printf 'save_glitch\tnotrun\t0\tsaveglitch\tthis tree has no tools/hil_save_glitch.py\n' >> "$OUT/steps.tsv"
 fi
 
-# 2b. "no louder after the key-up" (TEST-PLAN, its last section): the Rhodes TYPEs x NOISE 48 / 127, v15 / v60 / v127 x
+# 2b. "no louder after the key-up" (a release must-pass): the Rhodes TYPEs x NOISE 48 / 127, v15 / v60 / v127 x
 # C2 / C4 / C6 held 2 s, the key-up (and the pedal case), USB + the jack (QUICK=1: v15 only)
 rq=(); [ "$QUICK" = "1" ] && rq=(--quick)
 rmrep "$TREE/build/hil/release_level/48000/report.txt" "$TREE/build/hil/release_level/48000/report.json"
@@ -593,7 +593,7 @@ for t in $OTHER_REVS; do
     cpu_step "cpu_marimba_$lt" "cpu_marimba_$lt" "${CPUT[@]}" --rev-type "$t" -- --engine marimba --worst --usb 48000
 done
 
-# 4. the key velocity converter's CPU gate (TEST-PLAN 3b; PLAN 3.4): each engine's worst scenarios only (the pedal
+# 4. the key velocity converter's CPU gate: each engine's worst scenarios only (the pedal
 # ones: hil_cpu --scenario pedal) x OFF / idle / STRESS x 5 runs, each mode's median; the whole gate when the tree's hil_cpu has no
 # --scenario yet (feature/rev-run adds it)
 SC=(); (cd "$TREE" && "$PY" tools/hil_cpu.py --help 2>/dev/null | grep -q -- "--scenario") && SC=(--scenario pedal)
@@ -609,7 +609,7 @@ else
 fi
 
 # 5. the reverb's own stress (unless stress_48000 had INFINITE already), then stress_max at 44.1 kHz: 2 worst takes
-# x 60 s + the recipes at 30 s (PLAN 3.3 step 4; 48 kHz stays full)
+# x 60 s + the recipes at 30 s (48 kHz stays full)
 if [ -n "$HEAVY_REV" ] && [ "${HEAVY_REV:0:3}" = "INF" ]; then
     printf 'stress_rev_48000\tnotrun\t0\tstress\tcovered by step stress_48000: it ran with the reverb TYPE %s (frozen in its worst takes)\n' \
         "$HEAVY_REV" >> "$OUT/steps.tsv"
@@ -639,7 +639,7 @@ copy "$TREE/build/hil/must/report.md" t1_s3s4-report.md
 copy "$TREE/build/hil/must/report.json" t1_s3s4-report.json
 printf 't1_s2\tnotrun\t0\tmust\tcovered by step stress_48000: T1 S2 (the jack alone, no USB stream) is its *-no-usb takes, the same recipe for 58.6 s per engine instead of 34 s, judged by the same detectors (test-speed plan 3.3)\n' >> "$OUT/steps.tsv"
 
-# 7. the folded jack steps (PLAN 3.3 step 3): rows naming stress_48000's fold; one hil_jack on the Rhodes as the
+# 7. the folded jack steps: rows naming stress_48000's fold; one hil_jack on the Rhodes as the
 # cross-check of the folded numbers (CROSSCHECK=1, the plan's P3 side-by-side, until it is proven)
 for f in silence:"hil_scan silence: the USB peak 0 at idle (the jack check's 3 s idle, gated)" \
          jack_vibes:"hil_jack's silence / hiss / loud chord / harmonics, VIBES (the jack check take)" \

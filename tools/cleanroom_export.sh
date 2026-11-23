@@ -8,7 +8,7 @@
 # - git archive REF into OUTDIR (no .git, no history); OUTDIR must not exist or be empty.
 # - fx_fel.c (fx.c in a REF before the split): the two loops (dly_loop with its comment, and dly_loop_kb with its comment; the statics between them stay)
 #   are replaced by an #include of dly_own.c; a skeleton firmware/src/dly_own.c (signatures only) is written.
-# - private/ is deleted. Every other file that carries the loops' text (three or more distinctive lines of them, the
+# - the gitignored notes folder is deleted. Every other file that carries the loops' text (three or more distinctive lines of them, the
 #   rule inline below) is removed. firmware/src/dly_tape.c must stay to build: the functions derived from the loops
 #   (dly_rd, dly_fade, dly_wr_c, dly_loop_c / _cd / _ca, dly_fade_c, tp_loop_c, tp_tape_k / _kb, tp_tape, tp_loop) are cut
 #   out, in four groups, and each group becomes an include of dly_own.c with DLY_OWN_PART 2 to 5 (the skeleton lists the signatures).

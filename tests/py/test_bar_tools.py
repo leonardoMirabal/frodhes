@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The bar-engine scans' plumbing (tools/bar_scan.py, tools/bar_freq_scan.py), run on a Rhodes TYPE through the host
-build: they render, measure and report. The bar TYPE's own pass / fail is the scan's job (PLAN P6), not this test's."""
+build: they render, measure and report. The bar TYPE's own pass / fail is the scan's job, not this test's."""
 import json
 import os
 import subprocess

@@ -8,7 +8,7 @@
  *   dly_equiv [--calls N] [--seed S] [--jobs J]       default N = 1000000, S = 1, J = 1 (10^8: --calls 100000000)
  * Output: "PASS <n> calls" or "FAIL case <k> field <name> index <i>", nothing else (k: the call's number).
  *
- * What dly_own.c must expose (private/plans/dly-own-contract.md has the same text). One file, included five times
+ * What dly_own.c must expose. One file, included five times
  * with DLY_OWN_PART set to 1 to 5 (fx.c, and dly_tape.c four times: where the derived routines were), after
  * everything fx.c / dly_tape.c define above that place; it must not define a name they define. Part 1: dly_loop (the
  * spec's main loop, section 2) and dly_loop_kb (section 10); part 2: dly_rd, dly_fade (11, 12); part 3 (FR_CHUNK):

@@ -9,7 +9,7 @@ tuned); mode 2 and the mode shapes at the hammer line and at the tip follow. She
 itself are left out: the slenderness L / h is 24 or more on every reed.
 
 Reed data per key (length, width, thickness by reed group) are published reed-replacement figures (the private
-resource list); the clamp length, the taper's extent and the strike line are estimates (private/plans).
+resource list); the clamp length, the taper's extent and the strike line are estimates.
 
     r = reed(key)        # dict: L, w, h(x), tip mass, f, mass-normalised mode shapes at the strike line and tip
 """

@@ -7,7 +7,7 @@ and the kernels' own checks.
   python3 tools/rev_scan.py            a table per TYPE: T60 at DECAY 0 / 64 / 127 (INFINITE: 119 too), the cost,
                                        the tail's end, the level re HALL -> build/rev_scan/report.txt
 
-The TYPE values (private/reverb/CONTRACT.md): FXP_RV_TYPE 0 OFF, 1 HALL, 2 PLATE, 3 INFINITE. A tree without
+The TYPE values: FXP_RV_TYPE 0 OFF, 1 HALL, 2 PLATE, 3 INFINITE. A tree without
 FXP_RV_TYPE (before the framework's interface) has HALL only: has_types() says so and the tests skip.
 """
 import itertools

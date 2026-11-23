@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""VIBES (the first bar TYPE) keeps everything that was there (PLAN §8.5): the Rhodes types' cards, values, PERFORM
+"""VIBES (the first bar TYPE) keeps everything that was there: the Rhodes types' cards, values, PERFORM
 names, TREM/WAH kinds, CC 21 bands and presets are unchanged; the bar TYPE gets its own card names; MIDI CC 80 / 21
 and program change reach the new values; the saved preset index is converted once; a record written with VIBES is
 read safely by the firmware before VIBES, and an old record by this one.

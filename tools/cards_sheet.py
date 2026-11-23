@@ -4,7 +4,7 @@
 same pages, in the framebuffer's own colours (tools/manual_shots.py's default), at the large face's sizes (a host
 build per size: -DUI_VAL_PX=28 / 25 / 24, aatext.c).
 
-  tools/cards_sheet.py [OUT_DIR]     (default private/ui-simplify/design-pass)
+  tools/cards_sheet.py [OUT_DIR]     (default: a gitignored folder of the checkout)
   tools/cards_sheet.py --breathe [OUT_DIR]   only breathe.png: A at 24 px, the tight first version (UI_BREATHE=0)
                                              next to the breathing one (the default)
 

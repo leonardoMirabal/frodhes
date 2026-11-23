@@ -39,7 +39,7 @@ difference from 6 ms before to 30 ms after it, against the larger of the run wit
 settled (60-93 ms after), and the same on the difference of the two runs (the change alone: the reverb, the delay
 and the other notes cancel), over 10x is a click (click_ratio). An event that starts a note (more voices 8 ms after
 it: a knob on the ARPEGGIO page moving the next step) is not checked, as the arp's CCs and buttons are not. A click is named by what it changed (the parameters
-that differ in the two runs' dumps); the ones private/BUGHUNT-095.md already lists are reported as known, the
+that differ in the two runs' dumps); the ones the bug list already has are reported as known, the
 others fail.
 
 A failure is shrunk (delta debugging over the stream; the panic and the checks regenerated) to a minimal script in
@@ -89,7 +89,7 @@ KNOWN_CC = sorted(({int(c) for c in re.findall(r'\[P_\w+\] = \{"[^"]*", \d+, \d+
 PNAME = re.search(r"enum \{ (P_TYPE.*?)P_COUNT \};", _src, re.S).group(1)
 PNAME = [w.strip() for w in re.sub(r"/\*.*?\*/", "", PNAME, flags=re.S).replace("\n", " ").split(",") if w.strip()]
 
-# what the clicks already found (private/BUGHUNT-095.md; inf-size / mix-fix): parameter -> finding
+# what the clicks already found (inf-size / mix-fix): parameter -> finding
 KNOWN_CLICK = {
     "P_CP_SW": "#2", "P_PH_SW": "#2", "P_DL_TIME": "#3", "P_DL_SYNC": "#3", "P_FL_TYPE": "#4", "P_DRIVE": "#5",
     "P_CMP_SW": "#6", "P_CMP_AMT": "#6", "P_CMP_GAIN": "#6", "P_TW_SW": "#7", "P_TW_MODE": "#7", "P_LEVEL": "#9",

@@ -217,7 +217,7 @@ static RAMFN int fl_read_ram(uint32_t off, uint8_t *dst, uint32_t n)   /* 0x0B f
  * read command works anywhere but the sector / page in progress, so the ISRs can run from XIP. Progress needs >= 200
  * us (erase) / 100 us (program) between a resume and the next suspend. So: FL_SLICE_US of the operation with the
  * interrupts off, suspend, XIP back on, the interrupts on for FL_GAP_US, off, XIP off, resume, repeat. No suspend bit
- * within FL_SUS_US (another chip): the old blocking wait. private/flash/P25Q80H-suspend-notes.md */
+ * within FL_SUS_US (another chip): the old blocking wait. */
 #define FL_SUSPEND_OK(id) ((id) == 0x856014u)     /* the parts known to suspend */
 #define FL_SLICE_US   250u                        /* the operation's time per slice (interrupts off; >= 200 us for an
                                                    * erase to progress, counted from the interrupts going off) */

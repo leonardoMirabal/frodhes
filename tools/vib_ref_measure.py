@@ -3,7 +3,7 @@
 """Measure reference vibraphone recordings - for the VIBES engine's calibration targets ONLY.
 
 The recordings are read where they are (a path on the command line) and never copied, played back or fitted into
-the engine or its tables: only measured NUMBERS come out (private/vibraphone/ref_measure.md, plots in
+the engine or its tables: only measured NUMBERS come out (a gitignored table, plots in
 build/vib_ref/). Per note:
 
   partials     the strongest peaks of the spectrum after the attack: frequency, ratio to f0, cents vs the 1:4:10

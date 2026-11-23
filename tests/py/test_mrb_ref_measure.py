@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""tools/mrb_ref_measure.py (MARIMBA PLAN D10, numbers only) on SYNTHETIC notes (no recording is read here): the pack
+"""tools/mrb_ref_measure.py (numbers only) on SYNTHETIC notes (no recording is read here): the pack
 parser (a DAW sampler preset's zones), the in-place AIFF reader, the refusal of protected (non-PCM) pack audio,
 and measure()'s numbers against a note whose f0, partials, levels and decays are known. Plus the device tools' dry
 runs (vib_sampleback --engine marimba, hil_jack --engine marimba: the host build in the device's place)."""

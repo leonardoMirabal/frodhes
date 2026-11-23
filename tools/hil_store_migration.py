@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""The store's migration from 0.9.5 on the FM-1 (BUGHUNT #28, private/STOCK-DATA-096.md section 6): the part MIDI
+"""The store's migration from 0.9.5 on the FM-1 (BUGHUNT #28): the part MIDI
 reaches. 0.9.5's setup and pattern made over MIDI, the candidate installed over it, then back and forth.
 
     tools/hil_store_migration.py --fwsc CANDIDATE [--old build/dl095/frodhes-0.9.5.fwsc] [--fresh] [--dry-run]

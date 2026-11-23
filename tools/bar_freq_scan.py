@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Pitch and decay of every key's partials, measured on the C engine (host build) against the generated spec: the
-SCAN's S6 (PLAN §9.2) on its own, like tools/filter_scan.py for the filter.
+SCAN's S6 on its own, like tools/filter_scan.py for the filter.
 
 Per key (F3..F6 by default) at v100, the default cards (MALLET 5.0 = the middle family), RAW, NOISE 0, the key held
 for the whole render (the damper off, as with the pedal down): each designed mode's frequency (inst_f over

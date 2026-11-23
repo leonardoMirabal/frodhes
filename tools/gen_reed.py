@@ -25,7 +25,7 @@ The model, per key 33..96 (64 reeds, A1..C7):
 - the load and the amplifier: the pickup capacitance against the input load is a first-order corner (current mode
   below it, charge mode above), the small speakers a band-pass with a midrange lift (RD_RLC, RD_BODY).
 
-Format: private/plans/whurli-interface.md (rh_key_t rows with 4 mode slots, 5 velocity anchors at v = 0, 32, 64, 96,
+Format: the engine's table interface (rh_key_t rows with 4 mode slots, 5 velocity anchors at v = 0, 32, 64, 96,
 128, raw pulse shapes per group, the interleaved Hermite pickup row, Q28 biquads). Every word is checked out of the
 chip-ROM window. The solver results (finite elements, capacitance curves) are pinned in reed_pins.json, rounded, so
 every machine builds the same header.
@@ -68,7 +68,7 @@ OFF_MAX = 1.0                   # units: TONE's cap on the rest height (the plat
 LEVELMAP = os.path.join(ROOT, "docs", "model", "data", "reed_levelmap.json")   # per key: the soft anchors' gain (tools/reed_levelmap.py)
 BUDGET = 17 * 1024              # bytes: the interface's cap for all WHURLI data
 
-# Every number the model uses; ESTIMATE marks the ones no source fixes (private/plans/whurli-physics.md, to verify).
+# Every number the model uses; ESTIMATE marks the ones no source fixes (to verify).
 P = {
     "slot_gap_mm": 0.21,        # the reed's lateral clearance in its slot: published slot spacings - reed widths
     "plate_t_mm": 1.0,          # ESTIMATE: pickup plate (sheet) thickness the reed's edge sees

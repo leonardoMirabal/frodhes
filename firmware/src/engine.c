@@ -14,7 +14,7 @@
  * TYPE change across engines: the running engine keeps playing for one more block with its output faded to zero over
  * those 256 samples, then all its voices stop and the other engine takes over; events wait in the ring during that
  * block (they are played by the new engine one block later). With no voice sounding the change is immediate.
- * A change between two bar types (VIBES <-> MARIMBA) goes the same way (MARIMBA PLAN §3.12, C1): the main loop asks
+ * A change between two bar types (VIBES <-> MARIMBA) goes the same way: the main loop asks
  * for a bar type in eng_want_sub, the ISR latches it into bar_sub only in eng_switch, after the fade and bar_kill_all,
  * so a voice never re-strikes with another type's tables and bar_sub is constant while any bar voice lives. A session
  * that never leaves VIBES never takes this path. */

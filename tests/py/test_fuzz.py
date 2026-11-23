@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""Fuzz (PLAN P11.5): seeded random streams of MIDI (notes with lost note-offs, CCs, program changes, clock, start /
+"""Fuzz: seeded random streams of MIDI (notes with lost note-offs, CCs, program changes, clock, start /
 stop / continue, SysEx and garbage), the FM-1's keys, buttons (taps and holds) and knobs, for 3 s, on the Rhodes
 and on VIBES; then the panic every DAW sends (CC 123 and the transport off, on all 16 channels) and two probes.
 Each seed must:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""release_level, the "no louder after the key-up" must-pass on the FM-1 (private/TEST-PLAN.md, its last section):
+"""release_level, the "no louder after the key-up" must-pass on the FM-1:
 releasing a held key must never make the sound louder (0.9.5's test: a soft note played 9-12 dB under its own damper
 thump, "I press a key and get 2 sounds").
 

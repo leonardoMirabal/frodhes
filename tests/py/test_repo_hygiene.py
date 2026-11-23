@@ -5,7 +5,7 @@
       its licence file;
   (c) carrying a vendor / product name that was replaced by generic wording (a curated list).
 The user's own panel names KHLON, TSH8, OHCD, BHLUE and DYNO are allowed (his decision). The research notes, the
-third-party copies and the reviewers' scratch moved to private/ in 0.9.5; this keeps them from coming back."""
+third-party copies and the reviewers' scratch left the tree in 0.9.5; this keeps them from coming back."""
 import fnmatch
 import os
 import re
@@ -28,7 +28,7 @@ THIRD_PARTY_OK = {"move/vendor/": "move/vendor/LICENSE.schwung"}   # "path/prefi
 # names replaced by generic wording in 0.9.5 (comments, tools, tests, public text)
 BRANDS = re.compile(r"reface|yamaha|ableton|arturia|pigments|kontakt|orchestral mallets|jrhodes|fender", re.I)
 # music software by name (2026-11-08, the plugin's docs): public text says "a CLAP host", "an Audio Unit host";
-# case-sensitive, so the words logic / live / reason in code stay free (the real host list: private/)
+# case-sensitive, so the words logic / live / reason in code stay free (the real host list is not in the tree)
 DAWS = re.compile(r"\b(?:Logic Pro|Logic|GarageBand|MainStage|Bitwig|Reaper|REAPER|Studio One|Renoise|Cubase|Nuendo|"
                   r"FL Studio|Pro Tools|Ardour|Reason Studios|Ableton Live)\b")
 FENDER_OK = re.compile(r"trademark", re.I)      # the non-affiliation / trademark lines may name the owners
@@ -87,6 +87,52 @@ def problems(files, root=ROOT):
                 bad.append(f"{f}:{n}: music software name {m.group(0)!r} (use generic wording: a CLAP / VST3 / AU host)")
     return bad
 
+
+
+# the gitignored notes folder: no tracked file names it (its plans and notes stay out of the public tree). Allowed: the
+# .gitignore, macOS temp paths (/private/var, /private/tmp), and the run-time paths below, each by its exact text
+P = "private" + "/"                              # (spelled in two parts, so this file passes its own check)
+PRIVATE = re.compile(r"private[/]")
+MAC_TMP = re.compile(r"/private[/](?:var|tmp)\b")
+PRIVATE_FILE_OK = {".gitignore"}
+PRIVATE_OK = {                                   # path: the run-time text it may keep (local defaults, never published)
+    "tools/final/run_final_rev.sh": ['TAKES="${TAKES:-$MAIN/' + P + 'reverb/takes}"'],
+    "tools/final/summarize_rev.py": ["'" + P + "reverb/takes/'"],
+    "tools/rc_gate.sh": ['"$MAIN/' + P + 'release-095/t2_run.py"'],
+    "tests/py/test_release_tool.py": ['"/' + P + '" not in got'],
+}
+
+
+def private_mentions(files, root=ROOT):
+    bad = []
+    for f in files:
+        p = os.path.join(root, f)
+        if f in PRIVATE_FILE_OK or not os.path.isfile(p) or b"\0" in open(p, "rb").read(8192):
+            continue
+        for n, line in enumerate(open(p, encoding="utf-8", errors="replace"), 1):
+            line = MAC_TMP.sub("", line)
+            for ok in PRIVATE_OK.get(f, ()):
+                line = line.replace(ok, "")
+            if PRIVATE.search(line):
+                bad.append(f"{f}:{n}: names the gitignored notes folder (say what the note says, not where it is)")
+    return bad
+
+
+def test_no_private_notes_named():
+    bad = private_mentions(tracked())
+    assert not bad, "\n".join(bad)
+
+
+def test_private_rule_fires(tmp_path):
+    r = _repo(tmp_path, {
+        "tools/a.py": ("# see " + P + "plans/x.md\n").encode(),                     # a note by path
+        "tools/b.py": b"tmp = '/private/var/folders/x'  # /private/tmp too\n",         # macOS temp: allowed
+        ".gitignore": (P + "\n").encode(),                                           # allowed
+        "tools/rc_gate.sh": ('run "$MAIN/' + P + 'release-095/t2_run.py"\n# ' + P + 'y\n').encode(),
+    })
+    joined = "\n".join(private_mentions(tracked(r), r))
+    assert "tools/a.py:1" in joined and "tools/rc_gate.sh:2" in joined
+    assert "b.py" not in joined and ".gitignore" not in joined and "rc_gate.sh:1" not in joined
 
 def test_tracked_tree_is_clean():
     bad = problems(tracked())
