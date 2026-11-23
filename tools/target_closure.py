@@ -53,6 +53,8 @@ def run_m(cfile, flags):
     """the files cfile includes with these flags (relative to ROOT, normalized); -MG: a missing header (the
     emulator's emscripten.h) is listed, not an error"""
     cc = os.environ.get("CC", "cc")
+    if cfile.endswith(".m"):    # (the macOS-only Objective-C files: their includes read as C, so the list is the same on
+        flags = ["-x", "c", *flags]   # every OS; gcc on Linux has no Objective-C front end, cc1obj)
     r = subprocess.run([cc, "-M", "-MG", *flags, cfile], cwd=ROOT, capture_output=True, text=True)
     if r.returncode:
         raise SystemExit("target_closure: %s -M %s failed:\n%s" % (cc, cfile, r.stderr[-2000:]))

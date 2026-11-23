@@ -78,7 +78,7 @@ void frui_text_default(void *ctx, const frui_model *m, int id, char *val, char *
     case FRP_TW_RATE: sy = m->p[FRP_TW_SW] != 2 ? FRP_TW_SYNC : 0; break;
     }
     if (sy && m->p[sy]) { strcpy(val, FRN_SYNC[m->p[sy]]); return; }
-    if (m->p[FRP_TYPE] >= 0 && m->p[FRP_TYPE] < FRN_NTYPE && FRN_TYPE_BARS[m->p[FRP_TYPE]]) {   /* the bar engine's named detents (eng_pages.h) */
+    if (m->p[FRP_TYPE] < FRN_NTYPE && FRN_TYPE_BARS[m->p[FRP_TYPE]]) {   /* the bar engine's named detents (eng_pages.h) */
         int f;
         if (id == FRP_TONE) {
             for (f = 0; f < 3; f++) if (v == V_STRIKE[f]) { strcpy(val, N_STRIKE[f]); return; }
