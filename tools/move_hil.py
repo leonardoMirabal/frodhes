@@ -563,6 +563,8 @@ class TapRig(UsbRig):
             self.remote.set_param(self.slot, key, value)
 
     def _send(self, kind, a, b=0):
+        if kind == "pc":                         # (the player hands its messages to the app (web_midi), past the
+            a = host_pc(a)                       # bridge's program changes to F20-F61: WHURLI F58-F61 are the app's 35-38)
         self.pending.append((kind, int(a), int(b)))
 
     def set_hq(self, on):
@@ -761,7 +763,9 @@ def _save(d, name, take):
     w.close()
 
 
-GLOBAL_CCS = ((64, 0), (111, 0), (119, 0))
+GLOBAL_CCS = ((64, 0), (111, 0), (119, 0), (40, 0))
+# (CC 40 0: RESPONSE A, FULL, as the host boots: a saved setting no preset or CC 120 resets, as hil_scan's PRE_SET; the
+# 0.9.14 d2 of 2026-11-23 found the slot on B, LIGHT, and every usb-host DIFFERS and the bars' usb-vel failed on it)
 # (the modes param_defaults does not reach, off as the host boots: the pedal, the FX bypass, RAW. The Move has no
 # arpeggiator, sequencer or chords: the bridge drops their CCs, MB_CC_DROP)
 BOOT_KEYS = os.path.join(ROOT, "move", "tests", "boot_keys.txt")
@@ -777,7 +781,12 @@ def boot_keys():
     return out
 
 
-ENGINE_CCS = {"rhodes": (), "vibes": ((79, 0), (47, 0)), "marimba": ((79, 127),)}   # (hil_crackle.engine_ccs: CC 79
+ENGINE_CCS = {"rhodes": (), "vibes": ((79, 0), (47, 0)), "marimba": ((79, 127),),
+              # the other electric-piano TYPEs by CC 80, each at its band's middle (0.9.14's five bands: 0-25 STAGE 77,
+              # 26-51 SUITCASE, 52-76 EARLY FELT, 77-102 BELL DYNO, 103-127 WHURLI); "rhodes" is STAGE 77, the default
+              "suitcase": ((80, 38),), "felt": ((80, 64),), "dyno": ((80, 90),), "whurli": ((80, 115),)}
+EP_TYPES = ("suitcase", "felt", "dyno", "whurli")    # (judged as the Rhodes is: VEL, SUS; usb-stress by CC 80)
+# (hil_crackle.engine_ccs: CC 79
 # the bar TYPE; VIBES with its motor off, CC 47: the TYPE's turn switches it on, and its pulse would move every level
 # the tests read; usb-host plays the presets, F13 with its motor)
 
@@ -816,6 +825,7 @@ def cc_param(r, cc, value):
 def _prep(r, engine=None, **cc):
     """hil_scan's dry state (every parameter at its default, no effects), the engine, then cc (name or number: value)"""
     r.dry()
+    r._send("cc", 40, 0)                         # (RESPONSE A, as the host boots: GLOBAL_CCS)
     for c, v in ENGINE_CCS[engine or "rhodes"]:
         r._send("cc", c, v)
     for k, v in cc.items():
@@ -876,6 +886,7 @@ VELS = (1, 8, 16, 24, 32, 48, 64, 80, 96, 112, 127)
 VEL = {"rhodes": dict(vels=VELS, mono_from=1, rise=(1, 127, 20.0, None)),
        "vibes": dict(vels=(1, 8, 24, 40, 64, 80, 96, 117, 127), mono_from=24, rise=(40, 117, 10.0, None)),
        "marimba": dict(vels=VELS, mono_from=8, rise=(8, 127, 26.0, 32.0))}
+VEL.update({e: VEL["rhodes"] for e in EP_TYPES})
 
 
 def usb_vel(r, d, note=60, vels=None, engine=None, out=print):
@@ -943,6 +954,7 @@ SUS = {"rhodes": dict(off=0.8, win=(0.9, 1.15), up=2.0, gone=(0.9, 1.3), dur=(2.
        "marimba": dict(off=0.35, win=(0.1, 0.2), up=0.55, gone=(0.1, 0.2), dur=(1.2, 1.4), catch=0.25, hold_db=None,
                        cc=((103, 127),))}
 SUS["vibes"] = SUS["rhodes"]
+SUS.update({e: SUS["rhodes"] for e in EP_TYPES})
 
 
 def usb_sus(r, d, note=60, vel=100, engine=None, out=print):
@@ -1435,12 +1447,15 @@ def usb_stress(r, d, engine="rhodes", secs=60.0, nv=MOVE_VOICES, bpm=0.0, seed=0
     rep = {"engine": engine, "voices": nv, "takes": []}
     bad = []
     for name, fx in (("low", dict(hc.HEAVY, LEVEL=0)), ("unity", hc.HEAVY)):
-        ccs = hc.engine_ccs(engine, fx)
+        # (the other electric pianos: the Rhodes' worst case with the TYPE's CC 80 after it; hil_crackle's "whurli"
+        # selects it by the FM-1's program change 35, which is F20 on the Move; its keys 33..96: REG_WHURLI)
+        ccs = hc.engine_ccs("rhodes", fx) + list(ENGINE_CCS[engine]) if engine in EP_TYPES else hc.engine_ccs(engine, fx)
         r._send("cc", 120, 0)
+        r._send("cc", 40, 0)                     # (RESPONSE A, as the host boots: GLOBAL_CCS)
         for c, v in ccs:
             r._send("cc", c, v)
         time.sleep(0.3)
-        ev, dur = hc.worst_events(nv, secs / 2, rng)
+        ev, dur = hc.worst_events(nv, secs / 2, rng, hc.REG_WHURLI if engine == "whurli" else None)
         ev = sorted(ev, key=lambda e: e[0])
         tk = r.rec(dur, ev + (clock_events(bpm, 0.1, dur - 0.2) if bpm else []))
         _save(d, "stress-%s-%s" % (engine, name), tk)
@@ -1516,6 +1531,14 @@ def host_binary(hq=None):
     return hostrun.build(MOVE_HOST % h, extra=MOVE_HOST_DEFS + ["-DHQ_DEFAULT=%d" % h])
 
 
+def host_pc(pc):
+    """the host build's program change for the program change pc a take sends: the Move's WHURLI F58-F61 (73-76,
+    move/move_bridge.h) are the host build's (the FM-1's) F20-F23 at 35-38 (presets.c preset_of_pc); every other
+    program as sent (the callers send F01-F16 at 0-15 or the FM-1's numbers: the Move's F20-F57 have no host program)"""
+    pc = int(pc)
+    return 35 + pc - 73 if 73 <= pc <= 76 else pc
+
+
 def host_phrase(ev, dur, program=0, hq=None, lead=(), after=(), tune=0, bpm10=None):
     """the host build (tests/host.c) playing the events after program change program (F01 = 0): (n, 2) LSB at 44.1;
     hq: 0 Classic, else (1, None: as the plugin loads) the HQ Rhodes' build (host_binary); lead: [(cc, value)] at 1 ms, before the program change, as the take
@@ -1529,7 +1552,7 @@ def host_phrase(ev, dur, program=0, hq=None, lead=(), after=(), tune=0, bpm10=No
     pre = 500
     lines = (["1 midi 0xB0 %d %d" % cv for cv in lead] + (["2 tune %d" % int(tune)] if tune else []) +
              (["3 tempo %d" % int(bpm10)] if bpm10 else []) +
-             ["5 midi 0xC0 %d" % program] +
+             ["5 midi 0xC0 %d" % host_pc(program)] +
              ["6 midi 0xB0 %d %d" % cv for cv in after])
     for t, k, a, b in ev:
         ms = pre + int(round(1000 * t))
@@ -2846,8 +2869,10 @@ class KeptState:
 
 # --------------------------------------------------------------------------- d2: the whole USB-C run, three engines
 D2_ENGINES = ("rhodes", "vibes", "marimba")
-D2_PRESET = {"rhodes": 0, "vibes": 12, "marimba": 14}         # F01, F13 VIBES, F15 MARIMBA (the dry presets)
+D2_PRESET = {"rhodes": 0, "vibes": 12, "marimba": 14,         # F01, F13 VIBES, F15 MARIMBA (the dry presets)
+             "suitcase": 1, "felt": 2, "dyno": 3, "whurli": 73}   # F02, F03, F04, F58 WHURLI (--engines; not in D2_ENGINES)
 D2_NOTES = {"rhodes": (36, 60, 84), "vibes": (53, 65, 84), "marimba": (36, 60, 84)}   # (VIBES' range is F3-F6)
+D2_NOTES.update({e: (36, 60, 84) for e in EP_TYPES})            # (WHURLI's keys are 33..96)
 
 
 class FakeEchoRig(FakeRig):
@@ -3343,7 +3368,7 @@ def drives_the_move(a):
 def _main(a):
     if a.cmd == "d2":
         engines = tuple(x for x in a.engines.split(",") if x)
-        bad = [x for x in engines if x not in D2_ENGINES]
+        bad = [x for x in engines if x not in D2_PRESET]
         if bad:
             raise SystemExit("--engines: %s" % bad)
         d = a.out or os.path.join(OUT, stamp() + "-d2")
