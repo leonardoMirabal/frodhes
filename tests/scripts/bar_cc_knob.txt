@@ -73,4 +73,8 @@
 1300 midi 0x90 105 90
 1300 midi 0x90 107 90
 1300 midi 0x90 108 90
-1600 expect rms > -43
+# the burst sounds, its steals started: 100 ms after it (2026-11-23: at 1600 ms the reading was the tail of whichever
+# notes kept a voice, which the voice count decides: the last 8 of the burst at 8 voices are keys 85-108, MARIMBA's
+# shortest bars, gone by then (-76.5 dB; 9 voices -50.0; 10 voices kept 69-81, -42.1). At 1400 ms: 8 voices -30.9,
+# 9 -25.4, 10 -21.7, 14 -19.3; the render is the same)
+1400 expect rms > -43
