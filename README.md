@@ -152,7 +152,7 @@ To remove it, delete the `Frodhes.*` files again. More:
 [the manual](docs/MANUAL.md#17-appendix-the-desktop-plugin).
 
 <p align="center">
-  <img src="docs/manual/img/plugin/plugin-presets.png?v=cec41ef5" width="384" alt="The plugin's PRESETS list: every factory and user sound, grouped by instrument">
+  <img src="docs/manual/img/plugin/plugin-presets.png?v=6d4d2636" width="384" alt="The plugin's PRESETS list: every factory and user sound, grouped by instrument">
   <img src="docs/manual/img/plugin/plugin-effects.png?v=0564369e" width="384" alt="The plugin playing: the compressor and the tape delay on, their knobs and meters live">
 </p>
 

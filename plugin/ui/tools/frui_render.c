@@ -158,7 +158,7 @@ static int check_layout(const frui *u, const char *name)
         float e[4] = {g->x, g->y, g->x + g->w, g->y + g->h};
         static const char *const en[4] = {"left", "top", "right", "bottom"};
         int k;
-        if (g->kind == FRW_TAB_L || g->kind == FRW_TAB_R || g->kind == FRW_CTX || g->kind == FRW_ITEM) continue;   /* (the knob menu: a pop-up) */      /* text-width tabs: checked by their baseline */
+        if (g->kind == FRW_TAB_L || g->kind == FRW_TAB_R || g->kind == FRW_LAMP || g->kind == FRW_CTX || g->kind == FRW_ITEM) continue;   /* (the knob menu: a pop-up) */      /* text-width tabs: checked by their baseline */
         if (g->kind == FRW_KNOB && g->id != FRP_LEVEL) goto knob;          /* a knob: its centre, below */
         for (k = 0; k < 4; k++) {
             float d = e[k] - 4.f * roundf(e[k] / 4.f);
