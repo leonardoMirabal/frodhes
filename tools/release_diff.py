@@ -70,7 +70,7 @@ import numpy as np
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))     # (cb_loud; the pool's spawned workers too)
 import dry_dist  # noqa: E402  (its TYPE_BASE: the TYPE cases on the engine's voicing)
-LAST = "v0.9.13"                   # the last release (183476d9); move with every release, never to a candidate
+LAST = "v0.9.12"                   # the last release (5baa6f44); move with every release, never to a candidate
 OUT = os.path.join(ROOT, "build", "release_diff")
 BASE_FAST = os.path.join(ROOT, "tests", "baselines", "release_diff_fast.json")
 EXPECTED = os.path.join(ROOT, "tests", "expected_changes.yaml")
