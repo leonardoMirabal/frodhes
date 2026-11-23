@@ -65,6 +65,7 @@ Q30, Q28, Q25, Q16, Q12 = 1 << 30, 1 << 28, 1 << 25, 1 << 16, 1 << 12
 M_LIM = (1 << 23) - 1           # |m| bound of the pickup loop
 X_MAX = 7.0                     # units: the tip's peak at the BARK cap (the mode states saturate at 8)
 OFF_MAX = 1.0                   # units: TONE's cap on the rest height (the plate's edge)
+LEVELMAP = os.path.join(ROOT, "docs", "model", "data", "reed_levelmap.json")   # per key: the soft anchors' gain (tools/reed_levelmap.py)
 BUDGET = 17 * 1024              # bytes: the interface's cap for all WHURLI data
 
 # Every number the model uses; ESTIMATE marks the ones no source fixes (private/plans/whurli-physics.md, to verify).
@@ -361,7 +362,15 @@ def build(repin=False):
     pk = np.array([float(np.max(np.abs(r))) + 1e-12 for r in yp])
     cap = min(1.0, float(np.percentile(10 ** ((P["peak_dbfs"] + 3) / 20) * 32767 / pk, 10)))
     g = np.minimum(g * cap, (2 ** 31 - 1) / Q16)
+    lmap = json.load(open(LEVELMAP))["g32"] if os.path.exists(LEVELMAP) else {}
     for s, gk in zip(keys, g):
+        # the soft end's level evenness (docs/model/data/reed_levelmap.json, tools/reed_levelmap.py): the output gain at the anchors
+        # v0 / v32 is g32 times the table's (>1: the key's own gain takes the boost, RD_PGAIN the cut at the louder anchors, so
+        # v64 and up stay exactly as they were); the pulses, so the bark and the growl, are untouched
+        g32 = float(lmap.get(str(s["midi"]), 1.0))
+        G = max(1.0, g32)
+        gk = float(gk) * G
+        s["pulse"]["pgain"] = [max(1, min(65535, int(round(65535 * a / G)))) for a in (g32, g32, 1.0, 1.0, 1.0)]
         s["gain"] = float(gk)
         s["kill"] = rm.kill_level(s, pick, float(gk))
         s["life_blocks"] = int(min(6891, math.ceil((2 * s["modes"][0]["t60"] + 1.0) * FS / 256)))

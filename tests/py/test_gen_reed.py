@@ -141,3 +141,17 @@ def test_pickup_aliasing(spec):
         dd = np.diff(cd)
         e = (d - dd)[1000:-1000]
         assert 10 * np.log10(np.sum(e ** 2) / np.sum(dd[1000:-1000] ** 2)) < -50, key
+
+
+def test_level_map_is_applied_and_leaves_the_loud_anchors_alone(spec):
+    """tools/reed_levelmap.py's soft-end gains (docs/model/data/reed_levelmap.json): the output gain at the v0 / v32 anchors is g32
+    times the table's; the key's own gain takes any boost and RD_PGAIN the cut at v64 and up, so the loud end is what it was"""
+    import json
+    m = json.load(open(gw.LEVELMAP))["g32"]
+    assert sorted(int(k) for k in m) == list(range(33, 97)) and all(0.05 <= v <= 12.0 for v in m.values())
+    for k in spec["keys"]:
+        g32 = m[str(k["midi"])]
+        G = max(1.0, g32)
+        pg = k["pulse"]["pgain"]
+        assert pg[2] == pg[3] == pg[4] == max(1, min(65535, round(65535 / G)))
+        assert abs(pg[1] / pg[2] - g32) < 0.002 * max(g32, 1.0) + 1e-4
