@@ -345,19 +345,42 @@ def det_clicks(x, ev_ms):
     return bs.click_count(x, ev_ms, int(GUARD_POST))[0], det_hp(x, ev_ms)
 
 
-def det_lpc(x, ev_ms):
+BARK_AWARE = os.environ.get("TYPE_SCAN_BARK") == "1"   # set by main for WHURLI (the pool's workers inherit it)
+BARK_EXCESS = 3.0   # WHURLI: a spike's excess over the periodic waveform (bark_excess); bark 0.3 .. 1.1, a +150 LSB click 6, +3000 125
+
+
+def bark_excess(x, n, f0):
+    """a 2nd-difference spike at sample n over the largest 2nd difference of the cycle before and the cycle after (period 1 / f0):
+    a bark pulse (the electrostatic pickup's lopsided current at a hard strike) belongs to every cycle, ~1; a click is in neither,
+    well over 1. The LPC residual alone flags both (tests/py/test_whurli.py has the same measure)"""
+    d = np.abs(np.diff(np.asarray(x, float), 2))
+    P = FS / f0
+    s0 = d[max(n - 3, 0):n + 4].max()
+
+    def cyc(c):
+        a, b = int(c - P / 2), int(c + P / 2)
+        return d[a:b].max() if a >= 0 and b < len(d) else 0.0
+    return s0 / max(cyc(n - P), cyc(n + P), 1.0)
+
+
+def det_lpc(x, ev_ms, st=None):
     """GLT: the LPC glitch detector on both channels (one for a mono array), the events outside the guards: returns the
-    events' times (s)"""
+    events' times (s). st (WHURLI: [(key, vel, on_ms, off_ms)]): an event under ONE sounding note whose spike is part of that note's
+    period (bark_excess < BARK_EXCESS) is the bark, not a glitch; every other event is kept (no threshold moves)"""
     chans = [x[:, 0], x[:, 1]] if x.ndim == 2 else [x]
-    hit = set()
+    hit = {}
     for c in chans:
         for i in gl.events(c, FS):
-            hit.add(int(i))
+            hit.setdefault(int(i), c)
     keep = []
     for i in sorted(hit):
         t = i * 1000.0 / FS
         if any(-GUARD_LPC <= t - g <= GUARD_LPC for g in ev_ms):
             continue
+        if st:
+            snd = [n for (n, v, on, off) in st if on <= t <= off + 400]
+            if len(snd) == 1 and bark_excess(hit[i], i, dd.f0(snd[0])) < BARK_EXCESS:
+                continue
         if keep and i - keep[-1] < FS * 0.003:
             continue
         keep.append(i)
@@ -442,6 +465,85 @@ def alias_cells(window, f0, partials=(), modal=None):
             float(10 * np.log10(p[mod].sum() / a + 1e-30)))
 
 
+_REED = {}
+
+
+def reed_modes_hz(key):
+    """WHURLI's reed modes (Hz) of a key, from firmware/gen/reed_tables.h's theta words (mode 1, 2, 3)"""
+    if not _REED:
+        t = open(os.path.join(ROOT, "firmware", "gen", "reed_tables.h")).read()
+        rows = [ln for ln in t.split("\n") if re.match(r"\s*\{\{\{", ln)]
+        for i, ln in enumerate(rows):
+            ms = re.findall(r"\{([^{}]*)\}", ln)[:4]
+            _REED[33 + i] = [int(m.split(",")[2]) * FS / (2 * math.pi * 2 ** 29) for m in ms if int(m.split(",")[2])]
+    return _REED[key]
+
+
+FOLD_GUARD_HZ = 9.0      # the Blackman-Harris window's main lobe (4 bins of a 0.5 s window: +-8 Hz) and a Hz over
+FOLD_COVER_MAX = 0.6     # the share of the image bins the lattice's guards may cover: over it the band is not judged (reported)
+
+
+def fold_cell(window, key):
+    """WHURLI's ALI: the real foldback. The note's partials are predicted: the harmonics p f1 and the reed lattice p f1 + q f2 (q = +-1,
+    +-2; + r f3), which are the instrument's own (mode 2 and the pickup's sidebands). Those above Nyquist come back at fs - f: the
+    energy at the images of the harmonics and the first sidebands (q = 0, +-1), outside the guards round every predicted in-band line,
+    re H1 (dB), is the aliasing. Blackman-Harris window (sidelobes -92 dB: a strong line's skirt does not reach the images).
+    Returns (fold dB re H1, coverage); coverage is the share of the images' bins the guards hide: over FOLD_COVER_MAX the note's
+    band is not judged (a low key's lattice is denser than the window resolves)"""
+    from scipy.signal.windows import blackmanharris
+    fm = reed_modes_hz(key)
+    w = np.asarray(window, float) * blackmanharris(len(window))
+    n = 1 << 17
+    sp = np.abs(np.fft.rfft(w, n)) ** 2
+    fr = np.fft.rfftfreq(n, 1.0 / FS)
+    f0 = dd.f0(key)
+    fund = float(fr[np.argmax(np.where(np.abs(fr - f0) < f0 * 0.03, sp, 0))])
+    sc = fund / fm[0]
+    f2 = fm[1] * sc if len(fm) > 1 else 0.0
+    f3 = fm[2] * sc if len(fm) > 2 else 0.0
+    nyq = FS / 2.0
+    use = (fr > 30) & (fr < 20000)
+    guard = np.zeros(len(fr), bool)
+    for q in range(-2, 3):
+        for r in ((-1, 0, 1) if f3 else (0,)):
+            for pp in range(-4, int(20000 / fund) + 8):
+                f = pp * fund + q * f2 + r * f3
+                if 0 < f < nyq:
+                    guard |= np.abs(fr - f) < max(FOLD_GUARD_HZ, f * 0.0015)
+    img = np.zeros(len(fr), bool)
+    for q in (-1, 0, 1):
+        if q and not f2:
+            continue
+        for pp in range(0, int(2 * FS / fund) + 2):
+            f = pp * fund + q * f2
+            if f <= nyq:
+                continue
+            fi = abs(f - round(f / FS) * FS)
+            if 0 < fi < nyq:
+                img |= np.abs(fr - fi) < max(FOLD_GUARD_HZ / 3, fi * 0.0005)
+    a = sp[np.abs(fr - fund) < max(dd.IBW, fund * dd.IREL)].sum() + 1e-30
+    cand = use & img & ~guard
+    cover = 1.0 - cand.sum() / max((use & img).sum(), 1)
+    return float(10 * np.log10(sp[cand].sum() / a + 1e-30)), float(cover)
+
+
+def ali_row(case, ty, w, n, judge):
+    """one ALI row: the electric pianos and the bars as before; WHURLI (idx 6): the instrument's own reed lattice is not judged, the
+    foldback is (fold_cell, where its guards leave the images readable) and the 10..20 kHz off-harmonic power (hf), the same limits"""
+    inh, hf, inhw, h1, bark, floor, mdl = alias_cells(w, dd.f0(n), ty.partials, modal_of(ty))
+    li, lh = ali_limits(inhw)
+    if ty.idx != 6:
+        return row("ALI", case, max(inh - li, hf - lh, mdl - MODAL_MAX), 0, inh <= li and hf <= lh and mdl <= MODAL_MAX,
+                   f"inh {inh:.1f} (limit {li:.1f}), hf {hf:.1f} ({lh:.1f}), modal {mdl:.1f} ({MODAL_MAX:.0f}), bark {bark:.1f} dB",
+                   judged=judge), (inh, hf, inhw, h1, bark, floor, mdl)
+    fo, cov = fold_cell(w, n)
+    use_fold = cov <= FOLD_COVER_MAX
+    val = max(hf - lh, (fo - li) if use_fold else -999.0)
+    return row("ALI", case, val, 0, hf <= lh and (fo <= li or not use_fold),
+               f"fold {fo:.1f} (limit {li:.1f}{'' if use_fold else ', not judged: the lattice hides ' + format(cov, '.0%') + ' of the images'}), "
+               f"hf {hf:.1f} ({lh:.1f}), lattice inh {inh:.1f} not judged, bark {bark:.1f} dB", judged=judge), (inh, hf, inhw, h1, bark, floor, mdl)
+
+
 def ali_limits(inhw):
     return max(ALI_INH, inhw + ALI_WHITE), max(ALI_HF, inhw + ALI_WHITE)
 
@@ -489,7 +591,7 @@ def common(x, ev, st, case, raw, hold_runs=True, lpc=True, rel=True, idle=True):
     a, b = det_clicks(x, g)
     rows.append(row("CLK", case, a + b, 0, a + b == 0, f"d2 {a}, hp {b}"))
     if lpc:
-        ev_l = det_lpc(x, g)
+        ev_l = det_lpc(x, g, st if BARK_AWARE else None)
         rows.append(row("GLT", case, len(ev_l), 0, not ev_l, "at " + ", ".join(f"{t:.3f}" for t in ev_l[:6]) if ev_l else ""))
     n = det_clip(x, CLP_RAW if raw else CLP_LIM)
     rows.append(row("CLP", case, n, 0, n == 0))
@@ -527,13 +629,9 @@ def case_keys(spec):
         d = dict(lufs=level_lufs(x, o, 1000), phon=level_phon(x, o, 1000), lufs5=level_lufs(x, o, 500))
         if n in alikeys and n >= ALI_KMIN and vel >= ALI_VMIN:
             w = mono(x)[int((o + 150) * FS / 1000):int((o + 650) * FS / 1000)]
-            inh, hf, inhw, h1, bark, floor, mdl = alias_cells(w, dd.f0(n), ty.partials, modal_of(ty))
-            li, lh = ali_limits(inhw)
+            arow, (inh, hf, inhw, h1, bark, floor, mdl) = ali_row(f"v{vel} key {n}", ty, w, n, judge_ali)
             d.update(inh=inh, inh_hf=hf, inhw=inhw, h1=h1, bark=bark, floor=floor, modal=mdl)
-            rows.append(row("ALI", f"v{vel} key {n}", max(inh - li, hf - lh, mdl - MODAL_MAX), 0,
-                            inh <= li and hf <= lh and mdl <= MODAL_MAX,
-                            f"inh {inh:.1f} (limit {li:.1f}), hf {hf:.1f} ({lh:.1f}), modal {mdl:.1f} ({MODAL_MAX:.0f}), bark {bark:.1f} dB",
-                            judged=judge_ali))
+            rows.append(arow)
             nse_ok = floor <= NSE_DB or floor + h1 <= NSE_ABS
             rows.append(row("NSE", f"v{vel} key {n}", floor + h1, NSE_ABS, nse_ok, f"between-partial floor {floor:.1f} dB re H1 = {floor + h1:.1f} dBFS", judged=judge_ali))
         data["keys"][n] = d
@@ -608,12 +706,8 @@ def case_knob(spec):
         lv[(n, v)] = level_lufs(x, o, 500)
         if v >= ALI_VMIN and n >= ALI_KMIN:
             w = mono(x)[int((o + 150) * FS / 1000):int((o + 650) * FS / 1000)]
-            inh, hf, inhw, h1, bark, floor, mdl = alias_cells(w, dd.f0(n), ty.partials, modal_of(ty))
-            li, lh = ali_limits(inhw)
-            rows.append(row("ALI", f"{k}={val} key {n} v{v}", max(inh - li, hf - lh, mdl - MODAL_MAX), 0,
-                            inh <= li and hf <= lh and mdl <= MODAL_MAX,
-                            f"inh {inh:.1f} ({li:.1f}), hf {hf:.1f} ({lh:.1f}), modal {mdl:.1f} ({MODAL_MAX:.0f}), bark {bark:.1f} dB",
-                            judged=judges_alias(ty)))
+            arow, (inh, hf, inhw, h1, bark, floor, mdl) = ali_row(f"{k}={val} key {n} v{v}", ty, w, n, judges_alias(ty))
+            rows.append(arow)
     return rows, dict(knob=k, val=val, lv={f"{n}/{v}": l for (n, v), l in lv.items()})
 
 
@@ -685,6 +779,7 @@ def case_pedal(spec):
     t = 400
     for i, n in enumerate((48, 52, 55, 60, 64, 67, 72, 76)):
         ev += bm.note(t, n, 100 if i % 2 else 127, 150)
+        st.append((n, 100 if i % 2 else 127, t, t + 150))     # (for WHURLI's bark-aware GLT: the strikes, one sounding at a time here)
         t += 250
     ev.append((3200, "midi 0xB0 64 0"))                                       # the pedal up: the held tails damp
     for i in range(5):                                                          # flutter
@@ -692,7 +787,7 @@ def case_pedal(spec):
         ev.append((3920 + 240 * i, "midi 0xB0 64 0"))
     ev += bm.note(5300, 60, 127, 3000) + [(5400, "midi 0xB0 64 127"), (7000, "midi 0xB0 64 0")]   # half-pedal-ish: pedal under a held note
     x, _ = render(spec["bin"], setup(ty, "norm") + ev, 7000 + TAIL)
-    rows = common(x, ev, [], "pedal", False, rel=False)
+    rows = common(x, ev, st, "pedal", False, hold_runs=False, rel=False)
     r, p = det_release(x, 3200)
     rows.append(row("REL", "pedal up", max(r - REL_RMS, p - REL_PEAK), 0, r <= REL_RMS and p <= REL_PEAK,
                     f"rms {r:+.2f} dB, peak {p:+.2f} dB"))
@@ -958,6 +1053,41 @@ def selftest_rows(binary):
                     f"-33 dB: modal {cm[6]:.1f}, inh {cm[0]:.1f} (without the band {cn[0]:.1f}); -20 dB: modal {cl[6]:.1f}"))
     rows.append(row("SLF", "NSE fires on a white floor", cw[5], NSE_DB, cw[5] > NSE_DB and cw[5] + cw[3] > NSE_ABS and ch[5] <= NSE_DB,
                     f"clean {ch[5]:.1f}, noisy {cw[5]:.1f} dB re H1 ({cw[5] + cw[3]:.1f} dBFS)"))
+    # WHURLI's foldback: the clean takes pass; an aliased partial -30 dB re H1 fails. Key 45: caught by hf (a tone midway between two
+    # harmonics near 14 kHz, outside their 0.3 % bands); key 60: caught by fold (the image fs - k f1 of a harmonic above Nyquist).
+    # Not key 39: fs / f1 = 567.0 there (an alias lands on a harmonic) and the 0.3 % bands cover the whole gap at 78 Hz: no line
+    # detector sees an alias on that note; its clean take only has to pass.
+    from scipy.signal.windows import blackmanharris
+    tw0 = resolve_type(6)
+    for key, how in ((39, None), (45, "hf"), (60, "fold")):
+        xk, _ = render(binary, setup(tw0, "raw") + bm.note(300, key, 127, 900), 2500)
+        wk = xk[int((300 + 9 + 150) * FS / 1000):int((300 + 9 + 650) * FS / 1000), 0]
+        f1 = reed_modes_hz(key)[0]
+        S = np.abs(np.fft.rfft(wk * blackmanharris(len(wk)), 1 << 17))
+        fr = np.fft.rfftfreq(1 << 17, 1.0 / FS)
+        h1a = S[np.abs(fr - f1) < f1 * 0.03].max() / (blackmanharris(len(wk)).sum() / 2)
+        tt = np.arange(len(wk)) / FS
+        r0, _ = ali_row(f"key {key} clean", tw0, np.round(wk), key, True)
+        if how is None:
+            rows.append(row("SLF", f"ALI WHURLI key {key}: the clean take passes", r0["value"], 0, r0["ok"], r0["info"]))
+            continue
+        fimg = (round(14000 / f1) + 0.5) * f1 if how == "hf" else FS - int(30000 / f1) * f1
+        bad = wk + h1a * 10 ** (-30 / 20) * np.sin(2 * np.pi * fimg * tt)
+        r1, _ = ali_row(f"key {key} aliased", tw0, np.round(bad), key, True)
+        rows.append(row("SLF", f"ALI WHURLI key {key}: the clean take passes, an aliased partial at {fimg:.0f} Hz fails ({how})",
+                        r1["value"], 0, r0["ok"] and not r1["ok"], f"clean {r0['value']:.1f}, aliased {r1['value']:.1f} dB over its limit; {r1['info']}"))
+    # WHURLI's bark: key 36 v127 BARK 127 (the bark's LPC events, one a cycle) passes the bark-aware GLT, a click added to it fires
+    tw = resolve_type(6)
+    evw = bm.note(300, 36, 127, 900)
+    xw, _ = render(binary, setup(tw, "raw", BARK=127) + evw, 3000)
+    stw = [(36, 127, 300, 1200)]
+    gw = guards(evw)
+    raw_n, bark_n = len(det_lpc(xw, gw)), len(det_lpc(xw, gw, stw))
+    xc = xw.copy()
+    xc[int(0.8 * FS), :] += 150
+    click_n = len(det_lpc(xc, gw, stw))
+    rows.append(row("SLF", "GLT: WHURLI's bark passes, a +150 LSB click on it fires", click_n, 0,
+                    raw_n >= 4 and bark_n == 0 and click_n >= 1, f"raw LPC {raw_n}, bark-aware {bark_n}, with the click {click_n}"))
     return rows
 
 
@@ -1185,6 +1315,7 @@ def main():
         return 0 if all(r["ok"] for r in rows) else 1
     pr = tuple(float(v) for v in a.partials.split(",") if v)
     types = [resolve_type(i) for i in range(bm.n_types())] if a.type == "all" else [resolve_type(a.type, a.type_cc, pr)]
+    os.environ["TYPE_SCAN_BARK"] = "1" if any(t.idx == 6 for t in types) else "0"   # WHURLI: bark-aware GLT (det_lpc)
     types.sort(key=lambda t: t.idx != 0)                      # STAGE 77 first: the reference of TYP and CPU
     ref, code = None, 0
     for ty in types:
