@@ -1,4 +1,4 @@
-# WHURLI (TYPE 6, ALGORITHM six steps from ST77: the Rhodes engine on its own tables, rh_type 4): notes over its
+# WHURLI (TYPE 6, ALGORITHM four steps from ST77: the Rhodes engine on its own tables, rh_type 4): notes over its
 # 64-key range (33..96) at soft / medium / hard velocities, a re-strike, a pedal chord, notes outside the range
 # (no voice: exact silence), a TYPE change away and back, silence at the end. RAW: the engine without the effects.
 # tests/py/test_whurli.py renders this script's WAV and looks for clicks and NaN-like jumps.
@@ -7,8 +7,6 @@
 62 turn 1 1
 64 turn 1 1
 66 turn 1 1
-68 turn 1 1
-70 turn 1 1
 200 expect state type WHURLI
 # one note per register, soft to hard
 300 midi 0x90 36 40

@@ -139,8 +139,8 @@
 7500 turn 1 -1
 7600 expect sound
 7600 expect state bars 0
-7600 expect state card.2.0 BELL_DYNO
-7600 expect state msg BELL_DYNO
+7600 expect state card.2.0 WHURLI
+7600 expect state msg WHURLI
 # ---- FX bypass: the FX light goes out, nothing else changes; again: back
 7700 btn 2
 7800 expect led 2 0

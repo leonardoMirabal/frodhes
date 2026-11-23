@@ -415,6 +415,7 @@ static void sb_param_abs(uint32_t s, int32_t x)
 {
     int32_t hi, cur = slot_val(s, &hi), n;
     if (s >= P_COUNT) return;
+    if (s == P_TYPE) x = TYPE_POS[x < 0 ? 0 : x >= (int32_t)N_TYPE_N ? (int32_t)N_TYPE_N - 1 : x];   /* the TYPE's slot value is its place in the scroll order, the parameter's its id */
     if (x < 0) x = 0;
     if (x > hi) x = hi;
     if (s == P_CMP_SW) { if (x && !PV(P_CMP_SW)) cmp_wake(1); else param_set(P_CMP_SW, x); ui_mark_param(s); return; }
@@ -423,7 +424,7 @@ static void sb_param_abs(uint32_t s, int32_t x)
         slot_turn(s, x - cur);
         { int32_t now = slot_val(s, &hi); if (now == cur) break; cur = now; }
     }
-    if (PV(s) != (uint8_t)x && x <= PARAMS[s].hi) param_set(s, x);   /* past a panel stop (MOTOR RATE: 120) */
+    if (s != P_TYPE && PV(s) != (uint8_t)x && x <= PARAMS[s].hi) param_set(s, x);   /* past a panel stop (MOTOR RATE: 120) */
     ui_mark_param(s);
     ui_mark(E_CARDS); ui_mark(E_FOOTER);
 }

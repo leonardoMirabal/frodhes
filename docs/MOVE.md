@@ -189,7 +189,7 @@ of its controls.
 
 ### FRODHES
 
-TYPE (ST77, SUIT, FELT, DYNO, VIBE, MRMB, WHRL: the [FRODHES page](MANUAL.md#frodhes-the-main-page)'s TYPE), SPREAD
+TYPE (ST77, SUIT, FELT, DYNO, WHRL, VIBE, MRMB, the [FRODHES page](MANUAL.md#frodhes-the-main-page)'s TYPE, scrolled in that order on the screen), SPREAD
 (the keys across the stereo field: the manual's [MIDI](MANUAL.md#12-midi), CC 105), SUS ([Sustain](#sustain)), FX ([The
 effects](#the-effects)), PRESET (knob 5: the sound, its full name across knobs 5-7; [Presets and
 saving](#presets-and-saving)) and the delay's MIX (DELAY, knob 8, the FM-1's PERFORM name for it). Knobs 6 and 7 have

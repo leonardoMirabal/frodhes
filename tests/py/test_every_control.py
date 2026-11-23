@@ -293,6 +293,8 @@ def _tune():
 
 # ---- TYPE
 
+TYPE_POS = [0, 1, 2, 3, 5, 6, 4]     # ALGORITHM detents from STAGE 77 to each TYPE id (WHURLI, id 6, sits before VIBES)
+
 PROBE3 = sum((note(300, n, 100, 1300) for n in (48, 60, 72)), [])
 
 
@@ -304,7 +306,7 @@ def _type():
     Rhodes (MARIMBA PLAN §9.5)"""
     ws = []
     for t in range(6):
-        w = R(CLEAN + detents(1, 1, t, 40) + ["100 dump"] + PROBE3, 1800)
+        w = R(CLEAN + detents(1, 1, TYPE_POS[t], 40) + ["100 dump"] + PROBE3, 1800)
         assert w.state(100)["p.0"] == str(t) and w.state(100)["bars"] == str(int(t >= 4))
         ws.append(w.seg(0.3, 1.5))
     d = min(tdist(ws[a], ws[b]) for a in range(4) for b in range(a + 1, 4))
@@ -334,10 +336,10 @@ MC3, MC4 = 130.81, 261.63
 
 
 def mrmb(page, enc, d, probe, end, extra=(), pre=()):
-    """MARIMBA by five ALGORITHM detents from STAGE 77, SELECT to the page (1 = FRODHES, 2 = VOICE 1/3, 3 = VOICE 2/3),
+    """MARIMBA by six ALGORITHM detents from STAGE 77, SELECT to the page (1 = FRODHES, 2 = VOICE 1/3, 3 = VOICE 2/3),
     knob enc turned d detents (0 = untouched), a dump at 90 ms (the card), then the probe"""
     turns = [f"{60 + 3 * i} turn 0 1" for i in range(page)]
-    return R(CLEAN + list(pre) + detents(1, 1, 5, 40) + turns + ([f"80 turn {enc} {d}"] if d else []) + ["90 dump"]
+    return R(CLEAN + list(pre) + detents(1, 1, TYPE_POS[5], 40) + turns + ([f"80 turn {enc} {d}"] if d else []) + ["90 dump"]
              + list(extra) + probe, end)
 
 

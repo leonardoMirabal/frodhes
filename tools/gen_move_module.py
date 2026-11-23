@@ -796,6 +796,12 @@ def fmt_conf():
     return out
 
 
+def type_order():
+    """firmware/src/engine.c TYPE_ORDER: the TYPE ids in the order a player scrolls them (position -> id)"""
+    eng = open(os.path.join(ROOT, "firmware", "src", "engine.c")).read()
+    return [int(x) for x in re.search(r"TYPE_ORDER\[ENG_NTYPE\] = \{([^}]*)\}", eng).group(1).split(",")]
+
+
 def screen_pages(levels):
     """the levels as Frodhes' own screen shows them: [{title, gate (ui_engine, -1 always shown), part (an engine's
     VOICE page 0, its next page 1, -1 not an engine page), root, knobs}], each knob {key, name, type, min, max, step,
@@ -827,6 +833,8 @@ def screen_pages(levels):
             for f in ("min", "max", "step", "options"):
                 if f in it:
                     k[f] = it[f]
+            if key == "p_type":                     # the screen steps the TYPE in the scroll order (WHURLI after BELL DYNO); the value stays its id
+                k["order"] = type_order()
             if "default" in it:                      # (a double tap on the knob's touch resets it: the screen's reset)
                 k["def"] = it["default"]
             if it.get("access") == "write":

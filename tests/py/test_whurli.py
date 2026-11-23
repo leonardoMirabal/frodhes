@@ -48,7 +48,7 @@ def sweep_f0(n):
 def sweep(whurli):
     ls = [H.cc(50, 119, 127)]
     if whurli:
-        ls += [f"{60 + 2 * i} turn 1 1" for i in range(6)]            # ALGORITHM: ST77 -> ... -> WHURLI
+        ls += [f"{60 + 2 * i} turn 1 1" for i in range(4)]            # ALGORITHM: ST77 -> SUITCASE -> EARLY FELT -> BELL DYNO -> WHURLI
     t = 300
     for v in VELS:
         for k in KEYS:
@@ -77,7 +77,7 @@ def test_the_sweep_has_no_click_and_nothing_saturates():
 
 
 def test_a_note_outside_the_keys_has_no_voice():
-    ls = [H.cc(50, 119, 127)] + [f"{60 + 2 * i} turn 1 1" for i in range(6)] + H.note(300, 24, 110, 200) + H.note(300, 108, 110, 200)
+    ls = [H.cc(50, 119, 127)] + [f"{60 + 2 * i} turn 1 1" for i in range(4)] + H.note(300, 24, 110, 200) + H.note(300, 108, 110, 200)
     r = H.run("whurli-oor", ls + ["200 expect state type WHURLI"], 1500)
     assert np.all(r.L == 0) and np.all(r.R == 0)
 
@@ -103,7 +103,7 @@ def test_the_type_maps_agree():
 def test_the_detector_still_fires_on_a_click_at_v127_key_40():
     """self-test of the bark-aware detector: a clean v127 key 40 (barking) has no click; the same render with 150 LSB added in
     one sample is found (excess 6; the LPC residual alone flags bark and click alike)"""
-    ls = [H.cc(50, 119, 127)] + [f"{60 + 2 * i} turn 1 1" for i in range(6)] + H.note(300, 40, 127, 600)
+    ls = [H.cc(50, 119, 127)] + [f"{60 + 2 * i} turn 1 1" for i in range(4)] + H.note(300, 40, 127, 600)
     x = H.run("whurli-k40", ls, 1500).L.copy()
     f0 = lambda n: 440 * 2 ** ((40 - 69) / 12)
     assert clicks(x, f0) == []

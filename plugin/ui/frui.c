@@ -1484,7 +1484,7 @@ static void popup(frui *u)
     id = g->id;
     names = opt_names(id, &n);
     sel = pval(m, id);
-    if (id == FRP_TYPE) { ih = 32.f; lx = 64.f; }
+    if (id == FRP_TYPE) { ih = 32.f; lx = 64.f; sel = sel >= 0 && sel < FRN_NTYPE ? FRN_TYPE_POS[sel] : 0; }   /* (the items in the scroll order) */
     cols = n > 8 ? 3 : 1;
     rows = (n + cols - 1) / cols;
     cw = 0.f;
@@ -1506,8 +1506,8 @@ static void popup(frui *u)
             frui_rrect(u->c, X(ix), X(iy), X(cw), X(ih), X(R_CTRL), FRUI_RGB(40, 40, 43));
             frui_rrect(u->c, X(ix + 4.f), X(iy + ih * 0.5f - 6.f), X(2.f), X(12.f), X(1.f), C_ACC);
         }
-        if (id == FRP_TYPE) eicon(u, i, ix + 16.f, iy + (ih - 24.f) * 0.5f, 1.f, i == sel ? C_TEXT : C_TEXT2);
-        tx(u, ix + lx, mid(u, iy + ih * 0.5f, 10.5f), T_MENU, 0, names[i], i == sel ? C_TEXT : C_TEXT2);
+        if (id == FRP_TYPE) eicon(u, FRN_TYPE_ORDER[i], ix + 16.f, iy + (ih - 24.f) * 0.5f, 1.f, i == sel ? C_TEXT : C_TEXT2);
+        tx(u, ix + lx, mid(u, iy + ih * 0.5f, 10.5f), T_MENU, 0, id == FRP_TYPE ? names[FRN_TYPE_ORDER[i]] : names[i], i == sel ? C_TEXT : C_TEXT2);
         reg(u, FRW_ITEM, i, ix, iy, cw, ih);
     }
 }

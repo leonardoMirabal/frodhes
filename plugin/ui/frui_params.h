@@ -49,6 +49,19 @@ static const char *const FRN_TYPE[] = {"STAGE 77", "SUITCASE", "EARLY FELT", "BE
 /* TYPE -> engine (0 the Rhodes engine, 1 the bars) and the TYPEs that have them: one map, as firmware/src/engine.c
  * ENG_TYPE_ENG (tests/py/test_whurli.py keeps them equal); no range test on a TYPE */
 static const unsigned char FRN_TYPE_BARS[FRN_NTYPE] = {0, 0, 0, 0, 1, 1, 0};
+/* the order a TYPE is scrolled in (the menu, the arrows, the wheel): the four pianos, WHURLI, VIBES, MARIMBA. Display only: the
+ * parameter's value is the TYPE's id (WHURLI stays 6: presets, state and the host's automation keep their meaning); FRN_TYPE_ORDER[position]
+ * = id, FRN_TYPE_POS[id] = position (firmware/src/engine.c TYPE_ORDER / TYPE_POS; tests/py/test_whurli_order.py keeps them equal) */
+static const unsigned char FRN_TYPE_ORDER[FRN_NTYPE] = {0, 1, 2, 3, 6, 4, 5};
+static const unsigned char FRN_TYPE_POS[FRN_NTYPE] = {0, 1, 2, 3, 5, 6, 4};
+/* the TYPE id d places on from id t in the scroll order (clamped; wrap: wrapping at the ends) */
+static inline int frn_type_step(int t, int d, int wrap)
+{
+    int p = (t >= 0 && t < FRN_NTYPE ? FRN_TYPE_POS[t] : 0) + d;
+    if (wrap) p = ((p % FRN_NTYPE) + FRN_NTYPE) % FRN_NTYPE;
+    else p = p < 0 ? 0 : p > FRN_NTYPE - 1 ? FRN_NTYPE - 1 : p;
+    return FRN_TYPE_ORDER[p];
+}
 #define FRN_T_VIBES 4
 #define FRN_T_MARIMBA 5
 

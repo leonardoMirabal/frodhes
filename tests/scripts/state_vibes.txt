@@ -66,11 +66,11 @@
 4600 expect preset
 4600 expect sound
 4600 expect state vcard.2.0 ON
-# ---- ALGORITHM: VIBES -> BELL DYNO (the Rhodes): no tremolo (TREM/WAH off, LFO dark), the MOTOR page is not
+# ---- ALGORITHM: VIBES -> WHURLI (one detent back in the scroll order; the Rhodes engine): no tremolo (TREM/WAH off, LFO dark), the MOTOR page is not
 # shown (SELECT from DECAY goes to COMPRESSOR); back to VIBES: the motor as it was
 4700 turn 1 -1
 4800 expect state bars 0
-4800 expect state card.2.0 BELL_DYNO
+4800 expect state card.2.0 WHURLI
 4800 expect state label.3.0 TONE
 4800 expect state card.7.0 OFF
 4800 expect sound
