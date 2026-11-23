@@ -46,6 +46,6 @@ def test_report_is_json(bins, tmp_path):
 
 def test_unknown_type_needs_its_cc():
     with pytest.raises(SystemExit):
-        ts.resolve_type(6)
-    t = ts.resolve_type(6, "80:112")
+        ts.resolve_type(7)
+    t = ts.resolve_type(7, "80:112")
     assert (t.ccnum, t.ccval) == (80, 112)

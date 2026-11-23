@@ -375,7 +375,7 @@ controller (CC 80) reaches the other four electric pianos only.
 
 ### COMPRESSOR
 
-![COMPRESSOR](manual/img/comp.png?v=bcdebf1d)
+![COMPRESSOR](manual/img/comp.png?v=81973be3)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
