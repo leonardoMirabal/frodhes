@@ -14,13 +14,8 @@ if [ -z "$NAMES" ]; then
     NAMES=$(mktemp)
     gh release view "v$V" --json assets -q '.assets[].name' > "$NAMES"
 fi
-REQ="frodhes-$V.fwsc frodhes.fwsc frodhes-$V-c1.fwsc frodhes-c1.fwsc
-frodhes-$V-smk37-pro.fwsc frodhes-smk37-pro.fwsc frodhes-$V-smk37-elite.fwsc frodhes-smk37-elite.fwsc
-frodhes-$V-mke-p37.fwsc frodhes-mke-p37.fwsc frodhes-$V-move.tar.gz frodhes-module.tar.gz
-frodhes-plugin-macos.pkg frodhes-plugin-macos.zip frodhes-plugin-windows.zip
-frodhes-plugin-linux-x86_64.zip frodhes-plugin-linux-aarch64.zip frodhes-$V-mpc.zip frodhes-mpc.zip
-Frodhes-$V-mpc-armv7.zip Frodhes-$V-mpc-aarch64.zip
-Apache-2.0.txt"
+# the required names: tools/release_asset_names.txt (append only), {v} = this version
+REQ=$(grep -v '^#' "$(dirname "$0")/release_asset_names.txt" | sed "s/{v}/$V/g")
 LINKED=$(cat README.md docs/*.md web/*.html web/*.js 2>/dev/null \
     | grep -oE 'releases/latest/download/[A-Za-z0-9._-]+' | sed 's|.*/||' | sort -u)
 miss=""

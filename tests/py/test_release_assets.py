@@ -51,3 +51,31 @@ def test_release_yml_checks_before_publishing():
     assert chk == names.index("publish the release") - 1
     att = next(s for s in st if "tools/plugin_asset.sh" in s.get("run", ""))
     assert "exit 0" not in att["run"]               # no plugin asset is a failure, never a silent skip
+
+
+NAMES = os.path.join(ROOT, "tools", "release_asset_names.txt")
+
+
+def names(text):
+    return [n for n in text.splitlines() if n and not n.startswith("#")]
+
+
+def test_the_asset_names_are_append_only():
+    """every name the last release's tools/release_asset_names.txt listed is still listed: an asset name, once
+    published, is never dropped or renamed (0.9.12 dropped frodhes-X.Y.Z-c1.fwsc, the name The Firmware Hub follows,
+    and the hub stayed on 0.9.11)"""
+    last = subprocess.run(["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*", "HEAD"], cwd=ROOT,
+                          capture_output=True, text=True).stdout.strip()
+    old = subprocess.run(["git", "show", f"{last}:tools/release_asset_names.txt"], cwd=ROOT, capture_output=True,
+                         text=True)
+    base = names(old.stdout) if old.returncode == 0 else [n.replace(V, "{v}") for n in FULL]   # before the list
+    gone = sorted(set(base) - set(names(open(NAMES).read())))
+    assert not gone, f"asset names dropped since {last or 'the list began'}: {gone} (append only)"
+
+
+def test_release_yml_publishes_every_listed_fwsc():
+    run = "\n".join(s.get("run", "") for s in yaml.safe_load(open(os.path.join(
+        ROOT, ".github", "workflows", "release.yml")))["jobs"]["release"]["steps"])
+    for n in names(open(NAMES).read()):
+        if n.endswith(".fwsc"):
+            assert n.replace("{v}", "$V") in run or n.split("{v}")[-1] in run, n
