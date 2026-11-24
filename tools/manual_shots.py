@@ -287,11 +287,11 @@ def main():
     for ms, name in shots.items():
         src = f"{tag}-{ms}.ppm"
         im = Image.open(src).convert("RGB")
+        if name == "splash":                                # the start screen without its VERSION line: the manual
+            im.paste(im.getpixel((0, 239)), (0, 205, 240, 236))   # and the hub card (fmhub.json) never name a version,
+            #                                                     # least of all DEV (rows 215..224 at 240 px)
+            (im if raw else device_look(im)).resize((480, 480), Image.NEAREST).save(os.path.join(OUT, "thumbnail.png"))
         (im if raw else device_look(im)).resize((480, 480), Image.NEAREST).save(os.path.join(OUT, f"{name}.png"))
-        if name == "splash":                                # the listing thumbnail (the firmware hub): the splash
-            th = im.copy()                                  # without its VERSION line, so its one path never
-            th.paste(im.getpixel((0, 239)), (0, 205, 240, 236))   # names a version (rows 215..224 at 240 px)
-            (th if raw else device_look(th)).resize((480, 480), Image.NEAREST).save(os.path.join(OUT, "thumbnail.png"))
         os.remove(src)
     if cards is not None:
         print(sorted(set(shots.values())))

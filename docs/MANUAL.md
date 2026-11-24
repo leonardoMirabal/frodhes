@@ -76,7 +76,7 @@ Linux: [PLUGIN.md](PLUGIN.md#packages).
 
 ### Your first sound
 
-<img src="manual/img/splash.png?v=86b49529" alt="The start screen: FRODHES, ELECTRIC PIANO + VIBES + MARIMBA" width="240" align="right">
+<img src="manual/img/splash.png?v=23c51997" alt="The start screen: FRODHES, ELECTRIC PIANO + VIBES + MARIMBA" width="240" align="right">
 
 Frodhes starts with its own screen: the name, its three instruments and the version installed. After a moment, or
 as soon as you touch a button or a knob, it opens the **PERFORM** page. Play the keys: the first time, you hear
