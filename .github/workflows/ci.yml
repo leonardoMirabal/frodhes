@@ -195,7 +195,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     container: debian:bookworm
     steps:
-      - run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates make gcc libc6-dev python3 python3-pip python3-venv
+      - run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates make gcc g++ libc6-dev python3 python3-pip python3-venv
       - uses: actions/checkout@v4
       # (bookworm's Python 3.11: numpy 2.3 / scipy 1.16 are the last for it; PyYAML: test_move_catalog reads release.yml)
       - run: |
