@@ -8,7 +8,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 V = "9.9.9"
-FULL = ["frodhes-%s.fwsc" % V, "frodhes.fwsc",
+FULL = ["frodhes-%s.fwsc" % V, "frodhes.fwsc", "frodhes-%s-c1.fwsc" % V, "frodhes-c1.fwsc",
         "frodhes-%s-smk37-pro.fwsc" % V, "frodhes-smk37-pro.fwsc", "frodhes-%s-smk37-elite.fwsc" % V,
         "frodhes-smk37-elite.fwsc", "frodhes-%s-mke-p37.fwsc" % V, "frodhes-mke-p37.fwsc",
         "frodhes-%s-move.tar.gz" % V, "frodhes-module.tar.gz", "frodhes-plugin-macos.pkg",
@@ -35,16 +35,12 @@ def test_any_missing_asset_fails(tmp_path):
         assert r.returncode == 1 and n in r.stderr, n
 
 
-def test_a_retired_c1_asset_fails(tmp_path):
-    for n in ("frodhes-c1.fwsc", "frodhes-%s-c1.fwsc" % V):   # since 0.9.12 the FM-1 has one package, frodhes.fwsc
-        r = check(tmp_path, FULL + [n])
-        assert r.returncode == 1 and n in r.stderr, n
-
-
-def test_release_yml_ships_no_c1_asset():
+def test_release_yml_ships_the_hub_c1_asset():
+    """The Firmware Hub follows frodhes-c1.fwsc: 0.9.12-0.9.13 lacked it and the hub stayed on 0.9.11"""
     run = "\n".join(s.get("run", "") for s in yaml.safe_load(open(os.path.join(
         ROOT, ".github", "workflows", "release.yml")))["jobs"]["release"]["steps"])
-    assert "build/publish/frodhes-c1" not in run and "-c1.fwsc build/publish" not in run
+    assert 'cp "build/frodhes-$V.fwsc" build/publish/frodhes-c1.fwsc' in run
+    assert 'cp "build/frodhes-$V.fwsc" "build/publish/frodhes-$V-c1.fwsc"' in run
     assert 'cp "build/frodhes-$V-c1.fwsc" "build/frodhes-$V.fwsc"' in run     # the two-core build as frodhes.fwsc
 
 
