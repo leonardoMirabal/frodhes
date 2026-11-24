@@ -910,9 +910,11 @@ static int coretest(void)
 
     /* ---- presets: factory, browse, UNDO, user files, program changes */
     n0 = VT->preset_count(ca);
-    CHECK(n0 >= 57, "57 factory presets at least (%d)", n0);
+    CHECK(n0 >= 61, "61 factory presets at least (%d)", n0);
     CHECK(!VT->preset_info(ca, 0, &pi) && !strcmp(pi.tag, "F01") && pi.name[0] && !pi.user, "F01 '%s'", pi.name);
     CHECK(!VT->preset_info(ca, 56, &pi) && !strcmp(pi.tag, "F57"), "F57 '%s'", pi.name);
+    CHECK(!VT->preset_info(ca, 57, &pi) && !strcmp(pi.tag, "F58") && !strcmp(pi.name, "WHURLI"), "F58 WHURLI '%s'", pi.name);
+    CHECK(!VT->preset_info(ca, 60, &pi) && !strcmp(pi.tag, "F61") && !strcmp(pi.name, "REED SOFT"), "F61 '%s'", pi.name);
     VT->preset_load(ca, 4); run(a, 2);
     idx = VT->preset_current(ca, &pi, &ed);
     CHECK(idx == 4 && !ed && !strcmp(pi.tag, "F05"), "F05 loaded (%d %s %s edited %d)", idx, pi.tag, pi.name, ed);
@@ -937,7 +939,7 @@ static int coretest(void)
     /* a user preset */
     VT->param_set(ca, P_TONE_, 111); VT->param_set(ca, P_RV_DEPTH_, 99); run(a, 2);
     idx = VT->preset_save(ca, "Test \"One\"");
-    CHECK(idx >= 57 && VT->preset_count(ca) == n0 + 1, "saved as a user preset (%d)", idx);
+    CHECK(idx >= 61 && VT->preset_count(ca) == n0 + 1, "saved as a user preset (%d)", idx);
     run(a, 2);
     CHECK(VT->preset_current(ca, &pi, &ed) == idx && pi.user && !ed && !strcmp(pi.name, "Test _One_"),
           "the sound is that preset now (%s '%s' edited %d)", pi.tag, pi.name, ed);
@@ -957,25 +959,25 @@ static int coretest(void)
     CHECK(VT->preset_current(ca, &pi, &ed) == 4, "program change 4: F05 (%d)", VT->preset_current(ca, &pi, &ed));
     blk_n = 0; ev_midi(0, 0xC0, 40, 0); run(a, 3);
     CHECK(VT->preset_current(ca, &pi, &ed) == 24, "program change 40: F25 (%d)", VT->preset_current(ca, &pi, &ed));
-    {   /* the FM-1's map, on to F57: 0..15 F01..F16, 32 + k F17 + k (32..34 F17..F19 as the device, 35..72 F20..F57) */
-        static const int PC[][2] = { { 0, 0 }, { 15, 15 }, { 32, 16 }, { 34, 18 }, { 35, 19 }, { 50, 34 }, { 72, 56 } };
+    {   /* the FM-1's map, on to F61: 0..15 F01..F16, 32 + k F17 + k (32..34 F17..F19 as the device, 35..72 F20..F57 as before, 73..76 WHURLI F58..F61) */
+        static const int PC[][2] = { { 0, 0 }, { 15, 15 }, { 32, 16 }, { 34, 18 }, { 35, 19 }, { 50, 34 }, { 72, 56 }, { 73, 57 }, { 76, 60 } };
         for (k = 0; k < (int)(sizeof PC / sizeof PC[0]); k++) {
             blk_n = 0; ev_midi(0, 0xC0, (uint8_t)PC[k][0], 0); run(a, 3);
             CHECK(VT->preset_current(ca, &pi, &ed) == PC[k][1], "program change %d: F%02d (%d)", PC[k][0], PC[k][1] + 1,
                   VT->preset_current(ca, &pi, &ed));
         }
-        blk_n = 0; ev_midi(0, 0xC0, 73, 0); run(a, 3);
-        CHECK(VT->preset_current(ca, &pi, &ed) == 56, "program change 73: no preset there, F57 stays");
+        blk_n = 0; ev_midi(0, 0xC0, 77, 0); run(a, 3);
+        CHECK(VT->preset_current(ca, &pi, &ed) == 60, "program change 77: no preset there, F61 stays");
     }
     blk_n = 0; ev_midi(0, 0xC0, 16, 0); run(a, 3);
-    CHECK(VT->preset_current(ca, &pi, &ed) == 57 && VT->param_get(ca, P_TONE_) == 111, "program change 16: U01 (%d)",
+    CHECK(VT->preset_current(ca, &pi, &ed) == 61 && VT->param_get(ca, P_TONE_) == 111, "program change 16: U01 (%d)",
           VT->preset_current(ca, &pi, &ed));
     VT->settings_get(ca, &s); s.pgm_change = 0; VT->settings_set(ca, &s); run(a, 2);
     blk_n = 0; ev_midi(0, 0xC0, 4, 0); run(a, 3);
-    CHECK(VT->preset_current(ca, &pi, &ed) == 57, "program changes off: ignored");
+    CHECK(VT->preset_current(ca, &pi, &ed) == 61, "program changes off: ignored");
     s.pgm_change = 1; VT->settings_set(ca, &s); run(a, 2);
-    printf("ok    presets: %d (57 factory + user), browse with wrap, UNDO both ways, a user file saved and loaded, "
-           "program changes (0..15 F01..F16, 32..72 F17..F57, U01; off)\n", VT->preset_count(ca));
+    printf("ok    presets: %d (61 factory + user), browse with wrap, UNDO both ways, a user file saved and loaded, "
+           "program changes (0..15 F01..F16, 32..76 F17..F61, U01; off)\n", VT->preset_count(ca));
 
     /* ---- SUSTAIN, FX BYPASS, the on-screen keyboard, the meters, velocity, MIDI CHANNEL */
     n_outs = 0;
@@ -1106,12 +1108,44 @@ static int coretest(void)
         printf("ok    older and broken states: version 1 loads (defaults for the new keys), garbage and a cut state "
                "refused, a bad learn map dropped, a CLASSIC state loads on HQ (24 voices) and saves as HQ\n");
     }
+    {   /* the effect lamps' memory (version 6): each effect's last setting other than OFF, kept by the instance (it
+         * outlives the window), saved with the project; a state without it (older, or none seen) loads with none, and
+         * saves as before */
+        char old[4096], *pv;
+        mem_t m3 = { 0 };
+        CHECK(VT->version >= 6u && VT->fx_last && VT->fx_last_set, "the UI extension has fx_last (version %u)", VT->version);
+        CHECK(state_of(a, &m3) == 0 && !strstr(m3.b, "\"lamp\""), "no lamp memory yet: the state has no \"lamp\" key");
+        VT->fx_last_set(ca, 1, 2); VT->fx_last_set(ca, 5, 3); VT->fx_last_set(ca, 7, 4); VT->fx_last_set(ca, 0, 300);
+        CHECK(VT->fx_last(ca, 1) == 2 && VT->fx_last(ca, 5) == 3 && VT->fx_last(ca, 7) == 0 && VT->fx_last(ca, 0) == 0,
+              "kept per effect (TREM/WAH %d, REVERB %d), a tab or value out of range dropped", VT->fx_last(ca, 1),
+              VT->fx_last(ca, 5));
+        CHECK(state_of(a, &m3) == 0 && strstr(m3.b, "\"lamp\":\"0,2,0,0,0,3\""), "saved with the state:\n%s", m3.b);
+        CHECK(state_load(b, m3.b) == 0 && VT->fx_last(cb, 1) == 2 && VT->fx_last(cb, 5) == 3 && VT->fx_last(cb, 0) == 0,
+              "loaded in a second instance (%d %d)", VT->fx_last(cb, 1), VT->fx_last(cb, 5));
+        CHECK(state_of(b, &m2) == 0 && !strcmp(m3.b, m2.b), "the lamp state round trip:\n%s\n%s", m3.b, m2.b);
+        snprintf(old, sizeof old, "%s", m3.b);     /* a state from before: no "lamp" key */
+        pv = strstr(old, ",\"lamp\":\"");
+        {
+            char *e = strchr(pv + 9, '"') + 1;
+            memmove(pv, e, strlen(e) + 1);
+        }
+        CHECK(state_load(b, old) == 0 && VT->fx_last(cb, 1) == 0 && VT->fx_last(cb, 5) == 0 && VT->param_get(cb, P_TONE_) == 100,
+              "an older state loads: the sound, no lamp memory");
+        CHECK(state_of(b, &m2) == 0 && !strcmp(old, m2.b), "and saves as it was:\n%s\n%s", old, m2.b);
+        snprintf(old, sizeof old, "%s", m3.b);
+        pv = strstr(old, "\"lamp\":\"");
+        pv[8] = 'Z';
+        CHECK(state_load(b, old) == 0 && VT->fx_last(cb, 1) == 0 && VT->fx_last(cb, 5) == 0, "a bad lamp memory loads empty");
+        VT->fx_last_set(ca, 1, 0); VT->fx_last_set(ca, 5, 0);
+        free(m3.b);
+        printf("ok    the lamps' memory: kept by the instance, saved and loaded, an older or bad state loads with none\n");
+    }
     b->destroy(b);
     /* the user preset seen by a new instance, deleted */
     CHECK((b = create()) != 0, "a third instance");
     cb = VT->core_of(b);
-    CHECK(VT->preset_count(cb) == n0 + 1 && !VT->preset_info(cb, 57, &pi) && pi.user, "the user preset in a new instance");
-    CHECK(VT->preset_delete(cb, 57) == 0 && VT->preset_count(cb) == n0 && VT->preset_delete(cb, 3) != 0, "deleted (a factory one cannot be)");
+    CHECK(VT->preset_count(cb) == n0 + 1 && !VT->preset_info(cb, 61, &pi) && pi.user, "the user preset in a new instance");
+    CHECK(VT->preset_delete(cb, 61) == 0 && VT->preset_count(cb) == n0 && VT->preset_delete(cb, 3) != 0, "deleted (a factory one cannot be)");
     b->destroy(b);
     a->destroy(a);
     entry->deinit();

@@ -54,14 +54,14 @@ def test_no_test_report_in_the_manual():
 
 
 def test_install_through_schwung_manager():
-    """the user's install is Schwung Manager's, the GitHub URL first (the catalog only once Frodhes is listed); ssh
+    """the user's install is Schwung Manager's, the GitHub URL first, then Schwung's catalog (Frodhes is listed); ssh
     and move_install.py are the developers' (MOVE-DEV.md)"""
     dev = DEV
     inst = DOC[DOC.index("### Install\n"):DOC.index("### Put Frodhes on a track")]
     assert "http://<move-ip>:7700" in inst and "**Global Settings > System > Web Manager**" in inst
     assert "**Install Custom Module**" in inst and "**From GitHub URL**" in inst and "From Tarball**" in inst
     assert "`leonardoMirabal/frodhes`" in inst and "https://github.com/leonardoMirabal/frodhes" in inst
-    assert inst.index("**From GitHub URL**") < inst.index("Once Frodhes is listed in Schwung's module catalog")
+    assert inst.index("**From GitHub URL**") < inst.index("[Schwung's module catalog](https://schwung.dev/catalog.html?filter=sound_generator)")
     upd = DOC[DOC.index("## Updating and removing"):DOC.index("## What differs from the FM-1")]
     assert "**Uninstall**" in upd and "**Update**" in upd
     assert "move_install.py" not in DOC and "ssh ableton@move.local" not in DOC
@@ -134,10 +134,10 @@ def test_dropped_ccs():
 
 
 def test_program_change_of_the_move_presets():
-    """F20-F57 are program change 35-72: the preset number plus 15 (move_bridge.h MB_PX_BASE = PR_NF + PR_NU)"""
+    """F20-F61 are program change 35-76: the preset number plus 15 (move_bridge.h: MB_E_VAR 35, the Move's index space, mb_e2i)"""
     br = _src("move", "move_bridge.h")
-    assert "#define MB_PX_BASE (PR_NF + PR_NU)" in br and "16u + PR_NF" in br
-    assert "Program change 35-72 loads\nF20-F57: the preset number plus 15 (F20 is 35, F57 is 72)." in DOC
+    assert "#define MB_E_VAR 35u" in br and "#define MB_E_UFIRST 19u" in br and "mb_e2i" in br
+    assert "Program change 35-76 loads\nF20-F61: the preset number plus 15 (F20 is 35, F57 is 72, F58 WHURLI is 73, F61 is 76)." in DOC
     assert "number less 15" not in DOC
 
 

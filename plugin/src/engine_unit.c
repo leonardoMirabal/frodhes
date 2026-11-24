@@ -12,6 +12,9 @@
 #ifndef FRP_SLOT
 #error "plugin/src/engine_unit.c: build with -DFRP_SLOT=<0..15> (plugin/cmake/slots.cmake)"
 #endif
+#ifndef FR_OWN
+#define FR_OWN 0
+#endif
 #define DINGHY_HOST 1
 #define DINGHY_WEB 1
 #define DINGHY_PLUGIN 1
@@ -27,6 +30,11 @@
 #include "../../firmware/src/frodhes.c"
 
 #undef main
+#if FR_OWN_HAL
+#define FRP_STORE_RESET() OWN_STORE_RESET()
+#else
+#define FRP_STORE_RESET() memset(web_store_buf, 0, sizeof web_store_buf)
+#endif
 #undef printf
 #undef fprintf
 #undef getenv

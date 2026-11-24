@@ -5,10 +5,11 @@
 The scripts: Gate M's MIDI-driven entries (tests/scripts and Gate R's generated effect and calibration scripts; the
 same list the desktop plugin's Gate D plays) and tests/hq. Each is rendered to a 16-bit WAV by:
 
-  host24   the host build (tests/host.c) with the desktop plugin's switches (24 voices, HQ)
+  host24   the host build (tests/host.c) with the desktop plugin's switches (24 voices, HQ, FR_OWN=1)
   host16   the host build with the Move's (MOVE_DEFS: 16 voices, HQ), the MPC's own build
   clap     the desktop plugin (build/plugin: frp_clap_render on bundles/Frodhes.clap), 24 voices
-  mpc24    the MPC port built at 24 voices (mpc/build.py --voices 24 --out build/mpc24), mpc/tests/vst2_render
+  mpc24    the MPC port built at 24 voices (mpc/build.py --voices 24 --own --out build/mpc24: the
+           desktop plugin's own-code switch FR_OWN=1, as the plugin; the shipped MPC build has it off), mpc/tests/vst2_render
   mpc16    the MPC port as it ships (build/mpc), 16 voices
 
 and the checks (each a list of renders that must be the same file):
@@ -41,7 +42,7 @@ OUT = ROOT / "build" / "mpc" / "bitexact"
 NICE = ["nice", "-n", "15"]
 HQ = ["-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1"]
 MOVE_DEFS = ["-DFR_VOICES=16u"] + HQ
-PLUG_DEFS = ["-DFR_VOICES=24u"] + HQ
+PLUG_DEFS = ["-DFR_VOICES=24u", "-DFR_OWN=1"] + HQ   # (FR_OWN=1: the plugin's own-code build, as Gate D)
 CLAP_RENDER = ROOT / "build" / "plugin" / "frp_clap_render"
 CLAP = ROOT / "build" / "plugin" / "bundles" / "Frodhes.clap"
 NATIVE_EXT = "dylib" if sys.platform == "darwin" else "so"
@@ -119,7 +120,7 @@ def main():
     missing = [str(p.relative_to(ROOT)) for p in (CLAP_RENDER, CLAP, MPC16, MPC24, VST2_RENDER) if not p.exists()]
     if missing:
         print("bitexact: missing " + ", ".join(missing) + " (make plugin; make mpc; python3 mpc/build.py --target "
-              "native --voices 24 --out build/mpc24)")
+              "native --voices 24 --own --out build/mpc24)")
         return 2
     empty = OUT / "presets-empty"           # (the user presets: an empty folder, never the machine's own)
     empty.mkdir(parents=True, exist_ok=True)

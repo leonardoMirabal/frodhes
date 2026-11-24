@@ -81,8 +81,8 @@ def rms(v):
 
 
 def test_helpers_are_fx_c():
-    """the harness' copies of fx.c's helpers are fx.c's text exactly"""
-    fx = open(os.path.join(ROOT, "firmware", "src", "fx.c")).read()
+    """the harness' copies of fx.c's helpers are fx.c's (or, the classic HALL's, fx_fel.c's) text exactly"""
+    fx = "".join(open(os.path.join(ROOT, "firmware", "src", n)).read() for n in ("fx.c", "fx_fel.c"))
     h = open(os.path.join(ROOT, "tests", "c", "rev_inf_test.c")).read()
     part = h[h.index("/* fx.c (verbatim) */") + 21:h.index("/* rev_types.c")]
     for fn in re.split(r"\n(?=static )", part.strip()):

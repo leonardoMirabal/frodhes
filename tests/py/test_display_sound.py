@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""What the screen says is what the sound does (PLAN P11.1; added 2026-10-17 after the CHORUS / PHASER SPEED cards
+"""What the screen says is what the sound does (added 2026-10-17 after the CHORUS / PHASER SPEED cards
 showed twice the real rate). Every card with a unit is read through the firmware's own slot_text ("T dump" on the
 host build, or tests/c/cards.c for every value) and the quantity is measured from the rendered audio at three
 settings, on the Rhodes and on VIBES (TYPE by CC 79 0):

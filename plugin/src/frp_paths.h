@@ -8,6 +8,8 @@
  *   Linux    $XDG_DATA_HOME/frodhes/ (an absolute path), else ~/.local/share/frodhes/     presets/  settings.json
  *   Windows  %APPDATA%\Frodhes\ (else %USERPROFILE%\AppData\Roaming\Frodhes\)          Presets\  settings.json
  *   FRODHES_PRESET_DIR, when set, is the preset folder on every OS (the tests).
+ *   FRP_PRESET_ROOT, a build-time define (a string, e.g. -DFRP_PRESET_ROOT='"/some/folder"'), is the preset folder when
+ *   the variable is not set; not defined (the default): the OS's folder above.
  *
  * The path logic is pure (frp_path_* take the OS and an frp_env_t): every OS's rules are tested on any OS
  * (plugin/tests/test_paths.c). Paths are UTF-8 everywhere; on Windows the file calls convert to UTF-16 (the "W"

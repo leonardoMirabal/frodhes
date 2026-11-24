@@ -54,6 +54,8 @@ def test_option_names_match_params_c(ui_name, fw_name):
         assert m, n
         return re.findall(r"\"([^\"]*)\"", m.group(1))
     fw = _read(os.path.join(ROOT, "firmware", "src", "params.c"))
+    if fw_name == "N_DRV":                              # (the plugin is the own-code build: params.c's N_DRV under
+        fw = fw.split("#if !FR_OWN", 1)[1].split("#else", 1)[1]   # FR_OWN, TYPE 1's own name)
     ui = _read(os.path.join(UI, "frui_params.h"))
     assert names(ui, ui_name) == names(fw, fw_name)
 

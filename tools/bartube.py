@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""The vibraphone bar <-> tube pair: V1 two-way coupled to the resonator tube, with the motor (PLAN §3.3, §4.5, §7).
+"""The vibraphone bar <-> tube pair: V1 two-way coupled to the resonator tube, with the motor.
 
 The physics is tinebar.TineBar reused: the "tine" DOF is the bar's V1 (driven by the mallet, damped by the felt, read
 as the bar's direct sound) and the "bar" DOF is the tube's first resonance. The coupling is a symmetric stiffness
@@ -218,7 +218,7 @@ class BarTube(tinebar.TineBar):
         return out
 
     def solve_sigma2(self, target_t60, lo, hi, iters=60):
-        """solve_sigma for both regimes (MARIMBA PLAN §6 step 4): the V1-like T60 falls with sigma where the tube is
+        """solve_sigma for both regimes: the V1-like T60 falls with sigma where the tube is
         the more damped (zeta_r > zeta_n, the vibraphone) and also where it is the less damped below the critical
         coupling (the strongly coupled pair converges on the mean decay), and may rise between; so T60(lo) and
         T60(hi) are evaluated and the bracket that contains the target is bisected (geometric). Outside both: the
@@ -566,7 +566,7 @@ def render_pair(w, n, g=None, x0=None, upper=()):
 
 
 # ------------------------------------------------------------------------- per-key design from the measured targets
-# §3.0 / private/vibraphone/ref_measure.md (MEASURED-REF; files named one octave low, so file "F2" = F3 = MIDI 53).
+# the reference measurements (MEASURED-REF; files named one octave low, so file "F2" = F3 = MIDI 53).
 # Lane A's vibes.json is the long-term home of these numbers; design_keys() takes them as arguments.
 REF_NOTES = [53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84, 86, 88, 89]
 REF_T1B = [6.6, 6.1, 5.0, 9.5, 5.2, 4.7, 4.3, 6.5, 4.2, 6.1, 10.2, 5.7, 6.7, 9.1, 5.2, 7.8, 7.4, 6.0, 6.4, 5.2, 4.6, 2.4]

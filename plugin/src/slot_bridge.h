@@ -18,7 +18,7 @@
  * The plugin's own parts live here too, so one published record and one state carry everything:
  *   MIDI       the velocity curve (TOUCH: MEDIUM = as played), the learned CCs before the default map (the app's own
  *              CC table), program changes on / off and the plugin's preset list for them
- *   presets    F01..F19 (presets.c), F20..F57 (move/move_presets.h, the Move's variants), the user's files (their
+ *   presets    F01..F23 (presets.c), F20..F57 + WHURLI (move/move_presets.h, the Move's variants), the user's files (their
  *              values come in through the mailbox, or for a program change from bridge.c's cache: frp_user_get);
  *              UNDO is the app's (presets.c preset_undo: the undo copy in the settings record), the names follow
  *   tempo      HOST (the DAW's tempo, 120 without one; a MIDI clock still leads, as CLOCK EXT), INTERNAL (the BPM
@@ -33,7 +33,7 @@
 #include <fenv.h>
 #include <stdatomic.h>
 #include "coro/coro.h"
-#include "../../move/move_presets.h"     /* F20..F57 (read only: the Move's generated table) */
+#include "../../move/move_presets.h"     /* F20..F57 + WHURLI (read only: the Move's generated table) */
 
 #define SB_STACK (256u * 1024u)          /* the coroutine's stack (app_main and what it calls; ui_draw is the deepest) */
 #define SB_FIFO 2048u                    /* frames (power of two); the instance never asks more than 1024 ahead */
@@ -42,12 +42,14 @@
 #define SB_CC_DROP(cc) (((cc) >= 43u && (cc) <= 46u) || ((cc) >= 52u && (cc) <= 63u))
 #define SB_BPM_FALLBACK10 1200u
 #define SB_MAP_DEFAULT_HEX "00007f00007f"   /* the Move state's "map" (move_bridge.h MB_MAP_DEFAULT: every mapping off) */
-#define SB_PX_BASE (PR_NF + PR_NU)       /* the app's index of F20 (move_bridge.h MB_PX_BASE) */
-#define SB_NFACT (PR_NF + MB_PX_N)       /* the factory presets: 57 */
+#define SB_PX_BASE (PR_NF + PR_NU)       /* the app's index of the first variant, F20 on the plugin (move_bridge.h MB_PX_BASE) */
+#define SB_W0 19u                        /* the plugin's F20: the variants F20-F57 (SB_W0 .. SB_W0 + MB_PX_N - 1), then WHURLI */
+#define SB_WN (PR_NF - SB_W0)            /* WHURLI: presets.c's F20-F23, the plugin's F58-F61 (after the variants: no index moved) */
+#define SB_NFACT (PR_NF + MB_PX_N)       /* the factory presets: 61 */
 #define SB_NOWN 6u                       /* the plugin's own parameters (params_map.h, ids 0x10000 + k) */
 #define SB_LEARN_OWN 200u                /* a learned own parameter's code: 200 + k (the app's ids are < P_COUNT) */
-_Static_assert(SB_NFACT == FRP_NFACTORY, "bridge.h FRP_NFACTORY: F01..F19 + F20..F57");
-_Static_assert(MB_PX_FIRST == PR_NF + 1u && SB_PX_BASE == 35u, "move_presets.h follows presets.c (F20 = index 35)");
+_Static_assert(SB_NFACT == FRP_NFACTORY, "bridge.h FRP_NFACTORY: F01..F19, F20..F57, WHURLI F58..F61");
+_Static_assert(MB_PX_FIRST == SB_W0 + 1u && SB_PX_BASE == 39u && SB_WN == 4u, "move_presets.h: the variants are F20-F57 after presets.c's F01-F19");
 _Static_assert(P_COUNT <= FRP_NPARAM_APP && P_COUNT < SB_LEARN_OWN, "the learn codes");
 
 typedef struct { uint8_t kind, x; uint32_t at, a; int32_t v; } sb_ev_t;   /* x: at is an app frame x 256 (exact) */
@@ -117,15 +119,21 @@ static void sb_entry(void *arg)
     for (;;) coro_yield(&sb.co);
 }
 
-/* ---- the presets: the plugin's index 0..56 = F01..F57; the app's: 0..18 F01..F19, 35..72 F20..F57 */
-static uint32_t sb_app_idx(uint32_t i) { return i < PR_NF ? i : SB_PX_BASE + (i - PR_NF); }
+/* ---- the presets: the plugin's index 0..60 = F01..F61 (F01-F19 presets.c's, F20-F57 the variants, F58-F61 WHURLI: no
+ * index moved when WHURLI came); the app's: 0..22 presets.c's F01..F23 (F20-F23 WHURLI), 39..76 the variants */
+static uint32_t sb_app_idx(uint32_t i)
+{
+    return i < SB_W0 ? i : i < SB_W0 + MB_PX_N ? SB_PX_BASE + (i - SB_W0) : SB_W0 + (i - SB_W0 - MB_PX_N);
+}
 static int sb_plug_idx(uint32_t a)       /* the app's index -> the plugin's, -1 (a user slot: not in the list) */
 {
-    return a < PR_NF ? (int)a : a >= SB_PX_BASE && a < SB_PX_BASE + MB_PX_N ? (int)(PR_NF + a - SB_PX_BASE) : -1;
+    if (a < SB_W0) return (int)a;
+    if (a < PR_NF) return (int)(SB_W0 + MB_PX_N + a - SB_W0);
+    return a >= SB_PX_BASE && a < SB_PX_BASE + MB_PX_N ? (int)(SB_W0 + a - SB_PX_BASE) : -1;
 }
 static void sb_fact_name(uint32_t i, char *s, uint32_t n)   /* "SUITCASE" (no tag) */
 {
-    const char *nm = i < PR_NF ? PR_FNAME[i] : i < SB_NFACT ? MB_PX_NAME[i - PR_NF] : "";
+    const char *nm = i < SB_W0 ? PR_FNAME[i] : i < SB_W0 + MB_PX_N ? MB_PX_NAME[i - SB_W0] : i < SB_NFACT ? PR_FNAME[SB_W0 + i - SB_W0 - MB_PX_N] : "";
     uint32_t k = 0;
     while (nm[k] && k + 1u < n) { s[k] = nm[k]; k++; }
     while (k > 0 && s[k - 1u] == ' ') k--;
@@ -365,12 +373,16 @@ static void sb_state_apply(void)         /* the boot's sanitize and apply steps 
     chord_sanitize();
     seq_sanitize();
     if (set.usb_fixed > 1u) set.usb_fixed = 0;
+#if !FR_OWN_HAL                      /* (the own-code build has no screen palette or lights to bound or apply) */
     if (set.palette >= COLOR_N) set.palette = 0;
     if (set.dim >= DIM_N) set.dim = 0;
+#endif
     if (set.leds > 4u) set.leds = 0;
     usb_pre_master = set.usb_fixed;
     uart_midi_on = !set.trs_off;
+#if !FR_OWN_HAL
     dim_apply();
+#endif
     params_apply_all();
     tempo_set10(set.bpm10);
     bpm_hand = sb.st_hand >= 400u && sb.st_hand <= 2400u ? sb.st_hand : set.bpm10;
@@ -403,6 +415,7 @@ static void sb_param_abs(uint32_t s, int32_t x)
 {
     int32_t hi, cur = slot_val(s, &hi), n;
     if (s >= P_COUNT) return;
+    if (s == P_TYPE) x = TYPE_POS[x < 0 ? 0 : x >= (int32_t)N_TYPE_N ? (int32_t)N_TYPE_N - 1 : x];   /* the TYPE's slot value is its place in the scroll order, the parameter's its id */
     if (x < 0) x = 0;
     if (x > hi) x = hi;
     if (s == P_CMP_SW) { if (x && !PV(P_CMP_SW)) cmp_wake(1); else param_set(P_CMP_SW, x); ui_mark_param(s); return; }
@@ -411,7 +424,7 @@ static void sb_param_abs(uint32_t s, int32_t x)
         slot_turn(s, x - cur);
         { int32_t now = slot_val(s, &hi); if (now == cur) break; cur = now; }
     }
-    if (PV(s) != (uint8_t)x && x <= PARAMS[s].hi) param_set(s, x);   /* past a panel stop (MOTOR RATE: 120) */
+    if (s != P_TYPE && PV(s) != (uint8_t)x && x <= PARAMS[s].hi) param_set(s, x);   /* past a panel stop (MOTOR RATE: 120) */
     ui_mark_param(s);
     ui_mark(E_CARDS); ui_mark(E_FOOTER);
 }
@@ -616,8 +629,8 @@ static uint8_t sb_vel(uint32_t v)
 
 /* ---- program changes: 0..15 F01..F16, 32..34 F17..F19 through the app (presets.c preset_of_pc: as the FM-1),
  * 16..31 the first 16 user presets (bridge.c's files: frp_user_get; where there is no file, the app's own user bank
- * as on the FM-1: its starter sounds), 35..72 F20..F57: the FM-1's rule (32 + k loads F17 + k, presets.c) carried
- * on past its last preset, so every factory preset has a program change; 73..127 load nothing */
+ * as on the FM-1: its starter sounds), 35..76 F20..F61 (F58..F61 WHURLI): the FM-1's rule (32 + k loads F17 + k) carried
+ * on past its last preset, so every factory preset has a program change; 77..127 load nothing */
 static int sb_pc_mine(uint32_t ch, uint32_t pc)   /* 1: the plugin takes it (or drops it), 0: the app's */
 {
     uint8_t p[P_COUNT];
@@ -626,7 +639,7 @@ static int sb_pc_mine(uint32_t ch, uint32_t pc)   /* 1: the plugin takes it (or 
     if (set.midi_ch && ch != set.midi_ch - 1u) return 0;   /* (the app's filter drops it) */
     if (pc >= 16u && pc < 32u) return frp_user_get(pc - 16u, p, name) == 0;   /* (no file there: the app's own user
                                           * bank, its starter sounds, as on a new FM-1) */
-    return !(pc < 16u || (pc >= 32u && pc < 16u + PR_NF));
+    return !(pc < 16u || (pc >= 32u && pc < 35u));   /* (F01-F16, F17-F19: the app's; 35..76 the plugin's) */
 }
 static void sb_pc(uint32_t pc)
 {
@@ -634,7 +647,7 @@ static void sb_pc(uint32_t pc)
     char name[FRP_PNAME];
     if (!sb.cfg.pgm) { sb.st.cc_drop++; return; }
     if (pc >= 16u && pc < 32u) { if (!frp_user_get(pc - 16u, p, name)) sb_load_values(p, name); }
-    else if (pc >= SB_PX_BASE && pc < SB_PX_BASE + MB_PX_N) sb_load_fact(PR_NF + pc - SB_PX_BASE);
+    else if (pc >= 35u && pc < 16u + SB_NFACT) sb_load_fact(pc - 16u);   /* F20..F61: the preset number plus 15 */
 }                                        /* (else no preset there) */
 
 /* ---- the inert parts (above; move_bridge.h mb_inert, with the arpeggiator off too) and the tempo source */
@@ -784,7 +797,7 @@ static int sb_boot(void)
     if (!sb.stack) return -1;
     memset(sb.stack, 0, SB_STACK);       /* (every page touched now, not on the audio thread) */
     memset(host_mem, 0xFF, sizeof host_mem);   /* (the flash, erased: nothing saved, the defaults load) */
-    memset(web_store_buf, 0, sizeof web_store_buf);
+    FRP_STORE_RESET();                   /* (the settings record: nothing saved yet) */
     hq_mode = 1;                         /* (every note HQ, every engine: hq/rhodes_hq.h) */
     coro_init(&sb.co, sb.stack, SB_STACK, sb_entry, 0);
     coro_resume(&sb.co);                 /* app_main up to its first poll */

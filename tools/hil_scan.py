@@ -107,11 +107,11 @@ def n_types():
 
 
 def type_cc(t):
-    """the CC value selecting TYPE t on the CC that type_ccnum(t) names: CC 80 (by 32) for the Rhodes types 0..3 as
-    before, CC 79 for the bar types (frodhes.c midi_cc, params.c TYPE_CC79): VIBES 0..95, MARIMBA 96..127; VIBES is
+    """the CC value selecting TYPE t on the CC that type_ccnum(t) names: CC 80 for the Rhodes types 0..3 (8 40 72 96: inside
+    both the old bands of 32 and the five of 0.9.14, WHURLI 103..127), CC 79 for the bar types (frodhes.c midi_cc, params.c TYPE_CC79): VIBES 0..95, MARIMBA 96..127; VIBES is
     sent as 64 (its 0.9.3 value), MARIMBA as 127"""
     if t < 4:
-        return t * 32 + 8
+        return (8, 40, 72, 96)[t]
     return {4: 64, 5: 127}[t]
 
 
@@ -1357,7 +1357,7 @@ def stress(r, rep):
     return c == 0 and z == 0, f"clicks {c}, zero runs {z}, peak {rep['stress']['peak_db']:.1f} dBFS, clipped {rep['stress']['clipped']}"
 
 
-PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 MARIMBA, F17..F19 Rhodes (0.9.5)
+PR_COUNT = 23          # F01..F23 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 MARIMBA, F17..F19 Rhodes (0.9.5), F20..F23 WHURLI
 # each factory preset's loudness re F01 (LU) and its tolerance, the chord A3 C4 E4 v100 (CHORD): the Rhodes presets
 # 0 +- 1.5 (AGENTS.md); VIBES 2.5 dB above the Rhodes types (MANUAL), so F13 / F14 +2.5 +- 1.0; MARIMBA is set 2.5 dB
 # above too, but its strikes are held under -0.5 dBFS (the user's level decision "A", 2026-10-20): F16 WOOD ECHO (echo,
@@ -1384,7 +1384,13 @@ PRESET_TARGET = {"PUNCH 77": (-1.9, 1.0), "BALLAD": (2.6, 1.0), "70S PHASER": (1
                  "VIBES": (-1.1, 1.0), "VIBES ECHO": (-0.9, 1.0), "MARIMBA": (-5.2, 1.0), "WOOD ECHO": (-8.1, 1.0),
                  "TAPE ECHO": (0.0, 1.0), "DREAM": (-2.1, 1.0), "U02": (-1.3, 1.0), "U03": (-1.6, 1.0),
                  "U04": (0.5, 1.0), "U05": (-1.2, 1.0), "U06": (-1.4, 1.0), "U07": (-1.2, 1.0), "U08": (-1.9, 1.0),
-                 "U09": (-1.1, 1.0)}
+                 "U09": (-1.1, 1.0),
+                 "WHURLI": (-2.7, 1.0), "REED GROWL": (-2.5, 1.0), "REED TREM": (-2.8, 1.0), "REED SOFT": (-3.0, 1.0)}
+# WHURLI F20..F23 (0.9.14): the reed type's velocity law is steeper than the pianos' (v127 about +8 dB over STAGE 77 at the
+# same LEVEL, v100 about +4 by critical-band loudness), so the LEVEL that keeps a v127 chord under the limiter-idle
+# ceiling (-3.0 dBFS: quick.py's peak check) reads -2.5..-3.0 LU re F01 on this v100 chord by LUFS and +1.1..+3.8 by
+# critical-band loudness (tests: build host, 4 chords A3 F3 C4 D4, 1.1 s after the onset), inside the factory range
+# (-2.4..+3.9 by critical band)
 # THRESHOLD (0.9.13, the chord-robust rows: presets on PR_CHORDS' mean, A3-C4-E4 alone until then): RESO SWEEP 1.2 ->
 # 2.3, BELL DYNO 0 -> -1.4 (+-1.5 as before), WARM DRIVE 0 -> 1.8 (+-1.5). Their level re F01 moves with the notes (a
 # resonant filter's sweep, the bell's register, a drive): host, one core / two cores, on the six chords F11 +2.48 /
@@ -1419,7 +1425,7 @@ PR_GAP_RETAKES = 2      # presets(): a take with a recording gap is taken again 
 
 def preset_pc(p):
     """the program change of row p (0-based: F01..F19, then U01..): presets.c preset_of_pc, PC 0..15 F01..F16,
-    16..31 U01..U16, 32..34 F17..F19"""
+    16..31 U01..U16, 32..38 F17..F23"""
     return p if p < 16 else p + 16 if p < PR_COUNT else p - PR_COUNT + 16
 
 
@@ -4071,13 +4077,13 @@ def _jump(V, S, jumps, ch=None, extra=()):
 
 # ==================================================================================================================
 # MARIMBA (TYPE 5, CC 79 = 127): the same rig and report as the VIBES suites (USB and the jack side by side, the jack
-# decides), the thresholds of MARIMBA PLAN §10.2 / §10.3 (the D rows) as tests/py/test_marimba_cards_audible.py,
+# decides), the thresholds (the D rows) as tests/py/test_marimba_cards_audible.py,
 # test_marimba_controls_audible.py and tools/marimba_scan.py judge them on the host. Not in the default run:
 # --marimba, or --only marimba_*; report build/hil/marimba-report.md (+ .json). Written for P5 (the coordinator's FM-1
 # session); --dry-run and --host run them without a device. No MOTOR suite: MARIMBA has no motor (marimba_decay checks
 # that CC 47-51 change nothing). MUTE (CC 103) is the hand at key-up: 0 rings out.
 # ==================================================================================================================
-MKEYS = (48, 60, 84)                      # C3 C4 C6 (PLAN §12 step 2)
+MKEYS = (48, 60, 84)                      # C3 C4 C6
 MFAMS = (("SOFT", 0), ("MED", 42), ("HARD", 85), ("RUBBER", 127))
 MVELS = (8, 24, 40, 64, 88, 100, 117, 127)
 # MARIMBA's chord re ST77 (the user's level decision "A", 2026-10-20: marimba.json calib.st77_offset_db stays +2.5 dB,
@@ -4154,7 +4160,7 @@ def m_known(check, setting, suite="marimba_", vals=None):
 
 
 def mt60(x, f):
-    """the V1 T60 by a 30 dB fit (5..35 dB under the peak; PLAN §10.2 B1)"""
+    """the V1 T60 by a 30 dB fit (5..35 dB under the peak; B1)"""
     return t60(x, f, 5.0, 35.0)
 
 
@@ -4648,7 +4654,7 @@ def marimba_vel(V, S):
     keys_st = S.usb(lambda q: np.array([lu(cut(t.usb, i, 0, 1.0)) for i in t.on(q)]))
     S.check("keys C2..C7: neighbour step", "every key, v100, USB stereo (as heard)",
             {s_: None if v is None else float(np.abs(np.diff(v)).max()) for s_, v in keys_st.items()},
-            lambda d: d <= 1.5, "<= 1.5 dB (PLAN M1, D)", fmt=lambda d: f"{d:.2f} dB")
+            lambda d: d <= 1.5, "<= 1.5 dB (M1, D)", fmt=lambda d: f"{d:.2f} dB")
     S.check("keys C2..C7: neighbour step, one channel", "every key, v100, USB L vs jack (the dry width's comb)",
             {s_: v and float(np.abs(np.diff(v[0])).max()) for s_, v in vals.items()}, lambda d: True,
             "information (one channel: the width's +1.6 / -1.9 dB comb)", level=True, info=True,
@@ -4656,7 +4662,7 @@ def marimba_vel(V, S):
     # (information, as tools/marimba_scan.py's M1 row, the user 2026-11-05: the 1 s loudness falls 8.6 dB C2 -> C7
     # because the high bars die in ~0.3 s; the peaks are within 4 dB, the neighbour step above gates the evenness)
     S.check("keys C2..C7: level span", "", {s_: v and float(v[0].max() - v[0].min()) for s_, v in vals.items()},
-            lambda d: True, "information (PLAN M1: the neighbour step gates)", fmt=lambda d: f"{d:.1f} dB", info=True)
+            lambda d: True, "information (M1: the neighbour step gates)", fmt=lambda d: f"{d:.1f} dB", info=True)
     S.check("keys C2..C7: tuning re the spec", "", {s_: v and float(np.abs(v[1]).max()) for s_, v in vals.items()},
             lambda d: d <= 3, "|cents| <= 3", fmt=lambda d: f"{d:.2f} c")
 
@@ -4671,7 +4677,7 @@ def m_roll(keys, rate, vel, t0=0.2, dur=4.0):
 
 
 def pumping(x, i0, dur=4.0):
-    """the LUFS span over sliding 0.5 s windows (hop 0.1 s) from 0.5 s into the roll to its end (PLAN M5)"""
+    """the LUFS span over sliding 0.5 s windows (hop 0.1 s) from 0.5 s into the roll to its end (M5)"""
     v = [lu(cut(x, i0, a, a + 0.5)) for a in np.arange(0.5, dur - 0.5 + 1e-9, 0.1)]
     return float(max(v) - min(v))
 

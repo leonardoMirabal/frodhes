@@ -51,7 +51,9 @@ FR_COLD static uint32_t smk_vel(uint32_t v)            /* the keybed's velocity 
 #define FR_KEY_VEL(k) smk_vel(fm1_in.key_vel[SMK_KEY_F3 + (k)])   /* a middle key (keybed 5..31) */
 
 /* ---- state */
-enum { SP_PREV = 6, SP_NEXT, SP_DRIVE, SP_COMP, SP_FILTER, SP_TREM, SP_PHA, SP_CHO, SP_DLY, SP_SUS };   /* pads 1..6 TYPE */
+#define SMK_TYPE_PADS 6u                       /* pads 1..6 pick TYPE 0..5 (the four pianos, VIBES, MARIMBA); WHURLI (TYPE 6) is reached
+                                                * by ALGORITHM (docs/SMK37.md): the pad row has no free pad */
+enum { SP_PREV = SMK_TYPE_PADS, SP_NEXT, SP_DRIVE, SP_COMP, SP_FILTER, SP_TREM, SP_PHA, SP_CHO, SP_DLY, SP_SUS };   /* pads 1..6 TYPE */
 static const uint8_t SMK_OFF[3] = {110, 38, 0}, SMK_ON[3] = {40, 120, 210}, SMK_ACT[3] = {190, 230, 255};   /* R G B */
 static uint8_t smk_bank;                       /* FADER BANK: 0 = A (the voice), 1 = B (the PERFORM knobs) */
 static struct {
@@ -134,7 +136,7 @@ FR_COLD static void smk_fx_switch(uint32_t k)          /* TREM/WAH, CHORUS, DELA
 }
 FR_COLD static void smk_pad_hit(uint32_t p)
 {
-    if (p < N_TYPE_N) {                        /* the TYPE, as ALGORITHM sets it */
+    if (p < SMK_TYPE_PADS) {                   /* the TYPE, as ALGORITHM sets it */
         type_pick((int32_t)p);
         ui_say_big(N_TYPE_LONG[PV(P_TYPE)]);
     } else if (p == SP_PREV || p == SP_NEXT)
@@ -355,7 +357,7 @@ FR_COLD static void smk_pad_rgb(uint32_t p, int on, int act)
 FR_COLD static void smk_leds(void)
 {
     uint32_t p, snd = (uint32_t)smk_sounding(), fx = snd && !fx_bypass, pos = pg_pos(ui_page, ui_vp_ok());
-    for (p = 0; p < N_TYPE_N; p++) smk_pad_rgb(p, PV(P_TYPE) == p, (int)snd);
+    for (p = 0; p < SMK_TYPE_PADS; p++) smk_pad_rgb(p, PV(P_TYPE) == p, (int)snd);
     smk_pad_rgb(SP_PREV, smk_pad_t[SP_PREV] && fm1_ms - smk_pad_t[SP_PREV] < 200u, 1);   /* (a flash when pressed) */
     smk_pad_rgb(SP_NEXT, smk_pad_t[SP_NEXT] && fm1_ms - smk_pad_t[SP_NEXT] < 200u, 1);
     smk_pad_rgb(SP_DRIVE, PV(P_DRV_SW) && PV(P_DRIVE), (int)fx);

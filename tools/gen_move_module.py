@@ -307,8 +307,9 @@ def model():
         for i, n in enumerate(x.strip() for x in m.group(1).split(",")):
             if re.fullmatch(r"[A-Za-z_]\w*", n):
                 defs.setdefault(n, i)
-    names = {m.group(1): re.findall(r'"([^"]*)"', m.group(2))
-             for m in re.finditer(r"static const char \*const (\w+)\[[^\]]*\] = \{([^}]*)\};", allt)}
+    names = {}                                     # (the first definition: params.c's N_DRV under #if !FR_OWN, not the
+    for m in re.finditer(r"static const char \*const (\w+)\[[^\]]*\] = \{([^}]*)\};", allt):   # own-code build's)
+        names.setdefault(m.group(1), re.findall(r'"([^"]*)"', m.group(2)))
     pc = src["params.c"]
     penum = re.search(r"enum \{ (P_TYPE.*?)P_COUNT \};", pc, re.S).group(1)
     pids = [p.strip() for p in penum.split(",") if p.strip()]
@@ -625,7 +626,7 @@ def help_lines(text):
 
 def help_json(m, levels, reach):
     kids = [{"title": "Overview", "lines": help_lines(
-        "Physical models of an electric piano (four types), a vibraphone and a marimba. No samples. TYPE on the "
+        "Physical models of an electric piano (four types), a reed piano, a vibraphone and a marimba. No samples. TYPE on the "
         "first page picks the instrument; its VOICE pages follow it.") + [""] + help_lines(
         "SUS is the sustain pedal, on or off: ON holds the notes, OFF lets them go. A pedal on CC 64 works too.") + [""]
         + help_lines(
@@ -644,7 +645,7 @@ def help_json(m, levels, reach):
         pages.append({"title": lvl["name"][:HELP_MAX], "lines": lines})
     kids.append({"title": "Pages", "children": pages})
     midi = help_lines("Notes with velocity and release velocity, pitch bend (piano types), sustain CC 64 with half "
-                      "pedal, program change 0-15 F01-F16, 16-31 U01-U16, 32-34 F17-F19, MIDI clock. Every "
+                      "pedal, program change 0-15 F01-F16, 16-31 U01-U16, 32-72 F17-F57, 73-76 F58-F61 (WHURLI), MIDI clock. Every "
                       "parameter has its CC, as on the FM-1:")
     for p in m["pids"]:
         cc = m["params"][p]["cc"]
@@ -795,6 +796,12 @@ def fmt_conf():
     return out
 
 
+def type_order():
+    """firmware/src/engine.c TYPE_ORDER: the TYPE ids in the order a player scrolls them (position -> id)"""
+    eng = open(os.path.join(ROOT, "firmware", "src", "engine.c")).read()
+    return [int(x) for x in re.search(r"TYPE_ORDER\[ENG_NTYPE\] = \{([^}]*)\}", eng).group(1).split(",")]
+
+
 def screen_pages(levels):
     """the levels as Frodhes' own screen shows them: [{title, gate (ui_engine, -1 always shown), part (an engine's
     VOICE page 0, its next page 1, -1 not an engine page), root, knobs}], each knob {key, name, type, min, max, step,
@@ -826,6 +833,8 @@ def screen_pages(levels):
             for f in ("min", "max", "step", "options"):
                 if f in it:
                     k[f] = it[f]
+            if key == "p_type":                     # the screen steps the TYPE in the scroll order (WHURLI after BELL DYNO); the value stays its id
+                k["order"] = type_order()
             if "default" in it:                      # (a double tap on the knob's touch resets it: the screen's reset)
                 k["def"] = it["default"]
             if it.get("access") == "write":
@@ -926,7 +935,7 @@ SAY_NAMES = {
 SAY_PAGES = {"EQ": "EQ", "DRIVE/FILTER": "Drive and filter", "TREM/PHASER": "Tremolo and phaser", "LFO/SETUP": "LFO and setup"}
 SAY_WORDS = {
     "ST77": "Stage 77", "SUIT": "Suitcase", "FELT": "Early felt", "DYNO": "Bell dyno", "VIBE": "Vibes",
-    "MRMB": "Marimba", "INF": "Infinite", "DIG": "Digital", "ANA": "Analog", "RAND": "Random", "UP-DN": "Up down",
+    "MRMB": "Marimba", "WHRL": "Whurli", "INF": "Infinite", "DIG": "Digital", "ANA": "Analog", "RAND": "Random", "UP-DN": "Up down",
     "SQR": "Square", "TRI": "Triangle", "S&H": "Sample and hold", "LP12": "Low pass 12", "LP18": "Low pass 18",
     "HP12": "High pass 12", "HP18": "High pass 18", "BP": "Band pass", "TREM": "Tremolo",
     "1/32": "32nd", "16T": "16th triplet", "1/16": "16th", "8T": "8th triplet", "16D": "dotted 16th", "1/8": "8th",

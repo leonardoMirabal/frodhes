@@ -34,7 +34,7 @@ import tinebar as tbm      # noqa: E402
 GEN_VERSION = 1
 FS = 44100.0
 KEY_LO, KEY_HI = 21, 108
-NM = 5                      # V1 V2 O1 O2 H1
+NM = 4                      # V1 V2 O1 O2 (the spec's fifth, H1, is never live: no slot in the table)
 NBAND, NLAYER, PLEN = 5, 8, 64
 PU_N = 2048
 S_MAX_GAP2 = 32.0
@@ -862,7 +862,8 @@ def emit(spec, fam_tabs):
     rows = []
     for k in spec["keys"]:
         ms = []
-        for m in k["modes"]:
+        assert all(m["f"] == 0.0 and m.get("amp", 0.0) == 0.0 and m.get("b", 0.0) == 0.0 for m in k["modes"][NM:]), k["midi"]    # the dropped slots are empty
+        for m in k["modes"][:NM]:
             c = mode_coefs(m["f"], m["t60"], m["t60_rel"])
             # y (Q25) += (F (Q15) * b) >> 20  =>  b = w_gap * 2^25 * 2^20 / 2^15 = w * 2^30
             b = int(round(m["b"] * Q30)) if c["th"] else 0

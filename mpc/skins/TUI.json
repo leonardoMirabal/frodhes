@@ -2138,7 +2138,8 @@
                     "EARLY FELT",
                     "BELL DYNO",
                     "VIBES",
-                    "MARIMBA"
+                    "MARIMBA",
+                    "WHURLI"
                 ]
             },
             {
@@ -2478,7 +2479,11 @@
                     "F54 DREAM CLEAR",
                     "F55 DREAM DEEP",
                     "F56 DRIVE SOFT",
-                    "F57 DRIVE BODY"
+                    "F57 DRIVE BODY",
+                    "F58 WHURLI",
+                    "F59 REED GROWL",
+                    "F60 REED TREM",
+                    "F61 REED SOFT"
                 ]
             },
             {

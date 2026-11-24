@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""Gate VB (VIBES PLAN section 10): the bar engine (firmware/src/bars.c on the host build) against the float golden
+"""Gate VB: the bar engine (firmware/src/bars.c on the host build) against the float golden
 model (tools/bars_model.py), note for note: residual energy <= -60 dB of the signal (held), <= -50 dB with the
 motor, -60 dB with BELL 0 (no tube). RAW (no effects), NOISE 0, the budget off (FRODHES_NOBUDGET: the golden model
 has no mode budget; S12 checks the budget itself)."""

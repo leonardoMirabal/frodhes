@@ -146,7 +146,7 @@ static void cmd_conv(void)
             params_defaults();
             set.flags = (uint8_t)(f >= 2u ? 1u | 2u | 4u | 8u | 32u : f == 1u ? 1u | 2u | 4u | 8u : 1u | 2u | 8u);
 #if PR_NF_SET >= 19
-            set.flags2 = (uint8_t)(f == 3u);
+            set.flags2 = (uint8_t)(f == 3u ? 7u : 0u);
 #endif
             set.preset = PRE[i];
             set.undo_preset = (uint8_t)(PRE[i] + 1u);

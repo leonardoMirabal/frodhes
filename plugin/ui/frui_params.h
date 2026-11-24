@@ -26,7 +26,7 @@ enum { FRP_TYPE, FRP_DRIVE, FRP_TW_SW, FRP_TW_DEPTH, FRP_TW_RATE, FRP_TW_SYNC, F
 
 /* params.c's ranges for the ids the UI draws as knobs (0..hi) and which are centred (64 = 0) */
 static const unsigned char FRP_HI[FRP_COUNT] = {
-    [FRP_TYPE] = 5, [FRP_DRIVE] = 127, [FRP_TW_SW] = 2, [FRP_TW_DEPTH] = 127, [FRP_TW_RATE] = 127, [FRP_TW_SYNC] = 13,
+    [FRP_TYPE] = 6, [FRP_DRIVE] = 127, [FRP_TW_SW] = 2, [FRP_TW_DEPTH] = 127, [FRP_TW_RATE] = 127, [FRP_TW_SYNC] = 13,
     [FRP_TW_MODE] = 1, [FRP_TW_SHAPE] = 127, [FRP_CP_SW] = 1, [FRP_CP_DEPTH] = 127, [FRP_CP_SPEED] = 127,
     [FRP_CP_SYNC] = 14, [FRP_CP_FDBK] = 127, [FRP_DL_SW] = 3, [FRP_DL_DEPTH] = 127, [FRP_DL_TIME] = 127,
     [FRP_DL_SYNC] = 13, [FRP_DL_FDBK] = 127, [FRP_DL_TONE] = 127, [FRP_RV_DEPTH] = 127, [FRP_TONE] = 127,
@@ -44,10 +44,31 @@ static const unsigned char FRP_HI[FRP_COUNT] = {
                          (id) == FRP_EQ_LO || (id) == FRP_EQ_MID || (id) == FRP_EQ_HI || (id) == FRP_TUNE)
 
 /* option names, as the device's cards show them (params.c N_*, the long forms where the device has them) */
-static const char *const FRN_TYPE[] = {"STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "VIBES", "MARIMBA"};
+static const char *const FRN_TYPE[] = {"STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "VIBES", "MARIMBA", "WHURLI"};
+#define FRN_NTYPE 7
+/* TYPE -> engine (0 the Rhodes engine, 1 the bars) and the TYPEs that have them: one map, as firmware/src/engine.c
+ * ENG_TYPE_ENG (tests/py/test_whurli.py keeps them equal); no range test on a TYPE */
+static const unsigned char FRN_TYPE_BARS[FRN_NTYPE] = {0, 0, 0, 0, 1, 1, 0};
+/* the order a TYPE is scrolled in (the menu, the arrows, the wheel): the four pianos, WHURLI, VIBES, MARIMBA. Display only: the
+ * parameter's value is the TYPE's id (WHURLI stays 6: presets, state and the host's automation keep their meaning); FRN_TYPE_ORDER[position]
+ * = id, FRN_TYPE_POS[id] = position (firmware/src/engine.c TYPE_ORDER / TYPE_POS; tests/py/test_whurli_order.py keeps them equal) */
+static const unsigned char FRN_TYPE_ORDER[FRN_NTYPE] = {0, 1, 2, 3, 6, 4, 5};
+static const unsigned char FRN_TYPE_POS[FRN_NTYPE] = {0, 1, 2, 3, 5, 6, 4};
+/* the TYPE id d places on from id t in the scroll order (clamped; wrap: wrapping at the ends) */
+static inline int frn_type_step(int t, int d, int wrap)
+{
+    int p = (t >= 0 && t < FRN_NTYPE ? FRN_TYPE_POS[t] : 0) + d;
+    if (wrap) p = ((p % FRN_NTYPE) + FRN_NTYPE) % FRN_NTYPE;
+    else p = p < 0 ? 0 : p > FRN_NTYPE - 1 ? FRN_NTYPE - 1 : p;
+    return FRN_TYPE_ORDER[p];
+}
+#define FRN_T_VIBES 4
+#define FRN_T_MARIMBA 5
+
 static const char *const FRN_ONOFF[] = {"OFF", "ON"};
 static const char *const FRN_TWK[] = {"OFF", "PAN", "TREM", "WAH"};
-static const char *const FRN_DRV[] = {"OFF", "FDRV", "KHLON", "TSH8", "OHCD", "BHLUE"};
+static const char *const FRN_DRV[] = {"OFF", "WARM", "KHLON", "TSH8", "OHCD", "BHLUE"};   /* (the plugin's own-code
+                                    * build's names: params.c N_DRV under FR_OWN) */
 static const char *const FRN_DL[] = {"OFF", "DIG", "ANA", "TAPE"};
 static const char *const FRN_RV[] = {"OFF", "HALL", "PLATE", "INFINITE"};
 static const char *const FRN_FLT[] = {"OFF", "LP12", "LP18", "HP12", "HP18", "BP", "NOTCH"};

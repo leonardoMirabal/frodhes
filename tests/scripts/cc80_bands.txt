@@ -1,0 +1,45 @@
+# CC 80 picks the electric pianos in five equal bands (frodhes.c midi_cc, params.c TYPE_CC80: band = (v * 5) >> 7):
+# STAGE 77 0..25, SUITCASE 26..51, EARLY FELT 52..76, BELL DYNO 77..102, WHURLI 103..127. Every band edge both sides,
+# the old band starts 0 / 32 / 64 / 96 (still ST77 SUIT FELT DYNO) and 127 (WHURLI; DYNO before 0.9.14). p.0 = TYPE.
+# Turning to WHURLI by CC 80 is a TYPE pick as ALGORITHM's: its neutral voicing (TONE, p.20, back to 64).
+100 midi 0xB0 80 25
+150 expect state p.0 0
+200 midi 0xB0 80 26
+250 expect state p.0 1
+300 midi 0xB0 80 51
+350 expect state p.0 1
+400 midi 0xB0 80 52
+450 expect state p.0 2
+500 midi 0xB0 80 76
+550 expect state p.0 2
+600 midi 0xB0 80 77
+650 expect state p.0 3
+700 midi 0xB0 80 102
+750 expect state p.0 3
+800 midi 0xB0 80 103
+850 expect state p.0 6
+900 midi 0xB0 80 127
+950 expect state p.0 6
+1000 midi 0xB0 80 0
+1050 expect state p.0 0
+1100 midi 0xB0 80 32
+1150 expect state p.0 1
+1200 midi 0xB0 80 64
+1250 expect state p.0 2
+1300 midi 0xB0 80 96
+1350 expect state p.0 3
+1400 midi 0xB0 80 127
+1450 expect state p.0 6
+1500 midi 0xB0 80 64
+1550 expect state p.0 2
+# TONE moved on a Rhodes TYPE, then CC 80 127: WHURLI at its neutral voicing
+1600 midi 0xB0 28 10
+1650 expect state p.20 10
+1700 midi 0xB0 80 127
+1750 expect state p.0 6
+1750 expect state p.20 64
+# a note plays on WHURLI by CC 80
+1800 midi 0x90 60 100
+2300 expect rms > -60
+2400 midi 0x80 60 0
+2600 end

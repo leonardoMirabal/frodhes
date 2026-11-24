@@ -46,7 +46,7 @@ def test_records_are_presets_c():
     gen_move_presets.py --sync has nothing to move (tools/tail_build.sh runs it on each candidate)"""
     recs, rows, names = gp.presets_c()
     rec = gp.records()
-    assert len(recs) == 19
+    assert len(recs) == 23
     for k, r in enumerate(recs):
         assert rec[("F%02d" % (k + 1), "A")][0] == names[k], (k, names[k])
         a = {n: v for n, _, v in rec[("F%02d" % (k + 1), "A")][1]}
@@ -103,7 +103,7 @@ def test_sync_by_name(tmp_path, monkeypatch):
     shutil.copy(os.path.join(ROOT, "firmware", "src", "params.c"), src)
     recs, rows, names = gp.presets_c()
     pc = open(os.path.join(ROOT, "firmware", "src", "presets.c")).read()
-    order = list(range(19))
+    order = list(range(23))        # (F20..F23 WHURLI stay where they are)
     order[4], order[7] = 7, 4
     nn = [names[i] for i in order]
     nr = [recs[i] for i in order]
@@ -144,11 +144,11 @@ def test_sync_by_name(tmp_path, monkeypatch):
 
 def test_preset_lists_expected_and_compare():
     """tools/preset_lists.py (the Move's and the plugin's lists against presets.c, tools/tail_build.sh): the expected
-    list is presets.c's 19 then the 38 variants, the records agree with presets.c, and compare names a value or a name
+    list is presets.c's 23 then the 38 variants, the records agree with presets.c, and compare names a value or a name
     that differs"""
     import preset_lists as pl
     ids, want, bad = pl.expected()
-    assert not bad and len(want) == 57 and want[0][0].startswith("F01 ") and want[19][0].startswith("F20 ")
+    assert not bad and len(want) == 61 and want[0][0].startswith("F01 ") and want[23][0].startswith("F24 ")
     assert all(len(v) == len(ids) for _, v in want)
     assert pl.compare("x", want, want, ids) == []
     got = [(l, list(v)) for l, v in want]
@@ -156,7 +156,7 @@ def test_preset_lists_expected_and_compare():
     got[30] = ("F31 OTHER", got[30][1])
     b = pl.compare("x", got, want, ids)
     assert len(b) == 2 and "P_LEVEL" in b[0] and "F31 OTHER" in b[1], b
-    assert pl.compare("x", got[:-1], want, ids)[0].startswith("x: 56 factory presets")
+    assert pl.compare("x", got[:-1], want, ids)[0].startswith("x: 60 factory presets")
 
 
 def test_records_follow_params(monkeypatch):

@@ -31,6 +31,9 @@ TYPE_CC79 = [int(x) for x in re.search(r"TYPE_CC79\[N_TYPE_N\] = \{([^}]*)\}", P
 DRV_CC84 = [int(x) for x in re.search(r"DRV_CC84\[\d*\] = \{([^}]*)\}", PARAMS_C).group(1).split(",")]
 
 
+NO_CC_TYPE = 6                                                 # the TYPE no CC selects (the open MIDI-route question)
+
+
 def cc_for(slot, x):
     """the (CC, value) that sets parameter slot to x through frodhes.c midi_cc: the inverse of its banding"""
     p = M["params"][slot]
@@ -66,6 +69,8 @@ def test_every_parameter_key_round_trips():
         p = M["params"][slot]
         assert kcc == p["cc"], (key, kcc)
         for x in values(p["hi"]):
+            if slot == "P_TYPE" and x == NO_CC_TYPE:               # WHURLI: ALGORITHM, the host's parameter and the page reach it,
+                continue                                           # no CC yet (CC 80 has four bands, CC 79 is the bars'); tests/py/test_whurli.py
             n, v = cc_for(slot, x)
             lines += [cc(t, n, v), f"{t + 3} dump"]
             want.append((t + 3, slot, x))
@@ -91,7 +96,7 @@ def test_cc_path_traps_are_as_documented():
     assert s1[f"p.{pid['P_PH_SW']}"] == "1" and s1[f"p.{pid['P_CP_SW']}"] == "0"
     assert s2[f"p.{pid['P_PH_DEPTH']}"] == "100" and s2[f"p.{pid['P_CP_DEPTH']}"] == s1[f"p.{pid['P_CP_DEPTH']}"]
     assert s3[f"p.{pid['P_CP_SW']}"] == "1" and s3[f"p.{pid['P_PH_SW']}"] == "0"
-    assert s4[f"p.{pid['P_TYPE']}"] == "3"
+    assert s4[f"p.{pid['P_TYPE']}"] == "6"                       # 127: WHURLI (CC 80 five bands), a piano
 
 
 def card_of(slot):
@@ -141,7 +146,7 @@ def test_settings_options_match_the_cards():
 def test_every_preset_loads():
     """program change 0-15 = F01-F16, 32-34 = F17-F19 (a factory preset by its number on the header), 16-31 the user
     slots (U01.. when the slot holds one, else nothing changes); every parameter within its range after each"""
-    lines, t, pcs = ["50 dump"], 100, list(range(35))
+    lines, t, pcs = ["50 dump"], 100, list(range(39))
     for pc in pcs:
         lines += [f"{t} midi 0xC0 {pc} 0", f"{t + 40} dump"]
         t += 60
@@ -247,8 +252,8 @@ def test_plugin_state_round_trip():
 
 @NO_GLUE
 def test_plugin_presets_and_hierarchy_per_type():
-    """preset / preset_count (73) / preset_name for every preset: F01-F19 (0-18), U01-U16 (19-34, empty in a new data
-    folder: nothing loads), the Move-only F20-F57 (35-72, move/move_presets.h); after each load the panel holds the
+    """preset / preset_count (77) / preset_name for every preset: F01-F19 (0-18), U01-U16 (19-34, empty in a new data
+    folder: nothing loads), the Move-only F20-F57 (35-72) and WHURLI F58-F61 (73-76, move/move_presets.h); after each load the panel holds the
     preset's full parameter list exactly as the review read it back (move/presets/proposed_records.txt: A for F01-F19,
     so the Move's F01-F19 are the FM-1's presets.c records; B / C for F20-F57); get_param("ui_hierarchy") is
     move_ui.h's text and ui_engine (the VOICE levels' gate) follows each TYPE (eng_pages.h TYPE_UI)"""
@@ -257,18 +262,20 @@ def test_plugin_presets_and_hierarchy_per_type():
     if r is None:
         pytest.skip("no Linux arm64 and no frodhes-move:bookworm image (make move-image)")
     out = r.stdout.splitlines()
-    assert "count 73" in out, r.stdout[-2000:]
+    assert "count 77" in out, r.stdout[-2000:]
     pr = [ln.split(" ", 3) for ln in out if ln.startswith("preset ")]
     pv = {int(ln.split()[1]): [int(x) for x in ln.split()[2:]] for ln in out if ln.startswith("pv ")}
-    assert len(pr) == 73 and len(pv) == 73
+    assert len(pr) == 77 and len(pv) == 77
     rec = gp.records()
     want = {i: rec[("F%02d" % (i + 1), "A")][1] for i in range(19)}
     for num, name, _, base, v, pairs in gp.table():
         want[35 + num - gp.FIRST] = pairs
+    for k in range(4):                                             # WHURLI: presets.c's F20-F23, at 73-76 on the Move
+        want[73 + k] = rec[("F%02d" % (20 + k), "A")][1]
     prev = None
     for i, (_, idx, cur, name) in enumerate(pr):
         if cur == str(i):                                          # loaded: its own name
-            n = i + 1 if i < 19 else i - 19 + 1 if i < 35 else i - 35 + gp.FIRST
+            n = i + 1 if i < 19 else i - 19 + 1 if i < 35 else i - 35 + gp.FIRST if i < 73 else i - 73 + 58
             assert re.match(r"[FU]%02d " % n, name) and name[0] == ("U" if 19 <= i < 35 else "F"), (i, name)
         else:                                                      # an empty user slot: nothing loads
             assert 19 <= i < 35 and cur == prev, (i, cur, prev)
@@ -279,6 +286,12 @@ def test_plugin_presets_and_hierarchy_per_type():
             bad = [(n, x, got[pid] if pid < len(got) else None) for n, pid, x in want[i] if pid >= len(got) or got[pid] != x]
             assert not bad, (i, name, bad)                         # (parameter, want, got)
     names = {i: name for i, (_, _, _, name) in enumerate(pr)}
+    old = [ln.split(" ", 1) for ln in open(os.path.join(ROOT, "tests", "baselines", "move_preset_index_0913.txt")).read().splitlines()
+           if not ln.startswith("#")]
+    assert len(old) == 73 and [(int(i), names[int(i)]) for i, n in old if not 19 <= int(i) < 35] == \
+        [(int(i), n) for i, n in old if not 19 <= int(i) < 35], \
+        "a Move preset index (a saved setlist, a program change) names another preset than on 0.9.13"
+    assert [names[i] for i in range(73, 77)] == ["F58 WHURLI", "F59 REED GROWL", "F60 REED TREM", "F61 REED SOFT"], names
     import gen_move_presets as gp                           # (the names follow presets.c's order: --sync by name)
     last = gp.table()[-1]
     assert names[35] == "F20 STAGE77 ECHO" and names[72] == "F%02d %s" % (last[0], last[1]), (names[35], names[72])

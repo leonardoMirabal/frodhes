@@ -236,7 +236,7 @@ static void hq_pulse_gain(rh_voice_t *v)
     {   /* the live force's ratio within the physical force's range, as before the drive (the physical force after
          * HAMMER and its cap, then the live force's cap): the modes take the force in the drive's units, where the
          * same contact would pass the cap and play up to 4 dB over the table's pulse (key 108, v127 then v1) */
-        uint32_t hh = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RH_TYPE[rh_type & 3u].ham) >> 16);
+        uint32_t hh = (uint32_t)(((uint64_t)(uint32_t)rh_ham * rh_ty_ham((uint32_t)(v->k - RH_KEYS))) >> 16);
         float pp = (float)(((int64_t)h->pa * hh) >> 16);
         if (pp > 32767.0f) pp = 32767.0f;
         if (pp < 1.0f) pp = 1.0f;

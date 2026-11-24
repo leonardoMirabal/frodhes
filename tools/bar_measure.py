@@ -28,17 +28,22 @@ BAR_NAME = dict(TONE="STRIKE", BARK="MALLET", BELL="TUBE", HAMMER="WEIGHT", DECA
                 NOISE="NOISE", TUNE="TUNE")
 
 
+NO_CC_TYPES = 1            # the last TYPEs a CC cannot select: WHURLI (TYPE 6) has no MIDI route yet (CC 80 has four bands,
+                           # CC 79 is the bars'); the scans drive the others by CC
+
+
 def n_types():
+    """the TYPEs the scans can drive by CC (all of params.c's but the last NO_CC_TYPES)"""
     src = open(os.path.join(ROOT, "firmware", "src", "params.c")).read()
-    return int(re.search(r'\[P_TYPE\] = \{"[^"]*", (\d+),', src).group(1)) + 1
+    return int(re.search(r'\[P_TYPE\] = \{"[^"]*", (\d+),', src).group(1)) + 1 - NO_CC_TYPES
 
 
 def type_cc(t):
-    """the CC value selecting TYPE t on the CC that type_ccnum(t) names: CC 80 (by 32) for the Rhodes types 0..3 as
-    before, CC 79 for the bar types (frodhes.c midi_cc, params.c TYPE_CC79): VIBES 0..95, MARIMBA 96..127; VIBES is
+    """the CC value selecting TYPE t on the CC that type_ccnum(t) names: CC 80 for the Rhodes types 0..3 (8 40 72 96: inside
+    both the old bands of 32 and the five of 0.9.14, WHURLI 103..127), CC 79 for the bar types (frodhes.c midi_cc, params.c TYPE_CC79): VIBES 0..95, MARIMBA 96..127; VIBES is
     sent as 64 (its 0.9.3 value), MARIMBA as 127"""
     if t < 4:
-        return t * 32 + 8
+        return (8, 40, 72, 96)[t]
     return {4: 64, 5: 127}[t]
 
 

@@ -293,6 +293,8 @@ def _tune():
 
 # ---- TYPE
 
+TYPE_POS = [0, 1, 2, 3, 5, 6, 4]     # ALGORITHM detents from STAGE 77 to each TYPE id (WHURLI, id 6, sits before VIBES)
+
 PROBE3 = sum((note(300, n, 100, 1300) for n in (48, 60, 72)), [])
 
 
@@ -301,10 +303,10 @@ def _type():
     """TYPE (ALGORITHM, from any page): six different instruments. The closest two (STAGE 77 / SUITCASE) are 0.84 dB
     apart in 1/3-octave timbre, VIBES 22+ dB from every Rhodes, MARIMBA 29.2 dB from VIBES and 17.8+ dB from every
     Rhodes; each Rhodes pair at least 0.4, VIBES at least 8 from a Rhodes, MARIMBA at least 6 from VIBES and 8 from a
-    Rhodes (MARIMBA PLAN §9.5)"""
+    Rhodes"""
     ws = []
     for t in range(6):
-        w = R(CLEAN + detents(1, 1, t, 40) + ["100 dump"] + PROBE3, 1800)
+        w = R(CLEAN + detents(1, 1, TYPE_POS[t], 40) + ["100 dump"] + PROBE3, 1800)
         assert w.state(100)["p.0"] == str(t) and w.state(100)["bars"] == str(int(t >= 4))
         ws.append(w.seg(0.3, 1.5))
     d = min(tdist(ws[a], ws[b]) for a in range(4) for b in range(a + 1, 4))
@@ -317,12 +319,12 @@ def _type():
 
 @case("TYPE-CC80-79")
 def _type_cc():
-    """CC 80 bands of 32 pick the Rhodes types, CC 79 0 VIBES (the first bar band starts at 0), CC 79 127 MARIMBA
-    (VIBES 0..95, MARIMBA 96..127: every value is test_bars_compat's)"""
-    w = R(CLEAN + [cc(30, 80, 70), "40 dump", cc(50, 79, 0), "60 dump", cc(70, 80, 127), "80 dump", cc(90, 79, 127),
-                   "100 dump", cc(110, 79, 64), "120 dump"], 140)
-    got = [w.state(t)["p.0"] for t in (40, 60, 80, 100, 120)]
-    assert got == ["2", "4", "3", "5", "4"], got
+    """CC 80's five bands pick the electric pianos (96 DYNO, 127 WHURLI), CC 79 0 VIBES (the first bar band starts at
+    0), CC 79 127 MARIMBA (VIBES 0..95, MARIMBA 96..127: every value is test_bars_compat's)"""
+    w = R(CLEAN + [cc(30, 80, 70), "40 dump", cc(50, 79, 0), "60 dump", cc(70, 80, 96), "80 dump", cc(90, 79, 127),
+                   "100 dump", cc(110, 79, 64), "120 dump", cc(130, 80, 127), "140 dump"], 160)
+    got = [w.state(t)["p.0"] for t in (40, 60, 80, 100, 120, 140)]
+    assert got == ["2", "4", "3", "5", "4", "6"], got
     return 1.0, 1.0, "ok"
 
 
@@ -334,10 +336,10 @@ MC3, MC4 = 130.81, 261.63
 
 
 def mrmb(page, enc, d, probe, end, extra=(), pre=()):
-    """MARIMBA by five ALGORITHM detents from STAGE 77, SELECT to the page (1 = FRODHES, 2 = VOICE 1/3, 3 = VOICE 2/3),
+    """MARIMBA by six ALGORITHM detents from STAGE 77, SELECT to the page (1 = FRODHES, 2 = VOICE 1/3, 3 = VOICE 2/3),
     knob enc turned d detents (0 = untouched), a dump at 90 ms (the card), then the probe"""
     turns = [f"{60 + 3 * i} turn 0 1" for i in range(page)]
-    return R(CLEAN + list(pre) + detents(1, 1, 5, 40) + turns + ([f"80 turn {enc} {d}"] if d else []) + ["90 dump"]
+    return R(CLEAN + list(pre) + detents(1, 1, TYPE_POS[5], 40) + turns + ([f"80 turn {enc} {d}"] if d else []) + ["90 dump"]
              + list(extra) + probe, end)
 
 

@@ -40,20 +40,30 @@ typedef struct {
     const char *const *names; /* F_ENUM */
 } pdesc_t;
 
-static const char *const N_TYPE[] = {"ST77", "SUIT", "FELT", "DYNO", "VIBE", "MRMB"};
-static const char *const N_TYPE_LONG[] = {"STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "VIBES", "MARIMBA"};
+static const char *const N_TYPE[] = {"ST77", "SUIT", "FELT", "DYNO", "VIBE", "MRMB", "WHRL"};
+static const char *const N_TYPE_LONG[] = {"STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "VIBES", "MARIMBA", "WHURLI"};
 /* TYPE -> engine (0 Rhodes, 1 bars), the engine's own type index, and the drive row (fx.c, 0..3). Append-only, in
  * step with N_TYPE. The Rhodes types 0..3 are unchanged; VIBES (4) is the first bar type, MARIMBA (5) the second
  * (bars.c BAR_TYPE[1]). TYPE_FLAGS: what the instrument has, as the bar type record's flags (bars.h bar_type_t):
  * bit0 a motor (the MOTOR controls and their auto-on), bit1 a damper (key-up damps; without one DECAY's second card
  * is MUTE, the player's hand: 0 = rings out). */
-#define N_TYPE_N 6u
-static const uint8_t TYPE_ENGINE[N_TYPE_N] = {0, 0, 0, 0, 1, 1};
-static const uint8_t TYPE_SUB[N_TYPE_N] = {0, 1, 2, 3, 0, 1};
-static const uint8_t TYPE_DRIVE_ROW[N_TYPE_N] = {0, 1, 2, 3, 0, 0};
-static const uint8_t TYPE_FLAGS[N_TYPE_N] = {0, 0, 0, 0, 3, 0};
-static const uint8_t TYPE_CC79[N_TYPE_N] = {0, 0, 0, 0, 0, 96};   /* the bar types' CC 79 band starts, rising in TYPE
+#ifdef ENG_HAS_BARS                              /* engine.c's map is the one: no range test on a TYPE anywhere */
+#define N_TYPE_N ENG_NTYPE
+#define TYPE_ENGINE ENG_TYPE_ENG
+#define TYPE_SUB ENG_TYPE_SUB
+#else
+#define N_TYPE_N 7u
+static const uint8_t TYPE_ENGINE[N_TYPE_N] = {0, 0, 0, 0, 1, 1, 0};
+static const uint8_t TYPE_SUB[N_TYPE_N] = {0, 1, 2, 3, 0, 1, 4};
+#endif
+static const uint8_t TYPE_DRIVE_ROW[N_TYPE_N] = {0, 1, 2, 3, 0, 0, 0};   /* (WHURLI: the STAGE 77 row) */
+static const uint8_t TYPE_FLAGS[N_TYPE_N] = {0, 0, 0, 0, 3, 0, 0};
+static const uint8_t TYPE_CC79[N_TYPE_N] = {0, 0, 0, 0, 0, 96, 0};   /* the bar types' CC 79 band starts, rising in TYPE
                                     * order (frodhes.c midi_cc): VIBES 0..95, MARIMBA 96..127 (the Rhodes: CC 80) */
+/* CC 80: the electric pianos in five equal bands, band = (v * 5) >> 7 (frodhes.c midi_cc): STAGE 77 0..25, SUITCASE 26..51,
+ * EARLY FELT 52..76, BELL DYNO 77..102, WHURLI 103..127. The old band starts 0 / 32 / 64 / 96 keep their TYPE (0.9.14; it
+ * was v >> 5, four bands of 32, 96..127 DYNO) */
+static const uint8_t TYPE_CC80[5] = {0, 1, 2, 3, 6};
 _Static_assert(sizeof N_TYPE / sizeof N_TYPE[0] == N_TYPE_N && sizeof N_TYPE_LONG / sizeof N_TYPE_LONG[0] == N_TYPE_N,
                "one name per TYPE");
 #define TYPE_IS_BARS(t) ((uint32_t)(t) < N_TYPE_N && TYPE_ENGINE[(t)] != 0u)   /* the main loop's TYPE (the UI) */
@@ -69,13 +79,18 @@ FR_COLD static void eng_set_type(uint32_t t) { rh_type = (uint8_t)(t < N_TYPE_N 
 FR_COLD static int eng_is_bars(void) { return 0; }       /* the engine plays bars for the TYPE last set (not the ISR latch) */
 FR_COLD static void eng_bar_knob(uint32_t k, uint32_t v) { (void)k; (void)v; }
 #endif
-#define PR_NF_SET 19u              /* presets.c PR_NF: the factory presets (12 before VIBES, 14 before MARIMBA, 16
+#define PR_NF_SET 23u              /* presets.c PR_NF: the factory presets (12 before VIBES, 14 before MARIMBA, 16
                                     * before F17..F19, 0.9.5) */
 static const char *const N_TW[] = {"OFF", "TRM", "WAH"};
 static const char *const N_CP[] = {"OFF", "CHO", "PHA"};   /* "PHA": records before 0.4 */
 static const char *const N_ONOFF[] = {"OFF", "ON"};
+#if !FR_OWN
 static const char *const N_DRV[] = {"OFF", "FDRV", "KHLON", "TSH8", "OHCD", "BHLUE"};   /* the drive's TYPE (fx.c
                                     * drive.c): 1 FDRV, the drive before ("ON" in older records), 2.. the circuits */
+#else
+static const char *const N_DRV[] = {"OFF", "WARM", "KHLON", "TSH8", "OHCD", "BHLUE"};   /* the plugin's own-code build:
+                                    * TYPE 1 is its own drive (drive.c, drv_own1.c), the same value in the records */
+#endif
 static const uint8_t DRV_CC84[6] = {0, 112, 64, 76, 88, 100};   /* CC 84's band start per drive TYPE (as TYPE_CC79):
                                     * OFF 0..63 and FDRV 112..127 (0 and 127 keep their sound), the others in between */
 static uint8_t drv_last = 1;       /* the drive TYPE last on: turning DRIVE up on PERFORM / FRODHES wakes it (not saved) */
@@ -98,7 +113,7 @@ static const char *const N_SYNC[] = {"FREE", "1/32", "16T", "1/16", "8T", "16D",
                                      "1/1", "2BAR", "4BAR"};
 
 static const pdesc_t PARAMS[P_COUNT] = {
-    [P_TYPE] = {"TYPE", 5, 0, F_ENUM, 80, N_TYPE},
+    [P_TYPE] = {"TYPE", 6, 0, F_ENUM, 80, N_TYPE},
     [P_DRIVE] = {"DRV", 127, 0, F_R10, 81, 0},
     [P_TW_SW] = {"TREM", 2, 0, F_ENUM, 17, N_TW},
     [P_TW_DEPTH] = {"DPTH", 127, 0, F_R10, 18, 0},
@@ -204,7 +219,8 @@ typedef struct {
     uint8_t panel4[16], undo4[16];             /* the EQ: ids 64..79 (flags2 bit 2: present; else their defaults) */
     uint8_t seq_rsv[13];
     uint8_t flags2;                            /* 0.9.5: 1 = the preset index in the 19-factory layout (U01 = 19);
-                                                * 2 = panel4 / undo4 present (the EQ) */
+                                                * 2 = panel4 / undo4 present (the EQ); 4 = the 23-factory layout
+                                                * (F20..F23 WHURLI: U01 = 23) */
 #if BOARD_SMK37
     uint8_t smk_mst[2];                        /* 0.9.6, SMK-37: K1's MASTER + 1, little endian (0, every record
                                                 * before: smk_input.h's 724; frodhes_smk.h smk_master_stored) */
@@ -341,7 +357,7 @@ FR_COLD static void params_defaults(void)
     set.ver = SET_VER;
     set.flags = 4u | 32u | 64u | 128u;   /* a fresh record: its preset index is already in today's layout (19 factory:
                                     * flags2 1), its PERFORM knobs today's defaults */
-    set.flags2 = 1u | 2u;
+    set.flags2 = 1u | 2u | 4u;
     set.preset = 0;
     set.bpm10 = 1200;
     set.clock = 1;                 /* EXT: follows MIDI clock when it comes (USB or TRS) */
@@ -408,7 +424,19 @@ FR_COLD static void params_sanitize(void)
                                    (set.undo_preset >= 17u + 9u && set.undo_preset < 17u + 12u));
         if (set.preset >= 16u && set.preset < 16u + 16u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 16u);
         if (set.undo_preset >= 17u && set.undo_preset < 17u + 16u) set.undo_preset = (uint8_t)(set.undo_preset + PR_NF_SET - 16u);
-        set.flags2 |= 1u;
+        set.flags2 |= 1u | 4u;                       /* (PR_NF_SET is today's layout: bit 4 is done too) */
+    }
+    if (!(set.flags2 & 4u)) {                        /* records with 19 factory presets (up to 0.9.13): U01 was 19; F20..F23
+                                                      * (WHURLI) come before the user bank now, so every user index moves
+                                                      * up by 4 (a factory index, below 19, stays) */
+#ifdef FR_HQ                                         /* the Move: its F20..F57 variants follow the user bank (35..72), they move too */
+        if (set.preset >= 19u && set.preset < 19u + 16u + 38u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 19u);
+        if (set.undo_preset >= 20u && set.undo_preset < 20u + 16u + 38u) set.undo_preset = (uint8_t)(set.undo_preset + PR_NF_SET - 19u);
+#else
+        if (set.preset >= 19u && set.preset < 19u + 16u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 19u);
+        if (set.undo_preset >= 20u && set.undo_preset < 20u + 16u) set.undo_preset = (uint8_t)(set.undo_preset + PR_NF_SET - 19u);
+#endif
+        set.flags2 |= 4u;
     }
     if (!(set.flags & 64u)) params_perf_update();     /* records up to 0.9.4: the PERFORM defaults (above) */
     if (!(set.flags & 128u)) {                        /* records before the reverb's TYPE: its ids at their defaults
@@ -581,7 +609,12 @@ static void param_set(uint32_t id, int32_t v)
 FR_COLD static void type_pick(int32_t t)
 {
     int was = TYPE_HAS_MOTOR(PV(P_TYPE));
+    int to_reed = t == 6 && PV(P_TYPE) != 6;   /* WHURLI (TYPE 6) */
     param_set(P_TYPE, t);
+    if (to_reed) {   /* turning TO WHURLI: its own neutral voicing, the one its tables are calibrated at (the knobs of the type
+                      * left are not carried over); turning away from it leaves every knob as it is */
+        param_set(P_TONE, 64); param_set(P_BARK, 64); param_set(P_BELL, 64); param_set(P_HAMMER, 64);
+    }
     if (!was && TYPE_HAS_MOTOR(PV(P_TYPE)) && !PV(P_MOT_ON) && !set.mot_user_off) param_set(P_MOT_ON, 1);
 }
 

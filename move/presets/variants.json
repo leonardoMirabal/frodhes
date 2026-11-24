@@ -545,5 +545,17 @@
   },
   "pick": "B",
   "why": "B is the search's own alternative; C the driven 77's body."
+ },
+ "F20": {
+  "note": "new in presets.c 2026-11-22"
+ },
+ "F21": {
+  "note": "new in presets.c 2026-11-22"
+ },
+ "F22": {
+  "note": "new in presets.c 2026-11-22"
+ },
+ "F23": {
+  "note": "new in presets.c 2026-11-22"
  }
 }

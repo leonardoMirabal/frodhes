@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""No louder after the key-up (private TEST-PLAN, release must-pass, 2026-10-25): letting go of a note must never make
+"""No louder after the key-up (a release must-pass, 2026-10-25): letting go of a note must never make
 it louder. 0.9.5's first test build gave a soft note (v15) a key-up damper thump 9-12 dB over the note itself (the
 thump had a fixed level; real key velocity let the notes go soft under it): "I press a key and get 2 sounds".
 

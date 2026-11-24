@@ -1,0 +1,47 @@
+# Turning TO WHURLI loads its neutral voicing (TONE, BARK, BELL, HAMMER at 64); turning away keeps every knob as it is.
+# Turning away (a detent back: BELL DYNO, one on: VIBES) keeps the knobs; back to WHURLI: neutral again.
+# RAW. CC 28 TONE, 29 BARK, 30 BELL, 31 HAMMER; ALGORITHM (turn 1) four steps ST77 -> SUITCASE -> EARLY FELT -> BELL DYNO -> WHURLI (the scroll order: WHURLI, then VIBES, MARIMBA).
+50 midi 0xB0 119 127
+60 midi 0xB0 28 100
+61 midi 0xB0 29 20
+62 midi 0xB0 30 110
+63 midi 0xB0 31 5
+100 expect state p.0 0
+100 expect state p.20 100
+100 expect state p.21 20
+100 expect state p.22 110
+100 expect state p.23 5
+200 turn 1 1
+202 turn 1 1
+204 turn 1 1
+206 turn 1 1
+300 expect state p.0 6
+300 expect state p.20 64
+300 expect state p.21 64
+300 expect state p.22 64
+300 expect state p.23 64
+350 midi 0xB0 28 90
+351 midi 0xB0 29 30
+352 midi 0xB0 30 70
+353 midi 0xB0 31 100
+400 turn 1 -1
+450 expect state p.0 3
+450 expect state p.20 90
+450 expect state p.21 30
+450 expect state p.22 70
+450 expect state p.23 100
+500 turn 1 1
+550 expect state p.0 6
+550 expect state p.20 64
+550 expect state p.21 64
+550 expect state p.22 64
+550 expect state p.23 64
+600 turn 1 1
+650 expect state p.0 4
+700 midi 0xB0 28 20
+710 midi 0xB0 80 0
+750 expect state p.0 0
+750 expect state p.20 20
+800 midi 0x90 60 100
+1200 expect rms > -65
+1300 end

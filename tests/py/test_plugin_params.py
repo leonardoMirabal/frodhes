@@ -28,3 +28,20 @@ def test_ids_are_the_enum():
     assert len(set(ids)) == len(ids)
     params_c = open(os.path.join(ROOT, "firmware", "src", "params.c")).read()
     assert params_c.count("[P_") >= n_app       # (every P_ id has its PARAMS[] row)
+
+
+def test_plugin_preset_numbers_did_not_move():
+    """every plugin factory preset keeps its number and name from 0.9.13 (a host's saved PRESET value, automation, a
+    program change file): the Move's index i (35..72 the variants) is the plugin's i - 16; WHURLI is F58-F61, after them"""
+    import re
+    src = open(GEN).read()
+    names = dict(re.findall(r'"(F\d\d) ([^"]*)"', src))
+    old = [ln.split(" ", 1) for ln in open(os.path.join(ROOT, "tests", "baselines", "move_preset_index_0913.txt")).read().splitlines()
+           if not ln.startswith("#")]
+    for i, n in old:
+        i = int(i)
+        if 19 <= i < 35:
+            continue                                   # (the user slots)
+        tag, name = n.split(" ", 1)
+        assert tag == "F%02d" % (i + 1 if i < 19 else i - 15) and names.get(tag) == name, (i, n, names.get(tag))
+    assert [names["F%02d" % k] for k in range(58, 62)] == ["WHURLI", "REED GROWL", "REED TREM", "REED SOFT"]

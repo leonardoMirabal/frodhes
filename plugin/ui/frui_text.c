@@ -78,7 +78,7 @@ void frui_text_default(void *ctx, const frui_model *m, int id, char *val, char *
     case FRP_TW_RATE: sy = m->p[FRP_TW_SW] != 2 ? FRP_TW_SYNC : 0; break;
     }
     if (sy && m->p[sy]) { strcpy(val, FRN_SYNC[m->p[sy]]); return; }
-    if (m->p[FRP_TYPE] >= 4) {                       /* the bar engine's named detents (eng_pages.h) */
+    if (m->p[FRP_TYPE] < FRN_NTYPE && FRN_TYPE_BARS[m->p[FRP_TYPE]]) {   /* the bar engine's named detents (eng_pages.h) */
         int f;
         if (id == FRP_TONE) {
             for (f = 0; f < 3; f++) if (v == V_STRIKE[f]) { strcpy(val, N_STRIKE[f]); return; }
@@ -86,7 +86,7 @@ void frui_text_default(void *ctx, const frui_model *m, int id, char *val, char *
         }
         if (id == FRP_BARK)
             for (f = 0; f < 4; f++)
-                if (v + 4 >= V_FAM[f] && v <= V_FAM[f] + 4) { strcpy(val, (m->p[FRP_TYPE] == 5 ? N_MFAM : N_VFAM)[f]); return; }
+                if (v + 4 >= V_FAM[f] && v <= V_FAM[f] + 4) { strcpy(val, (m->p[FRP_TYPE] == FRN_T_MARIMBA ? N_MFAM : N_VFAM)[f]); return; }
     }
     if (id == FRP_RV_DECAY && m->p[FRP_RV_TYPE] == 3 && v >= 120) { strcpy(val, v >= 127 ? "FREEZE" : "SUSTAIN"); return; }
     if (id == FRP_TW_RATE && m->p[FRP_TW_SW] == 2) { fmt_r10(val, v); return; }

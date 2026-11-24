@@ -158,7 +158,7 @@ static int check_layout(const frui *u, const char *name)
         float e[4] = {g->x, g->y, g->x + g->w, g->y + g->h};
         static const char *const en[4] = {"left", "top", "right", "bottom"};
         int k;
-        if (g->kind == FRW_TAB_L || g->kind == FRW_TAB_R || g->kind == FRW_CTX || g->kind == FRW_ITEM) continue;   /* (the knob menu: a pop-up) */      /* text-width tabs: checked by their baseline */
+        if (g->kind == FRW_TAB_L || g->kind == FRW_TAB_R || g->kind == FRW_LAMP || g->kind == FRW_CTX || g->kind == FRW_ITEM) continue;   /* (the knob menu: a pop-up) */      /* text-width tabs: checked by their baseline */
         if (g->kind == FRW_KNOB && g->id != FRP_LEVEL) goto knob;          /* a knob: its centre, below */
         for (k = 0; k < 4; k++) {
             float d = e[k] - 4.f * roundf(e[k] / 4.f);
@@ -417,7 +417,7 @@ int main(int argc, char **argv)
     m.p[FRP_EQ_LO] = 74; m.p[FRP_EQ_MID] = 54; m.p[FRP_EQ_FREQ] = 50; m.p[FRP_EQ_HI] = 60; m.edited = 1;
     m.tab_l = FRT_EQ; m.tab_r = FRT_FILTER;
     render(&m, "tab-eq-filter", 960, 600);
-    load(&m, PR_F08, "F08", "SUIT TREM");                    /* DRIVE (FDRV) + TREM/WAH on PAN */
+    load(&m, PR_F08, "F08", "SUIT TREM");                    /* DRIVE (TYPE 1) + TREM/WAH on PAN */
     m.tab_l = FRT_DRIVE; m.tab_r = FRT_TREM;
     chord(&m, maj7, 5);
     render(&m, "tab-drive-tremwah", 960, 600);

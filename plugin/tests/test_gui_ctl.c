@@ -8,6 +8,7 @@
 #include "gui_fake_host.h"
 
 static int fails;
+#define G_SPLIT_X 480.f                /* the right panel starts past the middle (frui.c: x 488) */
 #define CHECK(c, ...) do { if (c) printf("PASS "); else { printf("FAIL "); fails++; } printf(__VA_ARGS__); printf("\n"); } while (0)
 
 static frp_gui_t *ctl;
@@ -20,6 +21,18 @@ static int ev(int kind, int button, int mods, float x, float y, float wheel, int
     memset(&e, 0, sizeof e);
     e.kind = kind; e.button = button; e.mods = mods; e.x = x; e.y = y; e.wheel = wheel; e.key = key;
     return cl->input(cl->ctx, &e);
+}
+/* the lamp's pixels round a logical point at 1.5x: the sum of their channels, 8 logical px square */
+static uint32_t lamp_sum(float lx, float ly)
+{
+    uint32_t t = 0;
+    int i, j;
+    for (j = (int)((ly - 4.f) * 1.5f); j < (int)((ly + 4.f) * 1.5f); j++)
+        for (i = (int)((lx - 4.f) * 1.5f); i < (int)((lx + 4.f) * 1.5f); i++) {
+            uint32_t p = px[j * cv.w + i];
+            t += (p & 255) + ((p >> 8) & 255) + ((p >> 16) & 255);
+        }
+    return t;
 }
 static void paint(void) { frui_canvas_init(&cv, px, cv.w, cv.h); cl->paint(cl->ctx, &cv, 1.f); }
 
@@ -445,6 +458,102 @@ int main(void)
         CHECK(h.saves == s0 + 1 && !frp_gui_model(ctl)->saving, "a click elsewhere leaves it too");
         CHECK(ev(FRG_KEY, 0, 0, 0, 0, 0, 'q') == 0, "with the field closed, letters go to the host");
         paint();
+    }
+
+    /* an effect's lamp (the right panel's tabs): a click switches the effect off, the next one back on with the setting
+     * it had (REVERB's PLATE, TREM/WAH's WAH), or the page's first one when it had none (FILTER: LP12); one gesture
+     * each; the page shown stays; a click on the tab's name only selects the page; the lamp lights up under the mouse */
+    {
+        const frui *u = frp_gui_frui(ctl);
+        float lx, ly, nx = 0.f;
+        int k, b0, tr, na, j;
+        uint32_t lit0, lit1;
+        h.v[FRP_RV_TYPE] = 2; h.v[FRP_TW_SW] = 2; h.v[FRP_FL_TYPE] = 0;
+        cl->tick(cl->ctx); paint();
+        k = fh_find(u, FRW_LAMP, FRT_REVERB, &lx, &ly);
+        CHECK(k >= 0 && frui_widget_get(u, k)->w >= 20.f && frui_widget_get(u, k)->h >= 20.f,
+              "REVERB's lamp is a hit target of 20 px square or more");
+        for (j = 0, na = 0; j < frui_widget_count(u); j++) na += frui_widget_get(u, j)->kind == FRW_LAMP;
+        CHECK(na == FRT_NR, "the right panel's six tabs have one, the left panel's none (%d)", na);
+        tr = frp_gui_model(ctl)->tab_r; b0 = h.gesture_begins;
+        ev(FRG_DOWN, FRG_LEFT, 0, lx, ly, 0, 0); ev(FRG_UP, FRG_LEFT, 0, lx, ly, 0, 0);
+        CHECK(h.v[FRP_RV_TYPE] == 0 && h.gesture_begins == b0 + 1 && h.gestures_open == 0 && frp_gui_model(ctl)->tab_r == tr,
+              "a click on the lamp: REVERB OFF (%d), one gesture (%d), the page unchanged (%d)", h.v[FRP_RV_TYPE],
+              h.gesture_begins - b0, frp_gui_model(ctl)->tab_r);
+        cl->tick(cl->ctx); paint();
+        ev(FRG_DOWN, FRG_LEFT, 0, lx, ly, 0, 0); ev(FRG_UP, FRG_LEFT, 0, lx, ly, 0, 0);
+        CHECK(h.v[FRP_RV_TYPE] == 2 && h.gesture_begins == b0 + 2 && h.gestures_open == 0,
+              "the next click: back on, PLATE restored (%d)", h.v[FRP_RV_TYPE]);
+        cl->tick(cl->ctx);                             /* (the host has it) */
+        h.v[FRP_RV_TYPE] = 0; cl->tick(cl->ctx);       /* OFF from the page (or the host): the lamp still restores */
+        ev(FRG_DOWN, FRG_LEFT, 0, lx, ly, 0, 0); ev(FRG_UP, FRG_LEFT, 0, lx, ly, 0, 0);
+        CHECK(h.v[FRP_RV_TYPE] == 2, "OFF set elsewhere, then the lamp: PLATE again (%d)", h.v[FRP_RV_TYPE]);
+        paint();
+        fh_find(u, FRW_LAMP, FRT_TREM, &x, &y);
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        cl->tick(cl->ctx); paint();
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        CHECK(h.v[FRP_TW_SW] == 2, "TREM/WAH: off and on, WAH restored (%d)", h.v[FRP_TW_SW]);
+        cl->tick(cl->ctx); paint();
+        {   /* the memory is the instance's: REVERB off with the lamp, the window closed, a new one opened while it is OFF
+             * (it never saw PLATE): its lamp turns PLATE back on, not the page's first type */
+            frp_gui_t *c0 = ctl;
+            const frg_client *l0 = cl;
+            fh_find(u, FRW_LAMP, FRT_REVERB, &x, &y);
+            ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+            CHECK(h.v[FRP_RV_TYPE] == 0 && h.fxl[FRT_REVERB] == 2, "REVERB off by the lamp, PLATE kept by the instance (%d)",
+                  h.fxl[FRT_REVERB]);
+            ctl = frp_gui_new(&ch); cl = frp_gui_client(ctl);
+            paint();
+            fh_find(frp_gui_frui(ctl), FRW_LAMP, FRT_REVERB, &x, &y);
+            ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+            CHECK(h.v[FRP_RV_TYPE] == 2 && h.gestures_open == 0, "a reopened window: the lamp turns PLATE back on (%d)",
+                  h.v[FRP_RV_TYPE]);
+            frp_gui_free(ctl);
+            ctl = c0; cl = l0;
+            cl->tick(cl->ctx); paint();
+        }
+        {                                              /* a new instance and window that never saw FILTER on */
+            frp_gui_t *c0 = ctl;
+            const frg_client *l0 = cl;
+            h.v[FRP_FL_TYPE] = 0; h.fxl[FRT_FILTER] = 0;
+            ctl = frp_gui_new(&ch); cl = frp_gui_client(ctl);
+            paint();
+            fh_find(frp_gui_frui(ctl), FRW_LAMP, FRT_FILTER, &x, &y);
+            ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+            CHECK(h.v[FRP_FL_TYPE] == 1 && h.gestures_open == 0,
+                  "FILTER, never on: the lamp picks the page's first type, LP12 (%d)", h.v[FRP_FL_TYPE]);
+            frp_gui_free(ctl);
+            ctl = c0; cl = l0;
+        }
+        cl->tick(cl->ctx); paint();
+        /* the name: a click on it selects the page and switches nothing */
+        na = frui_anchor_count(u);
+        for (j = 0; j < na; j++) {
+            const frui_anchor *a = frui_anchor_get(u, j);
+            if (a->what == FRA_TAB && a->id == FRT_REVERB && a->x > G_SPLIT_X) nx = a->x + 11.f + 8.f;   /* into the name */
+        }
+        b0 = h.sets;
+        CHECK(nx > 0.f && frui_hit(u, nx, ly, 0) >= 0, "REVERB's name is drawn");
+        ev(FRG_DOWN, FRG_LEFT, 0, nx, ly, 0, 0); ev(FRG_UP, FRG_LEFT, 0, nx, ly, 0, 0);
+        CHECK(frp_gui_model(ctl)->tab_r == FRT_REVERB && h.sets == b0 && h.v[FRP_RV_TYPE] == 2,
+              "a click on the name: the REVERB page (%d), nothing switched (%d writes)", frp_gui_model(ctl)->tab_r, h.sets - b0);
+        paint();
+        /* hover: the lamp is marked and drawn lighter (lit: a wider glow; out: a lighter glass) */
+        lit0 = lamp_sum(lx + 1.5f, ly);
+        CHECK(ev(FRG_MOVE, 0, 0, lx, ly, 0, 0) & 1, "moving onto a lamp asks for a repaint");
+        CHECK(frp_gui_model(ctl)->hover == FRUI_WID(FRW_LAMP, FRT_REVERB), "and marks it");
+        paint();
+        lit1 = lamp_sum(lx + 1.5f, ly);
+        CHECK(lit0 != lit1, "the lamp under the mouse is drawn differently (%u -> %u)", lit0, lit1);
+        ev(FRG_MOVE, 0, 0, lx, ly + 200.f, 0, 0);
+        h.v[FRP_RV_TYPE] = 0; cl->tick(cl->ctx); paint();
+        lit0 = lamp_sum(lx + 1.5f, ly);
+        ev(FRG_MOVE, 0, 0, lx, ly, 0, 0); paint();
+        lit1 = lamp_sum(lx + 1.5f, ly);
+        CHECK(lit1 > lit0, "an unlit lamp under the mouse is drawn lighter (%u -> %u)", lit0, lit1);
+        ev(FRG_MOVE, 0, 0, lx, ly + 200.f, 0, 0);
+        h.v[FRP_RV_TYPE] = 2; cl->tick(cl->ctx); paint();
     }
 
     /* hover */

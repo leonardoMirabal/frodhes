@@ -8,7 +8,7 @@ Records the USB audio and an audio interface input (the jack) at the same time w
                                          (default: the interface "M6", input 5 -> --ch 5)
 
 --engine marimba runs its own session (ST77, MARIMBA, ST77 again: SNR within 1 dB of ST77, the drift; the muted and
-idle floors, USB exact zero at idle; the silence gate on MARIMBA tails, TEST-PLAN A5) -> build/hil/jack-marimba.json.
+idle floors, USB exact zero at idle; the silence gate on MARIMBA tails) -> build/hil/jack-marimba.json.
 --dist all|raw: the dry distortion gate only (must-pass; tests/py/test_dry_distortion.py's FM-1 counterpart) ->
 build/hil/jack-dist.json, exit 1 on a failure.
 --dry-run: no device (the host build plays the MIDI; the jack is simulated): checks the procedure, writes build/hil/dry/.
@@ -151,7 +151,7 @@ def hp20(x):
 
 
 def gate_tail(u, j, t_note):
-    """TEST-PLAN A5 on one tail: USB (full scale 1.0) and the jack. The mute instant z = the first sample after which
+    """The silence gate on one tail: USB (full scale 1.0) and the jack. The mute instant z = the first sample after which
     USB is exact zero to the end. 'gate' when the 200 ms before z - 46 ms stayed <= 16 LSB (fx.c: a 46 ms linear fade
     after 203 ms under 16 LSB ends at z), else 'decayed' (the tail itself rounded to zero first, e.g. a hand mute);
     on a gate the 50 ms before the fade start [z - 96 ms, z - 46 ms] peak <= 16 LSB. Jack, 10 ms frames from z: none
@@ -187,7 +187,7 @@ def gate_tail(u, j, t_note):
 
 
 def marimba(J, a, out):
-    """--engine marimba (PLAN §12.5, TEST-PLAN §6.3 / A5): ST77, MARIMBA, ST77 again in one session (the drift check);
+    """--engine marimba: ST77, MARIMBA, ST77 again in one session (the drift check);
     SNR = the loud chord's jack RMS (and LUFS) over the jack's 8-20 kHz hiss. A MARIMBA note does not sustain (a low
     quiet one ends in the gate and the codec mutes inside the hiss window), so MARIMBA's SNR is taken over the ST77
     hiss of the same session (the codec's analog hiss is the engine's no more); MARIMBA's own hiss under a pedalled
@@ -285,7 +285,7 @@ def marimba(J, a, out):
               f"{q['loud']['usb_peak_db']:.1f}, jack rms {q['loud']['jack_db']:.1f} LUFS {q['loud']['jack_lufs']:.1f}; "
               f"SNR {q['snr_db']:.1f} dB (LUFS {q['snr_lufs_db']:.1f})")
     print(f"  SNR MARIMBA - ST77 {rep['snr_vs_st77_db']:+.2f} dB (within 1 dB: {'yes' if rep['snr_ok'] else 'NO'}), "
-          f"on LUFS {rep['snr_lufs_vs_st77_db']:+.2f}; ST77 drift {rep['st77_drift_db']:+.2f} dB (TEST-PLAN: +-0.3); "
+          f"on LUFS {rep['snr_lufs_vs_st77_db']:+.2f}; ST77 drift {rep['st77_drift_db']:+.2f} dB (limit +-0.3); "
           f"MARIMBA's hiss re the session's {rep['hiss_equal_db']:+.1f} dB")
     for nm, q in rep["tails"].items():
         print(f"  tail {nm:28s} " + ", ".join(f"{k} {v}" for k, v in q.items()))
@@ -295,7 +295,7 @@ def marimba(J, a, out):
 
 
 def idle_judge(usb_nonzero, jack_db, jack_hf_db, silences):
-    """the idle gate (TEST-PLAN A5): USB exact zero and the jack at the session's muted floor. The reference is the
+    """the idle gate: USB exact zero and the jack at the session's muted floor. The reference is the
     median of the session's silent takes (all exact zero on USB): one 3 s take of the interface's analog floor
     wanders by ~2 dB (0.9.7 T2: -91.3 / -90.9 / -93.2 dB, the same digital zero), so a single take as the reference
     failed a silent FM-1. Noise from the FM-1 (a dither left on, hiss) raises the 8-20 kHz band too: gated as well."""

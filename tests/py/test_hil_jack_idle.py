@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""tools/hil_jack.py's idle gate (TEST-PLAN A5) on the numbers of real sessions: the reference is the median of the
+"""tools/hil_jack.py's idle gate on the numbers of real sessions: the reference is the median of the
 session's silent takes, not one take (0.9.7 T2 on ecf62e54 failed a silent FM-1 on a quiet reference take)."""
 import os
 import sys

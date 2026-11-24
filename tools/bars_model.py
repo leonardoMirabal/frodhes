@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""The float golden model of the VIBES bar voice (VIBES PLAN §4-§7, P1 step 5; Gate VA on it, Gate VB = bars.c vs it).
+"""The float golden model of the VIBES bar voice (Gate VA on it, Gate VB = bars.c vs it).
 
 It has exactly the structure of bars.c: 32-frame sub-blocks; the mallet pulse blended once at note-on from the
 tables (two families x two velocity layers, integer arithmetic as the C), played with linear interpolation; slot 0
@@ -162,7 +162,7 @@ def note_init(spec, n, vel, kn):
     k = spec["keys"][min(max(n, spec["key_lo"]), spec["key_lo"] + len(spec["keys"]) - 1) - spec["key_lo"]]
     kidx = k["midi"] - spec["key_lo"]
     dk, dr = spec["decay_k"][kn["decay"]], spec["decay_k"][kn["release"]]
-    if not has_damper(spec):                         # MUTE (MARIMBA PLAN §3.4, C5): the hand-stop words unscaled
+    if not has_damper(spec):                         # MUTE (C5): the hand-stop words unscaled
         dr = 65536
     t30 = spec["tune_t"][int(kn["tune"]) + 50]
     pw = pos_weight(spec["bar_pos"][k["band"]], kn["tone"])

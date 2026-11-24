@@ -4,7 +4,7 @@
  * every value (params.c param_text; the enums' full names), so the plugin's value texts are the panel's, never typed in
  * twice.
  *   param_dump                    one "P id lab hi def fmt cc" line per parameter, then "T id v text" per value,
- *                                 then "F i name" per factory preset (F01..F19 presets.c, F20..F57 move_presets.h)
+ *                                 then "F i name" per factory preset (F01..F23 presets.c, F24..F61 move_presets.h)
  * Built by the generator with the plugin's engine flags (plugin/CMakeLists.txt FRP_ENGINE_DEFS). */
 #define main host_main_unused
 #include "../../firmware/src/frodhes.c"
@@ -36,7 +36,7 @@ int main(void)
         PV(id) = keep;
     }
     for (id = 0; id < PR_NF + MB_PX_N; id++) {
-        const char *nm = id < PR_NF ? PR_FNAME[id] : MB_PX_NAME[id - PR_NF];
+        const char *nm = id < 19u ? PR_FNAME[id] : id < 19u + MB_PX_N ? MB_PX_NAME[id - 19u] : PR_FNAME[id - MB_PX_N];   /* F01-F19, the variants F20-F57, WHURLI F58-F61 */
         int n = (int)strlen(nm);
         while (n > 0 && nm[n - 1] == ' ') n--;
         printf("F %u %.*s\n", (unsigned)id, n, nm);

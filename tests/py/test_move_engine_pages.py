@@ -20,7 +20,7 @@ import test_move_sustain as tms  # noqa: E402
 VOICE = {0: "PIANO VOICE", 1: "VIBES VOICE", 2: "MARIMBA VOICE"}
 ALL = {"PIANO VOICE", "VIBES VOICE", "VIBES MOTOR", "MARIMBA VOICE"}
 OWN = {0: {"PIANO VOICE"}, 1: {"VIBES VOICE", "VIBES MOTOR"}, 2: {"MARIMBA VOICE"}}
-TYPE_ENG = {0: 0, 1: 0, 4: 1, 5: 2}       # eng_pages.h TYPE_UI (ST77, SUIT ... VIBE, MRMB)
+TYPE_ENG = {0: 0, 1: 0, 4: 1, 5: 2, 6: 0}  # eng_pages.h TYPE_UI (ST77, SUIT ... VIBE, MRMB, WHRL)
 
 
 # Frodhes' own screen is the Move UI (move_bridge.h MB_OWN_UI): the plugin serves its pages as ui_pages and refuses

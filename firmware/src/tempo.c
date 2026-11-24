@@ -394,12 +394,17 @@ FR_COLD static uint32_t tempo_beat_led(void)
 }
 
 /* ---- scales */
+#if FR_OWN                                      /* the plugin's own-code build: the masks from tools/gen_scales_own.py */
+#include "scales_own.h"
+#define SCALE_MASK SCALE_OWN_MASK
+#else
 static const uint16_t SCALE_MASK[11] = {
     0xAB5, /* MAJ  0 2 4 5 7 9 11 */  0x5AD, /* MIN 0 2 3 5 7 8 10 */  0x6AD, /* DOR 0 2 3 5 7 9 10 */
     0x6B5, /* MIX  0 2 4 5 7 9 10 */  0xAD5, /* LYD 0 2 4 6 7 9 11 */  0x5AB, /* PHRY 0 1 3 5 7 8 10 */
     0x9AD, /* HARM 0 2 3 5 7 8 11 */  0xAAD, /* MEL 0 2 3 5 7 9 11 */  0x295, /* PEN 0 2 4 7 9 */
     0x4A9, /* MPEN 0 3 5 7 10 */      0x4E9, /* BLUES 0 3 5 6 7 10 */
 };
+#endif
 static const int8_t DEGREE[12] = {0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6};   /* white keys C..B -> degree */
 
 /* the nearest note of the scale (a tie, as F between E and G in a pentatonic, goes down) */

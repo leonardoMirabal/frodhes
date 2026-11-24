@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""The MARIMBA VOICE cards are heard (MARIMBA PLAN §0 item 3, §10.2 B2; the VIBES lessons of §16: cards that passed
+"""The MARIMBA VOICE cards are heard (B2; the VIBES lessons: cards that passed
 every damage check while doing nothing audible, families bunched together). Each card set from the panel as a player
 does (VOICE 1/2, K1..K4 turned from 64: tools/marimba_scan.panel), keys C3 / C4 / C6 (48 60 84; TUBE also C2) at
 v100, v117 (the user's KEY VEL) and v127, RAW, NOISE 0, MARIMBA by CC 79 127 (tools/marimba_scan.py measures):
@@ -79,7 +79,7 @@ _SPEC = None
 
 def capped(n, vel, a, b):
     """both contacts at T7f's cap (marimba_va.capped, Gate VA-M9's rule: the same pulse shape played at the same rate,
-    VIBES's F6-class exceptions, PLAN §10.2 B2 'documented per key')"""
+    VIBES's F6-class exceptions, B2 'documented per key')"""
     global _SPEC
     if _SPEC is None:
         _SPEC = ms.va().load_spec()

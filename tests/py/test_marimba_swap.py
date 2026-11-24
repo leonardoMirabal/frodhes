@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""MARIMBA PLAN §3.12 / §8.2 C1: a change between the two bar types (VIBES <-> MARIMBA) while notes ring fades the
+"""C1: a change between the two bar types (VIBES <-> MARIMBA) while notes ring fades the
 bar engine out over one block and stops its voices, as a change between engines does (a voice never re-strikes with
 the other type's tables); the same TYPE again changes nothing; the next note plays on the new type. RAW (CC 119):
 the engine alone, so "stopped" is exact digital zero. The host report names the TYPE that rendered last (C11)."""

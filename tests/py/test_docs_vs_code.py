@@ -78,7 +78,7 @@ def test_manual_links_resolve():
 
 def test_cc79_row_matches_the_bar_type_bands():
     """the CC table's row 79 names every bar TYPE with its band (params.c TYPE_CC79 / TYPE_ENGINE: VIBES 0-95, MARIMBA
-    96-127; MARIMBA PLAN §9.4)"""
+    96-127)"""
     pc = src("params.c")
 
     def arr(name):

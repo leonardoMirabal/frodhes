@@ -76,7 +76,7 @@ def preset_pc(p):
 def cc_of(name, x, hi, drv):
     """(CC number offset unused) the CC value that sets parameter name to x (frodhes.c midi_cc's bands)"""
     if name == "P_TYPE":
-        return (80, x * 32 + 8) if x < 4 else (79, {4: 64, 5: 127}[x])
+        return (80, (8, 40, 72, 96)[x]) if x < 4 else (79, {4: 64, 5: 127}[x])
     if name == "P_DRV_SW":
         return (None, 0 if x == 0 else 127 if x == 1 else drv[x] + 4)
     if hi == 127:

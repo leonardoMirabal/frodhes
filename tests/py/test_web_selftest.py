@@ -39,7 +39,7 @@ def test_selftest_every_engine():
                     continue
             if b is None:
                 pytest.skip("no Chromium / Chrome for Playwright")
-            for q in ("selftest", "selftest&vibes", "selftest&marimba"):
+            for q in ("selftest", "selftest&vibes", "selftest&marimba", "selftest&whurli"):
                 pg = b.new_page()
                 errs = []
                 pg.on("pageerror", lambda e: errs.append(str(e)))
@@ -53,5 +53,6 @@ def test_selftest_every_engine():
         srv.shutdown()
     for q, (rms, lit, errs) in out.items():
         assert not errs, (q, errs)
-        assert -36 < rms < -20, (q, rms)                # (a note, not silence or a clipped mess)
+        # (a note, not silence or a clipped mess; WHURLI's velocity law is steeper: the same strike reads 5.9 dB under STAGE 77's, -36.4 against -30.5 dB)
+        assert (-40 if q.endswith('whurli') else -36) < rms < -20, (q, rms)
         assert lit > 5000, (q, lit)

@@ -106,7 +106,7 @@ def test_every_engine_sounds_and_sustains(tmp_path, cc):
 @built
 def test_programs(tmp_path):
     """the host's program select, a MIDI program change and the PRESET parameter all load F06 (the same sound once
-    the change is through) and the host shows it; the programs are the 57 factory presets"""
+    the change is through) and the host shows it; the programs are the 61 factory presets"""
     pre, post = "0 midi 0x90 60 100\n", "400 midi 0x90 64 100\n1500 end\n"
     w1, o1 = render(tmp_path, "prog", pre + "300 program 5\n" + post)
     w2, o2 = render(tmp_path, "pc", pre + "300 midi 0xC0 5 0\n" + post)
@@ -124,7 +124,7 @@ def test_programs(tmp_path):
         r = subprocess.run([HOST_SIM, LIB, "dump"], capture_output=True, text=True, env=env(tmp_path), cwd=tmp_path)
         d = json.loads(r.stdout[r.stdout.index("{"):])
         progs = d["programs"]
-        assert len(progs) == 57 and progs[0] == "F01 STAGE 77" and progs[56].startswith("F57"), progs
+        assert len(progs) == 61 and progs[0] == "F01 STAGE 77" and progs[56].startswith("F57") and progs[57] == "F58 WHURLI" and progs[60] == "F61 REED SOFT", progs
         assert len(d["params"]) == 72
 
 

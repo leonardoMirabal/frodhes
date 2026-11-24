@@ -4,7 +4,7 @@ Frodhes runs on Akai MPC standalone hardware as an instrument plugin: the deskto
 electric piano, vibraphone and marimba as on the FM-1, the same effects, the higher-quality version of each) in the
 MPC's plugin format, a VST 2.4 plugin for its 32-bit and 64-bit ARM models, built with the
 [MPC Plugin SDK](https://github.com/inmusic-software/mpc-plugin-builder-sdk). It plays 16 voices on every instrument
-(as on the Move) and has the factory presets F01-F57 as its programs.
+(as on the Move) and has the factory presets F01-F61 as its programs.
 
 **Status: runs on an Akai MPC** (checked by a tester on their MPC: it loads, plays and its pages and Q-Links work).
 Everything below is also tested on a computer: in the SDK's host simulator (a host that behaves like the MPC's), in
@@ -36,7 +36,7 @@ zip's `INSTALL.txt` and [below](#what-to-report-back)).
 
 ## Install and remove
 
-**From the catalogue:** Frodhes is listed in the community's [Open MPC plugin catalogue](https://open-mpc.github.io).
+**From the catalogue:** Frodhes is listed in the community's [Open MPC plugin catalogue](https://open-mpc.github.io/#q=frodhes).
 With its Plugin Manager on the MPC ([how to set it up](https://open-mpc.github.io/install.html)), find Frodhes in the
 catalogue and install or update it from there, on the MPC's screen or from a phone or computer; the Plugin Manager
 picks the build for your MPC (32-bit or 64-bit ARM) and puts it in `VST2 Plugins` for you. Then go on at step 3 below.
@@ -117,7 +117,7 @@ VOICE page's 1280 x 640 crop for the plugin catalogue.
   app's 67 with their FM-1 values and texts, then TUNE, PRESET, SUSTAIN, EFFECTS BYPASS and VELOCITY RESPONSE. Their
   ids (`p<FM-1 id>`) are permanent, so saved projects stay valid. A change the app makes itself (a CC, a program
   change, a preset) moves the MPC's knob too.
-- **Programs**: F01-F57. The MPC's program select, a MIDI program change and the PRESET parameter load the same
+- **Programs**: F01-F61. The MPC's program select, a MIDI program change and the PRESET parameter load the same
   preset.
 - **MIDI**: notes and velocity, the sustain pedal, pitch bend, the FM-1's CC map, program changes, each at its
   sample in the block.
@@ -189,14 +189,16 @@ not built):
   (the MPC's load sequence, the parameter-0 quirk, block sizes 32-512, a random parameter sweep, the state round
   trip with the re-saved chunk byte-identical, all notes off, timing): PASS, 0 warnings, on this machine's build and
   on both ARM builds in Docker.
-- **Engines, sustain, programs, state, tempo**: a note on every TYPE (the four electric pianos, VIBES, MARIMBA) and
+- **Engines, sustain, programs, state, tempo**: a note on every TYPE (the five electric pianos, VIBES, MARIMBA) and
   the pedal holding it; the program select, a MIDI program change and the PRESET parameter giving the same sound;
   the state loaded over an instance in another state and saved again: the same bytes and values, and two loaded
   instances playing the same samples; a delay synced to 1/4 echoing a quarter note later at 100, 120 and 150 BPM.
 - **Bit-exactness** (`mpc/tests/bitexact.py`): 84 scripts (Gate M's MIDI-driven entries: `tests/scripts`, the
   effect and calibration scripts, Gate D's list; and `tests/hq`), every one byte for byte:
   - the MPC build at 24 voices = the desktop plugin = the host build (in the plugins' host-time test mode), and the
-    MPC build as it ships (16 voices) = the host build at the Move's switches;
+    MPC build as it ships (16 voices) = the host build at the Move's switches. The 24-voice comparison build is made
+    with the desktop plugin's own-code switch (`mpc/build.py --own`, `FR_OWN=1`), so it plays the plugin's DRIVE TYPE 1
+    (WARM); the shipped MPC build keeps FDRV;
   - as they ship: the MPC build at 24 voices = the desktop plugin at 44.1 and at 48 kHz, also with random block
     sizes on the MPC;
   - the shipped `frodhes-arm64.so` and `frodhes-arm32.so` on Linux (Docker; the 32-bit one under QEMU) = the host

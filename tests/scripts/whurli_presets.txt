@@ -1,0 +1,37 @@
+# The WHURLI factory presets keep their own TONE / BARK / BELL / HAMMER on load (the neutral voicing is for turning the TYPE
+# to WHURLI, not for a preset): F20..F23 by program change 35..38, each from a different sound first (F01, then another WHURLI
+# preset). RAW. p.0 TYPE, p.20..23 TONE BARK BELL HAMMER.
+50 midi 0xB0 119 127
+100 midi 0xC0 0 0
+200 expect state p.0 0
+300 midi 0xC0 35 0
+400 expect state header F20_WHURLI
+400 expect state p.0 6
+400 expect state p.20 64
+400 expect state p.21 64
+400 expect state p.22 64
+400 expect state p.23 64
+500 midi 0xC0 0 0
+600 midi 0xC0 36 0
+700 expect state header F21_REED_GROWL
+700 expect state p.0 6
+700 expect state p.20 72
+700 expect state p.21 96
+700 expect state p.22 64
+700 expect state p.23 96
+800 midi 0xC0 37 0
+900 expect state header F22_REED_TREM
+900 expect state p.0 6
+900 expect state p.20 64
+900 expect state p.21 56
+900 expect state p.22 64
+900 expect state p.23 64
+1000 midi 0xC0 0 0
+1100 midi 0xC0 38 0
+1200 expect state header F23_REED_SOFT
+1200 expect state p.0 6
+1200 expect state p.20 48
+1200 expect state p.21 28
+1200 expect state p.22 56
+1200 expect state p.23 36
+1300 end

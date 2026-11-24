@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""S12 for the VIBES mode budget (PLAN section 9): the bar engine on the host build, each chord rendered with the
+"""S12 for the VIBES mode budget: the bar engine on the host build, each chord rendered with the
 budget and without it (FRODHES_NOBUDGET), the residual re the signal over 0.2 .. 1.2 s (the plan's limit: -40 dB),
 clicks (tools/hil_scan.py's second-difference test) and the cost model's worst block (cpu-proxy, us).
 

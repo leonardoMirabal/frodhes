@@ -7,7 +7,7 @@ instrument. Frodhes draws its own screen: the Move's eight knobs as eight cards,
 What each control does to the sound is described in the [FM-1 manual](MANUAL.md#4-the-pages). This manual covers
 the Move's controls and what is different.
 
-![The first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix](manual/img/move/move-frodhes.png?v=ba262a7f)
+![The first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix](manual/img/move/move-frodhes.png?v=630fd25b)
 
 ## Contents
 
@@ -47,8 +47,8 @@ the Move's controls and what is different.
 
 Schwung Manager downloads the latest release. To install from a file instead, download **`frodhes-module.tar.gz`**
 from the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest) and upload it under **Install
-Custom Module > From Tarball**. Once Frodhes is listed in Schwung's module catalog, you can also install and update it
-from there.
+Custom Module > From Tarball**. Frodhes is also in [Schwung's module catalog](https://schwung.dev/catalog.html?filter=sound_generator), so you
+can install and update it from there.
 
 ### Put Frodhes on a track
 
@@ -80,7 +80,7 @@ pads, the step buttons, Up and Down (the octave), Play and the other buttons sta
 ### Presets
 
 On the FRODHES page, turn **knob 5 (PRESET)**. **F01-F19** are the FM-1's factory sounds, **F20-F57** are two more
-versions of each, made for the Move, and **U01-U16** are your own. 0.9.10 changed the factory presets and some of their
+versions of each, made for the Move, **F58-F61** are the four WHURLI presets (the FM-1's F20-F23), and **U01-U16** are your own. 0.9.10 changed the factory presets and some of their
 numbers (the [list](MANUAL.md#6-presets)); F20-F57 follow them (the appendix below).
 
 ### Saving a sound
@@ -132,7 +132,7 @@ the Move runs and shown 4 times larger.
   shows that the effects are off (FX OFF, the Left arrow). An **`S`** shows that the sustain holds (SUS ON, the Right
   arrow).
 
-![The header with the effects off (X) and the sustain on (S); the FX and SUS cards agree](manual/img/move/move-header-fx-sus.png?v=333d757c)
+![The header with the effects off (X) and the sustain on (S); the FX and SUS cards agree](manual/img/move/move-header-fx-sus.png?v=0f0541f8)
 
 - **The large card**: touch a knob, or turn it, and its card fills the screen: the name, the value in large letters,
   a wide bar of the same kind and, along the bottom, a mark for each of the page's knobs, the one you hold filled.
@@ -145,7 +145,7 @@ the Move runs and shown 4 times larger.
 - **A message** shows in a box for about a second: `SPRD RESET` after a double tap, `SAVED U05` after a save,
   `NOT SAVED` when you leave the save card with Back.
 
-![A double tap on SPREAD: back to 0, SPRD RESET](manual/img/move/move-reset.png?v=c42be043)
+![A double tap on SPREAD: back to 0, SPRD RESET](manual/img/move/move-reset.png?v=105f51c4)
 
 - **The knob lights** show each knob's value, as on Schwung's own screens: knobs 1-4 white and 5-8 amber, brighter
   as the value grows, dark where the page has no control. **The Left arrow** is lit while the effects are on, **the
@@ -159,7 +159,7 @@ the Move runs and shown 4 times larger.
 Each page holds up to eight controls, one for each knob, in the FM-1's order and with the FM-1's ranges and
 defaults. The overview shows a name of at most four letters on each card (SPRD for SPREAD, DPTH for DEPTH, ATCC for
 AT CC); the large card shows the full name. The VOICE pages are those of the instrument that plays: PIANO VOICE for
-ST77, SUIT, FELT and DYNO, VIBES VOICE and VIBES MOTOR for VIBE, MARIMBA VOICE for MRMB. The VOICE pages follow TYPE,
+ST77, SUIT, FELT, DYNO and WHRL, VIBES VOICE and VIBES MOTOR for VIBE, MARIMBA VOICE for MRMB. The VOICE pages follow TYPE,
 so the page count is 13 or 14.
 
 | Page | Controls |
@@ -189,13 +189,13 @@ of its controls.
 
 ### FRODHES
 
-TYPE (ST77, SUIT, FELT, DYNO, VIBE, MRMB: the [FRODHES page](MANUAL.md#frodhes-the-main-page)'s TYPE), SPREAD
+TYPE (ST77, SUIT, FELT, DYNO, WHRL, VIBE, MRMB, the [FRODHES page](MANUAL.md#frodhes-the-main-page)'s TYPE, scrolled in that order on the screen), SPREAD
 (the keys across the stereo field: the manual's [MIDI](MANUAL.md#12-midi), CC 105), SUS ([Sustain](#sustain)), FX ([The
 effects](#the-effects)), PRESET (knob 5: the sound, its full name across knobs 5-7; [Presets and
 saving](#presets-and-saving)) and the delay's MIX (DELAY, knob 8, the FM-1's PERFORM name for it). Knobs 6 and 7 have
 no control here.
 
-![FRODHES](manual/img/move/move-frodhes.png?v=ba262a7f)
+![FRODHES](manual/img/move/move-frodhes.png?v=630fd25b)
 ![Knob 5 touched: the preset, its name above and its number large](manual/img/move/move-frodhes-k5.png?v=caea2c9e)
 
 ### PIANO VOICE, VIBES VOICE, VIBES MOTOR, MARIMBA VOICE
@@ -341,12 +341,14 @@ back. SUS is not saved with it: a set that loads starts with SUS off and FX on, 
 PRESET on the first page turns through the factory sounds and the 16 user slots, in this order:
 
 - **F01-F19**, the FM-1's factory presets, the same sounds (described in the manual's [presets](MANUAL.md#6-presets)).
-- **F20-F57, on the Move only**: two more versions of each FM-1 preset, made for the Move ([the
+- **F20-F57, on the Move only**: two more versions of each of F01-F19, made for the Move ([the
   list](#appendix-the-factory-presets-f20-f57)).
+- **F58-F61**: the four WHURLI presets, the FM-1's F20-F23 (WHURLI, REED GROWL, REED TREM, REED SOFT), after the others so
+  that no earlier preset or program change moved.
 - **U01-U16**, the user slots.
 
-Program change loads them as on the FM-1 (0-15 F01-F16, 16-31 U01-U16, 32-34 F17-F19). Program change 35-72 loads
-F20-F57: the preset number plus 15 (F20 is 35, F57 is 72).
+Program change loads them as on the FM-1 (0-15 F01-F16, 16-31 U01-U16, 32-34 F17-F19). Program change 35-76 loads
+F20-F61: the preset number plus 15 (F20 is 35, F57 is 72, F58 WHURLI is 73, F61 is 76).
 
 ## Sustain
 
@@ -441,7 +443,7 @@ them.
 ## Updating and removing
 
 **Updating.** Unload Frodhes from every track first: a module that plays must not be replaced under it. Then install
-the new version the same way as the first (From GitHub URL or From Tarball). Once Frodhes is in the catalog, Schwung
+the new version the same way as the first (From GitHub URL or From Tarball). As Frodhes is in the catalog, Schwung
 Manager shows a new version next to it (**Update**, or **Update All**). If the manager asks for a restart, restart.
 An update keeps your settings and user presets.
 
@@ -466,7 +468,7 @@ and user presets stay on the Move. To remove them too, delete the folder
 - **Not on the Move**: the PERFORM, ASSIGN and DISPLAY pages (the Move has its own pads, knobs and screen); the
   sequencer, the chords and the scales (the Move has its own; their CCs do nothing); the BPM and CLOCK settings;
   KEY VEL, TOUCH, USB VOL, TRS, COLOR, BRIGHT and LEDS.
-- **Only on the Move**: the factory presets F20-F57 ([Presets and saving](#presets-and-saving)), the pressure
+- **Only on the Move**: the factory presets F20-F61 ([Presets and saving](#presets-and-saving)), the pressure
   [mappings](#lfosetup-mappings), SAVE TO USER from the menu, Schwung's own presets, and several Frodhes at once.
 - SPREAD and the compressor's RELEASE, set on the FM-1 by MIDI or a page of their own, are on the pages here.
 - The sound is part of the Move's set.

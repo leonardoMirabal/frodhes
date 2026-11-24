@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""The METERS look (private UI-SIMPLIFY-PLAN §2, §5, §10), checked on host screenshots of every page x every TYPE.
+"""The METERS look, checked on host screenshots of every page x every TYPE.
 
 How it reads the screen: the host build (tests/host.c) runs a script per TYPE that walks every page with SELECT; at
 each page it takes a screenshot (PPM: the 240 x 240 framebuffer as the firmware wrote it) and asks the firmware what
@@ -388,7 +388,7 @@ def meters():
     s = read_probes(r).get(T0, {})
     missing = [k for k in ("row0", "hot") if s.get(k, None) is None]
     if missing and not os.environ.get("FRODHES_METERS_FORCE"):
-        pytest.skip(f"the METERS build is not merged (host_state has no {', '.join(missing)}: UI-SIMPLIFY lane B)")
+        pytest.skip(f"the METERS build is not merged (host_state has no {', '.join(missing)})")
     return True
 
 

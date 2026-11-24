@@ -73,6 +73,9 @@ int frg_view_poll_fd(const frg_view *v);
 void frg_view_poll(frg_view *v);
 /* the platform's CLAP window API name ("cocoa", "win32", "x11": CLAP_WINDOW_API_*) */
 extern const char *const FRG_VIEW_API;
+/* 1 when the platform's window sizes (CLAP gui get / set_size, the host's resize) are in points that the backing scale
+ * multiplies into pixels (macOS), 0 when they are physical pixels (Windows, Linux): set next to FRG_VIEW_API */
+extern const int FRG_VIEW_SIZES_IN_POINTS;
 /* the tests: what the view shows now (its own pixel buffer; macOS: read back from the layer), w x h, 0xFFRRGGBB, valid
  * until the next call; NULL when nothing was painted yet */
 const uint32_t *frg_view_grab(frg_view *v, int *w, int *h);

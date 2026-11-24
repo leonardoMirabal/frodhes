@@ -107,6 +107,7 @@ def main():
            "static const uint8_t RH_VM_MK[RH_NKEY][RH_MK_N] = {"]
     out += ["  {" + ",".join(map(str, r)) + "}," for r in rows] + ["};"]
     open(HDR, "w").write("\n".join(out) + "\n")
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "gen_rh_pack.py")], check=True)   # (the firmware links the packed rows)
     print("wrote %s" % HDR, file=sys.stderr)
 
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""T1, the must-pass tier of the release test plan (private TEST-PLAN v2): six real-use scenarios on the FM-1, judged
+"""T1, the must-pass tier of the release test plan (v2): six real-use scenarios on the FM-1, judged
 first by the firmware's own counters (CC 116: USB underruns / missed / overruns, the ring's true low point, the whole
 audio ISR, the ISR entry spacing, voices shed; read every 0.5 s), then by the audio (USB: repeated / stale frames by
 tools/hil_crackle.py's own repeat and stale detectors, hil_crackle.usb_judge, the one definition T1 judges USB audio
@@ -795,7 +795,7 @@ class Must:
         if jack:
             if xj is None:
                 audio.append(("jack: recorded", f"no interface {self.a.jack_dev!r} input {self.a.jack_ch}",
-                              "the jack recorded (TEST-PLAN: the jack is the reference)", "SKIP"))
+                              "the jack recorded (the jack is the reference)", "SKIP"))
             else:
                 audio += audio_rows("jack", xj[:, 0], j.sr, events, mj + 0.01, switch_times, repeats_gate=False,
                                     clicks_gate=clicks_gate, ccs=pm)

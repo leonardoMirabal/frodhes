@@ -13,7 +13,7 @@ This page covers only the SMK-37: the files, the install, the way back and the c
 cards do to the sound is the same on every device and is described once, in the [manual](MANUAL.md) (sections 2-14,
 the [pages](MANUAL.md#4-the-pages) in section 4); the SMK-37 reaches them as below ([The controls](#the-controls)).
 
-![The FRODHES page on the SMK-37: TYPE, TONE and BELL on K5..K7](manual/img/smk/smk-frodhes.png?v=c80c649f)
+![The FRODHES page on the SMK-37: TYPE, TONE and BELL on K5..K7](manual/img/smk/smk-frodhes.png?v=857f5b7f)
 
 ## The files
 
@@ -130,7 +130,7 @@ keys: KEY VEL is the velocity of a medium press, and TOUCH works as on the FM-1 
 
 | Pad | Does | Pad | Does |
 | --- | --- | --- | --- |
-| 1..6 | TYPE: ST77, SUIT, FELT, DYNO, VIBE, MRMB | 9 | DRIVE on / off |
+| 1..6 | TYPE: ST77, SUIT, FELT, DYNO, VIBE, MRMB (WHURLI: ALGORITHM or a preset) | 9 | DRIVE on / off |
 | 7 | previous preset | 10 | COMP on / off |
 | 8 | next preset | 11 | FILTER on / off |
 | | | 12 | TREM/WAH on / off (VIBES: the motor) |

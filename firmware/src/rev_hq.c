@@ -26,7 +26,7 @@ static union { rev_hqh_t h; rev_plate_t p; rev_inf_t i; } rev_u POOL;
 /* the cost, us per 256-frame block (fx_cost_us: the voice shedder and the bar engine's budget see it). The compiled
  * loops' instructions per sample (pi32v2 clang -Os, tools/drive_insns.py -D FR_REV_HQ=1 --firmware ..., the loud
  * paths) x 256, + the per-control-block code x 8, at the half-rate HALL's measured rate: its 45152 instructions a
- * block (5644 a control block) for REV_US_HALL 223 us = 4.94 ns an instruction (FX-CPU-STUDY: ~5 ns):
+ * block (5644 a control block) for REV_US_HALL 223 us = 4.94 ns an instruction (the effects' CPU study: ~5 ns):
  *   REV_US_FRONT  the send ~10 + rq_in 17 + rq_ret 21 = 48 a sample: 12.3k                       ->  61 -> 70
  *   HALL          rqh_end 4 x 20 + 4 x 15, rqh_mix8 109, rqh_dif 4 x 21 = 333 a sample + ~600 a control
  *                 block: 90k                                                                    -> 445
@@ -95,11 +95,16 @@ static FX_RAM __attribute__((noinline)) void rq_in(const int32_t *in, int32_t *o
     int32_t hp = rv_hp, he = rv_he;
     uint32_t i;
     for (i = 0; i < RQ_NC; i++) {
+#if FR_OWN
+        int32_t x = mulq15(clampi(FX_HC(1, in[i], -131071, 131071), -131071, 131071), hl);
+        out[i] = own_dc_hp(x, &hp, &he);
+#else
         int32_t x = mulq15(clampi(FX_HC(1, in[i], -131071, 131071), -131071, 131071), hl), v;
         v = x - hp + he;
         he = v & 63;
         hp += v >> 6;
         out[i] = x - hp;
+#endif
     }
     rv_hp = hp, rv_he = he;
 }

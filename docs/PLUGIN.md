@@ -22,6 +22,14 @@ the project (`.local/plugin-deps`), pinned by commit and checked at configure ti
 
 The bundles are universal (Apple silicon and Intel). `make plugin` installs nothing.
 
+**Own-code build.** The plugin is built with `FR_OWN=1` (`plugin/cmake/slots.cmake`), so it compiles only Frodhes' own
+code plus the pinned libraries. `FR_OWN` swaps in the drive (`drv_own1.c`), the delay loops (`dly_own.c`), the small
+fixed-point helpers (`fx_own.h`) and the pitch-bend and scale tables; `FR_OWN_HAL` swaps the platform layer for
+`plugin/src/own_hal.c`. In this build **DRIVE TYPE 1 is WARM**, a drive of its own, in place of the FM-1's FDRV: the
+parameter, its range and the presets stay the same, the sound of that type differs, and the other four types are
+unchanged. The FM-1, Move, MPC and web builds keep FDRV. `make gate-o` renders both switches and compares them
+(docs/ARCHITECTURE.md).
+
 ## Try it in a DAW
 
 Copy the bundle your host uses into your plug-in folder, clear the download flag, and rescan:
@@ -43,7 +51,7 @@ the FM-1.
 ![The plugin's window: the VOICE knobs, two effect sections and a keyboard](manual/img/plugin/plugin-main.png?v=a6729600)
 
 <p align="center">
-  <img src="manual/img/plugin/plugin-presets.png?v=cec41ef5" width="384" alt="PRESETS: every factory and user sound, grouped by instrument">
+  <img src="manual/img/plugin/plugin-presets.png?v=6d4d2636" width="384" alt="PRESETS: every factory and user sound, grouped by instrument">
   <img src="manual/img/plugin/plugin-save.png?v=96849c7d" width="384" alt="SAVE: the name field in place of the preset's name">
 </p>
 
@@ -57,11 +65,11 @@ uncached draw.
 | | |
 | --- | --- |
 | Knobs | drag up / down (200 points for the whole range), Shift for ten times finer, the wheel, double-click the value text to type a value (Enter sets the value whose text is nearest the number, Esc or a click elsewhere leaves it), double-click the knob itself (or Command-click; Control-click on Windows and Linux) for the default, right-click (or Control-click on macOS) for MIDI LEARN, FORGET and DEFAULT VALUE |
-| Switches, menus, tabs | click; the wheel steps a switch or a menu |
+| Switches, menus, tabs | click; the wheel steps a switch or a menu. Click an effect's lamp on its tab (FILTER to REVERB) to switch the effect on or off; back on, it has the setting it had before |
 | Keyboard focus | click a control or Tab / Shift-Tab; the arrows step the value (Shift: by 10), Page Up / Down by 10, Home / End, Delete the default, Enter opens a menu, Esc closes a menu, SETTINGS or the focus. Other keys go to the host |
 | The keys | play notes (lower on the key: louder); held notes light up, the host's too |
 | SUSTAIN, EFFECTS | latch the sustain (CC 64); bypass every effect (the app's FX button, CC 111). An effect that is off, and every effect under BYPASS, draws its knobs inactive (dimmed; they still answer) and its tab's lamp out; MOTOR, the instrument's own, is never bypassed |
-| The preset's name | PRESETS: every preset grouped by instrument (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO, VIBES, MARIMBA), each group the factory presets then the user's, the one playing marked; a click loads one and leaves the sheet open, so the keys, SUSTAIN and EFFECTS try it at once; the wheel or the pager turns the pages of a long list; Esc, the close key or the preset's name close it. The arrows step through the presets as before |
+| The preset's name | PRESETS: every preset grouped by instrument (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO, WHURLI, VIBES, MARIMBA), each group the factory presets then the user's, the one playing marked; a click loads one and leaves the sheet open, so the keys, SUSTAIN and EFFECTS try it at once; the wheel or the pager turns the pages of a long list; Esc, the close key or the preset's name close it. The arrows step through the presets as before |
 | SAVE | a name field in the preset box, the playing preset's name selected: type to replace it (capitals, up to 24 characters), Backspace / Delete edit, Enter (or SAVE again) saves the sound as a user preset of that name, Esc or a click elsewhere leaves it. REPLACE in the field: a user preset of that name exists and is overwritten. While the field is open the window keeps every key |
 | The gear | SETTINGS |
 
@@ -77,9 +85,9 @@ the window has).
 
 | | |
 | --- | --- |
-| Engine | HQ only: every engine (the Rhodes types, VIBES, MARIMBA) on its HQ float path and every effect on its HQ path (the full-rate reverb TYPEs, the compressor kept through EFFECTS BYPASS: the Move's and the two-core FM-1's build switches), with **24 voices on every engine**. 24 keys held all sound; a 25th steals a voice (faded out over one 5.8 ms block: no click). The FM-1's own 10-voice integer build (CLASSIC, an ENGINE parameter until 2026-11) is not in the plugin any more: a saved state or project that asks for it loads its sound on HQ |
-| Parameters | the app's 67 parameters with their FM-1 ids (stable: saved sessions and automation keep them), ranges and texts, grouped by module, plus TUNE, PRESET (F01-F57, for the host's own view), SUSTAIN (the latch), EFFECTS BYPASS and VELOCITY RESPONSE (the settings' RESPONSE, as CC 40: DEEP or EVEN) (72 in all; the id 0x10000, ENGINE's, stays reserved). A change the app makes itself (a program change, a CC, a preset) goes back to the host. Automation takes the device's own path: a sweep renders the same bytes as the same sweep sent as MIDI CCs, so the smoothing is the FM-1's |
-| Presets | F01-F19 (the FM-1's) and F20-F57 (the Move's variants), then the user's own, one file each (`*.frpreset`) in `~/Library/Application Support/Frodhes/Presets` (Linux `$XDG_DATA_HOME/frodhes/presets`, else `~/.local/share/frodhes/presets`; Windows `%APPDATA%\Frodhes\Presets`; `FRODHES_PRESET_DIR` overrides; the folders are made when the first preset is saved). In a sandboxed Audio Unit host the plugin uses the account's own folder when the sandbox lets it write there (the same presets as every other host), else the host's container (that host's presets only). The plugin-wide settings file has its place beside the presets (`settings.json`, `plugin/src/frp_paths.h`). Browse with wrap-around, UNDO as on the device. Program changes follow the FM-1's map, continued past F19 so that every factory preset can be reached: 0-15 F01-F16, 16-31 the first 16 user files (where there is none, the FM-1's own user bank: its starter sounds), 32-72 F17-F57 (32-34 are F17-F19 as on the FM-1, which has no preset after F19; 35-72 reach F20-F57 by the same rule). 73-127 load nothing |
+| Engine | HQ only: every engine (the electric piano types, VIBES, MARIMBA) on its HQ float path and every effect on its HQ path (the full-rate reverb TYPEs, the compressor kept through EFFECTS BYPASS: the Move's and the two-core FM-1's build switches), with **24 voices on every engine**. 24 keys held all sound; a 25th steals a voice (faded out over one 5.8 ms block: no click). The FM-1's own 10-voice integer build (CLASSIC, an ENGINE parameter until 2026-11) is not in the plugin any more: a saved state or project that asks for it loads its sound on HQ |
+| Parameters | the app's 67 parameters with their FM-1 ids (stable: saved sessions and automation keep them), ranges and texts, grouped by module, plus TUNE, PRESET (F01-F61, for the host's own view), SUSTAIN (the latch), EFFECTS BYPASS and VELOCITY RESPONSE (the settings' RESPONSE, as CC 40: DEEP or EVEN) (72 in all; the id 0x10000, ENGINE's, stays reserved). A change the app makes itself (a program change, a CC, a preset) goes back to the host. Automation takes the device's own path: a sweep renders the same bytes as the same sweep sent as MIDI CCs, so the smoothing is the FM-1's |
+| Presets | F01-F19 (the FM-1's), F20-F57 (the Move's variants) and F58-F61 (WHURLI, the FM-1's F20-F23), then the user's own, one file each (`*.frpreset`) in `~/Library/Application Support/Frodhes/Presets` (Linux `$XDG_DATA_HOME/frodhes/presets`, else `~/.local/share/frodhes/presets`; Windows `%APPDATA%\Frodhes\Presets`; `FRODHES_PRESET_DIR` overrides; the folders are made when the first preset is saved). In a sandboxed Audio Unit host the plugin uses the account's own folder when the sandbox lets it write there (the same presets as every other host), else the host's container (that host's presets only). The plugin-wide settings file has its place beside the presets (`settings.json`, `plugin/src/frp_paths.h`). Browse with wrap-around, UNDO as on the device. Program changes follow the FM-1's map, continued past F19 so that every factory preset can be reached: 0-15 F01-F16, 16-31 the first 16 user files (where there is none, the FM-1's own user bank: its starter sounds), 32-76 F17-F61 (32-34 are F17-F19 as on the FM-1; 35-76 reach F20-F61 by the same rule, the preset number plus 15, so the WHURLI presets F58-F61 are 73-76, where the FM-1 has them, as its F20-F23, at 35-38). 77-127 load nothing |
 | Settings | MIDI CHANNEL (ALL or 1-16), the velocity curve (MEDIUM as played, LIGHT, HEAVY: the device's TOUCH curves; FIXED with its velocity), program changes on / off, the tempo source (HOST: the DAW's tempo, 120 without one, a MIDI clock sent to the plugin still leads; INTERNAL: the BPM setting; MIDI CLOCK: an incoming clock, else the BPM setting), SYNC ALL (every tempo effect's SYNC at one division, also on every preset load), UPDATES (ON / OFF: the check for a newer release, below; the plugin's own, the same in every project). The sheet's title band shows VERSION, read only: a release's X.Y.Z, a developer build DEV and 4 hex digits of its commit, as the FM-1's MIDI page; when a newer release is out, an UPDATE / INSTALL X.Y.Z key before it |
 | MIDI learn | any knob (and TUNE, PRESET, SUSTAIN, BYPASS, VELOCITY RESPONSE) learns the next CC; a learned CC comes before the device's CC map; forget one or all; saved with the project |
 | State | the sound as the Move saves it (the 256-byte settings record and the sound it came from) plus the plugin's own keys (settings, learned CCs, SUSTAIN, EFFECTS BYPASS, the preset's name; version "pv" 3: "win", the window's size, once it was resized). A state without them (the first builds, a Move track) loads them as defaults (without "win": the window keeps its size); older builds ignore the keys they do not know; a broken or cut state is refused and changes nothing. The "engine" key is always written as HQ (an older build then loads the sound on its HQ engine) and never read: a state saved with ENGINE CLASSIC loads on HQ, 24 voices, and saves again as HQ |
@@ -335,6 +343,7 @@ CLAP support may need CLAP enabled in its plug-in preferences first.
 | | |
 | --- | --- |
 | `plugin/CMakeLists.txt`, `plugin/cmake/` | the build: the pins, the 16 engine slots (the HQ build, 24 voices), the formats through clap-wrapper |
+| `plugin/src/own_hal.c`, `own_store.h`, `own_gfx.h`, `own_touch.h` | the plugin's own platform layer (`FR_OWN_HAL`): clock, MIDI ring, storage in RAM, silent screen calls, key-velocity names |
 | `plugin/src/engine_unit.c`, `slot_bridge.h` | one engine slot: the app over the browser's platform layer, with every symbol private to the slot; its presets, MIDI learn, settings, state |
 | `plugin/src/bridge.c`, `bridge.h` | the instance: its slot, time, events, the UI queue, the resamplers, the user preset files |
 | `plugin/src/frp_os.h` | the oversampler: 160/147 polyphase and 2x half-band stages |

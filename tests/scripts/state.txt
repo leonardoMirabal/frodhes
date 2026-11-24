@@ -1,5 +1,5 @@
 # The state after every action: the panel is what the header names ("expect preset"), the engines and effects run
-# what the panel says ("expect sound"), and the LEDs and cards say the same (PLAN P11.2). LEDs: OCT- 0, OCT+ 1, FX 2,
+# what the panel says ("expect sound"), and the LEDs and cards say the same. LEDs: OCT- 0, OCT+ 1, FX 2,
 # SEL 3 (delay), ENV 4 (phaser), LFO 5 (trem/wah), EDIT 6, GLO 7, HOME 8, SAVE 9, ARP 10, SEQ 11, PLAY 12, REC 13.
 # Encoders: SELECT 0, ALGORITHM 1, K1-K4 2-5, PRESETS 6.
 #
@@ -139,8 +139,8 @@
 7500 turn 1 -1
 7600 expect sound
 7600 expect state bars 0
-7600 expect state card.2.0 BELL_DYNO
-7600 expect state msg BELL_DYNO
+7600 expect state card.2.0 WHURLI
+7600 expect state msg WHURLI
 # ---- FX bypass: the FX light goes out, nothing else changes; again: back
 7700 btn 2
 7800 expect led 2 0

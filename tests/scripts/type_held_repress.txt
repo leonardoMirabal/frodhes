@@ -50,12 +50,13 @@
 9300 expect rms > -40
 9400 midi 0x80 60 0
 10500 expect rms < -60
-# the panel: VIBES, 67 held; ALGORITHM (encoder 1) four steps back to ST77; note-on 67 again
+# the panel: VIBES, 67 held; ALGORITHM (encoder 1) five steps back to ST77 (WHURLI between); note-on 67 again
 10600 midi 0x90 67 100
 10900 turn 1 -1
 10920 turn 1 -1
 10940 turn 1 -1
 10960 turn 1 -1
+10980 turn 1 -1
 11100 expect state bars 0
 11200 midi 0x90 67 100
 11400 expect rms > -40

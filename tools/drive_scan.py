@@ -39,11 +39,23 @@ FS = 44100
 
 
 def type_names(tree=None):
-    """params.c N_DRV: the P_DRV_SW value of each name (OFF 0, FDRV 1, ...); CLASSIC is FDRV's other name"""
+    """params.c N_DRV: the P_DRV_SW value of each name (OFF 0, FDRV 1, ...); CLASSIC is FDRV's other name; the names
+    the plugin's own-code build gives (its N_DRV under FR_OWN: TYPE 1's own name) map to the same values"""
     import re
     src = open(os.path.join(tree or ROOT, "firmware", "src", "params.c")).read()
-    names = re.findall(r'"([^"]+)"', re.search(r"N_DRV\[\] = \{([^}]*)\}", src).group(1))
-    return dict({n: i for i, n in enumerate(names)}, CLASSIC=1)
+    lists = [re.findall(r'"([^"]+)"', m) for m in re.findall(r"N_DRV\[\] = \{([^}]*)\}", src)]
+    out = {}
+    for names in reversed(lists):
+        out.update({n: i for i, n in enumerate(names)})
+    return dict(out, CLASSIC=1)
+
+
+def own_name(tree=None):
+    """TYPE 1's name in the plugin's own-code build (params.c N_DRV under FR_OWN), or None"""
+    import re
+    src = open(os.path.join(tree or ROOT, "firmware", "src", "params.c")).read()
+    lists = [re.findall(r'"([^"]+)"', m) for m in re.findall(r"N_DRV\[\] = \{([^}]*)\}", src)]
+    return lists[1][1] if len(lists) > 1 else None
 
 
 TYPES = type_names()

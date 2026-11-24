@@ -114,6 +114,7 @@ static int b_setting_get(void *ctx, int key, int *v)
     case FRP_UI_WIN_W: if (!frp_ui_win_w(c->pc)) return -1; *v = frp_ui_win_w(c->pc); return 0;
     case FRS_UPDCHK: *v = frp_update_enabled(); return 0;     /* (the plugin's, every project's: the settings file) */
     }
+    if (key >= FRP_UI_FX_LAST && key < FRP_UI_FX_LAST + 6) { *v = frp_ui_fx_last(c->pc, key - FRP_UI_FX_LAST); return 0; }
     frp_ui_settings_get(c->pc, &s);
     if (!(f = set_field(&s, key))) return -1;
     *v = *f;
@@ -131,6 +132,7 @@ static void b_setting_set(void *ctx, int key, int v)
     case FRP_UI_WIN_W: frp_ui_win_w_set(c->pc, v); return;
     case FRS_UPDCHK: frp_update_set_enabled(v != 0); return;
     }
+    if (key >= FRP_UI_FX_LAST && key < FRP_UI_FX_LAST + 6) { frp_ui_fx_last_set(c->pc, key - FRP_UI_FX_LAST, v); return; }
     frp_ui_settings_get(c->pc, &s);
     if (!(f = set_field(&s, key))) return;
     *f = v;
@@ -271,7 +273,7 @@ static bool g_create(const clap_plugin_t *plugin, const char *api, bool is_float
 {
     frp_gui_clap_t *c = GUI(plugin);
     if (!c || !g_api_ok(api, is_floating) || c->core) return false;
-    c->px_api = strcmp(api, CLAP_WINDOW_API_COCOA) != 0;
+    c->px_api = !FRG_VIEW_SIZES_IN_POINTS;
     saved_size(c);
     c->core = frp_gui_new(&c->uh);
     if (!c->core) return false;

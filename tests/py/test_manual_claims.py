@@ -5,7 +5,7 @@ the largest |second difference| from 3 ms before to 30 ms after the change, agai
 without the change and the render that had the new setting from the start; over 10x is a click. Level claims compare
 RMS over 50 ms windows.
 
-The promises 0.9.5 does not keep are expected failures with their finding (private/BUGHUNT-095.md); strict=False."""
+The promises 0.9.5 does not keep are expected failures with their finding (the bug list); strict=False."""
 import numpy as np
 import pytest
 

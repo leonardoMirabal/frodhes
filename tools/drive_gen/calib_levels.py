@@ -26,7 +26,7 @@ import bar_measure as bm  # noqa: E402
 import drive_scan as ds  # noqa: E402
 
 def _private():
-    """private/ of this checkout, or of the main checkout this worktree hangs from (.claude/worktrees/<name>)"""
+    """the gitignored notes folder of this checkout, or of the main checkout this worktree hangs from (.claude/worktrees/<name>)"""
     d = ROOT
     while d != os.path.dirname(d):
         if os.path.isdir(os.path.join(d, "private", "drive")):

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""MARIMBA (bar TYPE 1) data, tables and Gate VA-M on the golden model (MARIMBA PLAN §7, tools/marimba_va.py): every
+"""MARIMBA (bar TYPE 1) data, tables and Gate VA-M on the golden model (tools/marimba_va.py): every
 gated check of the plan's §0 / §2 passes on the generated marimba spec (docs/model/data/marimba_spec.json) before
 any C reads it; the marimba's rows in the header are its spec's; the data file follows the schema."""
 import json
@@ -19,7 +19,7 @@ SPEC = json.load(open(SPEC_PATH)) if os.path.exists(SPEC_PATH) else None
 pytestmark = pytest.mark.skipif(SPEC is None, reason="no marimba_spec.json (the stub header)")
 
 # Gate VA-M checks that fail on the present data, with the reason (they stay measured and visible; the listening
-# packs C decide: MARIMBA PLAN §2.6).
+# packs C decide).
 KNOWN = {
     "M5 attack centroid v40 -> v117 on C4 MED": "the plan's 1.4x (a VIBES number) is out of reach on a wooden bar "
     "with the MED yarn: its contact on C4 (1.5-3 ms) keeps V2 / V3 20-40 dB under the fundamental at every velocity "
@@ -109,7 +109,7 @@ def test_mallet_map_moves_no_key_by_a_step():
     """card_level fam_map (gen_bars.shape_kn_fam): MARIMBA's KN_FAM row keeps the shared detents (0 / 42 / 64 / 85 /
     127 = one family each), rises monotonically, and on the golden model no authentic key's loudness (K-weighted over
     card_level t_s, v100 and v127, default cards) moves by more than 1.5 dB per 4 raw on the S10 grid's MALLET
-    values (0, 4 .. 120, 127: PLAN 10.2 B4, including the family knees). The linear map moved G3..E4 by 1.5..1.7 dB at the HARD ->
+    values (0, 4 .. 120, 127: B4, including the family knees). The linear map moved G3..E4 by 1.5..1.7 dB at the HARD ->
     RUBBER knee (the family ceiling turns RUBBER down up to 12 dB there)"""
     import numpy as np
     import bars_model as gm
@@ -127,7 +127,7 @@ def test_mallet_map_moves_no_key_by_a_step():
         assert step.max() <= 1.5, (vel, keys[int(step.max(axis=0).argmax())], float(step.max()))
 
 
-# ---------------------------------------------------------------- the marimba's pins (MARIMBA PLAN §20: as VIBES's)
+# ---------------------------------------------------------------- the marimba's pins (as VIBES's)
 MVB = json.load(open(gb.MARIMBA))
 MFE = gb.load_fe_pins(MVB, gb.MAR_FE_PINS)
 MPINS = gb.load_pins(gb.MAR_PINS)

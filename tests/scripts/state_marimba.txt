@@ -60,7 +60,7 @@
 3500 expect state card.2.0 MARIMBA
 3500 expect state bars 1
 3500 expect sound
-# ---- ALGORITHM: MARIMBA is the last TYPE (one more detent stays); down: VIBES
+# ---- ALGORITHM: MARIMBA is the last TYPE in the scroll order (one more detent stays); down: VIBES
 3600 turn 1 1
 3700 expect state card.2.0 MARIMBA
 3800 turn 1 -1

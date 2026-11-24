@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""The stub proof (MARIMBA PLAN §8.1 item 4), re-runnable: the per-type plumbing in bars.c cannot alter a sample.
+"""The stub proof, re-runnable: the per-type plumbing in bars.c cannot alter a sample.
 
     tools/marimba_stub_proof.py
 
@@ -25,6 +25,8 @@ def main():
     if not os.path.exists(os.path.join(gen, "bars_tables.h")) or "--regen" in sys.argv:
         subprocess.run([PY, os.path.join(ROOT, "tools", "gen_bars.py"), "--stub", "--out", gen], check=True,
                        capture_output=True, cwd=ROOT)
+    subprocess.run([PY, os.path.join(ROOT, "tools", "gen_bars_pack.py"), "--src", os.path.join(gen, "bars_tables.h"),
+                    "--out", gen], check=True, capture_output=True, cwd=ROOT)   # (the firmware links the packed form)
     hdr = open(os.path.join(gen, "bars_tables.h")).read()
     assert "1 STUB" in hdr, "not the stub header"
     binary = os.path.join(OUT, "frodhes")

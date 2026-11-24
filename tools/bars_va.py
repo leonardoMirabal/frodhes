@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Gate VA (VIBES PLAN §10): the golden model (tools/bars_model.py) on the generated, quantised spec
+"""Gate VA: the golden model (tools/bars_model.py) on the generated, quantised spec
 (docs/model/data/bars_spec.json) against the physics data (vibes.json, the reference measurements).
 
     python3 tools/bars_va.py            -> every check with its number and PASS / FAIL / REPORT (build/bars_va/report.txt)
@@ -540,7 +540,7 @@ def motor_checks(spec):
 
 def main():
     if "--type" in sys.argv and sys.argv[sys.argv.index("--type") + 1].lower() == "marimba":
-        import marimba_va                                # Gate VA-M (MARIMBA PLAN §7)
+        import marimba_va                                # Gate VA-M
         sys.argv = [a for a in sys.argv if a.lower() not in ("--type", "marimba")]
         return marimba_va.main()
     res = checks()

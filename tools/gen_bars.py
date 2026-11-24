@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Generate the VIBES bar-engine tables from the physics (VIBES PLAN §4.4, §4.6).
+"""Generate the VIBES bar-engine tables from the physics.
 
     tools/gen_bars.py [--strict] [--out DIR]   -> firmware/gen/bars_tables.h  +  docs/model/data/bars_spec.json
                                                   (or both into DIR)
@@ -13,10 +13,10 @@
                                                   marimba_pitch_pins.json; then --repin-marimba-pair re-solves the words
     tools/gen_bars.py --vibes-only             the one-type header (VIBES alone, BAR_NTYPE 1: the 0.9.3 format)
     tools/gen_bars.py --both --out DIR         DIR/bars_tables.h (every type) + DIR/bars_tables_vibes.h (--vibes-only)
-    tools/gen_bars.py --marimba-offset-add DB --out DIR   an A/B header for listening (MARIMBA PLAN §12.5): MARIMBA's
+    tools/gen_bars.py --marimba-offset-add DB --out DIR   an A/B header for listening: MARIMBA's
                                                   calib.st77_offset_db + DB, the ceiling / roll-off stages as always
 
-The default header holds every bar TYPE (MARIMBA PLAN §8.2: per-type BAR_KEYS / BAR_PRATE / BAR_PAMP / KN_FAM / KN_MASS /
+The default header holds every bar TYPE (per-type BAR_KEYS / BAR_PRATE / BAR_PAMP / KN_FAM / KN_MASS /
 KN_MASSI / KN_TUBE / KN_NZ / BAR_BODY / BAR_TYPE, the band tables global with BAR_PBAND). Type 0 is VIBES and each of
 its rows equals the --vibes-only header's (tests/py/test_gen_bars.py, field by field).
 
@@ -189,7 +189,7 @@ def interp_log(n, xs, ys):
     return float(math.exp(np.interp(n, xs, np.log(ys))))
 
 
-# ---------------------------------------------------------------- the type (MARIMBA PLAN §6: one header, several types)
+# ---------------------------------------------------------------- the type (one header, several types)
 MARIMBA = os.path.join(ROOT, "docs", "model", "data", "marimba.json")
 MAR_PINS = os.path.join(ROOT, "docs", "model", "data", "marimba_pins.json")
 MAR_FE_PINS = os.path.join(ROOT, "docs", "model", "data", "marimba_fe_pins.json")
@@ -413,7 +413,7 @@ def pair_split_hz(bt, sigma):
 
 
 def make_pair_mar(vb, n, zr, target):
-    """MARIMBA PLAN §6 step 4, regime-aware: sigma solved for the V1-with-tube target inside [lo, hi_eff] on whichever
+    """Regime-aware: sigma solved for the V1-with-tube target inside [lo, hi_eff] on whichever
     side the T60 moves (bartube.solve_sigma2); hi_eff = the weak-regime clamp where zeta_r > zeta_n (no splitting at
     BELL's top, as VIBES), else the split limit (the strongly coupled pair no more than T5a split_max_hz apart at
     BELL 64: past the critical coupling the pair splits by ~sigma f0 and the note beats). Returns (bt, clamp, limit):
@@ -1732,7 +1732,7 @@ def shape_error_x(phys, ct, n, shapes_r, nfam=NFAM):
 
 
 def share_pulses(vb, phys, ct, vspec):
-    """MARIMBA PLAN §3.2, as built: the pulse shapes are grouped over runs of consecutive position bands (greedy from
+    """As built: the pulse shapes are grouped over runs of consecutive position bands (greedy from
     the bottom, each run as long as one shape stands for all its keys within bands.pulse_tol_db); a run plays the
     VIBES pulse band or the key of its own whose shapes give the least worst error (shape_error: V1..V3 excitation at
     v40 / v100 / v127 within 30 dB of the DC), a VIBES one when it is within the tolerance (no flash), else its own,
@@ -1810,7 +1810,7 @@ def pair_stage(vb, fec, zt):
 
 def build(vb=None, vspec=None):
     """The spec of one bar type: VIBES (vb None: vibes.json) or a later type (vb its data, vspec VIBES's spec: its
-    pulse shapes are shared, MARIMBA PLAN §3.2). Call build_type for a later type (the per-type globals)."""
+    pulse shapes are shared). Call build_type for a later type (the per-type globals)."""
     vb = vb or load_vibes(strict="--strict" in sys.argv)
     mar = is_mar(vb)
     assert [f["detent"] for f in vb["T7c"]["families"]] == FAM_DETENT and len(FAM_DETENT) == NFAM, "T7c detents"
@@ -2167,7 +2167,7 @@ def build(vb=None, vspec=None):
                               win_ms=ct[n][q]["win_ms"], ncont=ct[n][q]["ncont"], shapes=ct[n][q]["shapes"],
                               prate=ct[n][q]["prate"]) for q in range(NFAM)],
                  grid=grid[n - KEY_LO])
-        if mar:                                       # the regime-aware pair's report (MARIMBA PLAN §6 step 4)
+        if mar:                                       # the regime-aware pair's report
             nm_ = bt.modes2()
             d.update(regime=k["regime"], split_hz=abs(nm_[0][0] - nm_[1][0]),
                      v1_target_cents=round(1200 * math.log2(v1_target(vb, k) / k["f0"]), 6),   # (rounded: libm exp)
@@ -2333,7 +2333,7 @@ def emit(spec):
     return body + f"/* sha256(body) = {digest} */\n"
 
 
-# ---------------------------------------------------------------- the multi-type header (MARIMBA PLAN §8.2)
+# ---------------------------------------------------------------- the multi-type header
 TYPE_FLAG_MOTOR, TYPE_FLAG_DAMPER = 1, 2
 
 
@@ -2349,13 +2349,13 @@ def type_record(spec, vb):
 
 
 def stub_type(spec):
-    """MARIMBA PLAN §8.1 item 4: type 1 = an exact copy of VIBES's tables (flags 3), so the per-type plumbing in bars.c
+    """Type 1 = an exact copy of VIBES's tables (flags 3), so the per-type plumbing in bars.c
     can be proven not to alter a sample (TYPE 5 renders byte-identical to TYPE 4) before any marimba data exists."""
     return dict(spec, name="STUB (a copy of VIBES)")
 
 
 def emit_multi(specs, vbs):
-    """The header with one row per bar TYPE (MARIMBA PLAN §8.2): BAR_KEYS / BAR_PRATE / BAR_PAMP / KN_FAM / KN_MASS / KN_MASSI
+    """The header with one row per bar TYPE: BAR_KEYS / BAR_PRATE / BAR_PAMP / KN_FAM / KN_MASS / KN_MASSI
     / KN_TUBE / KN_NZ / BAR_BODY / BAR_TYPE indexed [type] (read at note-on or by the main loop, never per sample);
     the band tables global: the position bands (BAR_POS / BAR_POSG / BAR_TUBEG, VIBES's 0..16 then each later type's
     own) and the pulse shapes (BAR_PULSE, VIBES's 0..16 then appended ones), BAR_PBAND mapping a position band to its
@@ -2377,7 +2377,7 @@ def emit_multi(specs, vbs):
     w = L.append
     w("/* SPDX-License-Identifier: GPL-3.0-only */")
     w("/* GENERATED by tools/gen_bars.py from docs/model/data/vibes.json (type 0) + the later types - do not edit. */")
-    w("/* The bar engine tables, one row per bar TYPE (VIBES PLAN §4.4, MARIMBA PLAN §8.2). Include after rhodes_tables.h")
+    w("/* The bar engine tables, one row per bar TYPE. Include after rhodes_tables.h")
     w(" * (rh_mode_t, RH_NANCH). Types: " + ", ".join("%d %s" % (i, s.get("name", "VIBES")) for i, s in enumerate(specs)) + ".")
     w(" * Run-time arithmetic the golden model (tools/bars_model.py) assumes, per type t (bars.c's bar_sub):")
     w(" *   BAR_POS: q = raw * 4096 / 127, point q >> 8, w = P[i] + (((P[i+1] - P[i]) * (q & 255)) >> 8); b = km->b * w >> 14;")
@@ -2526,7 +2526,7 @@ def main():
         spec = build()
     vb = spec["vibes"]
     mspec = None
-    if "--stub" in sys.argv:                              # type 1 = a copy of VIBES (MARIMBA PLAN §8.1 item 4)
+    if "--stub" in sys.argv:                              # type 1 = a copy of VIBES
         specs, vbs = [spec, stub_type(spec)], [vb, vb]
     elif "--vibes-only" in sys.argv:
         specs, vbs = [spec], [vb]
@@ -2535,7 +2535,7 @@ def main():
         errs = check_vibes(mvb, "--strict" in sys.argv)
         if errs:
             raise SystemExit("marimba.json: " + "; ".join(errs))
-        if "--marimba-offset-add" in sys.argv:            # an A/B level for listening (MARIMBA PLAN §12.5): MARIMBA's
+        if "--marimba-offset-add" in sys.argv:            # an A/B level for listening: MARIMBA's
             add = float(sys.argv[sys.argv.index("--marimba-offset-add") + 1])   # calib.st77_offset_db + add, the rest
             mvb["calib"]["st77_offset_db"] = float(mvb["calib"]["st77_offset_db"]) + add   # as the data says (the
             print("MARIMBA A/B: calib.st77_offset_db %+.1f dB (marimba.json %+.1f %+.1f); never the default: use --out"

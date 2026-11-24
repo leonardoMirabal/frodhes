@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Host-only prototype of the pulse-bank decoders (private/PULSE-COMPRESSION-PLAN.md), not firmware code.
+/* Host-only prototype of the pulse-bank decoders, not firmware code.
  * Built and run by `python3 tools/pulse_codec_study.py --emit-c build/pz`, which writes build/pz/pz_streams.h (the
  * streams of the real RH_PULSE / BAR_PULSE and the reference banks). Integers only, no 64-bit divide, no libcalls:
  * the shape the firmware decoder would take. Exit 0 = every value of both banks decoded bit-exactly, both formats.

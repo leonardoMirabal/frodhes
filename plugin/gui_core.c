@@ -54,6 +54,7 @@ struct frp_gui {
     float lvl[2], pk[2];
     double pk_t[2];
     uint8_t own_notes[128];          /* the keyboard's own notes (shown at once, before the app reports them) */
+    int loc_fxl[FRT_NR];             /* the lamps' memory when the host keeps none (FRP_UI_FX_LAST: the instance's) */
     /* the platform view (frp_gui_client) */
     frg_client cl;
     const uint32_t *tpx;             /* the view's buffer the canvas was last copied into */
@@ -80,6 +81,7 @@ static int *loc_setting(frp_gui_t *g, int key)
     if (key >= FRS_CHANNEL && key <= FRS_UPDCHK) return &g->loc_set[key - FRS_CHANNEL];
     if (key == FRP_UI_TUNE) return &g->loc_tune;
     if (key == FRP_UI_FX_BYPASS) return &g->loc_fx;
+    if (key >= FRP_UI_FX_LAST && key < FRP_UI_FX_LAST + FRT_NR) return &g->loc_fxl[key - FRP_UI_FX_LAST];
     return 0;
 }
 static void setting_set(frp_gui_t *g, int key, int v)
@@ -121,6 +123,30 @@ static void set_once(frp_gui_t *g, int id, int v)
     gesture(g, id, 1);
     set_value(g, id, v);
     gesture(g, id, 0);
+}
+/* a right-panel effect's lamp: its switch (the parameter whose 0 is OFF: a TYPE or an on / off), and a click on it */
+static int fx_switch(int tab)
+{
+    static const int sw[FRT_NR] = {FRP_FL_TYPE, FRP_TW_SW, FRP_PH_SW, FRP_CP_SW, FRP_DL_SW, FRP_RV_TYPE};
+    return tab >= 0 && tab < FRT_NR ? sw[tab] : -1;
+}
+/* the lamp's memory of effect tab's last setting other than OFF (0: none seen), kept by the instance (it outlives the
+ * window and is saved with the project), else by the window */
+static int fx_last(frp_gui_t *g, int tab) { return setting_get(g, FRP_UI_FX_LAST + tab, g->loc_fxl[tab]); }
+static void fx_last_note(frp_gui_t *g, int tab, int v)
+{
+    if (v && v != fx_last(g, tab)) setting_set(g, FRP_UI_FX_LAST + tab, v);
+}
+/* on -> OFF; OFF -> the setting it had before (TREM/WAH: its switch; PAN or TREM is TW_MODE, which OFF keeps), or
+ * the page's first one when none was seen */
+static void fx_toggle(frp_gui_t *g, int tab)
+{
+    int id = fx_switch(tab), v, last;
+    if (id < 0) return;
+    v = g->m.p[id];
+    if (v) { fx_last_note(g, tab, v); set_once(g, id, 0); return; }
+    last = fx_last(g, tab);
+    set_once(g, id, last > 0 && last <= hi_of(id) ? last : 1);
 }
 static int default_of(frp_gui_t *g, int id)
 {
@@ -254,6 +280,8 @@ int frp_gui_tick(frp_gui_t *g, double now)
         }
         m->p[i] = (uint8_t)iv;
     }
+    for (i = 0; i < FRT_NR; i++)                     /* the lamps' memory: what each effect was set to while on */
+        fx_last_note(g, i, m->p[fx_switch(i)]);
     m->tune = clampi(setting_get(g, FRP_UI_TUNE, g->loc_tune), -50, 50);
     m->fx_bypass = setting_get(g, FRP_UI_FX_BYPASS, g->loc_fx) != 0;
     m->midi_ch = setting_get(g, FRS_CHANNEL, g->loc_set[FRS_CHANNEL - FRS_CHANNEL]);
@@ -426,7 +454,7 @@ static void pl_fill(frp_gui_t *g)                   /* the list from the host (t
         memset(&m->pl[n], 0, sizeof m->pl[n]);
         memcpy(m->pl[n].tag, tag, sizeof tag); m->pl[n].tag[7] = 0;
         memcpy(m->pl[n].name, name, sizeof name); m->pl[n].name[23] = 0;
-        m->pl[n].type = (uint8_t)clampi(type, 0, 5);
+        m->pl[n].type = (uint8_t)clampi(type, 0, 6);
         m->pl[n].user = user != 0;
         n++;
     }
@@ -506,8 +534,8 @@ static void button(frp_gui_t *g, int id)
             g->h.preset_cmd(g->h.ctx, id == FRB_PREV ? FRP_UI_PRESET_PREV : id == FRB_NEXT ? FRP_UI_PRESET_NEXT :
                                       id == FRB_SAVE ? FRP_UI_PRESET_SAVE : FRP_UI_PRESET_UNDO);
         break;
-    case FRB_TYPE_PREV: set_once(g, FRP_TYPE, (m->p[FRP_TYPE] + 5) % 6); break;
-    case FRB_TYPE_NEXT: set_once(g, FRP_TYPE, (m->p[FRP_TYPE] + 1) % 6); break;
+    case FRB_TYPE_PREV: set_once(g, FRP_TYPE, frn_type_step(m->p[FRP_TYPE], -1, 1)); break;   /* (the scroll order, WHURLI after BELL DYNO) */
+    case FRB_TYPE_NEXT: set_once(g, FRP_TYPE, frn_type_step(m->p[FRP_TYPE], 1, 1)); break;
     case FRB_GEAR: m->settings = !m->settings; m->presets = 0; close_popups(g); break;
     case FRB_CLOSE: m->settings = 0; m->presets = 0; close_popups(g); break;
     case FRB_SUSTAIN:                                /* latching, as the device's REC: CC 64 down / up */
@@ -536,6 +564,7 @@ static void step_value(frp_gui_t *g, int id, int dir, int mods)
 {
     int hi = hi_of(id), st = hi >= 100 && (mods & FRG_SHIFT) ? 10 : 1;
     if (id == FRS_BPM) { if (g->m.tempo_src == 1) setting_set(g, FRS_BPM, clampi(bpm_step(g->m.bpm10, dir * st), BPM_LO, BPM_HI)); return; }
+    if (id == FRP_TYPE) { set_once(g, id, frn_type_step(frui_value(&g->m, id), dir * st, 0)); return; }
     set_once(g, id, clampi(frui_value(&g->m, id) + dir * st, 0, hi));
 }
 
@@ -634,7 +663,7 @@ static void mouse(frp_gui_t *g, int ev, float x, float y, int mods, int clicks)
         }
         if (m->menu >= 0) {                          /* an open menu: an item, or a click anywhere closes it */
             int id = m->menu & 0xFF, kind = m->menu >> 8;
-            if (on && w.kind == FRW_ITEM && kind == FRW_MENU) set_once(g, id, w.id);
+            if (on && w.kind == FRW_ITEM && kind == FRW_MENU) set_once(g, id, id == FRP_TYPE ? FRN_TYPE_ORDER[w.id] : w.id);
             m->menu = -1;
             return;
         }
@@ -672,6 +701,7 @@ static void mouse(frp_gui_t *g, int ev, float x, float y, int mods, int clicks)
             return;
         case FRW_TAB_L: m->tab_l = w.id; return;
         case FRW_TAB_R: m->tab_r = w.id; return;
+        case FRW_LAMP: fx_toggle(g, w.id); return;   /* (the page shown stays) */
         case FRW_PAGER:
             if (w.id == FRUI_PL_PAGER) m->pl_page = clampi(m->pl_page + (x >= w.x + w.w * 0.5f ? 1 : -1), 0, frui_preset_pages(m) - 1);
             else m->page_rv = x >= w.x + w.w * 0.5f;
@@ -763,7 +793,7 @@ static void wheel(frp_gui_t *g, float x, float y, float notches, int mods)
         gesture(g, id, 1);
     }
     g->wheel_t = g->now;
-    set_value(g, id, clampi(frui_value(&g->m, id) + steps, 0, hi));
+    set_value(g, id, id == FRP_TYPE ? frn_type_step(frui_value(&g->m, id), steps, 0) : clampi(frui_value(&g->m, id) + steps, 0, hi));
 }
 static int on_key(frp_gui_t *g, int key, int mods)
 {
@@ -797,7 +827,7 @@ static int on_key(frp_gui_t *g, int key, int mods)
         step_value(g, fid, key == FRK_PGUP ? 1 : -1, hi_of(fid) >= 100 ? FRG_SHIFT : 0);
         return 1;
     case FRK_HOME: set_once(g, fid, 0); return 1;
-    case FRK_END: set_once(g, fid, hi_of(fid)); return 1;
+    case FRK_END: set_once(g, fid, fid == FRP_TYPE ? FRN_TYPE_ORDER[hi_of(fid)] : hi_of(fid)); return 1;
     case FRK_DELETE: case FRK_BACKSPACE: set_once(g, fid, default_of(g, fid)); return 1;
     case FRK_RETURN:
         if ((m->focus >> 8) == FRW_MENU) { m->menu = m->menu == m->focus ? -1 : m->focus; return 1; }

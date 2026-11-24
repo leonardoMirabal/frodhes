@@ -5,7 +5,7 @@ silence, probe, roundtrip) and the differential click check on a few events find
 finding. First, the detectors themselves: each one fails on an injected fault (a wrap, a rail, a stuck voice ...),
 and the click check finds the FILTER TYPE click 0.9.5 has (BUGHUNT #4).
 
-Seeds that fail on 0.9.5 are expected failures with their finding (private/BUGHUNT-095.md); strict=False, so a fix
+Seeds that fail on 0.9.5 are expected failures with their finding (the bug list); strict=False, so a fix
 makes them XPASS (then take the line out). About 1.5 s a seed (15 s sanitized); the whole file under a minute with
 -n 2. The long run: python3 tools/monkey.py --minutes 30 -j 2."""
 import os

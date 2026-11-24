@@ -5,14 +5,14 @@ the FM-1. Its panel lifts the dark tones a lot (tools/manual_shots.py DEVICE_LOO
 surface RGB(16,16,18) shows as light teal, a single RGB565 green unit lifts black from L* 24 to 41.
 
   tools/meters_palettes.py search      candidate C: for each colour role, the RGB565 value whose device look is the
-                                       closest to the mock-up's colour (private/display/meters_final.py) as the panel
+                                       closest to the mock-up's colour as the panel
                                        could show it (the mock-up over the panel's own black, in linear light),
                                        keeping the order surface < track < fill < edge and fill < dim < label < value, each
                                        at least STEP L* above the one before, the fill and the edge within HUE_TOL of
                                        the mock-up's amber hue. Prints ui.c's RGB() values.
   tools/meters_palettes.py sheet [OUT] every page of both engines (Rhodes ST77, VIBES) in each candidate, in the device
                                        look: OUT/<candidate>-<page>.png and OUT/sheet.png (candidates as rows, the
-                                       Rhodes pages then the VIBES pages). OUT defaults to private/ui-simplify/palettes.
+                                       Rhodes pages then the VIBES pages). OUT defaults to a gitignored folder.
 
 The dark end of the model is an extrapolation (the CC 3 test pattern's dark ramp 0 4 8 12 16 20 is the cross-check:
 a photo of it exposed for the dark swatches pins it). The user's eye on the FM-1 decides."""
@@ -28,7 +28,7 @@ import manual_shots as ms                                     # noqa: E402  (DEV
 
 ROOT = ms.ROOT
 STEP = 6.0                                                    # L*: a visible step in the model
-# the mock-up's colours (private/display/vertical_mockup.py, meters_compare.py: BG SURF TRACK ACC_D ACC LAB VAL DIM)
+# the mock-up's colours (BG SURF TRACK ACC_D ACC LAB VAL DIM)
 MOCK = {"surf": (20, 20, 23), "track": (40, 40, 44), "fill": (70, 42, 10), "edge": (255, 150, 30),
         "dim": (96, 96, 102), "lab": (150, 150, 156), "val": (240, 240, 236)}
 CHAINS = (("surf", "track", "fill", "edge"), ("dim", "lab", "val"))

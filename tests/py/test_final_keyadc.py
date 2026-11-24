@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """tools/final/run_final_rev.sh's key-ADC gate: until 0.9.8 an engine that FAILed on 3 runs (the worst over the runs
-read +-100 us run to run, wider than the +10 idle / +60 STRESS limits) got 5 more (keyadc_<engine>5, TEST-PLAN 3b);
+read +-100 us run to run, wider than the +10 idle / +60 STRESS limits) got 5 more (keyadc_<engine>5);
 since 0.9.8 hil_cpu's gate takes the median of 5 runs itself and its verdict is the step's, one try."""
 import os
 import subprocess

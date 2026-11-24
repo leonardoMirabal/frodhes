@@ -95,6 +95,7 @@ typedef struct frp_core {
     int tail_main;                       /* tell on the main thread: the host is clap-wrapper (VST3 / Audio Unit) */
     void *gui;                           /* frp_ui_gui_data */
     int win_w;                           /* the window's logical width, saved in the state ("win"; 0: the default) */
+    uint8_t fx_last[6];                  /* the effect lamps' memory (frp_ui_fx_last), saved in the state ("lamp") */
     oq_ev_t oq[OQ];
     _Atomic uint32_t oqw, oqr;
     /* the UI's own view until the app has taken its writes (a drag must not jump back for a block) */
@@ -323,9 +324,13 @@ static const clap_plugin_latency_t EXT_LATENCY = { lat_get };
 static bool st_save(const clap_plugin_t *plugin, const clap_ostream_t *s)
 {
     frp_plugin_t *p = plugin->plugin_data;
-    char buf[FRP_STATE_MAX + 32];
+    char buf[FRP_STATE_MAX + 64];
+    const uint8_t *l = p->fx_last;
     int n = frp_inst_state_get(p->in, buf, FRP_STATE_MAX), done = 0;
     if (n < 0) return false;
+    if ((l[0] | l[1] | l[2] | l[3] | l[4] | l[5]) && n > 0 && buf[n - 1] == '}')   /* the lamps' memory, once one was on */
+        n += snprintf(buf + n - 1, sizeof buf - (size_t)n + 1, ",\"lamp\":\"%d,%d,%d,%d,%d,%d\"}", l[0], l[1], l[2], l[3],
+                      l[4], l[5]) - 1;
     if (p->win_w > 0 && n > 0 && buf[n - 1] == '}')   /* the window's size ("pv" 3), once it was resized */
         n += snprintf(buf + n - 1, sizeof buf - (size_t)n + 1, ",\"win\":\"%d\"}", p->win_w) - 1;
     while (done < n) {
@@ -350,6 +355,17 @@ static bool st_load(const clap_plugin_t *plugin, const clap_istream_t *s)
         if (w) {
             int x = atoi(w + 7);
             if (x >= 720 && x <= 1920 && x != p->win_w) { p->win_w = x; frp_gui_clap_size_changed(p->gui); }
+        }
+    }
+    {   /* the lamps' memory: a state without it (older, or no effect ever on) has none */
+        const char *l = strstr(buf, "\"lamp\":\"");
+        int i;
+        memset(p->fx_last, 0, sizeof p->fx_last);
+        for (i = 0, l = l ? l + 8 : 0; l && i < 6; i++) {
+            int x = atoi(l);
+            p->fx_last[i] = (uint8_t)(x > 0 && x < 256 ? x : 0);
+            while (*l >= '0' && *l <= '9') l++;
+            l = *l == ',' ? l + 1 : 0;
         }
     }
     if (!p->active) { if (p->hparams) p->hparams->rescan(p->host, CLAP_PARAM_RESCAN_VALUES); }
@@ -799,10 +815,12 @@ int frp_ui_preset_type(const frp_core *c, int idx)
     if (idx < 0) return -1;
     if (idx < (int)FRP_NFACTORY) { if (frp_fact_info((uint32_t)idx, 0, 0, v)) return -1; }
     else if (frp_user_values(idx - (int)FRP_NFACTORY, v)) return -1;
-    return v[0] <= 5u ? v[0] : 0;                    /* (params.c P_TYPE: id 0) */
+    return v[0] <= 6u ? v[0] : 0;                    /* (params.c P_TYPE: id 0) */
 }
 int frp_ui_win_w(const frp_core *c) { return c->win_w; }
 void frp_ui_win_w_set(frp_core *c, int w) { c->win_w = w <= 0 ? 0 : w < 720 ? 720 : w > 1920 ? 1920 : w; }
+int frp_ui_fx_last(const frp_core *c, int tab) { return tab >= 0 && tab < 6 ? c->fx_last[tab] : 0; }
+void frp_ui_fx_last_set(frp_core *c, int tab, int v) { if (tab >= 0 && tab < 6) c->fx_last[tab] = (uint8_t)(v > 0 && v < 256 ? v : 0); }
 /* the window's VERSION (read only): a release build's X.Y.Z, else DEV and 4 hex digits of the commit (frp_git.h, written
  * at every build by plugin/cmake/git_rev.cmake: $APP_GIT, else git, else none), as the FM-1's VERSION card */
 const char *frp_ui_version_text(void)
@@ -970,5 +988,5 @@ static const frp_ui_vtable UI_VTABLE = {
     frp_ui_tempo_bpm10, frp_ui_learn_start, frp_ui_learn_cancel, frp_ui_learning, frp_ui_learned_cc, frp_ui_learn_forget,
     frp_ui_learn_forget_all, frp_ui_cc_target, frp_ui_sustain_set, frp_ui_sustain, frp_ui_fx_bypass_set, frp_ui_fx_bypass,
     frp_ui_note, frp_ui_meters, frp_ui_notes, frp_ui_voices, frp_ui_voices_on, frp_ui_preset_type, frp_ui_win_w,
-    frp_ui_win_w_set, frp_ui_version_text,
+    frp_ui_win_w_set, frp_ui_version_text, frp_ui_fx_last, frp_ui_fx_last_set,
 };

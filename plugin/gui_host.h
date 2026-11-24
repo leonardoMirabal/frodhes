@@ -29,6 +29,8 @@ enum {
     FRP_UI_FX_BYPASS,                /* every effect bypassed at once (the FX switch; their own switches kept) */
     FRP_UI_HOST_BPM10,               /* read only: the host's tempo x 10 (0: none) */
     FRP_UI_WIN_W,                    /* the window's logical width (saved with the state; 720 .. 1920) */
+    FRP_UI_FX_LAST,                  /* .. + 5: each right-panel effect's last setting other than OFF, by tab (FRT_*;
+                                      * 0: none seen), kept by the instance so the lamp outlives the window */
 };
 enum { FRP_UI_PRESET_PREV, FRP_UI_PRESET_NEXT, FRP_UI_PRESET_SAVE, FRP_UI_PRESET_UNDO };
 enum { FRP_UI_LEARN_START, FRP_UI_LEARN_CANCEL, FRP_UI_LEARN_FORGET, FRP_UI_LEARN_FORGET_ALL };

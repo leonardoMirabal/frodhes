@@ -202,6 +202,7 @@ function fraction(st, k) {
     const v = k.type === "preset" ? st.preset : st.vals[k.key];
     if (v === null || v === undefined) return null;
     const lo = k.type === "enum" ? 0 : k.min, hi = k.type === "enum" ? k.options.length - 1 : k.max;
+    if (k.type === "enum" && k.order) return hi > 0 ? Math.max(0, k.order.indexOf(v | 0)) / hi : 0;   // (the TYPE: its place in the scroll order)
     if (k.type === "preset") return st.presetCount > 1 ? Math.max(0, presetOrder(st).indexOf(v | 0)) / (st.presetCount - 1) : 0;
     return hi > lo ? Math.max(0, Math.min(1, (v - lo) / (hi - lo))) : 0;
 }
@@ -299,7 +300,8 @@ function turn(ctx, st, slot, d) {
     if (cur === null || cur === undefined) { readKey(ctx, st, k); cur = st.vals[k.key]; }
     if (cur === null || cur === undefined) return;
     let v;
-    if (k.type === "enum") v = Math.max(0, Math.min(k.options.length - 1, cur + Math.sign(d)));
+    if (k.type === "enum" && k.order) v = k.order[Math.max(0, Math.min(k.order.length - 1, Math.max(0, k.order.indexOf(cur | 0)) + Math.sign(d)))];   // (the TYPE steps in the scroll order, its value stays its id)
+    else if (k.type === "enum") v = Math.max(0, Math.min(k.options.length - 1, cur + Math.sign(d)));
     else {
         const shift = typeof ctx.shiftHeld === "function" && ctx.shiftHeld();
         let step = k.step && k.step < 1 ? (shift ? k.step : 1) : 1;

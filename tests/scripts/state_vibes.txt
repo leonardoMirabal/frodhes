@@ -45,7 +45,7 @@
 2800 expect sound
 2800 expect state bars 1
 2800 expect state vcard.2.0 ON
-# ---- browse back over F19..F17, F16, F15 (MARIMBA), F14 to F13 VIBES (loads after 400 ms), then hold SAVE: undo to U01, the header with it
+# ---- browse back over F23..F17, F16, F15 (MARIMBA), F14 to F13 VIBES (loads after 400 ms), then hold SAVE: undo to U01, the header with it
 2900 turn 6 -1
 2920 turn 6 -1
 2940 turn 6 -1
@@ -53,6 +53,10 @@
 2980 turn 6 -1
 3000 turn 6 -1
 3050 turn 6 -1
+3060 turn 6 -1
+3070 turn 6 -1
+3080 turn 6 -1
+3090 turn 6 -1
 3600 expect state header F13_VIBES
 3600 expect preset
 3600 expect state vcard.2.2 2.6HZ
@@ -62,11 +66,11 @@
 4600 expect preset
 4600 expect sound
 4600 expect state vcard.2.0 ON
-# ---- ALGORITHM: VIBES -> BELL DYNO (the Rhodes): no tremolo (TREM/WAH off, LFO dark), the MOTOR page is not
+# ---- ALGORITHM: VIBES -> WHURLI (one detent back in the scroll order; the Rhodes engine): no tremolo (TREM/WAH off, LFO dark), the MOTOR page is not
 # shown (SELECT from DECAY goes to COMPRESSOR); back to VIBES: the motor as it was
 4700 turn 1 -1
 4800 expect state bars 0
-4800 expect state card.2.0 BELL_DYNO
+4800 expect state card.2.0 WHURLI
 4800 expect state label.3.0 TONE
 4800 expect state card.7.0 OFF
 4800 expect sound

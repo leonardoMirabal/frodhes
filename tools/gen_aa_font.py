@@ -10,7 +10,7 @@ tools/build.py generate() with --preset inter-tight).
                                       pass's smaller value faces: firmware/gen/aa_font_v25.h, aa_font_v24.h; ui.c
                                       UI_VAL_PX)
 
-Faces of the presets: two (UI-SIMPLIFY, the METERS look of private/display/ui-meters-final.png):
+Faces of the presets: two (the METERS look):
   S  13 px Medium (500): all small text (header, title, labels, units, hints), ASCII 32..126
   L  28 px SemiBold (600): the values and choice names, trimmed to L_CHARS (digits, capitals, signs); Huffman-coded
   standin     an installed Inter (~/Library/Fonts/Inter.ttc, else Inter in fonts/ next to tools/) with
@@ -41,7 +41,7 @@ import aa_raster as ar  # noqa: E402
 
 FONTS = Path(__file__).resolve().parents[1] / "fonts"
 LOCAL_INTER = os.path.expanduser("~/Library/Fonts/Inter.ttc")   # 4.001: 0 Regular, 10 Medium, 12 SemiBold
-# extra glyphs past ASCII 126 (Latin-1 by their code; outside Latin-1 -> CODE): none since UI-SIMPLIFY P1 (Felucca's
+# extra glyphs past ASCII 126 (Latin-1 by their code; outside Latin-1 -> CODE): none since the METERS look (Felucca's
 # (c) deg . A: O: U: a: o: u: ... were never drawn by Frodhes: no string of the firmware has them; a missing glyph
 # draws as '?' in S, see aatext.c aa_glyph)
 EXTRAS = []
@@ -53,7 +53,7 @@ PHASES, PHASES_L = 4, 2                # horizontal phases per glyph (aa_raster.
 HUFF = [("L", "S")]
 # L draws the values and the choices' names (units and messages are S): a sparse face, the space
 # as its range and the rest as extras. The set, from every slot_text value at every value / TYPE / page, the chord
-# names (notes.c chord_name), the TYPE names, the bars' detents and the splash (the scan of private/ui-simplify/P1.md),
+# names (notes.c chord_name), the TYPE names, the bars' detents and the splash,
 # minus what moves to S (the units Hz kHz s ms):
 #   numbers 0-9 + - . : %; sync divisions / (1/16 16T 8D 2BAR); chords # * (C#, the unknown-chord mark);
 #   capitals A-Y: OFF, CENTRE L/3 EDGE SOFT YARN CORD RUBBER, STAGE 77 SUITCASE EARLY FELT BELL DYNO
@@ -313,7 +313,7 @@ def main():
     names = {f[0] for f in faces}
     for old, new in TRANSITIONAL:
         if old not in names and new in names:
-            out.append(f"#define AF_{old} AF_{new}   /* transitional (UI-SIMPLIFY P1): until ui.c stops using AF_{old} */\n")
+            out.append(f"#define AF_{old} AF_{new}   /* transitional: until ui.c stops using AF_{old} */\n")
     Path(a.out).write_text("\n".join(out))
     print(f"fonts total {total} B  -> {a.out}")
 

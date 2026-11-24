@@ -124,7 +124,7 @@ names the Move (default `ableton@move.local`).
      from the working tree, writes `build/gate_m/update/report.md` and `report.json` (per changed render: the
      engines it plays, the RMS and peak change, the residual re REF, the largest octave-band change, the spectral
      centroid, the length) and then rewrites `move16.sha256`. The guard: a render may change only when its script
-     plays one of `--engines` (CC 79 0..95 VIBES, 96..127 MARIMBA, CC 80 a Rhodes type, a program change any engine).
+     plays one of `--engines` (CC 79 0..95 VIBES, 96..127 MARIMBA, CC 80 an electric piano type, a program change any engine).
      A Rhodes-only change that moves a VIBES or MARIMBA render, or one of their effect renders, stops it (exit 1,
      nothing written). `--engines vibes,marimba` for the bars, `--engines fx` for an effect change (every render may
      change). A render that changes at 16 voices while `renders.sha256` keeps REF's hash is listed: Gate R was not
@@ -177,9 +177,9 @@ names the Move (default `ableton@move.local`).
   `tools/ci_move.sh`'s Gate U) fails on a stale header. The header is a table of its own, `MB_PX_DATA`, included by
   `move/move_bridge.h` only: `presets.c` and its `PR_FDATA` are untouched (Gate S), so a change of `PR_FDATA`'s
   format never touches it. The bridge numbers them after the FM-1's indices (0-18 F01-F19, 19-34 U01-U16 as on the
-  FM-1, so store.bin and saved states keep their meaning; 35-72 F20-F57; `preset_count` 73, `u_first` 19), loads
-  them itself (`mb_pr_load`, presets.c `preset_load`'s steps) by the `preset` key and by program change 35-72, and
-  Frodhes' screen browses F01-F57, then U01-U16. To redo them after a new review: copy its `variants.json` and
+  FM-1, so store.bin and saved states keep their meaning; 35-72 F20-F57, 73-76 WHURLI (F58-F61); `preset_count` 77, `u_first` 19), loads
+  them itself (`mb_pr_load`, presets.c `preset_load`'s steps) by the `preset` key and by program change 35-76, and
+  Frodhes' screen browses F01-F61 (the browse order), then U01-U16. To redo them after a new review: copy its `variants.json` and
   `proposed_records.txt` into `move/presets/`, name any new variant in `NAMES`, run the generator, then
   `node tools/move_ui_shots.mjs --docs` and the MOVE.md list (`test_plugin_presets_and_hierarchy_per_type` reads
   every preset back against the records).

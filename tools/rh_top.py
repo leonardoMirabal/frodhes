@@ -145,6 +145,23 @@ def write(R, L, S=None):
         "static const uint8_t RH_TOP_S[4][RH_NKEY] = {\n%s\n};\n" % (TARGET, TARGET + TYPE_D[1], CAP_K0, tab(R), tab(L), tab(S)))
 
 
+G_STEP = 2                             # the gain back steps at most 2 (0.375 dB at v127) from key to key (2026-11-23: BELL DYNO
+                                       # keys 55..60 took G_MAX and their neighbours 0, a 1.27 dB level step at 54 / 55 at
+                                       # v100): a lower neighbour is raised toward the step (never a fitted G lowered)
+
+
+def bridge_g(L, R):
+    """L with every neighbour step over G_STEP ramped by raising the lower side (only where R cuts: G rides the cut)"""
+    L = np.array(L, int)
+    for ty in range(L.shape[0]):
+        for _ in range(G_MAX):
+            for j in range(L.shape[1]):
+                for i in (j - 1, j + 1):
+                    if 0 <= i < L.shape[1] and R[ty][j] and L[ty, i] - L[ty, j] > G_STEP:
+                        L[ty, j] = min(L[ty, i] - G_STEP, 127 - int(R[ty][j]))
+    return L
+
+
 def cap_db(k, ty=0):
     """the H2 ceiling for key k (dB re H1, at the voicing's defaults); TARGET (+ the TYPE's TYPE_D) at and under
     CAP_K0"""
@@ -239,6 +256,7 @@ def main():
                     if s and 64 + s > 127:                         # the ceiling's long ramp: the gain back rides
                         g = min(g, int(G64_DB / UNIT * (s / (64 + s - 127)) ** 2))   # its square, at most G64_DB at v64
                     L[ty, j] = g
+        L = bridge_g(L, R)
         write(R, L, S)
         print("R max %d (%.1f dB), keys cut %d of %d; G max %d (%.1f dB)" % (R.max(), R.max() * UNIT, (R > 0).sum(),
                                                                           R.size, L.max(), L.max() * UNIT))

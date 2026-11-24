@@ -5,6 +5,7 @@ on a synthetic signal), before and after a change:
 
     tools/fxq_metrics.py [--base DIR] [--json FILE] [NAME ...]
 
+FXQ_DEFS="-DFR_OWN=1" builds the harness at the plugin's own-code switch.
 --base DIR: also build the harness against DIR/firmware (e.g. a `git archive` of the commit before) and print both.
 NAME selects metrics by substring. Each metric is a level in dB (lower is better) or, where marked, a count:
 
@@ -33,7 +34,7 @@ FS = 44100
 def build(fw, exe):
     os.makedirs(os.path.dirname(exe), exist_ok=True)
     subprocess.run(["cc", "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", f"-I{fw}/src", f"-I{fw}/gen",
-                    f"-I{fw}/hal", os.path.join(ROOT, "tests", "c", "fxq_stage.c"), "-o", exe, "-lm"], check=True)
+                    f"-I{fw}/hal", *os.environ.get("FXQ_DEFS", "").split(), os.path.join(ROOT, "tests", "c", "fxq_stage.c"), "-o", exe, "-lm"], check=True)
     return exe
 
 

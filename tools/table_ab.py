@@ -57,7 +57,7 @@ THRESHOLDS_WHY = """\
 | measure | limit | why |
 | --- | --- | --- |
 | residual B - A re the take | <= -90 dB | The residual is the whole difference, sample by sample. A difference 90 dB under the note changes its level by at most 20 log10(1 + 10^(-90/20)) = 0.0003 dB and sits 30+ dB under masking thresholds for a sound in the same bands (simultaneous masking leaves a component inaudible 20-40 dB under the masker). |
-| residual, full band | <= -90 dBFS | One 16-bit LSB (the output's own grain) is -90.3 dBFS; the jack's floor is far above (SNR 74 dB re a loud chord, private/testplan). |
+| residual, full band | <= -90 dBFS | One 16-bit LSB (the output's own grain) is -90.3 dBFS; the jack's floor is far above (SNR 74 dB re a loud chord). |
 | residual 8-20 kHz | <= -100 dBFS | The band where the jack hiss is measured (AGENTS.md: the 8-20 kHz floor); the codec's hiss there is well above -100 dBFS, so a residual under it is buried in the device's own noise. |
 | LUFS | <= 0.01 dB | The level JND is 0.2-0.5 dB; the device A/B limit (tools/rh_devcmp.py) is 0.1 dB; the host has no noise, so 10x tighter. |
 | peak | <= 0.01 dB | As LUFS: the limiter and clip margins move with the peak. |
@@ -196,6 +196,8 @@ def build(tag, header):
     inc = d / "gen"
     inc.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(header, inc / "bars_tables.h")
+    subprocess.run([sys.executable, str(ROOT / "tools" / "gen_bars_pack.py"), "--src", str(inc / "bars_tables.h"),
+                    "--out", str(inc)], check=True, capture_output=True)   # (the firmware links the packed form: B's too)
     binary = d / "frodhes"
     subprocess.run([os.environ.get("CC", "cc"), "-I" + str(inc)] + gate_r.CFLAGS +
                    ["-o", str(binary), "firmware/src/frodhes.c", "-lm"], cwd=ROOT, check=True)

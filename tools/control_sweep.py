@@ -24,7 +24,7 @@ FLAG. The checks (each against static renders at 0, 32, 64, 96 and 127, or at an
           middle; a selector: every neighbouring pair of options both ways) at T_FLIP while the pedalled chord rings;
           the largest |second difference| of either channel from 3 ms before to 30 ms after the move, against the
           larger of the two renders held at the start and at the end value over the same span: over 10x flags. (The
-          absolute detector, d2 > 6 x level + 2000, missed steps of 1700 LSB on a 5000 LSB chord: private BUGHUNT-095)
+          absolute detector, d2 > 6 x level + 2000, missed steps of 1700 LSB on a 5000 LSB chord)
   trans   the moved render's level, 20 ms windows over 300 ms after the move, outside the two held renders' range
           (3 dB over the louder, 6 dB under the quieter) flags: a dropout or a burst after the move (the wet alone
           for delay and reverb); a control that glides THROUGH values (a cutoff: 'through') takes the renders held at
@@ -148,8 +148,8 @@ def _cases():
             if eng == "marimba":                 # struck again every 800 ms during the sweep, each strike latching the
                 sk |= {"jump", "stuck", "pitch"}  # knob's value then: the sweep's level and pitch follow the strikes
             add(Case(f"{eng} {lab}", cc, engine=eng, page="VOICE", skip=sk))
-    add(Case("rhodes TYPE", 80, kind="select", statics=[16, 48, 80, 112], page="FRODHES"))
-    add(Case("rhodes TYPE SPREAD", 80, [(105, 100)], kind="select", statics=[16, 48, 80, 112], page="FRODHES"))
+    add(Case("rhodes TYPE", 80, kind="select", statics=bands(4), page="FRODHES"))
+    add(Case("rhodes TYPE SPREAD", 80, [(105, 100)], kind="select", statics=bands(4), page="FRODHES"))
     for lab, cc in (("DEPTH", 48), ("SPEED", 49), ("SHAPE", 50)):
         add(Case(f"vibes MOTOR {lab}", cc, [(47, 127)], engine="vibes", kind="pitch" if lab == "SPEED" else "knob",
                  page="MOTOR"))

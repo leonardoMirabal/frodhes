@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""Power cycles on the host (PLAN P11.4): the host build keeps its flash in a file (FRODHES_FLASH), so a second run
+"""Power cycles on the host: the host build keeps its flash in a file (FRODHES_FLASH), so a second run
 is the FM-1 switched on again with exactly what the firmware saved. The settings (the system setup and the preset
 last loaded or saved, which plays again as it is stored: knobs turned after it are not kept, test_autosave_setup.py),
 the user presets and the sequencer's pattern survive; the saves wait 2 s after the last change (1.5 s for the pattern) and for silence; a
@@ -27,6 +27,7 @@ NSEC = 7
 MAGIC = 0x59474E44
 REC_N = 256 + 16 * 96                                      # the record: the settings, the 16 user presets (v3)
 # settings_t offsets (params.c; append-only, so these never move)
+O_FLAGS2, O_UNDO_PRESET = 234, 140                       # (params.c settings_t; 256 B, SET_VER 2, append-only)
 O_VER, O_FLAGS, O_OCT, O_PRESET, O_BPM, O_TUNE, O_TRANS, O_PANEL, O_UNDO_VALID, O_PANEL2 = 0, 1, 2, 3, 4, 10, 19, 24, 88, 89
 P = dict(TYPE=0, DRIVE=1, TW_SW=2, TW_DEPTH=3, TW_RATE=4, TW_MODE=6, CP_SW=8, CP_DEPTH=9, CP_SPEED=10, CP_SYNC=11,
          CP_FDBK=12, RV_DEPTH=19, PH_SW=28, PH_DEPTH=29, PH_SPEED=30, PH_SYNC=31, PH_FDBK=32, LEVEL=37, CMP_RATIO=38,
@@ -35,7 +36,7 @@ P = dict(TYPE=0, DRIVE=1, TW_SW=2, TW_DEPTH=3, TW_RATE=4, TW_MODE=6, CP_SW=8, CP
 
 # a record that names an empty user slot (U16, never a starter): the boot plays the record's own sound (snd_base:
 # the last preset loaded or saved), so the record's panel and its conversions are what the tests see
-NO_PRESET = 34
+NO_PRESET = 38          # U16 of the 23 factory presets (0.9.13's 34 before F20..F23 WHURLI)
 
 
 def flash_file(tag):
@@ -324,11 +325,11 @@ def test_old_settings_records_convert():
 
 
 def test_094_settings_record_preset_index():
-    """a 0.9.4 / 0.9.5-RC settings record (16 factory presets: U01 = 16; flags2 0) on 0.9.5 (19: F17..F19 before the
-    user bank): F01..F16 stay, U01..U16 move by 3, once; the preset it names then plays as stored (an empty one: the
+    """a 0.9.4 / 0.9.5-RC settings record (16 factory presets: U01 = 16; flags2 0) on 23 factory presets (F17..F19 and F20..F23
+    before the user bank): F01..F16 stay, U01..U16 move by 7, once; the preset it names then plays as stored (an empty one: the
     record's panel)"""
     fl = flash_file("v094")
-    for pre, want in ((0, 0), (15, 15), (16, 19), (31, 34)):
+    for pre, want in ((0, 0), (15, 15), (16, 23), (31, 38)):
         img = bytearray(b"\xff" * 5 * SECTOR)
         r = v1_record({P["TYPE"]: 1, P["DRIVE"]: 20}, preset=pre)
         r[O_VER], r[O_FLAGS] = 2, 255                       # every flag up to 0.9.5's RC, flags2 (0.9.5) clear
@@ -337,6 +338,29 @@ def test_094_settings_record_preset_index():
         b = boot(f"v094-{pre}", fl, check_preset=want != NO_PRESET)
         s = b.state(100)
         assert s["preset"] == str(want) and not b.fails, (pre, s["preset"], b.fails)
+        if want == NO_PRESET:
+            assert (s["p.0"], s["p.1"]) == ("1", "20"), (pre, s["p.0"], s["p.1"])
+
+
+def test_0913_settings_record_preset_index():
+    """a 0.9.13 settings record (19 factory presets: U01 = 19; flags2 bits 1 and 2) on the build with F20..F23 WHURLI
+    (23 factory presets): F01..F19 stay, U01..U16 move up by 4, once. The same record with flags2 bit 4 set (a record
+    this build saved) is left as it is. The record stays 256 B at SET_VER 2: only a flags2 bit was added."""
+    fl = flash_file("v0913")
+    # (preset, flags2, its undo copy's preset as saved: index + 1) -> (preset, undo) after the load
+    cases = (((0, 3, 0), (0, 0)), ((18, 3, 19), (18, 19)), ((19, 3, 20), (23, 24)), ((22, 3, 23), (26, 27)),
+             ((30, 3, 31), (34, 35)), ((34, 3, 35), (38, 39)), ((19, 3, 1), (23, 1)), ((5, 3, 35), (5, 39)),
+             ((23, 7, 24), (23, 24)), ((26, 7, 39), (26, 39)), ((18, 7, 19), (18, 19)))
+    for (pre, flags2, undo), (want, want_undo) in cases:
+        img = bytearray(b"\xff" * 5 * SECTOR)
+        r = v1_record({P["TYPE"]: 1, P["DRIVE"]: 20}, preset=pre)
+        r[O_VER], r[O_FLAGS], r[O_FLAGS2], r[O_UNDO_PRESET] = 2, 255, flags2, undo
+        put_settings(img, r)
+        open(fl, "wb").write(img)
+        b = boot(f"v0913-{pre}-{flags2}-{undo}", fl, check_preset=want < 23 + 9, lines=["100 dump"])   # (U10.. are empty: no starter)
+        s = b.state(100)
+        assert s["preset"] == str(want) and not b.fails, (pre, flags2, s["preset"], b.fails)
+        assert s["undo_preset"] == str(want_undo), (pre, flags2, undo, s["undo_preset"])   # the undo copy moves with it
         if want == NO_PRESET:
             assert (s["p.0"], s["p.1"]) == ("1", "20"), (pre, s["p.0"], s["p.1"])
 
@@ -458,7 +482,7 @@ def test_v2_motor_becomes_the_motor_page():
 def test_motor_off_by_hand_survives_a_power_cycle():
     """the MOTOR page's ON card switched off is kept (a setup choice: no motor when the TYPE turns to VIBES again)"""
     fl = flash_file("motoff")
-    lines = ["100 turn 1 1", "110 turn 1 1", "120 turn 1 1", "130 turn 1 1", "200 turn 0 1", "250 turn 0 1", "300 turn 0 1",
+    lines = ["100 turn 1 1", "110 turn 1 1", "120 turn 1 1", "130 turn 1 1", "140 turn 1 1", "200 turn 0 1", "250 turn 0 1", "300 turn 0 1",
              "400 turn 0 1", "500 turn 2 -1", "600 turn 1 -1", "700 dump"]
     r1 = run("motoff-1", lines, 4000, flash=fl)
     assert r1.state(700)[f"p.{MOT_ON}"] == "0" and r1.saves             # (a Rhodes TYPE now: no VOICE 3)
@@ -521,7 +545,7 @@ def test_record_naming_an_empty_slot_runs_its_synced_rates():
     fl, img = saved_flash("emptyslot", [cc(20, 17, 64), cc(21, 18, 100), cc(22, 20, 64),   # TREM on, DEPTH, SYNC
                                         "100 btn 9", "140 btn 9", "3000 dump"])          # SAVE to U01
     rec = settings_record(img)
-    assert rec[O_PRESET] == 19 and rec[O_PANEL + 2] == 1, (rec[O_PRESET], rec[O_PANEL + 2])   # U01, its sound
+    assert rec[O_PRESET] == 23 and rec[O_PANEL + 2] == 1, (rec[O_PRESET], rec[O_PANEL + 2])   # U01, its sound
     rec[O_PRESET] = NO_PRESET                                       # the record names U16: empty (never a starter)
     put_settings(img, rec)
     open(fl, "wb").write(img)

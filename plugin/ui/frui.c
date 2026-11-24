@@ -201,8 +201,8 @@ static int phi(int id)
     }
     return id == FRP_TUNE ? 100 : id == FRP_TW_KIND ? 3 : id >= 0 && id < FRP_COUNT ? FRP_HI[id] : 1;
 }
-static int is_bars(const frui_model *m) { return m->p[FRP_TYPE] >= 4; }
-static int has_motor(const frui_model *m) { return m->p[FRP_TYPE] == 4; }
+static int is_bars(const frui_model *m) { int t = m->p[FRP_TYPE]; return t >= 0 && t < FRN_NTYPE && FRN_TYPE_BARS[t]; }
+static int has_motor(const frui_model *m) { return m->p[FRP_TYPE] == FRN_T_VIBES; }
 
 static const char *const *opt_names(int id, int *n)
 {
@@ -254,15 +254,20 @@ static void chevron(frui *u, float cx, float cy, float sz, int dir, uint32_t col
         frui_line(u->c, X(cx - b * d), X(cy), X(cx + b * d), X(cy + a), lw, col);
     }
 }
-static void lamp(frui *u, float cx, float cy, float r, int on)     /* an effect's lamp: a small amber jewel */
+/* an effect's lamp: a small amber jewel; hov: the mouse is on it (a click switches it): a wider glow when lit, a
+ * lighter glass when out */
+static void lamp_h(frui *u, float cx, float cy, float r, int on, int hov)
 {
     if (on) {
-        frui_circle_shadow(u->c, X(cx), X(cy), X(r), X(r * 1.4f), FRUI_RGBA(255, 140, 20, 110));
+        frui_circle_shadow(u->c, X(cx), X(cy), X(r), X(r * (hov ? 2.2f : 1.4f)), FRUI_RGBA(255, 140, 20, hov ? 190 : 110));
         frui_circle_grad(u->c, X(cx), X(cy), X(r), FRUI_RGB(255, 206, 120), C_ACC);
+    } else if (hov) {
+        frui_circle_grad(u->c, X(cx), X(cy), X(r), FRUI_RGB(84, 84, 90), FRUI_RGB(124, 124, 132));
     } else {
         frui_circle_grad(u->c, X(cx), X(cy), X(r), FRUI_RGB(30, 30, 32), FRUI_RGB(52, 52, 56));
     }
 }
+static void lamp(frui *u, float cx, float cy, float r, int on) { lamp_h(u, cx, cy, r, on, 0); }
 /* brushed aluminium plate with machined edges: a lit top hairline and a dark bottom one */
 static void alu(frui *u, float x, float y, float w, float h, float r, uint32_t seed)
 {
@@ -576,6 +581,10 @@ static void eicon(frui *u, int type, float x, float y, float k, uint32_t col)
             RR(bx + 1.5f, 7, 3, th, 1.5f);
         }
         break;
+    case 6:   /* the reed piano: steel reeds, long to short, over the pickup plate */
+        L(3, 4, 37, 4);
+        for (i = 0; i < 7; i++) FR(5.f + 5.f * (float)i, 7.f, 2.f, 15.f - 1.7f * (float)i, 0.8f, col);
+        break;
     default:  /* marimba: wooden bars, long to short, on their frame */
         for (i = 0; i < 6; i++) {
             float bx = 3.f + 6.f * (float)i, bh = 17.f - 2.2f * (float)i;
@@ -731,7 +740,7 @@ static void type_selector(frui *u, float x, float y, float h)
     key_btn(u, FRB_TYPE_PREV, 0, x, y, 28.f, h);
     ctrl_box(u, bx, y, bw, h, open || is_hover(u, FRW_MENU, FRP_TYPE), open);
     eicon(u, t, bx + 8.f, y + (h - 24.f * 0.75f) * 0.5f, 0.75f, C_TEXT);
-    tx(u, bx + 46.f, mid(u, y + h * 0.5f, 10.5f), T_MENU, 0, FRN_TYPE[t <= 5 ? t : 0], C_TEXT);
+    tx(u, bx + 46.f, mid(u, y + h * 0.5f, 10.5f), T_MENU, 0, FRN_TYPE[t >= 0 && t < FRN_NTYPE ? t : 0], C_TEXT);
     chevron(u, bx + bw - 12.f, y + h * 0.5f, 3.f, 0, C_TEXT2);
     if (is_focus(u, FRW_MENU, FRP_TYPE))
         frui_rrect_stroke(u->c, X(bx - 3.f), X(y - 3.f), X(bw + 6.f), X(h + 6.f), X(R_CTRL + 3.f), X(1.f), C_ACC);
@@ -810,11 +819,15 @@ static void tabs(frui *u, int right, float x, float y, float w)
             frui_rect(u->c, X(kx + R_CTRL), X(ky) + 1.f, X(kw - 2.f * R_CTRL), 1.f, FRUI_RGBA(255, 255, 255, 46));
         }
         /* (BYPASS: every effect's lamp out; MOTOR is the instrument's own, never bypassed) */
-        lamp(u, cx + 2.5f, cy, 2.5f, eff_on(m, i, right) && (!m->fx_bypass || (!right && i == FRT_MOTOR)));
+        lamp_h(u, cx + 2.5f, cy, 2.5f, eff_on(m, i, right) && (!m->fx_bypass || (!right && i == FRT_MOTOR)),
+               right && is_hover(u, FRW_LAMP, i));
         anchor(u, FRA_TAB, i, cx, mid(u, cy, 10.5f));
         tx(u, cx + 11.f, mid(u, cy, 10.5f), T_TAB, 0, names[i],
            i == sel ? C_TEXT : is_hover(u, kind, i) ? frui_mix(C_TEXT2, C_TEXT, 0.5f) : C_TEXT2);
         reg(u, kind, i, cx - gap * 0.5f, y, cw + gap, 44.f);
+        /* the effects' lamps are switches: a 20 px square round the lamp, over the tab's area (registered after it, so
+         * it is hit first), ending where the name starts */
+        if (right) reg(u, FRW_LAMP, i, cx - 9.f, cy - 10.f, 20.f, 20.f);
         cx += cw + gap;
     }
     hair_h(u, x + 1.f, x + w - 1.f, y + 44.f, FRUI_RGB(32, 32, 34));
@@ -1317,7 +1330,7 @@ static float pl_colx(int k) { return (k & 2 ? G_H1 : G_H0) + (k & 1 ? 2.f * G_CO
 static int pl_flow(const frui_model *m, void (*f)(void *ctx, int slot, int idx, int type), void *ctx)
 {
     int t, i, pass, slot = 0, n = m->pl_n < FRUI_PL_MAX ? m->pl_n : FRUI_PL_MAX;
-    for (t = 0; t < 6; t++) {
+    for (t = 0; t < 7; t++) {
         int any = 0;
         for (i = 0; i < n && !any; i++) any = m->pl[i].type == t;
         if (!any) continue;
@@ -1480,7 +1493,7 @@ static void popup(frui *u)
     id = g->id;
     names = opt_names(id, &n);
     sel = pval(m, id);
-    if (id == FRP_TYPE) { ih = 32.f; lx = 64.f; }
+    if (id == FRP_TYPE) { ih = 32.f; lx = 64.f; sel = sel >= 0 && sel < FRN_NTYPE ? FRN_TYPE_POS[sel] : 0; }   /* (the items in the scroll order) */
     cols = n > 8 ? 3 : 1;
     rows = (n + cols - 1) / cols;
     cw = 0.f;
@@ -1502,8 +1515,8 @@ static void popup(frui *u)
             frui_rrect(u->c, X(ix), X(iy), X(cw), X(ih), X(R_CTRL), FRUI_RGB(40, 40, 43));
             frui_rrect(u->c, X(ix + 4.f), X(iy + ih * 0.5f - 6.f), X(2.f), X(12.f), X(1.f), C_ACC);
         }
-        if (id == FRP_TYPE) eicon(u, i, ix + 16.f, iy + (ih - 24.f) * 0.5f, 1.f, i == sel ? C_TEXT : C_TEXT2);
-        tx(u, ix + lx, mid(u, iy + ih * 0.5f, 10.5f), T_MENU, 0, names[i], i == sel ? C_TEXT : C_TEXT2);
+        if (id == FRP_TYPE) eicon(u, FRN_TYPE_ORDER[i], ix + 16.f, iy + (ih - 24.f) * 0.5f, 1.f, i == sel ? C_TEXT : C_TEXT2);
+        tx(u, ix + lx, mid(u, iy + ih * 0.5f, 10.5f), T_MENU, 0, id == FRP_TYPE ? names[FRN_TYPE_ORDER[i]] : names[i], i == sel ? C_TEXT : C_TEXT2);
         reg(u, FRW_ITEM, i, ix, iy, cw, ih);
     }
 }

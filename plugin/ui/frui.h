@@ -12,7 +12,7 @@
 
 #define FRUI_W 960                 /* logical size */
 #define FRUI_H 600
-#define FRUI_PL_MAX 320            /* the PRESETS sheet's entries: the 57 factory presets and the first user ones */
+#define FRUI_PL_MAX 320            /* the PRESETS sheet's entries: the 61 factory presets and the first user ones */
 #define FRUI_PL_PAGER 100          /* the PRESETS sheet's pager (an FRW_PAGER id beside REVERB's) */
 
 /* the two effect panels' tabs */
@@ -76,8 +76,10 @@ enum { FRS_CHANNEL = 200, FRS_VEL, FRS_FIXVEL, FRS_PGM, FRS_TEMPO, FRS_BPM, FRS_
 typedef void (*frui_text_fn)(void *ctx, const frui_model *m, int id, char *val, char *unit);
 
 enum { FRW_KNOB, FRW_SEG, FRW_MENU, FRW_TAB_L, FRW_TAB_R, FRW_BUTTON, FRW_PAGER, FRW_PRESET, FRW_KEYS, FRW_FADER, FRW_CTX,
-       FRW_CCMAP, FRW_ITEM, FRW_PITEM };   /* FRW_ITEM: an item of the open menu (id: the option's value); FRW_PITEM:
-                                            * a preset in the PRESETS sheet (id: its index in pl) */
+       FRW_CCMAP, FRW_ITEM, FRW_PITEM, FRW_LAMP };   /* FRW_ITEM: an item of the open menu (id: the option's value);
+                                            * FRW_PITEM: a preset in the PRESETS sheet (id: its index in pl); FRW_LAMP:
+                                            * a right-panel tab's lamp (id: the tab, FRT_*), a click switches its
+                                            * effect on or off */
 enum { FRB_PREV, FRB_NEXT, FRB_SAVE, FRB_UNDO, FRB_TYPE_PREV, FRB_TYPE_NEXT, FRB_GEAR, FRB_CLOSE, FRB_SUSTAIN, FRB_FX,
        FRB_BPM_DOWN, FRB_BPM_UP, FRB_LEARN_RESET, FRB_UPDATE, FRB_UPDATE_RAIL };   /* FRB_UPDATE (SETTINGS) and
                                                                                      * FRB_UPDATE_RAIL: UPDATE / INSTALL */

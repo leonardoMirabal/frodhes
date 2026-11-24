@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 # Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
-"""Lossless-codec study for the engines' big read-only tables (private/PULSE-COMPRESSION-PLAN.md).
+"""Lossless-codec study for the engines' big read-only tables.
 
 Reads the generated headers (firmware/gen/rhodes_tables.h, bars_tables.h: the data the firmware links, so the
 ground truth) and, per table, sizes every candidate codec exactly (bit counts of a real encoding, headers and side

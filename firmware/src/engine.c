@@ -9,12 +9,12 @@
  * eng_note_sounding(); the ISR calls eng_render(mono, n). eng_render drains the ring into the running engine: for
  * the Rhodes it re-posts each event into rhodes.c's own ring right before rh_render (in the same block, in order),
  * so the Rhodes engine sees exactly what it saw when the main loop posted to it directly: its output is unchanged.
- * rhodes.c only ever gets TYPE 0..3 in rh_type. params.c (param_apply) calls eng_set_type, eng_is_bars, eng_bar_knob.
+ * rhodes.c only ever gets 0..3 (the pianos) or 4 (WHURLI) in rh_type. params.c (param_apply) calls eng_set_type, eng_is_bars, eng_bar_knob.
  *
  * TYPE change across engines: the running engine keeps playing for one more block with its output faded to zero over
  * those 256 samples, then all its voices stop and the other engine takes over; events wait in the ring during that
  * block (they are played by the new engine one block later). With no voice sounding the change is immediate.
- * A change between two bar types (VIBES <-> MARIMBA) goes the same way (MARIMBA PLAN §3.12, C1): the main loop asks
+ * A change between two bar types (VIBES <-> MARIMBA) goes the same way: the main loop asks
  * for a bar type in eng_want_sub, the ISR latches it into bar_sub only in eng_switch, after the fade and bar_kill_all,
  * so a voice never re-strikes with another type's tables and bar_sub is constant while any bar voice lives. A session
  * that never leaves VIBES never takes this path. */
@@ -24,8 +24,18 @@
 #define ENG_HAS_BARS 1                         /* params.c: the engine hooks below replace its stubs */
 #define ENG_RHODES 0u
 #define ENG_BARS 1u
-#define ENG_RH_NTYPE 4u                        /* TYPE 0..3 the Rhodes; 4.. the bar types (4 = VIBES), as params.c
-                                                * TYPE_ENGINE / TYPE_SUB */
+/* The one TYPE -> engine map (params.c reads it as TYPE_ENGINE / TYPE_SUB: no range test on a TYPE anywhere): the TYPE's
+ * engine (0 Rhodes, 1 bars) and the engine's own index (the Rhodes engine's rh_type: 0..3 the four pianos, 4 the reed
+ * type WHURLI; the bar engine's bar_sub). Append-only, in step with params.c N_TYPE: 0..3 ST77 SUIT FELT DYNO, 4 VIBES,
+ * 5 MARIMBA, 6 WHURLI */
+#define ENG_NTYPE 7u
+static const uint8_t ENG_TYPE_ENG[ENG_NTYPE] = {0, 0, 0, 0, 1, 1, 0};
+static const uint8_t ENG_TYPE_SUB[ENG_NTYPE] = {0, 1, 2, 3, 0, 1, RH_T_REED};
+/* the order a player scrolls the TYPEs in (ALGORITHM, the plugin's and the Move's lists, the TYPE card's segments): the four pianos,
+ * WHURLI, VIBES, MARIMBA. Display only: the stored TYPE (presets, settings, CC 79 / 80, program changes, the plugin's and the Move's
+ * state) keeps its id: WHURLI is 6. TYPE_ORDER[position] = id, TYPE_POS[id] = position */
+static const uint8_t TYPE_ORDER[ENG_NTYPE] = {0, 1, 2, 3, 6, 4, 5};
+static const uint8_t TYPE_POS[ENG_NTYPE] = {0, 1, 2, 3, 5, 6, 4};
 
 /* the effects' view of the running engine's level (fx.c; a block's settings, read where each block's are worked out):
  * the bars into the effects at BAR_MIX_G (bars.h), lifted back by BAR_FX_K (a gain, Q15) / BAR_FX_DT (log2 Q12) where
@@ -93,16 +103,17 @@ static void eng_note_off(uint32_t note, uint32_t rv) { if (note < 128u) eng_post
 static void eng_pedal_level(uint32_t cc) { rh_hold = (uint8_t)(cc >= 64u); eng_post(EV_PEDAL, 0, cc > 127u ? 127u : cc); }
 static void eng_all_off(void) { eng_post(EV_ALL_OFF, 0, 0); }
 
-/* params.c param_apply(P_TYPE): rhodes.c only ever gets 0..3 in rh_type (a bar TYPE leaves it at the last Rhodes
+/* params.c param_apply(P_TYPE): rhodes.c only ever gets 0..4 in rh_type (a bar TYPE leaves it at the last Rhodes
  * one, so a Rhodes note still fading out at the change keeps its own voicing) */
 static uint16_t eng_epoch;                     /* main loop: counts the TYPE changes that stop the sounding voices (to
                                                 * another engine, or VIBES <-> MARIMBA); notes.c re-sounds a pitch
                                                 * still held across one when it is pressed again (out_resound) */
-static void eng_set_type(uint32_t t)
+static void eng_set_type(uint32_t t)               /* the TYPE (params.c), any of ENG_NTYPE */
 {
     uint8_t w = eng_want, s = eng_want_sub;
-    if (t < ENG_RH_NTYPE) { rh_type = (uint8_t)t; eng_want = ENG_RHODES; }
-    else { t -= ENG_RH_NTYPE; eng_want_sub = (uint8_t)(t < BAR_NTYPE ? t : 0u); eng_want = ENG_BARS; }
+    if (t >= ENG_NTYPE) t = 0;
+    if (ENG_TYPE_ENG[t] == ENG_RHODES) { rh_type = ENG_TYPE_SUB[t]; eng_want = ENG_RHODES; }
+    else { uint32_t b = ENG_TYPE_SUB[t]; eng_want_sub = (uint8_t)(b < BAR_NTYPE ? b : 0u); eng_want = ENG_BARS; }
     if (eng_want != w || (eng_want == ENG_BARS && eng_want_sub != s)) eng_epoch++;
 }
 static int eng_is_bars(void) { return eng_want == ENG_BARS; }   /* the main loop's TYPE, not the ISR latch */
@@ -111,10 +122,19 @@ static int eng_is_bars(void) { return eng_want == ENG_BARS; }   /* the main loop
  * where the bend changed, a new note starts at it); VIBES and MARIMBA ignore it. +-2 semitones. v14: the 14-bit MIDI
  * value (8192 = centre; for an SMK-37 pitch wheel, 8192 + its bend in 1/4096 semitone). The table and rh_retune are
  * genkigenki's (PR #3, the SMK-37 pitch wheel) */
+#if FR_OWN                                      /* the plugin's own-code build: the table from tools/gen_bend_own.py */
+#include "bend_own.h"
+#define ENG_BEND_T BEND_OWN_T
+#else
 static const int32_t ENG_BEND_T[17] = {   /* Q30: 2^(k/48) - 1, k = -8..8 (quarter semitones, +-2 semitones) */
     -117146609, -103232612, -89116230, -74794521, -60264498, -45523131, -30567345, -15394023, 0,
     15617934, 31463037, 47538612, 63848011, 80394637, 97181938, 114213416, 131492623};
+#endif
+#if FR_OWN
+static uint16_t eng_bend14 = 1u << 13;          /* the last bend value, 14 bits, 1 << 13 = centre (the host tests read it) */
+#else
 static uint16_t eng_bend14 = 8192u;            /* the bend last set (the host tests read it) */
+#endif
 static void eng_bend_set(int32_t v14)
 {
     int32_t q = v14 < 0 ? 0 : v14 > 16383 ? 16383 : v14, i = q >> 10, f = q & 1023;
@@ -445,7 +465,11 @@ static void eng_host_report(void)                /* tests/host.c, at the end of 
 #endif
     printf("rhodes steals %u\n", (unsigned)rh_h_steals);          /* tools/engine_ab.py */
     printf("bar starts max per block %u\n", (unsigned)bar_h_max_starts);   /* tests/py/test_bar_starts.py */
-    printf("type %u\n", eng_cur == ENG_BARS ? ENG_RH_NTYPE + bar_sub : (unsigned)rh_type);   /* the TYPE last rendered (C11) */
+    {   /* the TYPE last rendered (C11): the one whose engine and index are the running ones */
+        uint32_t t, cur = eng_cur == ENG_BARS ? bar_sub : rh_type, g = 0;
+        for (t = 0; t < ENG_NTYPE; t++) if (ENG_TYPE_ENG[t] == eng_cur && ENG_TYPE_SUB[t] == cur) g = t;
+        printf("type %u\n", g);
+    }
     if (eng_h_log) fclose(eng_h_log);
     if (bar_h_pred) fclose(bar_h_pred);
 }

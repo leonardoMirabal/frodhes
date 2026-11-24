@@ -364243,7 +364243,7 @@
 "T1b":{
 "_doc":"V1 T60 WITH the tube, pedal down (the heard decay), per reference note; the generator smooths it (median of +-smooth_keys reference neighbours, the window shrinking at the ends, as bartube.smooth_median) and solves sigma per key to hit it; outside F3..F6 the end value follows (f_end / f)^extrap_exp, clamped; where it exceeds the free bar's T60 (T1a, the top keys) the target is T1a and sigma is its minimum",
 "extrap":{
-"settle":"range outside F3..F6 is extrapolated by design (PLAN 13.1); listening",
+"settle":"range outside F3..F6 is extrapolated by design; listening",
 "src":"D:7 law 10 (174.6/f)^0.45, anchored at the end notes",
 "status":"ESTIMATE"
 },
@@ -364776,7 +364776,7 @@
 "src":"F:2.5 (same law) vs D:7 (x0.7); F-VAL #61",
 "status":"ESTIMATE"
 },
-"_comment":"Physics inputs of the VIBES bar engine for tools/gen_bars.py. Every row carries src (the report row it comes from: A..F = private/vibraphone/research reports, *-VAL = their validations, REF = private/vibraphone/ref_measure.md, numbers only) and status (CONFIRMED, CORRECTED, DERIVED, MEASURED-REF, ESTIMATE). gen_bars.py --strict fails on an ESTIMATE without a settle entry (the experiment that closes it, PLAN section 14). MIDI keys are the sounding pitch (the reference files are named one octave low; the octave is already corrected here). The reference recordings were measured in place by tools/vib_ref_measure.py; nothing from them but these numbers is used.",
+"_comment":"Physics inputs of the VIBES bar engine for tools/gen_bars.py. Every row carries src (the report row it comes from: A..F = the research reports, *-VAL = their validations, REF = the reference measurements, numbers only) and status (CONFIRMED, CORRECTED, DERIVED, MEASURED-REF, ESTIMATE). gen_bars.py --strict fails on an ESTIMATE without a settle entry (the experiment that closes it). MIDI keys are the sounding pitch (the reference files are named one octave low; the octave is already corrected here). The reference recordings were measured in place by tools/vib_ref_measure.py; nothing from them but these numbers is used.",
 "calib":{
 "_doc":"level calibration, as the Rhodes: per-key gain so v100 at the default knobs has an RMS over 50..300 ms of gain_target_dbfs (the Rhodes' -26 dBFS: the types are level-matched); a global cap so one voice at v127 RUBBER peaks at most peak_dbfs + 3 dB on 90 % of the keys; velocity trim towards the median curve",
 "_doc_offset":"user 2026-10-17: VIBES plays 2.5 dB over the Rhodes loudness: a struck bar has a higher crest factor (the same -2.8 dBFS peak gave its RMS 2.6 dB under the Rhodes), and on the jack its SNR was 2.5 dB lower (71.7 vs 74.2 dB); the limiter takes the polyphonic peaks",
@@ -364839,7 +364839,7 @@
 127
 ]
 },
-"src":"PLAN 9.2 S9 (a card's sweep moves the 0..300 ms level by <= 6 LU unless that is its job); user rules 2026-10-17 (no clipping in RAW at any voicing; TUBE: compensate to the plan's limit or justify)",
+"src":"scan S9 (a card's sweep moves the 0..300 ms level by <= 6 LU unless that is its job); user rules 2026-10-17 (no clipping in RAW at any voicing; TUBE: compensate to the plan's limit or justify)",
 "status":"DERIVED",
 "t_s":[
 0.0,
@@ -364859,7 +364859,7 @@
 "prune":{
 "_doc":"slots that never sound: an upper slot (V2 V3 V4 T1 T2) of a key is switched off in the data (b = 0, never lit) when its single-strike peak (the slot's x, free ringing between t0_s and t_s, after the contact) stays below db re the V1 slot's at every voicing of the grid (the four mallet families at their detents, v127, HAMMER 0 / 64 / 127, TONE raw 0 / 32 / 64 / 96 / 127, BELL 64): it is inaudible (the relative sleep puts it to sleep at -54 dB anyway), but bars.c's mode budget counts every lit upper slot. Slot X is off everywhere (T15)",
 "db":-60.0,
-"src":"PLAN 5.8, 6.6 (sleep rule, mode budget); coordinator 2026-10-17",
+"src":"the sleep rule, the mode budget; coordinator 2026-10-17",
 "status":"DERIVED",
 "t0_s":0.005,
 "t_s":0.05
@@ -364872,7 +364872,7 @@
 "nbody":0,
 "settle":"O3 / O13: P0 cost calibration, the S12 residual, listening on 8 / 12-note chords",
 "sleep_rel":9,
-"src":"PLAN 5.8, 6.6 (the budget: bars.c cost model, 2026-10-17)",
+"src":"the budget: bars.c cost model, 2026-10-17",
 "status":"ESTIMATE",
 "tors_q15":32767
 },

@@ -18,8 +18,8 @@
 #define FRP_UI_IFACE_H
 #include <stdint.h>
 
-#define FRP_UI_IFACE_VERSION 5   /* 3: voices_on (the HQ-only plugin, 24 voices); 4: preset_type, win_w, win_w_set;
-                                  * 5: version_text */
+#define FRP_UI_IFACE_VERSION 6   /* 3: voices_on (the HQ-only plugin, 24 voices); 4: preset_type, win_w, win_w_set;
+                                  * 5: version_text; 6: fx_last, fx_last_set */
 
 typedef struct frp_core frp_core;            /* one plugin instance */
 struct clap_plugin;
@@ -45,7 +45,7 @@ void frp_ui_param_begin(frp_core *c, uint32_t id);
 void frp_ui_param_set(frp_core *c, uint32_t id, int v);
 void frp_ui_param_end(frp_core *c, uint32_t id);
 
-/* ---- presets: the factory presets F01..F57 (F01..F19 the FM-1's, F20..F57 the Move's variants), then the user's own
+/* ---- presets: the factory presets F01..F61 (F01..F23 the FM-1's, F24..F61 the Move's variants), then the user's own
  * (files in frp_ui_preset_dir(), sorted by name). Indices run 0 .. count - 1 in that order; the factory ones never
  * move, a user preset's index can change when files are added or removed (frp_ui_rev bumps). */
 typedef struct {
@@ -54,7 +54,7 @@ typedef struct {
     int user;                                /* 1: a user file (it can be overwritten or deleted) */
 } frp_preset_info;
 int frp_ui_preset_count(const frp_core *c);
-int frp_ui_preset_factory_count(void);       /* 57 */
+int frp_ui_preset_factory_count(void);       /* 61 */
 int frp_ui_preset_info(const frp_core *c, int idx, frp_preset_info *out);    /* 0 ok, -1 no such index */
 /* what plays: its index (-1: a sound not in the list, e.g. a deleted user preset or a state from elsewhere), its
  * tag and name in *out, and *edited = 1 when the sound differs from the preset as stored */
@@ -134,6 +134,11 @@ int frp_ui_win_w(const frp_core *c);                 /* the window's logical wid
 void frp_ui_win_w_set(frp_core *c, int w);           /* 720..1920 (0: the default); saved with the project ("win") */
 const char *frp_ui_version_text(void);              /* the window's VERSION: a release's X.Y.Z (FRP_VERSION), a dev build
                                                       * "DEV" and 4 hex digits of its commit (FRP_GIT), as the FM-1 */
+/* ---- (version 6) the effect lamps' memory: per right-panel effect (tab 0..5: FILTER TREM/WAH PHASER CHORUS DELAY
+ * REVERB), its last setting other than OFF (0: none seen), so a lamp switched off turns the effect back on as it was,
+ * after the window was closed and reopened too; saved with the project ("lamp"; a state without it: none seen) */
+int frp_ui_fx_last(const frp_core *c, int tab);      /* 0..255; 0 for none or a tab out of range */
+void frp_ui_fx_last_set(frp_core *c, int tab, int v);
 
 /* ---- (version 2) the same functions as a CLAP extension, for out-of-process callers (the headless test host,
  * plugin/tests/clap_render.c --coretest): plugin->get_extension(plugin, FRP_UI_EXT_ID) returns a const frp_ui_vtable *.
@@ -186,5 +191,8 @@ typedef struct frp_ui_vtable {
     void (*win_w_set)(frp_core *c, int w);
     /* version 5 */
     const char *(*version_text)(void);
+    /* version 6 */
+    int (*fx_last)(const frp_core *c, int tab);
+    void (*fx_last_set)(frp_core *c, int tab, int v);
 } frp_ui_vtable;
 #endif

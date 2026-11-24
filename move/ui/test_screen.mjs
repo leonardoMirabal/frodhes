@@ -113,7 +113,7 @@ test("the VOICE pages follow TYPE (a knob here, or elsewhere)", () => {
     assert.equal(s.api.visiblePages(0).length, 14);                  // (CHORUS and DELAY apart, ARPEGGIO: 2026-10-30;
     assert.equal(s.api.visiblePages(1).length, 15);                  //  the EQ: 0.9.9; VELOCITY: 0.9.10)
     assert.equal(s.api.visiblePages(2).length, 14);
-    for (let i = 0; i < 4; i++) { s.knob(0, 1); s.wait(200); }        // TYPE ST77 -> VIBE
+    for (let i = 0; i < 5; i++) { s.knob(0, 1); s.wait(200); }        // TYPE ST77 -> VIBE
     s.live();
     assert.equal(s.st().engine, 1);
     goto(s, "VIBES MOTOR");
@@ -353,20 +353,20 @@ test("ARPEGGIO: the FM-1 page's cards (MODE RATE OCT GATE) and HOLD, after TEMPO
     assert.equal(titles.indexOf("ARPEGGIO"), titles.indexOf("TEMPO") + 1, titles.join(","));
 });
 
-test("PRESET: F01-F19, the Move-only F20-F57 (index 35..), then U01-U16 (index u_first 19..) (2026-11-01)", () => {
+test("PRESET: F01-F19, the Move-only F20-F57 (index 35..), WHURLI F58-F61 (73..), then U01-U16 (index u_first 19..) (2026-11-01)", () => {
     const s = new Screen().open();
-    assert.equal(s.plugin.get("preset_count"), "73");
+    assert.equal(s.plugin.get("preset_count"), "77");
     assert.equal(s.plugin.names[35], "F20 STAGE77 ECHO");
     const seen = [];
     for (let i = 0; i < 80; i++) { s.knob(4, 1); s.wait(50); s.plugin.apply(); seen.push(s.plugin.preset); }
     const want = [];
     for (let i = 1; i < 19; i++) want.push(i);
-    for (let i = 35; i < 73; i++) want.push(i);
+    for (let i = 35; i < 77; i++) want.push(i);
     for (let i = 19; i < 35; i++) want.push(i);
     assert.deepEqual(seen.slice(0, want.length), want);                  // the knob's order
     assert.ok(seen.slice(want.length).every((v) => v === 34), "the last one stays");
     for (let i = 0; i < 20; i++) { s.knob(4, -1); s.wait(50); s.plugin.apply(); }
-    assert.equal(s.plugin.preset, 68, "back from U16 through U01 to F53");
+    assert.equal(s.plugin.preset, 72, "back from U16 through U01 to F57");
 });
 
 test("REVERB INF: DECAY reads SUSTAIN from 120 and FREEZE at 127, as the FM-1's card (ui.c); a number otherwise", () => {
@@ -568,6 +568,19 @@ test("every overview label fits its card with a gap: its width at most the card'
             assert.ok(w(lab) <= cell - 1, `${p.title} ${lab}: ${w(lab)} px in a ${cell} px card`);
             assert.ok(!k.short || k.short.length >= 2, `${p.title} ${k.short}`);
         });
+    }
+});
+
+test("TYPE scrolls STAGE 77, SUITCASE, EARLY FELT, BELL DYNO, WHURLI, VIBES, MARIMBA; the stored id stays", () => {
+    const s = new Screen().open();
+    const ids = [0, 1, 2, 3, 6, 4, 5];                               // the p_type ids in scroll order
+    for (let i = 1; i < ids.length; i++) {
+        s.knob(0, 1); s.wait(200); s.live();
+        assert.equal(Number(s.plugin.get("p_type")), ids[i]);
+    }
+    for (let i = ids.length - 2; i >= 0; i--) {
+        s.knob(0, -1); s.wait(200); s.live();
+        assert.equal(Number(s.plugin.get("p_type")), ids[i]);
     }
 });
 

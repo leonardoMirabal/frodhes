@@ -807,3 +807,25 @@ def test_tap_lead_after_program_change():
     assert ev[-1] == (pc + 1, 0xB0, 47, 0)                 # (the motor off after it)
     r.pending = [("pc", 0, 0)]
     assert r.lead() == [(5, 0xC0, 0, 0)]                   # (as before: a lone change at 5 ms)
+
+
+def test_whurli_programs_and_the_ep_types():
+    """the Move's WHURLI F58-F61 (program changes 73-76) are the host build's F20-F23 (35-38); the tap player hands
+    its program changes to the app past the bridge, so it sends the app's numbers too. The other electric pianos
+    are d2 engines selected by CC 80 at their band's middle (0-25 / 26-51 / 52-76 / 77-102 / 103-127)"""
+    assert [mh.host_pc(p) for p in (0, 12, 14, 32, 73, 74, 75, 76)] == [0, 12, 14, 32, 35, 36, 37, 38]
+    bands = {"suitcase": (26, 51), "felt": (52, 76), "dyno": (77, 102), "whurli": (103, 127)}
+    for e, (lo, hi) in bands.items():
+        (cc, v), = mh.ENGINE_CCS[e]
+        assert cc == 80 and lo <= v <= hi
+        assert e in mh.D2_PRESET and e in mh.D2_NOTES and e in mh.VEL and e in mh.SUS
+    assert mh.D2_PRESET["whurli"] == 73 and mh.D2_ENGINES == ("rhodes", "vibes", "marimba")
+    assert (40, 0) in mh.GLOBAL_CCS
+
+
+def test_tap_rig_sends_the_apps_whurli_program():
+    r = mh.TapRig.__new__(mh.TapRig)
+    r.pending = []
+    r._send("pc", 73)
+    r._send("pc", 14)
+    assert r.pending == [("pc", 35, 0), ("pc", 14, 0)]

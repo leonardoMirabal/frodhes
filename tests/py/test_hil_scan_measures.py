@@ -63,7 +63,7 @@ def test_a_residue_before_the_first_event_is_not_the_onset():
     assert abs(on[0] - i) <= 2 * FS // 1000 and abs(lat - 0.065) < 0.003, (on, lat)
 
 
-# ---- K4: rc-0.9.9h's flaky MARIMBA jack rows (private/BACKLOG-after-099.md)
+# ---- K4: rc-0.9.9h's flaky MARIMBA jack rows
 def test_floor_sub():
     """the floor taken off a band's power, at most FLOOR_SUB_MAX_DB; none (USB's exact zeros) leaves it"""
     assert h.floor_sub(2.0, None) == 2.0 and h.floor_sub(2.0, 1.0) == 1.0

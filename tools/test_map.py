@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Which release tests a change needs: every tracked file -> its test tiers (private/TEST-PLAN.md v2).
+"""Which release tests a change needs: every tracked file -> its test tiers (the release test plan v2).
 
     tools/test_map.py [--since TAG] [--json] [FILE ...]
 
@@ -72,26 +72,28 @@ RULES = [
      "the app's glue: the audio ISR's wiring, the main loop, the MIDI CC map"),
     ("engine:rhodes", ["firmware/src/rhodes.c", "firmware/gen/rhodes_tables.h", "firmware/gen/rhodes_phim.h", "firmware/gen/rh_tone_g.h",
                        "firmware/gen/rh_tone_b.h", "firmware/gen/rh_velmap.h", "firmware/gen/rh_velmap_mk.h", "firmware/gen/rh_drive_mk.h",
-                       "firmware/gen/rh_top.h"], ALL, ("rhodes",), (),
+                       "firmware/gen/rh_top.h", "firmware/gen/rh_pack.h", "firmware/gen/reed_tables.h"], ALL, ("rhodes",), (),
      "the Rhodes engine (its DSP or tables)"),
-    ("engine:bars", ["firmware/src/bars.c", "firmware/src/bars.h", "firmware/gen/bars_tables.h"], ALL,
+    ("engine:bars", ["firmware/src/bars.c", "firmware/src/bars.h", "firmware/gen/bars_tables.h",
+                    "firmware/gen/bars_pack.h"], ALL,
      ("vibes", "marimba"), (), "the bar engine (VIBES, MARIMBA: its DSP or tables)"),
     ("engine:pulses", ["firmware/gen/pulse_pz.h"], ALL, ENGINES_T2, (),
      "the packed hammer / mallet pulses (rhodes.c rh_pz: the Rhodes and the bars decode them at the strike)"),
-    ("engine:dispatch", ["firmware/src/engine.c", "firmware/src/fxp.h"], ALL, ENGINES_T2 + ("effects",), (),
+    ("engine:dispatch", ["firmware/src/engine.c", "firmware/src/fxp.h", "firmware/src/bend_own.h"], ALL, ENGINES_T2 + ("effects",), (),
      "the engine dispatcher / the fixed-point helpers (every engine's DSP)"),
-    ("fx", ["firmware/src/fx.c", "firmware/src/fx_eq.c", "firmware/src/dly_tape.c",
+    ("fx", ["firmware/src/fx.c", "firmware/src/fx_own.h", "firmware/src/fx_fel.c", "firmware/src/fx_eq.c", "firmware/src/dly_tape.c", "firmware/src/dly_own.c",
             "firmware/gen/fx_tables.h"], (1, 4, 6),
      ("effects",), (),
      "the effects chain (its DSP or tables)"),
-    ("fx:drive", ["firmware/src/drive.c", "firmware/src/drv_*.c", "firmware/gen/drive_tables.h"], (1, 4, 6),
+    ("fx:drive", ["firmware/src/drive.c", "firmware/src/drv_*.c", "firmware/gen/drive_tables.h",
+                  "firmware/gen/drive_own_tables.h"], (1, 4, 6),
      ("effects",), (), "the DRIVE's TYPEs (the framework, a TYPE's kernel or its tables)"),
     ("fx:reverb", ["firmware/src/rev_types.c", "firmware/src/rev_*.c"], (1, 4, 6), ("effects",), (),
      "the REVERB's TYPEs (the framework or a TYPE's kernel)"),
     ("ui", ["firmware/src/ui.c", "firmware/src/params.c", "firmware/src/presets.c", "firmware/src/eng_pages.h",
             "firmware/src/aatext.c", "firmware/src/gfx.c", "firmware/src/lcd.c", "firmware/gen/*font*.h"],
      (3, 4, 5), (), (SHOTS,), "the panel, the parameters, the presets, the screen"),
-    ("notes", ["firmware/src/notes.c", "firmware/src/arp.c", "firmware/src/seq.c", "firmware/src/tempo.c",
+    ("notes", ["firmware/src/notes.c", "firmware/src/arp.c", "firmware/src/seq.c", "firmware/src/tempo.c", "firmware/src/scales_own.h",
                "firmware/src/midi_uart.c"], (1, 3), (), (SEQ,), "the notes, the arp, the sequencer, the tempo, MIDI in"),
     ("update", ["firmware/src/ota.c", "firmware/src/recovery.c", "firmware/src/bootguard.h", "firmware/loader/*"],
      (5,), (), (), "the update / recovery path and the loader"),

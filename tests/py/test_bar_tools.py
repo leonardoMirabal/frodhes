@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The bar-engine scans' plumbing (tools/bar_scan.py, tools/bar_freq_scan.py), run on a Rhodes TYPE through the host
-build: they render, measure and report. The bar TYPE's own pass / fail is the scan's job (PLAN P6), not this test's."""
+build: they render, measure and report. The bar TYPE's own pass / fail is the scan's job, not this test's."""
 import json
 import os
 import subprocess
@@ -13,7 +13,7 @@ import bar_measure as bm  # noqa: E402
 
 def test_type_bands_follow_the_firmware():
     assert bm.n_types() >= 5
-    assert [bm.type_cc(t) for t in range(4)] == [8, 40, 72, 104]           # hil_scan's values for the Rhodes TYPEs
+    assert [bm.type_cc(t) for t in range(4)] == [8, 40, 72, 96]           # hil_scan's values for the Rhodes TYPEs
     assert all(bm.type_ccnum(t) == 79 and 0 <= bm.type_cc(t) <= 127 for t in range(4, bm.n_types()))
     assert bm.type_name(4) == "VIBES" and bm.spec_for_type(4)[1] and not bm.spec_for_type(0)[1]
 

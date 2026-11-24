@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Measure reference marimba recordings - for the MARIMBA engine's calibration targets ONLY (MARIMBA PLAN D10, §2.6).
+"""Measure reference marimba recordings - for the MARIMBA engine's calibration targets ONLY (numbers only).
 
 The recordings are read where they are and never copied, played back, fitted or embedded: only NUMBERS come out
-(private/marimba/ref_measure.md, plots in build/mrb_ref/). The same `measure()` runs on the golden model
+(a gitignored table, plots in build/mrb_ref/). The same `measure()` runs on the golden model
 (tools/bars_model.py on docs/model/data/marimba_spec.json), on the host build (build/host/frodhes, MARIMBA = CC 79 127)
 and, through tools/vib_sampleback.py --engine marimba, on the FM-1's USB audio: every number in a comparison comes
 from one procedure.
@@ -587,7 +587,7 @@ def plot(G, H, R, t, outdir):
 
 def write_md(path, src_lines, zones, R, notes, G, H, extra, t, cmp_rows):
     L = ["# Reference marimba measurements (numbers only; the recordings stay where they are)", "",
-         "Made by tools/mrb_ref_measure.py (MARIMBA PLAN D10, approved 2026-10-19 for numbers only). Nothing of the "
+         "Made by tools/mrb_ref_measure.py (approved 2026-10-19 for numbers only). Nothing of the "
          "recordings is copied, played back, fitted or embedded.", ""] + src_lines + [""]
     if notes:
         L += ["## Not measured", ""] + [f"- {n}" for n in notes] + [""]

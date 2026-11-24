@@ -31,7 +31,7 @@
 /* ---- generated-table types (must match tools/gen_rhodes.py) */
 typedef struct { int32_t sh, ch, th, d, drel, cr, b; } rh_mode_t;
 typedef struct {
-    rh_mode_t m[5];
+    rh_mode_t m[4];                                       /* V1 V2 O1 O2 (the old fifth slot was zero on every key: RH_NM 4) */
     int32_t off, gain, kill, hc, pk;
     uint16_t prate, life;
     uint8_t band, fam, res, pad;
@@ -43,6 +43,13 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
     uint8_t nbody, drive_row; /* body biquads in use (RH_BODY), the drive's row */
 } rh_type_t;
 #include "rhodes_tables.h"
+_Static_assert(RH_NM == 4, "rh_key_t holds RH_NM modes");
+/* WHURLI (TYPE 6, rh_type 4): its own tables (tools/gen_reed_stub.py until the physics generator's), in the interface of
+ * the reed tables (rhodes_tables.h). Read only by the reed paths below (rh_init_rd, rh_load_pulse_rd, rh_pickup_rd, the
+ * chain of TYPE 4): every other TYPE takes exactly the path it always did */
+typedef struct { int32_t bark_max, off_max; uint16_t pamp_max, pad; } rd_lim_t;
+#include "reed_tables.h"
+#define RH_T_REED 4u                           /* rh_type of the reed type (the Rhodes types 0..3) */
 #ifndef RH_NO_TONE_G                           /* (-DRH_NO_TONE_G: without it, as tools/tone_level.py measures) */
 #include "rh_tone_g.h"                         /* TONE's level compensation (tools/tone_level.py --write) */
 #if defined(RH_DRIVE) && defined(RH_VM_ON)
@@ -54,6 +61,7 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #if defined(RH_DRIVE) && !defined(RH_NO_DRV_MK)  /* (-DRH_NO_DRV_MK: without it, as tools/drive_makeup.py measures) */
 #include "rh_drive_mk.h"                       /* the pickup drive's level make-up (tools/drive_makeup.py --write) */
 #endif
+#include "rh_pack.h"                            /* the make-up and TONE blend rows, each distinct row once (tools/gen_rh_pack.py) */
 #if defined(RH_DRIVE) && !defined(RH_NO_TOP) && !defined(RH_VM_PROBE)   /* (-DRH_NO_TOP: without it, as tools/rh_top.py
                                                 * measures) */
 #include "rh_top.h"                            /* the clean top's swing cut per TYPE and key (tools/rh_top.py --write) */
@@ -126,6 +134,7 @@ typedef struct {
     rh_ms_t m[RH_NM];
     const rh_key_t *k;
     uint8_t note, vel, alive, held;
+    uint8_t rd;                                /* a WHURLI voice (rh_init_rd): its own key table, pulse laws and pickup curve */
     uint8_t ramp;                              /* damper crossfade sub-blocks left */
     uint8_t rlen;                              /* its length (RAMP_SUB, or the release velocity's: rh_rel_len) */
     uint16_t rgain;                            /* Q15: the release velocity's damper weight scale (key up only) */
@@ -266,7 +275,7 @@ static uint32_t rh_mk_q12(const uint8_t *row, uint32_t vel)      /* Q12, < 2^16 
 /* the pickup drive's level make-up per TYPE, key and velocity: the drive's loudness back to the level the notes had
  * before it at mf and above, never under it (tools/drive_makeup.py). A gain on the voice's output only: the timbre
  * (the swing through the pickup) is the drive's. Note-on / re-strike only */
-#define rh_drv_mk(key, vel) rh_mk_q12(RH_DRV_MK[rh_type & 3u][key], vel)
+#define rh_drv_mk(key, vel) rh_mk_q12(RH_MK_U[RH_DRV_MK_I[rh_type & 3u][key]], vel)
 /* the mechanical noises (knock, felt, pedal thud: absolute levels) follow the notes' level: the make-up brings the
  * notes back to the reference's level, the noises were set against, so they stay at their own (without it: RH_NZ_G,
  * the drive's gain target re the noises' reference, -6 dB; with it the pedal's thud played 6 dB under 0.9.9's) */
@@ -456,8 +465,10 @@ static uint32_t rh_lit(uint32_t base, uint32_t n)
 static inline int rh_mode_runs(const rh_key_t *k, uint32_t m)
 {
 #ifndef RH_NO_GATE
-    uint32_t n = (uint32_t)(k - RH_KEYS) + RH_KEY_LO;
-    if (m == RH_V2 && n >= RH_V2_GATE_LO && n <= RH_V2_GATE_HI) return 0;
+    if ((uintptr_t)k - (uintptr_t)RH_KEYS < sizeof RH_KEYS) {      /* (a Rhodes key: the WHURLI rows have no gate) */
+        uint32_t n = (uint32_t)(k - RH_KEYS) + RH_KEY_LO;
+        if (m == RH_V2 && n >= RH_V2_GATE_LO && n <= RH_V2_GATE_HI) return 0;
+    }
 #endif
     return k->m[m].th != 0;
 }
@@ -620,6 +631,14 @@ static const uint16_t RH_DYN_V[RH_DYN_V_HI] = {             /* Q15, v 0..126 (12
 static const uint16_t RH_DYN_K[RH_KEY_LO + RH_NKEY - RH_DYN_K_LO] = {   /* Q15, keys 82..108 (below: 32768) */
     32768, 32557, 31967, 31073, 29949, 28673, 27312, 25928, 24573, 23288, 22108, 21059, 20161, 19432, 18888, 18546,
     18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427};
+/* BELL DYNO's top keys (2026-11-22): its presence (the body's shelf, +4 dB at 4.2 kHz, and the RLC's +1.9) and its
+ * harder tip raise the fundamental of the keys whose f0 sits in the shelf, so its top octave climbed 9 dB from key 99 to
+ * 108 against STAGE 77's 3 (v100) and a single v127 note on key 108 reached the rail (35.7k unclipped). From key 100
+ * up its level follows STAGE 77's key tracking, its own offset at keys 96..99 kept: a cut of 6.4 ((k - 99) / 9)^1.6 dB
+ * (0.2 dB at key 100, 1.75 at 103, 6.4 at 108). Only ever a cut; DYNO only */
+#define RH_DYN3_K_LO 99u
+static const uint16_t RH_DYN_K3[RH_KEY_LO + RH_NKEY - 1u - RH_DYN3_K_LO] = {   /* Q15, keys 100..108 */
+    32058, 30663, 28858, 26793, 24576, 22294, 20017, 17800, 15684};
 static uint32_t rh_dyn(uint32_t n, uint32_t vel, uint32_t lt)   /* Q15 (<= 32768): the key n (clamped), velocity vel;
                                                 * lt: RESPONSE B (light: 0.9.9's velocity law, the key taper only) */
 {   /* (-DRH_NO_DYN: without it, as tests/py/test_rhodes_dyn.py compares; off in the velocity map's probe builds:
@@ -632,6 +651,7 @@ static uint32_t rh_dyn(uint32_t n, uint32_t vel, uint32_t lt)   /* Q15 (<= 32768
     if (n > RH_KEY_LO + RH_NKEY - 1u) n = RH_KEY_LO + RH_NKEY - 1u;   /* (a MIDI note over 108 plays the top key's
                                                 * values: the table ended there, read past its end: the sanitizer) */
     if (n >= RH_DYN_K_LO) g = (g * RH_DYN_K[n - RH_DYN_K_LO]) >> 15;
+    if (n > RH_DYN3_K_LO && rh_type == 3u) g = (g * RH_DYN_K3[n - RH_DYN3_K_LO - 1u]) >> 15;
     return g;
 #endif
 }
@@ -651,6 +671,39 @@ static int32_t rh_bell_at(uint32_t n)                       /* Q16: BELL's scale
     if (b <= 65536 || n <= RH_BELL_K0) return b;
     if (n >= RH_BELL_K1) return 65536;
     return 65536 + (int32_t)(((int64_t)(b - 65536) * RH_BELL_T[n - RH_BELL_K0 - 1u]) >> 15);
+}
+/* a TYPE's own overtone scale under BELL's top quarter (2026-11-22): BELL DYNO's x1.8 (RH_TYPE bell, the only one over
+ * 1) stacked on BELL's x3.9 at 127 drove O1 / O2 at 7x their fitted force, and a v127 strike on keys 28-31 peaked over
+ * the rail dry (39.4k at key 28; STAGE 77 at BELL 127 13.7k). From BELL 96 (x2) to 127 the TYPE's scale gives up to
+ * 26 % of itself, linearly in BELL's scale: DYNO's product at 127 is x5.2 (its BELL 113), still rising at every step
+ * (the knob's 0.19 dB a step against at most 0.1 dB of fade). BELL up to 96 and every other TYPE as before.
+ * TONE under 64 (2026-11-23) brings the pickup nearer: DYNO's overtone strike grows with it, and a v127 bass note at
+ * TONE 0 reached the rail from BELL 80 (TONE 32 from BELL 104). There the product TYPE x BELL eases toward a ceiling:
+ * over BELL 64 its rise d becomes d M / (d + M) (M = 0.35: at most x2.15 at TONE 0, DYNO's own x1.8 at BELL 64), blended
+ * in by TONE's t (3 - t) / 2 as the level trim's fade; still rising at every BELL step. TONE 64 up and BELL 64 down as
+ * before */
+#define RH_BELL_M 22938u                                   /* 0.35 (Q16) */
+#define RH_BELL_TQ 131072                                  /* BELL 96: x2 (KN_P32) */
+static int32_t rh_ty_bell(int32_t tb)                      /* Q16: the TYPE's overtone scale at this BELL */
+{
+    int32_t x = rh_bell - RH_BELL_TQ, r = tb, to = rh_tone_off;
+    uint32_t t, f, k, p, d, sat, pe;
+    if (tb <= 65536) return tb;
+    if (x > 0) {
+        x = (int32_t)(((uint32_t)x * 535u) >> 10);             /* / (x3.914 - x2) in Q16: 0 .. 65536 */
+        if (x > 65536) x = 65536;
+        r = tb - (int32_t)((((int64_t)tb * 17039) >> 16) * x >> 16);   /* 17039: 0.26 */
+    }
+    if (to >= 0 || rh_bell <= 65536) return r;
+    t = (uint32_t)(-to) >> 8;
+    f = (uint32_t)(((uint64_t)t * (196608u - t)) >> 17);
+    k = (uint32_t)rh_bell;
+    p = (uint32_t)(((uint64_t)(uint32_t)r * k) >> 16);
+    d = (uint32_t)(((uint64_t)(uint32_t)tb * k) >> 16) - (uint32_t)tb;
+    sat = (uint32_t)tb + (uint32_t)(((d >> 4) * (RH_BELL_M >> 4)) / ((d >> 4) + (RH_BELL_M >> 4)) << 4);
+    if (sat >= p) return r;
+    pe = p - (uint32_t)(((uint64_t)(p - sat) * f) >> 16);
+    return (int32_t)((pe << 12) / (k >> 4));
 }
 static int32_t rh_dyn_gain(int32_t gain, uint32_t gd)       /* gain x gd (32768: gain itself, byte-identical) */
 {
@@ -776,8 +829,32 @@ static void rh_drv_restrike(rh_voice_t *v, uint32_t ki, uint32_t vel)
 #endif
 }
 #endif
+/* the TYPE's tip scale at a key (2026-11-22): RH_TYPE's ham (EARLY FELT x0.7, BELL DYNO x1.2) scales the contact rate.
+ * The hammer bands' pulses (gen_rhodes: bands start at keys 51, 61, 71 and 85, each 2-4x faster than the one under
+ * it) are lengthened by a softer tip enough to lower the fundamental more and more up a band, and much less on the
+ * next band's first key, so EARLY FELT's level stepped at each band edge: +1.3, +1.5, +1.9 and +3.0 dB at v40 (50/51,
+ * 60/61, 70/71, 84/85; +1.5 dB at 84/85 at v100), BELL DYNO's harder tip the mirror steps (-1.3 dB at 84/85).
+ * RH_HAM_M bridges each edge: the TYPE's deviation from x1 times m / 128 over the three keys either side (fitted on
+ * EARLY FELT at v40 and v100 to a straight line in level across the edge, the felt's loss elsewhere as it was; band 4
+ * barely moves with the tip, so at key 85 the three keys under it take the whole step). BELL DYNO (x1.2) only at the
+ * 84 / 85 edge (keys 82..84): its steps at 51, 61 and 71 are 0.06 .. 0.36 dB at v40. STAGE 77 / SUITCASE (x1)
+ * unchanged; every other key 128 (as before) */
+#define RH_HAM_M_LO (48u - RH_KEY_LO)
+#define RH_HAM_M_HI (82u - RH_KEY_LO)       /* a harder tip (BELL DYNO) only at 84 / 85: its lower edges step 0.06 .. 0.36 dB */
+static const uint8_t RH_HAM_M[] = {   /* keys 48..84, Q7 */
+    124, 104, 102, 143, 135, 128, 128, 128, 128, 128, 124, 114, 102, 153, 139, 128, 128, 128, 128,
+    128, 117, 98, 76, 143, 135, 128, 128, 128, 128, 128, 128, 128, 128, 128, 97, 63, 29};
+static uint32_t rh_ty_ham(uint32_t ki)
+{
+    int32_t h = RH_TYPE[rh_type & 3u].ham;
+    if (ki >= (h > 65536 ? RH_HAM_M_HI : RH_HAM_M_LO) && ki < RH_HAM_M_LO + sizeof RH_HAM_M)
+        h = 65536 - (((65536 - h) * (int32_t)RH_HAM_M[ki - RH_HAM_M_LO]) >> 7);
+    return (uint32_t)h;
+}
+static void rh_load_pulse_rd(rh_voice_t *v, uint32_t vel, int fresh);   /* (the WHURLI strike, below) */
 static void rh_load_pulse(rh_voice_t *v, uint32_t vel, int fresh)   /* fresh: rh_init's (the drive's level just set) */
 {
+    if (v->rd) { rh_load_pulse_rd(v, vel, fresh); return; }   /* a WHURLI voice: its own laws */
     uint32_t key = (uint32_t)(v->k - RH_KEYS), i = RH_VPOS_I[vel], f = RH_VPOS_F[vel], l = RH_VLAY_I[vel];
     const uint16_t *pa = RH_PAMP[key];
     const uint16_t *pr = RH_PRATE[key];               /* (+ RH_PRATE_B[key]: the key's base) */
@@ -834,7 +911,7 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel, int fresh)   /* fresh: rh
 #endif
     {   /* HAMMER knob x TYPE tips scale the contact rate; the force scales with it so the impulse (the hammer's
          * momentum) is kept: a softer tip pushes longer and less hard, it does not give more energy */
-        uint32_t h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RH_TYPE[rh_type & 3u].ham) >> 16);
+        uint32_t h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * rh_ty_ham(key)) >> 16);
         v->prate = (uint32_t)(((uint64_t)v->prate * h) >> 16);
         v->pamp = (int32_t)(((int64_t)v->pamp * h) >> 16);
         if (v->pamp > 32767) v->pamp = 32767;   /* mul15s range; the drive too (0.9.10, the user: clean at every
@@ -1043,7 +1120,7 @@ static int32_t __attribute__((noinline)) rh_tone_gain(int32_t gain, int32_t o64,
 #ifdef RH_TONE_W_Q
     /* S1a: with the pickup drive each key swings its own way at each velocity, so the blend is per TYPE, key and
      * velocity anchor (tone_level.py fit_w), x RH_TONE_W_Q, extrapolated past the two curves where the swing is past them */
-    const uint8_t *wt = RH_TONE_W[rh_type & 3u][ki];
+    const uint8_t *wt = RH_TW_U[RH_TONE_W_I[rh_type & 3u][ki]];
     uint32_t vi = RH_VPOS_I[vel], vf = RH_VPOS_F[vel] > 255u ? 255u : RH_VPOS_F[vel];
     int32_t w = (int32_t)wt[vi] + ((((int32_t)wt[vi + 1u] - (int32_t)wt[vi]) * (int32_t)vf) >> 8) - RH_TONE_W_Q;
     s = rh_tone_a(As, o64); h = rh_tone_a(Ah, o64); a64 = s + (h - s) * w / RH_TONE_W_Q;
@@ -1189,6 +1266,7 @@ static void rh_hd_restrike(rh_voice_t *v, uint32_t vel)
 {
     uint32_t m;
     int64_t u = v->hd_off0;
+    if (v->rd) return;                         /* (WHURLI: no glide) */
     if (v->gain != v->hd_gc) v->hd_g0 = v->gain;
     v->hd_y1 = v->hd_y2 = 0; v->off = v->hd_off0; v->gain = v->hd_gc = v->hd_g0;
     for (m = 0; m < RH_NM; m++) if (v->m[m].live) u += v->m[m].x;
@@ -1268,7 +1346,7 @@ static int32_t rh_vm(uint32_t t, uint32_t key, uint32_t vel)     /* t 0: X, 1: G
 #ifdef RH_VM_MK_Q
     if (t) {   /* G x the level make-up (Q12, the notes back to the reference release's level at mf and above, never
                 * under it below: an output gain only, the colour is the map's) */
-        a = (int32_t)(((uint32_t)a * rh_mk_q12(RH_VM_MK[key], vel)) >> 12);
+        a = (int32_t)(((uint32_t)a * rh_mk_q12(RH_VMK_U[RH_VM_MK_I[key]], vel)) >> 12);
         if (a > 65535) a = 65535;
         if (a < 1) a = 1;
     }
@@ -1310,7 +1388,7 @@ static int32_t rh_vm_b(const rh_mode_t *km, uint32_t m, const rh_type_t *ty, uin
 {
     int64_t b = ((int64_t)km->b * RH_DRV_IB[key]) >> 12;
     b = (((b * rh_bark_s) >> 16) * ty->bark) >> 16;
-    if (m == RH_O1 || m == RH_O2) b = (((b * ty->bell) >> 16) * rh_bell_at(key + RH_KEY_LO)) >> 16;
+    if (m == RH_O1 || m == RH_O2) b = (((b * rh_ty_bell(ty->bell)) >> 16) * rh_bell_at(key + RH_KEY_LO)) >> 16;
     b = (b * x) >> RH_VM_Q;
     return b > 0x7FFFFFFF ? 0x7FFFFFFF : b < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)b;
 }
@@ -1378,9 +1456,159 @@ static void rh_vm_kap(rh_voice_t *v, uint32_t n, const rh_type_t *ty, int32_t vx
 #endif
 }
 #endif
+
+/* ---- WHURLI (the reed type): the strike from its own tables. The modes, the pulse and the pickup are the engine's
+ * own (the mode loops, the force loop); what differs is where the numbers come from: RD_KEYS rows (rh_key_t), the five
+ * velocity anchors (v >> 5, Q8 fraction: anchor 4 = v 128), the pulse groups, the pickup curve read by rh_pickup_rd, and
+ * RD_LIM (the BARK scale's cap, the nearest pickup offset, the hammer clamp). No harmonic-decay glide, no amplitude ->
+ * pitch, no clean-top or velocity-map tables: the five laws carry them. One type check a strike, none a sample */
+static inline uint32_t rd_row(uint32_t note)                   /* the table row of a MIDI note (clamped) */
+{
+    return (note < RD_KEY_LO ? RD_KEY_LO : note > RD_KEY_LO + RD_NKEY - 1u ? RD_KEY_LO + RD_NKEY - 1u : note) - RD_KEY_LO;
+}
+static inline int32_t rd_law(const uint16_t *a, uint32_t vel)  /* a law at a velocity: the anchors, linear */
+{
+    uint32_t i = vel >> 5, f = (vel & 31u) << 3;
+    return (int32_t)a[i] + ((((int32_t)a[i + 1u] - (int32_t)a[i]) * (int32_t)f) >> 8);
+}
+static inline uint32_t rd_bscale(void)                         /* BARK x the type's tip scale, capped at RD_LIM (Q16) */
+{
+    uint32_t b = (uint32_t)(((uint64_t)(uint32_t)rh_bark_s * (uint32_t)RD_TYPE.bark) >> 16);
+    if (b > (uint32_t)RD_LIM.bark_max) b = (uint32_t)RD_LIM.bark_max;
+    return b < 4096u ? 4096u : b;
+}
+static inline __attribute__((always_inline)) int32_t rd_hermite(int32_t u)                    /* the pickup curve at gap offset u (Q25): Phi~(u * u) */
+{
+    int64_t s = (int64_t)u * u;
+    uint32_t i, t;
+    int32_t p0, m0, p1, m1, d, c3, c2, a;
+    const int32_t *q;
+    if (s >= ((int64_t)RD_PU_N << RD_PU_SH)) { i = RD_PU_N - 1u; t = 0x3FFFFFu; }
+    else { i = (uint32_t)(s >> RD_PU_SH); t = (uint32_t)(s >> (RD_PU_SH - 22)) & 0x3FFFFFu; }
+    q = RD_PHIM + 2u * i;
+    p0 = q[0]; m0 = q[1]; p1 = q[2]; m1 = q[3];
+    d = p1 - p0;
+    c3 = m0 + m1 - 2 * d;
+    c2 = d - m0 - c3;
+    a = c2 + (int32_t)(((int64_t)t * c3) >> 22);
+    a = m0 + (int32_t)(((int64_t)t * a) >> 22);
+    return p0 + (int32_t)(((int64_t)t * a) >> 22);
+}
+static int32_t rd_slope(int32_t u)                             /* |dPhi/du| near u: the fundamental's small-signal gain */
+{
+    int32_t d = 1 << 20, h = rd_hermite(u + d) - rd_hermite(u - d);
+    return h < 0 ? -h : h;
+}
+static void rh_load_pulse_rd(rh_voice_t *v, uint32_t vel, int fresh)
+{
+    uint32_t key = rd_row(v->note), i = vel >> 5, w = (vel & 31u) << 10, j, h, gl;
+    const int16_t *pa = RD_PULSE[RD_KGRP[key]][i], *pb = RD_PULSE[RD_KGRP[key]][i + 1u];
+    int32_t pamp, g;
+    for (j = 0; j < RH_PLEN; j++) v->pbuf[j] = (int16_t)(pa[j] + (((int32_t)pb[j] - (int32_t)pa[j]) * (int32_t)w >> 15));
+    v->pbuf[RH_PLEN] = v->pbuf[RH_PLEN + 1u] = 0;
+    v->ptab = v->pbuf;
+    v->atk = 0;
+    v->prate = (uint32_t)rd_law(RD_PRATE[key], vel) << 4;               /* Q12 -> Q16 */
+    pamp = rd_law(RD_PAMP[key], vel);
+    h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RD_TYPE.ham) >> 16);   /* HAMMER x the tips: the rate, and the
+                                                         * force with it (the impulse is kept) */
+    v->prate = (uint32_t)(((uint64_t)v->prate * h) >> 16);
+    pamp = (int32_t)(((int64_t)pamp * h) >> 16);
+    if (pamp > (int32_t)RD_LIM.pamp_max) pamp = (int32_t)RD_LIM.pamp_max;          /* the type's own hammer clamp */
+    if (pamp < 1) pamp = 1;
+    v->pphys = pamp;                                                    /* (the note's force: the key-up noises' measure) */
+    gl = (uint32_t)rd_law(RD_PGAIN[key], vel);                          /* the level law now (Q16) x the dynamics stage */
+    g = (int32_t)((gl * rh_dyn(v->note, vel, v->lt)) >> 15);
+    if (g < 1) g = 1;
+    if (!fresh && (uint32_t)g != v->gq) {   /* a re-strike keeps the note-on's output gain (a step would click): the force
+                                             * takes the ratio of the gain laws, capped at the clamp */
+        uint32_t q = ((uint32_t)pamp * (uint32_t)g) / (uint32_t)(v->gq ? v->gq : 1u);   /* (pamp < 2^15, g < 2^16) */
+        pamp = (int32_t)(q > (uint32_t)RD_LIM.pamp_max ? (uint32_t)RD_LIM.pamp_max : q);
+        if (pamp < 1) pamp = 1;
+    }
+    v->pamp = pamp;
+    v->ppos = 0;
+#ifdef DINGHY_PLUGIN
+    fr_ofs_apply(&v->ppos, &v->pdly, v->prate, rh_ofs);
+#endif
+}
+static void rh_init_rd(rh_voice_t *v, uint32_t note, uint32_t vel)
+{
+    uint32_t m, key = rd_row(note), bs = rd_bscale(), bg = (0x80000000u / bs) << 1, gl, kk, q;
+    const rh_key_t *k = &RD_KEYS[key];
+    int32_t t = rh_tune_now(), bell = rh_bell_at(note), u, g;
+    v->rd = 1; v->k = k; v->tn = rh_tune_t;
+#ifdef RH_VMAP
+    v->vm = 0;
+#endif
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    v->tb = rh_bend_t;
+#endif
+    for (m = 0; m < RH_NM; m++) {
+        rh_ms_t *s = &v->m[m];
+        const rh_mode_t *km = &k->m[m];
+        s->x = s->y = s->ex = s->ey = 0;
+        s->peak = 0; s->kap = 0;
+        s->live = (uint8_t)rh_mode_runs(k, m);
+        if (!s->live) { s->e = s->eps = 0; continue; }
+        rh_coef(km, km->d, t, rh_k_decay, &s->e0, &s->eps0);
+        rh_coef(km, km->drel, t, rh_k_rel, &s->e1, &s->eps1);
+        s->e = s->es = s->e0; s->eps = s->epss = s->eps0;
+        {   /* force gain: BARK (capped) scales the tip, BELL the overtone modes; saturating */
+            int64_t b = (int64_t)km->b * bs >> 16;
+            if (m == RH_O1 || m == RH_O2) b = (((b * RD_TYPE.bell) >> 16) * bell) >> 16;
+            s->b = b > 0x7FFFFFFF ? 0x7FFFFFFF : b < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)b;
+        }
+    }
+    v->note = (uint8_t)note; v->vel = (uint8_t)vel; v->lvl = v->lvl0 = 0;
+    {   /* SPREAD: the key's place on the harp (as rh_init) */
+        int32_t p = rh_spread ? ((2 * (int32_t)note - 129) * rh_spread * 256) / (87 * 127) : 0;
+        v->pan = p > 256 ? 256 : p < -256 ? -256 : p;
+    }
+    {   /* the pickup offset: the key's, the type's and TONE's, never nearer the plate than RD_LIM.off_max */
+        int32_t mx = RD_LIM.off_max, o64;
+        v->off = k->off + RD_TYPE.off_delta + rh_tone_off;
+        if (v->off > mx) v->off = mx;
+        v->gain0 = mul16(k->gain, (int32_t)bg);                        /* the key's gain, BARK's level back */
+        o64 = k->off + RD_TYPE.off_delta;
+        if (o64 > mx) o64 = mx;
+        if (rh_tone_off > 0 && v->off != o64) {   /* TONE above 64: its loudness back, from the curve's own slope */
+            int32_t a64 = rd_slope(o64), a = rd_slope(v->off);
+            uint32_t r;
+            while (a64 > 0x3FFFF) { a64 >>= 1; a >>= 1; }                 /* (the ratio kept, in range for the shift) */
+            if (a < 1) a = 1;
+            r = ((uint32_t)a64 << 14) / (uint32_t)a;
+            if (r > (16u << 14)) r = 16u << 14;
+            v->gain0 = (int32_t)(((int64_t)v->gain0 * r) >> 14);
+        }
+    }
+    v->lt = (uint8_t)(rh_touch_mode != 0);
+    gl = (uint32_t)rd_law(RD_PGAIN[key], vel);
+    g = (int32_t)((gl * rh_dyn(note, vel, v->lt)) >> 15);
+    if (g < 1) g = 1;
+    v->gq = (uint16_t)g; v->mk = 4096u; v->pq = 4096u;
+    v->gain = (int32_t)(((int64_t)v->gain0 * g) >> 16);
+    kk = (uint32_t)(k->kill >> 3);                                      /* the kill level in this gain (rh_drv_level) */
+    q = kk < 32768u ? (kk << 16) / (uint32_t)g : kk / (uint32_t)g;
+    v->kl = kk < 32768u ? (int32_t)(q > 0x7FFFFFFFu ? 0x7FFFFFFFu : q) : q >= 32768u ? 0x7FFFFFFF : (int32_t)(q << 16);
+    v->okl = v->kl;
+    u = v->off;
+    v->Hprev = rd_hermite(u);
+    v->alive = 1; v->held = 1; v->ramp = 0; v->w_tgt = 0;
+    v->fade = 32768; v->pend = 0; v->felt_n = 0; v->felt_lp = 0;
+    v->age = ++rh_ages;
+    v->life = k->life;
+    v->hd_n = 0; v->hd_off0 = v->off; v->hd_g0 = v->hd_gc = v->gain;
+    rh_load_pulse_rd(v, vel, 1);
+#ifdef FR_HQ
+    hq_v[v - rv].on = 0; hq_v[v - rv].os = 0; hq_v[v - rv].ex = 0;                           /* (the Classic pickup path: rh_pickup_rd) */
+#endif
+}
 static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
 {
     const rh_type_t *ty = &RH_TYPE[rh_type];
+    if (rh_type == RH_T_REED) { rh_init_rd(v, note, vel); return; }   /* WHURLI: its own tables */
+    v->rd = 0;
     uint32_t m, n = note < RH_KEY_LO ? RH_KEY_LO : note > RH_KEY_LO + RH_NKEY - 1u ? RH_KEY_LO + RH_NKEY - 1u : note;
     const rh_key_t *k = &RH_KEYS[n - RH_KEY_LO];
     int32_t u, t = rh_tune_now(), bell = rh_bell_at(n);
@@ -1414,7 +1642,7 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
 #endif
         {   /* force gain: BARK scales the tip (the pickup then barks), BELL the overtones; saturating */
             int64_t b = ((((int64_t)km->b * rh_bark_s) >> 16) * ty->bark) >> 16;
-            if (m == RH_O1 || m == RH_O2) b = (((b * ty->bell) >> 16) * bell) >> 16;
+            if (m == RH_O1 || m == RH_O2) b = (((b * rh_ty_bell(ty->bell)) >> 16) * bell) >> 16;
             s->b = b > 0x7FFFFFFF ? 0x7FFFFFFF : b < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)b;
         }
     }
@@ -1428,7 +1656,19 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
         int32_t mx = RH_OFF_MAX >> sh;
         v->off = k->off + ((ty->off_delta + rh_tone_off) >> sh);
         if (v->off > mx) v->off = mx;                  /* never onto the pole axis (the fundamental cancels there) */
-        v->gain = mul16(mul16(mul16(k->gain, rh_bark_g), ty->bark_g), RH_TYPE_FG[rh_type][k->fam]);
+        int32_t bg = ty->bark_g, to = rh_tone_off;
+        if (bg > 65536 && to < 0) {                    /* BELL DYNO's level trim (x1.36, the only one over 1: set at
+                                                        * TONE 64 for its pickup nearer the pole axis) fades to unity as
+                                                        * TONE below 64 takes the pickup away (2026-11-22: held, DYNO at
+                                                        * TONE 0 played 2.7 dB over its own relation to STAGE 77, and a
+                                                        * v127 bass note's bell strike reached the rail, 36k unclipped):
+                                                        * by t (3 - t) / 2, t = (64 - TONE) / 64, as the measured excess
+                                                        * grows (0.63 of it at TONE 32) */
+            uint32_t t = (uint32_t)(-to) >> 8;          /* Q16: TONE 64 .. 0 -> 0 .. 65536 (rh_tone_off -2^24 at 0) */
+            uint32_t f = (uint32_t)(((uint64_t)t * (196608u - t)) >> 17);
+            bg -= (int32_t)(((int64_t)(bg - 65536) * f) >> 16);
+        }
+        v->gain = mul16(mul16(mul16(k->gain, rh_bark_g), bg), RH_TYPE_FG[rh_type][k->fam]);
 #ifndef RH_NO_TONE_G
         if (rh_tone_off > 0) {                         /* TONE above 64: its loudness back (the offsets in the family's
                                                         * own gap, the family's own curve: S8) */
@@ -1541,7 +1781,7 @@ static void __attribute__((noinline)) rh_knock_strike(uint32_t note, uint32_t ve
     pamp = (int32_t)RH_PAMP[key][i] + ((((int32_t)RH_PAMP[key][i + 1] - (int32_t)RH_PAMP[key][i]) * (int32_t)f) >> 8);
     prate = (uint32_t)((int32_t)RH_PRATE_B[key] + RH_PRATE[key][i] + ((((int32_t)RH_PRATE[key][i + 1] - (int32_t)RH_PRATE[key][i])
                                                        * (int32_t)f) >> 8)) << 4;
-    h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RH_TYPE[rh_type & 3u].ham) >> 16);
+    h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * rh_ty_ham(key)) >> 16);
     prate = (uint32_t)(((uint64_t)prate * h) >> 16);
     pamp = (int32_t)(((int64_t)pamp * h) >> 16);
     if (pamp > 32767) pamp = 32767;
@@ -1589,6 +1829,7 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
     uint32_t i, pick = RH_NV, best = 0xFFFFFFFFu;
     for (i = 0; i < RH_NA && rv[i].pend; i++) ;
     if (i == RH_NA) return 0;                           /* (more than RH_NV steals in one block: BUGHUNT #21) */
+    if (rh_type == RH_T_REED && (note < RD_KEY_LO || note >= RD_KEY_LO + RD_NKEY)) return 1;   /* WHURLI: no such key */
 #ifdef RH_START_MAX
     if (rh_starts >= RH_START_MAX) return 0;
     rh_starts++;
@@ -1664,7 +1905,8 @@ static void rh_events(void)                     /* the block's start (rh_render,
                     v->rgain = (uint16_t)rh_rel_gain(val);    /* val: the release velocity */
                     rh_set_damper_n(v, rh_rel_w(v), rh_rel_len(rh_settle(note), val));
                     if (rh_pedal_w && rh_thump && !v->ptab) {  /* the felt lands on the tine: a soft knock */
-                        uint32_t key = (uint32_t)(v->k - RH_KEYS);
+                        uint32_t key = v->rd ? (v->note < RH_KEY_LO ? 0u : v->note > RH_KEY_LO + RH_NKEY - 1u ? RH_NKEY - 1u : (uint32_t)v->note - RH_KEY_LO)
+                                   : (uint32_t)(v->k - RH_KEYS);
                         int32_t th = rh_thump > 32767 ? 32767 : rh_thump;
                         int32_t cap = (int32_t)(((uint32_t)rh_left(v) * RH_THUMP_CAP) >> 15);
                         th = mul15(th > cap ? cap : th, v->rgain);   /* the cap, then the release velocity's x0.6..1.4 */
@@ -1901,6 +2143,29 @@ static FR_RAM __attribute__((noinline)) int32_t rh_pickup_fx(rh_voice_t *v, cons
     return Hp;
 }
 
+/* WHURLI's pickup: the same form as rh_pickup / rh_pickup_s / rh_pickup_fx in one loop (the steal fade and the stereo
+ * position tested a sample: reed voices only), through its own curve (rd_hermite). Returns the last H. Not FR_RAM: the one-core
+ * images' RAM text has no room for it (it runs from flash there; the two-core image runs everything from flash) */
+static __attribute__((noinline)) int32_t rh_pickup_rd(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t off,
+                                                      int32_t Hp, int32_t gain)
+{
+    uint32_t j;
+    int32_t pan = v->pan;
+    for (j = 0; j < SUB; j++) {
+        int32_t H = rd_hermite(rh_x[j] + off);
+        int32_t o = (int32_t)(((int64_t)(Hp - H) * gain) >> 24);   /* (the table is stored negated, as the Rhodes') */
+        Hp = H;
+        if (v->fade != 32768) {
+            o = (int32_t)(((int64_t)o * rh_fade_g(v->fade)) >> 15);
+            v->fade -= (int32_t)(32768 / FADE_SAMPLES);
+            if (v->fade < 0) v->fade = 0;
+        }
+        mix[j] += o;
+        if (pan) side[j] += (o * pan) >> 8;
+    }
+    return Hp;
+}
+
 /* one voice, one 32-frame sub-block, added into mix[0..SUB) */
 FR_RAM2 static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, int32_t *side)
 {
@@ -1970,6 +2235,7 @@ FR_RAM2 static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_
         for (m++; m < RH_NM; m++)
             if (v->m[m].live) sum += fnz ? FR_FAR(rh_mode_f)(&v->m[m]) : FR_FAR(rh_mode_p)(&v->m[m]);
     }
+    if (v->rd) Hp = FR_FAR(rh_pickup_rd)(v, mix, side, off, Hp, gain); else   /* WHURLI */
 #ifdef FR_HQ
     if (hq_v[v - rv].os) Hp = hq_pickup(v, mix, side, Hp, gain); else   /* (gain: with the lift) */
     if (hq_v[v - rv].ex) hq_pickup1(v, mix, side, gain); else        /* (the exact flux at 1x: Hp unused) */
@@ -2064,6 +2330,61 @@ static void rh_shed(void)                                 /* overload: fade the 
 /* TUNE and DECAY / RELEASE are the note-on's (0.9.13, the audio review C2): TUNE, DECAY and RELEASE act on new notes,
  * so a bend retunes from the TUNE the voice started with (v->tn) and keeps its pair (E, eps) on the note-on's decays
  * (s->eps0 / eps1, the eps it runs with; E from a DECAY turned since was a pair that did not match) */
+#if FR_OWN                                      /* the plugin's own-code build: the same retune, written from what it computes */
+/* One sounding voice at the bend: its tuning is (1 + TUNE at the note-on)(1 + bend) - 1 (Q30); each mode that runs
+ * gets the coefficient pair for both of its decays (the note-on's eps0 / eps1) and the pair the damper crossfade
+ * (weight w_tgt, Q15) has reached between them. The bend is held in the voice's host-test copy. */
+static void rh_retune_voice(rh_voice_t *v, int32_t bend)
+{
+    uint32_t m;
+    const int32_t tune = v->tn + bend + mul30(v->tn, bend);
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    v->tb = bend;
+#endif
+    for (m = 0; m < RH_NM; m++) {
+        rh_ms_t *ms = &v->m[m];
+        int32_t sp, lo, hi;
+        int64_t cr;
+        if (rh_mode_runs(v->k, m)) {
+            cr = rh_coef_tune(&v->k->m[m], tune, &sp);
+            lo = rh_coef_e(ms->eps0, sp, cr);
+            hi = rh_coef_e(ms->eps1, sp, cr);
+            ms->e0 = lo;
+            ms->e1 = hi;
+            ms->e = lo + (int32_t)(((int64_t)(hi - lo) * v->w_tgt) >> 15);
+            ms->es = ms->e;
+        }
+    }
+}
+
+/* A new bend marks every voice as owing a retune; each block then serves the owing voices in a ring from the cursor,
+ * at most RH_RT_PER sounding ones, and the cursor ends one past the last voice looked at. */
+static void rh_retune(void) __attribute__((noinline));
+static void rh_retune(void)
+{
+    const int32_t bend = rh_bend_t;
+    uint32_t owing, cur, looked = 0, budget = RH_RT_PER;
+    if (bend != rh_bend_used) {
+        rh_bend_used = bend;
+        rh_rt_pend = ~0u >> (32u - RH_NV);
+    }
+    owing = rh_rt_pend;
+    cur = rh_rt_cur;
+    while (looked < RH_NV && owing != 0u && budget != 0u) {
+        if (owing & (1u << cur)) {
+            owing &= ~(1u << cur);
+            if (rv[cur].alive) {
+                rh_retune_voice(&rv[cur], bend);
+                budget--;
+            }
+        }
+        looked++;
+        cur = cur + 1u < RH_NV ? cur + 1u : 0u;
+    }
+    rh_rt_pend = owing;
+    rh_rt_cur = cur;
+}
+#else
 static void __attribute__((noinline)) rh_retune(void)
 {
     uint32_t i, m, k, done = 0, pend;
@@ -2096,6 +2417,7 @@ static void __attribute__((noinline)) rh_retune(void)
     }
     rh_rt_pend = pend; rh_rt_cur = i;
 }
+#endif
 
 /* the mechanical noises after the voices, into the mix (Q20): the key-down knock (S11), the pedal's thud (S12) */
 static FR_RAM void __attribute__((noinline)) rh_noise(int32_t *mix, uint32_t n)
@@ -2231,7 +2553,7 @@ static int rh_chain_zero(void)
 }
 static uint32_t rh_txf_type(void)                         /* the TYPE the filters run this block */
 {
-    uint32_t want = rh_type & 3u;
+    uint32_t want = rh_type > RH_T_REED ? 0u : rh_type;
     if (want != rh_txf.run && !rh_txf.n) {
         if (rh_chain_zero()) rh_txf.run = (uint8_t)want;
         else { memset(rh_txf.st, 0, sizeof rh_txf.st); memset(rh_txf.ss, 0, sizeof rh_txf.ss); rh_txf.ty = (uint8_t)want; rh_txf.n = RH_TXF_BLK; }
@@ -2241,13 +2563,15 @@ static uint32_t rh_txf_type(void)                         /* the TYPE the filter
 /* TYPE t's chain: in -> x (the side: x in place, its last stage rounding to Q15), from st (RLC, the body biquads) */
 static __attribute__((noinline)) void rh_chain(int32_t *x, const int32_t *in, uint32_t n, int32_t (*st)[5], int side, uint32_t t)
 {
-    uint32_t nb = RH_TYPE[t].nbody, sb;
-    if (!side) FR_FAR2(rh_df1)(in, x, n, RH_RLC[t], st[0]);
-    else if (nb) FR_FAR(rh_df1_s)(x, n, RH_RLC[t], st[0]); else FR_FAR(rh_df1_sq)(x, n, RH_RLC[t], st[0]);
+    const int32_t *rlc = t == RH_T_REED ? RD_RLC : RH_RLC[t];                    /* (TYPE 4: WHURLI's own chain) */
+    const int32_t (*body)[5] = t == RH_T_REED ? RD_BODY : RH_BODY[t];
+    uint32_t nb = t == RH_T_REED ? RD_TYPE.nbody : RH_TYPE[t].nbody, sb;
+    if (!side) FR_FAR2(rh_df1)(in, x, n, rlc, st[0]);
+    else if (nb) FR_FAR(rh_df1_s)(x, n, rlc, st[0]); else FR_FAR(rh_df1_sq)(x, n, rlc, st[0]);
     for (sb = 0; sb < nb; sb++)
-        if (!side) FR_FAR2(rh_df1)(x, x, n, RH_BODY[t][sb], st[1u + sb]);
-        else if (sb + 1u < nb) FR_FAR(rh_df1_s)(x, n, RH_BODY[t][sb], st[1u + sb]);
-        else FR_FAR(rh_df1_sq)(x, n, RH_BODY[t][sb], st[1u + sb]);
+        if (!side) FR_FAR2(rh_df1)(x, x, n, body[sb], st[1u + sb]);
+        else if (sb + 1u < nb) FR_FAR(rh_df1_s)(x, n, body[sb], st[1u + sb]);
+        else FR_FAR(rh_df1_sq)(x, n, body[sb], st[1u + sb]);
 }
 static void rh_txf_blend(int32_t *x, const int32_t *nw, uint32_t n)   /* x = old + (new - old) w, w rising */
 {

@@ -3,7 +3,7 @@
 """Screenshots for the manual: the host build walks every page (and a few states) and saves PNGs to docs/manual/img/,
 then composes overview.png (PERFORM, VOICE, PHASER, COMPRESSOR; the README's Screens section: its intro picture is piano.png, the FRODHES page). The page list is the firmware's: a first host run
 walks SELECT and reads each page's name back (the engine's VOICE pages are dynamic: voice1.png, voice2.png on the
-Rhodes; voice1-vibes.png .. voice3-vibes.png on VIBES; voice1-marimba.png, voice2-marimba.png on MARIMBA, with
+Rhodes; voice1-vibes.png .. voice3-vibes.png on VIBES; voice1-marimba.png, voice2-marimba.png on MARIMBA, piano-whurli.png and voice1-whurli.png on WHURLI, with
 piano-vibes.png / piano-marimba.png their FRODHES page). Files left in the folder from pages that went are listed.
 The SMK-37's pictures go to docs/manual/img/smk/ (smk_shots: the SMK host build); the Move's, docs/manual/img/move/,
 are tools/move_ui_shots.mjs's.
@@ -21,7 +21,7 @@ conflict on a PNG is resolved by re-running it, never by hand).
 The device look. The FM-1's ST7789 panel, behind its window, lifts the dark tones a lot and shifts the hue towards
 yellow: the AMBER palette's darkest step C_LINE = RGB(60,26,0) (frames) reads light khaki, the title UI_ACC =
 RGB(225,120,8) yellow, the values C_HI = RGB(255,166,40) near-white yellow, black a dark blue-grey. The transfer was
-measured by tools/display_cal.py from two photos of the FM-1 taken 2026-10-17 (private/display/, not in git):
+measured by tools/display_cal.py from two photos of the FM-1 taken 2026-10-17 (not in git):
   1. the colour test pattern (developer CC 3): 39 flat swatches (the 6 palettes, a grey ramp, R G B Y K W), which
      fix the panel's shape: per input channel x ** gamma, a 3 x 3 crosstalk matrix, a flare (rms 15 / 255 over
      the swatches; that photo is exposed for its bright swatches);
@@ -273,6 +273,14 @@ def main():
         L.append(f"{t} turn 0 1"); t += 100
         L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 1700
         L.append(f"{t} shot"); shots[t] = name; t += 100
+    # WHURLI (TYPE 6, the reed piano): F21 REED GROWL (the bark and the hard hammer up), its FRODHES page and VOICE 1/3
+    L.append(f"{t} midi 0xC0 36 0"); t += 100               # F21 REED GROWL (program change 36)
+    L.append(f"{t} btn 8"); L.append(f"{t + 100} btn 8"); t += 200   # HOME twice: PERFORM, then the FRODHES page
+    L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 1700
+    L.append(f"{t} shot"); shots[t] = "piano-whurli"; t += 100
+    L.append(f"{t} turn 0 1"); t += 100                     # VOICE 1/3: TONE BARK BELL HAMMER
+    L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 1700
+    L.append(f"{t} shot"); shots[t] = "voice1-whurli"; t += 100
     L.append(f"{t} end")
     open(tag + ".txt", "w").write("\n".join(L) + "\n")
     subprocess.run([BIN, tag, tag + ".txt"], check=True, capture_output=True)
