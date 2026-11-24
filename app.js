@@ -299,6 +299,7 @@ if (location.search.includes("selftest")) {
     if (!M || performance.now() - t0 < 1500) return setTimeout(wait, 100);
     if (location.search.includes("vibes")) M._web_midi(0xB0, 79, 0);   // ?selftest&vibes: TYPE VIBES (CC 79)
     if (location.search.includes("marimba")) M._web_midi(0xB0, 79, 127);   // ?selftest&marimba: TYPE MARIMBA (96..127)
+    if (location.search.includes("whurli")) M._web_midi(0xC0, 35, 0);   // ?selftest&whurli: F20 WHURLI (program change 35)
     M._web_keys(1 << 7);                               // C4
     setTimeout(() => {
       const p = M._web_audio(16) >> 2, f = M.HEAPF32;
