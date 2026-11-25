@@ -98,7 +98,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = "leonardoMirabal/frodhes"
 PAGES_URL = "https://leonardomirabal.github.io/frodhes/"
 STABLE = "frodhes.fwsc"                       # release.yml uploads the package under this name too
-RETIRED = ("frodhes-c1.fwsc", "frodhes-{v}-c1.fwsc")   # 0.9.10-0.9.11's second FM-1 package: frodhes.fwsc is two-core now
+# the FM-1 package once more under the name The Firmware Hub follows (0.9.12-0.9.13 lacked it: the hub stayed on 0.9.11)
+HUB_ASSETS = ("frodhes-c1.fwsc", "frodhes-{v}-c1.fwsc")
 # release.yml also builds and attaches the SMK-37 packages (./build.sh --board smk37 [--model elite|mke]), each under
 # the fixed name and the build's own versioned one: the fixed name -> the build's file (tools/build.py package())
 SMK_ASSETS = {"frodhes-smk37-pro.fwsc": "frodhes-{v}-smk37.fwsc",
@@ -833,16 +834,17 @@ class Release:
         # the Move package: expected when the release commit records it (or this run tested it); with --verify-only,
         # when either name is there both must be
         want_move = bool(self.move_recorded or self.move_ok or (self.a.verify_only and set(move_names) & set(names)))
-        missing = [n for n in (versioned, STABLE,
+        missing = [n for n in (versioned, STABLE, *(h.format(v=self.ver) for h in HUB_ASSETS),
                                *SMK_ASSETS, *(smk_versioned(n, self.ver) for n in SMK_ASSETS),
                                LICENCE_ASSET, *PLUGIN_ASSETS, *(n.format(v=self.ver) for n in MPC_ASSETS),
                                *(move_names if want_move else ()))
                    if n not in names]
         if missing or r.get("isDraft"):
             raise Stop(f"{r['url']}: assets {names} (missing {missing}), draft {r.get('isDraft')}")
-        retired = [n for n in (c.format(v=self.ver) for c in RETIRED) if n in names]
-        if retired:
-            raise Stop(f"{r['url']}: retired assets {retired} attached (the FM-1 has one package, frodhes.fwsc)")
+        digest = {x["name"]: x.get("digest") for x in r["assets"]}
+        hub = [h.format(v=self.ver) for h in HUB_ASSETS]
+        if any(digest.get(h) != digest.get(STABLE) for h in hub):
+            raise Stop(f"{r['url']}: {hub} are not byte for byte {STABLE} (The Firmware Hub follows frodhes-c1.fwsc)")
         ev = [f"{r['url']} lists {', '.join(names)}"]
         if not want_move:
             ev.append("the Move package: not in this release (not tested)" if not set(move_names) & set(names) else

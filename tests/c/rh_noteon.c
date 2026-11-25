@@ -4,8 +4,8 @@
  *                       builds from the cache is byte for byte the one rh_coef builds (the cache off); a stale
  *                       cache (a knob moved, rh_cc_poll not yet run) and a bend fall back to rh_coef. Prints
  *                       "cases N cached C" and exits 1 on a difference
- *   rh_noteon time R    a 9-note strike burst (rh_init x 9, every key in turn) R times with the cache, then without;
- *                       prints "ns_cached A ns_live B" per note-on */
+ *   rh_noteon time R    a 9-note strike burst (rh_init x 9, every key in turn) R times with the cache and without, in
+ *                       interleaved blocks of 50; prints "ns_cached A ns_live B" per note-on, each path's fastest block */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,10 +30,10 @@ static int cached_now(uint32_t note)            /* rh_init's test, as it is ther
            && rh_cc_st[cp - 1u][2] == rh_k_rel;
 }
 
-static double now_ns(void)
+static double now_ns(void)       /* this thread's CPU time: time on other jobs (a busy CI runner) not counted */
 {
     struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
     return ts.tv_sec * 1e9 + ts.tv_nsec;
 }
 
@@ -74,22 +74,29 @@ int main(int argc, char **argv)
     if (argc > 2 && !strcmp(argv[1], "time")) {
         long r, reps = atol(argv[2]);
         uint32_t n = 21, i;
-        double t0, t1, t2, t3;
+        double t0, t1, t2, t3, bc = 1e30, bl = 1e30, bp = 1e30;
+        long b, blk = 200;                       /* short blocks, the paths interleaved, each at its fastest block:
+                                                 * a block that ran undisturbed (a busy CI runner shares the cores) */
         unsigned long chk = 0;
         rh_tune_t = 0; rh_k_decay = 65536; rh_k_rel = 65536; rh_bend_t = 0;
         rh_cc_poll();
-        t0 = now_ns();
-        for (r = 0; r < reps; r++)
-            for (i = 0; i < 9u; i++) { rh_init(&rv[i], n, 100); chk += (uint32_t)rv[i].m[0].e0; n = n == 108u ? 21u : n + 1u; }
-        t1 = now_ns();
-        for (r = 0; r < reps; r++)
-            for (i = 0; i < 9u; i++) { init_live(&rv[i], n, 100); chk += (uint32_t)rv[i].m[0].e0; n = n == 108u ? 21u : n + 1u; }
-        t2 = now_ns();
-        for (r = 0; r < reps; r++)              /* the pulse alone (decoded at the strike, both paths: pulse_pz.h) */
-            for (i = 0; i < 9u; i++) { rh_load_pulse(&rv[i], 100, 0); chk += (uint32_t)rv[i].pbuf[3]; }
-        t3 = now_ns();
-        printf("ns_cached %.1f ns_live %.1f chk %lu ns_pulse %.1f\n", (t1 - t0) / (reps * 9.0), (t2 - t1) / (reps * 9.0),
-               chk & 1u, (t3 - t2) / (reps * 9.0));
+        for (b = 0; b < reps / blk; b++) {
+            t0 = now_ns();
+            for (r = 0; r < blk; r++)
+                for (i = 0; i < 9u; i++) { rh_init(&rv[i], n, 100); chk += (uint32_t)rv[i].m[0].e0; n = n == 108u ? 21u : n + 1u; }
+            t1 = now_ns();
+            for (r = 0; r < blk; r++)
+                for (i = 0; i < 9u; i++) { init_live(&rv[i], n, 100); chk += (uint32_t)rv[i].m[0].e0; n = n == 108u ? 21u : n + 1u; }
+            t2 = now_ns();
+            for (r = 0; r < blk; r++)           /* the pulse alone (decoded at the strike, both paths: pulse_pz.h) */
+                for (i = 0; i < 9u; i++) { rh_load_pulse(&rv[i], 100, 0); chk += (uint32_t)rv[i].pbuf[3]; }
+            t3 = now_ns();
+            if (t1 - t0 < bc) bc = t1 - t0;
+            if (t2 - t1 < bl) bl = t2 - t1;
+            if (t3 - t2 < bp) bp = t3 - t2;
+        }
+        printf("ns_cached %.1f ns_live %.1f chk %lu ns_pulse %.1f\n", bc / (blk * 9.0), bl / (blk * 9.0),
+               chk & 1u, bp / (blk * 9.0));
         return 0;
     }
     fprintf(stderr, "usage: rh_noteon check | time REPS\n");

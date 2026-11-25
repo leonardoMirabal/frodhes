@@ -217,6 +217,10 @@ jobs:
           # releases/latest/download/frodhes.fwsc (the docs never name a version)
           mkdir -p build/publish
           cp "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc
+          # and twice more as frodhes-c1.fwsc / frodhes-X.Y.Z-c1.fwsc: the name The Firmware Hub follows (it lists
+          # Frodhes by that asset name; 0.9.12-0.9.13 lacked it and the hub stayed on 0.9.11)
+          cp "build/frodhes-$V.fwsc" build/publish/frodhes-c1.fwsc
+          cp "build/frodhes-$V.fwsc" "build/publish/frodhes-$V-c1.fwsc"
           # the SMK-37 packages, versioned and under fixed names (the emulator and the docs link the fixed ones)
           # (tools/release.py SMK_ASSETS; the build names them frodhes-X.Y.Z-smk37[-elite|-mke].fwsc)
           for m in "smk37:smk37-pro" "smk37-elite:smk37-elite" "smk37-mke:mke-p37"; do
@@ -224,6 +228,7 @@ jobs:
             cp "build/frodhes-$V-${m%%:*}.fwsc" "build/publish/frodhes-$V-${m#*:}.fwsc"
           done
           set -- "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc \
+            build/publish/frodhes-c1.fwsc "build/publish/frodhes-$V-c1.fwsc" \
             "build/publish/frodhes-$V-smk37-pro.fwsc" "build/publish/frodhes-$V-smk37-elite.fwsc" \
             "build/publish/frodhes-$V-mke-p37.fwsc" \
             build/publish/frodhes-smk37-pro.fwsc build/publish/frodhes-smk37-elite.fwsc \

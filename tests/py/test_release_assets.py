@@ -8,7 +8,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 V = "9.9.9"
-FULL = ["frodhes-%s.fwsc" % V, "frodhes.fwsc",
+FULL = ["frodhes-%s.fwsc" % V, "frodhes.fwsc", "frodhes-%s-c1.fwsc" % V, "frodhes-c1.fwsc",
         "frodhes-%s-smk37-pro.fwsc" % V, "frodhes-smk37-pro.fwsc", "frodhes-%s-smk37-elite.fwsc" % V,
         "frodhes-smk37-elite.fwsc", "frodhes-%s-mke-p37.fwsc" % V, "frodhes-mke-p37.fwsc",
         "frodhes-%s-move.tar.gz" % V, "frodhes-module.tar.gz", "frodhes-plugin-macos.pkg",
@@ -35,16 +35,12 @@ def test_any_missing_asset_fails(tmp_path):
         assert r.returncode == 1 and n in r.stderr, n
 
 
-def test_a_retired_c1_asset_fails(tmp_path):
-    for n in ("frodhes-c1.fwsc", "frodhes-%s-c1.fwsc" % V):   # since 0.9.12 the FM-1 has one package, frodhes.fwsc
-        r = check(tmp_path, FULL + [n])
-        assert r.returncode == 1 and n in r.stderr, n
-
-
-def test_release_yml_ships_no_c1_asset():
+def test_release_yml_ships_the_hub_c1_asset():
+    """The Firmware Hub follows frodhes-c1.fwsc: 0.9.12-0.9.13 lacked it and the hub stayed on 0.9.11"""
     run = "\n".join(s.get("run", "") for s in yaml.safe_load(open(os.path.join(
         ROOT, ".github", "workflows", "release.yml")))["jobs"]["release"]["steps"])
-    assert "build/publish/frodhes-c1" not in run and "-c1.fwsc build/publish" not in run
+    assert 'cp "build/frodhes-$V.fwsc" build/publish/frodhes-c1.fwsc' in run
+    assert 'cp "build/frodhes-$V.fwsc" "build/publish/frodhes-$V-c1.fwsc"' in run
     assert 'cp "build/frodhes-$V-c1.fwsc" "build/frodhes-$V.fwsc"' in run     # the two-core build as frodhes.fwsc
 
 
@@ -55,3 +51,31 @@ def test_release_yml_checks_before_publishing():
     assert chk == names.index("publish the release") - 1
     att = next(s for s in st if "tools/plugin_asset.sh" in s.get("run", ""))
     assert "exit 0" not in att["run"]               # no plugin asset is a failure, never a silent skip
+
+
+NAMES = os.path.join(ROOT, "tools", "release_asset_names.txt")
+
+
+def names(text):
+    return [n for n in text.splitlines() if n and not n.startswith("#")]
+
+
+def test_the_asset_names_are_append_only():
+    """every name the last release's tools/release_asset_names.txt listed is still listed: an asset name, once
+    published, is never dropped or renamed (0.9.12 dropped frodhes-X.Y.Z-c1.fwsc, the name The Firmware Hub follows,
+    and the hub stayed on 0.9.11)"""
+    last = subprocess.run(["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*", "HEAD"], cwd=ROOT,
+                          capture_output=True, text=True).stdout.strip()
+    old = subprocess.run(["git", "show", f"{last}:tools/release_asset_names.txt"], cwd=ROOT, capture_output=True,
+                         text=True)
+    base = names(old.stdout) if old.returncode == 0 else [n.replace(V, "{v}") for n in FULL]   # before the list
+    gone = sorted(set(base) - set(names(open(NAMES).read())))
+    assert not gone, f"asset names dropped since {last or 'the list began'}: {gone} (append only)"
+
+
+def test_release_yml_publishes_every_listed_fwsc():
+    run = "\n".join(s.get("run", "") for s in yaml.safe_load(open(os.path.join(
+        ROOT, ".github", "workflows", "release.yml")))["jobs"]["release"]["steps"])
+    for n in names(open(NAMES).read()):
+        if n.endswith(".fwsc"):
+            assert n.replace("{v}", "$V") in run or n.split("{v}")[-1] in run, n

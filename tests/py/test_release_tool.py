@@ -250,11 +250,12 @@ def test_docs_step_refuses_stale_links_and_the_next_version(tree, monkeypatch):
     assert not [c for c in calls if c.startswith("git rm") or c.startswith("git commit")]
 
 
-def verify_shell(assets, readme, draft=False):
+def verify_shell(assets, readme, draft=False, digests=None):
     def sh(cmd, check=True, input=None, timeout=None, quiet=False):
         s = cmd if isinstance(cmd, str) else " ".join(cmd)
         if s.startswith("gh release view"):
-            return 0, json.dumps({"assets": [{"name": a} for a in assets], "isDraft": draft, "url": "https://r/v0.9.3"})
+            return 0, json.dumps({"assets": [{"name": a, "digest": (digests or {}).get(a, "sha256:fw")} for a in assets],
+                                  "isDraft": draft, "url": "https://r/v0.9.3"})
         if s.startswith("gh api"):
             return 0, readme
         if s.startswith("git tag --sort"):
@@ -265,7 +266,8 @@ def verify_shell(assets, readme, draft=False):
 
 def test_verify(monkeypatch, capsys):
     good = f"[`frodhes.fwsc`]({rel.LATEST_DL}) settings saved by 0.9.2 are read as they are"
-    both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *rel.SMK_ASSETS, rel.LICENCE_ASSET,
+    both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", "frodhes-c1.fwsc", "frodhes-0.9.3-c1.fwsc", *rel.SMK_ASSETS,
+            rel.LICENCE_ASSET,
             *[rel.smk_versioned(n, "0.9.3") for n in rel.SMK_ASSETS],
             *rel.PLUGIN_ASSETS, "Frodhes-0.9.3-mpc-armv7.zip", "Frodhes-0.9.3-mpc-aarch64.zip", "frodhes-mpc.zip",
             "frodhes-0.9.3-mpc.zip"]
@@ -281,15 +283,15 @@ def test_verify(monkeypatch, capsys):
     monkeypatch.setattr(rel, "sh", verify_shell(both, good))
     assert "README at v0.9.3 names no version" in r.s_verify() and hits == [rel.LATEST_DL]
     for assets, readme, sha, msg in ((both[:1] + both[2:], good, "a" * 64, r"missing \['frodhes.fwsc'\]"),
-                                     (both[:4] + both[5:], good, "a" * 64, r"missing \['frodhes-mke-p37.fwsc'\]"),
-                                     (both + ["frodhes-c1.fwsc"], good, "a" * 64, "retired assets"),
-                                     (both[:8] + both[9:], good, "a" * 64, r"missing \['frodhes-0.9.3-mke-p37.fwsc'\]"),
+                                     (both[:6] + both[7:], good, "a" * 64, r"missing \['frodhes-mke-p37.fwsc'\]"),
+                                     (both[:2] + both[3:], good, "a" * 64, r"missing \['frodhes-c1.fwsc'\]"),
+                                     (both[:3] + both[4:], good, "a" * 64, r"missing \['frodhes-0.9.3-c1.fwsc'\]"),
+                                     (both[:10] + both[11:], good, "a" * 64, r"missing \['frodhes-0.9.3-mke-p37.fwsc'\]"),
                                      (both[:-1], good, "a" * 64, r"missing \['frodhes-0.9.3-mpc.zip'\]"),
                                      ([n for n in both if n != "Frodhes-0.9.3-mpc-aarch64.zip"], good, "a" * 64,
                                       r"missing \['Frodhes-0.9.3-mpc-aarch64.zip'\]"),
                                      ([n for n in both if n != "frodhes-plugin-windows.zip"], good, "a" * 64,
                                       r"missing \['frodhes-plugin-windows.zip'\]"),
-                                     (both + ["frodhes-0.9.3-c1.fwsc"], good, "a" * 64, "retired assets"),
                                      (both, good, "b" * 64, "the build's bbbb"),
                                      (both, good.replace(rel.LATEST_DL, "frodhes-0.9.3.fwsc"), "a" * 64,
                                       "versions named")):
@@ -297,6 +299,10 @@ def test_verify(monkeypatch, capsys):
         r.sha = sha
         with pytest.raises(rel.Stop, match=msg):
             r.s_verify()
+    # the hub's name must carry the FM-1 package itself, byte for byte
+    monkeypatch.setattr(rel, "sh", verify_shell(both, good, digests={"frodhes-c1.fwsc": "sha256:other"}))
+    with pytest.raises(rel.Stop, match="not byte for byte frodhes.fwsc"):
+        r.s_verify()
     monkeypatch.setattr(rel, "resolve", lambda url: ("https://github.com/x/releases/download/v0.9.2/frodhes.fwsc",
                                                      "a" * 64))
     monkeypatch.setattr(rel, "sh", verify_shell(both, good))

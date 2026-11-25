@@ -42,5 +42,6 @@ script), the FM-1 over MIDI + USB audio, then `docs/MANUAL.md`, `README.md`, the
 
 Patch bumps (0.9.1, 0.9.2 ...), only when the user asks: full retest with the release build installed, point
 README / MANUAL at the new file, write `docs/releases/vX.Y.Z.md`, commit, `git tag -a vX.Y.Z -m "Frodhes X.Y.Z"`,
-`git push origin vX.Y.Z`; `.github/workflows/release.yml` builds and publishes. Confirm with the user before any
+`git push origin vX.Y.Z`; `.github/workflows/release.yml` builds and publishes. The release carries the FM-1 package also as
+`frodhes-c1.fwsc` / `frodhes-X.Y.Z-c1.fwsc`: The Firmware Hub follows that name (release_assets.sh requires it). Confirm with the user before any
 outward-facing action (release, publishing the emulator). Details: AGENTS.md section 9.

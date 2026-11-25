@@ -1,0 +1,18 @@
+{
+  "what": "Physically modelled electric pianos (tine and reed types), vibraphone and marimba. No samples. 14 voices, drive, tremolo or wah, phaser, chorus, delay and reverb, tap tempo and MIDI clock, an arpeggiator, a sequencer, scales and presets.",
+  "author": "Leonardo Mirabal",
+  "kinds": [
+    "synth"
+  ],
+  "play": "https://leonardomirabal.github.io/frodhes/",
+  "cheat": "https://github.com/leonardoMirabal/frodhes/blob/main/docs/MANUAL.md",
+  "image": "docs/manual/img/thumbnail.png",
+  "color": "#E67908",
+  "sounds": "none",
+  "smk37": {
+    "what": "The same physically modelled electric pianos, vibraphone and marimba for the SMK-37 (Pro, Elite and MKE-P37). No samples. Effects, an arpeggiator, a sequencer, scales and presets.",
+    "image": "docs/manual/img/thumbnail.png",
+    "install": "https://leonardomirabal.github.io/frodhes/#install",
+    "guide": "https://github.com/leonardoMirabal/frodhes/blob/main/docs/SMK37.md"
+  }
+}

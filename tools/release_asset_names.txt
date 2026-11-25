@@ -1,0 +1,26 @@
+# Every asset name a Frodhes release carries, {v} = the version. APPEND ONLY: players, the docs, the emulator and
+# outside catalogues (The Firmware Hub follows frodhes-{v}-c1.fwsc) fetch these names; dropping one breaks them
+# silently (0.9.12 dropped the -c1 names: the hub stayed on 0.9.11 for 9 days). release_assets.sh requires every
+# line; tests/py/test_release_assets.py fails when a line of the last release's copy is gone.
+frodhes-{v}.fwsc
+frodhes.fwsc
+frodhes-{v}-c1.fwsc
+frodhes-c1.fwsc
+frodhes-{v}-smk37-pro.fwsc
+frodhes-smk37-pro.fwsc
+frodhes-{v}-smk37-elite.fwsc
+frodhes-smk37-elite.fwsc
+frodhes-{v}-mke-p37.fwsc
+frodhes-mke-p37.fwsc
+frodhes-{v}-move.tar.gz
+frodhes-module.tar.gz
+frodhes-plugin-macos.pkg
+frodhes-plugin-macos.zip
+frodhes-plugin-windows.zip
+frodhes-plugin-linux-x86_64.zip
+frodhes-plugin-linux-aarch64.zip
+frodhes-{v}-mpc.zip
+frodhes-mpc.zip
+Frodhes-{v}-mpc-armv7.zip
+Frodhes-{v}-mpc-aarch64.zip
+Apache-2.0.txt
