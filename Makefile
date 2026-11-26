@@ -6,7 +6,7 @@ HOSTBIN ?= build/host/frodhes
 HOST_DEFS ?=                # other builds, e.g. make test HOST_DEFS=-DRH_VOICES=9u HOSTBIN=build/host9/frodhes (default: 10)
 CFLAGS_HOST := -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER='"dev"' -Ifirmware/src -Ifirmware/gen $(HOST_DEFS)
 
-.PHONY: all setup host quick pristine release-diff clean-renders test testv test10 test-c1 test-smk pytest firmware clean
+.PHONY: all setup host quick pristine release-diff clean-renders test testv test10 test-c1 test-smk test-smk-c1 pytest firmware clean
 
 all: test pytest
 
@@ -103,6 +103,21 @@ test-c1-lat:               ## the two-core package's build on the host (FR_C1_LA
 	  if [ $$rc = 0 ]; then echo "ok    real $$n"; \
 	  elif grep -qx "$$n" tests/lat/known.txt && [ $$rc -lt 64 ]; then echo "ok    real $$n (known: $$rc panel expects)"; \
 	  else echo "FAIL  real $$n (build/host-c1lat/$$n.log)"; fail=1; fi; done; exit $$fail
+
+SMKC1BIN := build/host-smk-c1/frodhes
+$(SMKC1BIN): firmware/src/*.c firmware/src/*.h firmware/hal/*.h firmware/gen/*.h tests/host.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS_HOST) -DBOARD_SMK37=1 -DFR_C1=1 -DFR_C1_LAT=1 -o $@ firmware/src/frodhes.c -lm
+
+test-smk-c1: $(SMKC1BIN)   ## the SMK-37 two-core build on the host (FR_C1 + FR_C1_LAT as ./build.sh --board smk37 --c1:
+                           ## 14 voices): every script, tests/scripts14/ for the steal scripts, tests/smk/; the flash
+                           ## allow-list and tests/smk/known.txt as test-smk
+	@fail=0; for s in tests/scripts/*.txt tests/scripts14/*.txt tests/smk/*.txt; do n=$$(basename $$s .txt); \
+	  case $$s in tests/scripts/*_steal_release.txt|tests/smk/known.txt) continue;; esac; \
+	  if FRODHES_LAT_SYNC=1 $(SMKC1BIN) build/host-smk-c1/$$n $$s > build/host-smk-c1/$$n.log 2>&1; then echo "ok    $$n"; \
+	  elif grep -q "FAIL flash" build/host-smk-c1/$$n.log; then echo "FAIL  $$n: a flash call refused (build/host-smk-c1/$$n.log)"; fail=1; \
+	  elif grep -qx "$$n" tests/smk/known.txt; then echo "known $$n (FM-1 only, tests/smk/known.txt)"; \
+	  else echo "FAIL  $$n (build/host-smk-c1/$$n.log)"; fail=1; fi; done; exit $$fail
 
 SMKBIN  := build/host-smk/frodhes
 SMK_DEFS := -DBOARD_SMK37=1 -DFR_VOICES=10u

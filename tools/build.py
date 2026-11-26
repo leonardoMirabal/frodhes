@@ -9,7 +9,7 @@ Outputs in build/: frodhes.bin (app), loader/ota.bin (update loader),
 frodhes.fwsc (package). See README.md for the toolchain and the SDK.
 
 --board smk37 (or BOARD=smk37) builds for the M-Vave SMK-37 (docs/SMK37.md): -DBOARD_SMK37=1 for the app and the
-loader, the app at 10 voices (-DFR_VOICES=10u), identity SMK-37 Pro_470 (every version, as the FM-1's FM-1_958: PR #3's,
+loader, the app at 10 voices (-DFR_VOICES=10u; with --c1 both cores and 14, as the FM-1), identity SMK-37 Pro_470 (every version, as the FM-1's FM-1_958: PR #3's,
 so a unit that ran 0.9.2-SMK updates in place; not tested on hardware), the store family FRODHES (the owner tag), the
 SMK flash layout (fm1pkg_make.py, app slot 0x97400 = 619,520 B), the package build/frodhes-smk37.fwsc. --model elite /
 mke (or MODEL=) with smk37: the same build under the SMK-37 Elite's or the MKE-P37's model name (identity SMK-37
@@ -680,9 +680,9 @@ def main():
         VERSION = a.release
     PRODUCT, name = package(BOARD, model, a.release)
     if a.c1:
-        if BOARD != "fm1":
-            raise SystemExit("--c1: the FM-1 only")
         C1 = True
+        if BOARD == "smk37":                    # the SMK-37: the same chip; two cores, 14 voices as the FM-1
+            BOARD_APP_DEFS[BOARD] = [d for d in BOARD_APP_DEFS[BOARD] if not d.startswith("-DFR_VOICES=")]
         BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], "-DFR_C1=1"] + ([] if a.c1_256 else ["-DFR_C1_LAT=1"])
         name = name[:-len(".fwsc")] + ("-c1-256.fwsc" if a.c1_256 else "-c1.fwsc")
     RAM2 = BOARD == "fm1" and not C1 and os.environ.get("FR_RAM2", "1") == "1"   # (FR_RAM2=0: the old layout, A/B)

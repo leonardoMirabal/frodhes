@@ -25,8 +25,8 @@ the [pages](MANUAL.md#4-the-pages) in section 4); the SMK-37 reaches them as bel
 
 Use the file for your model: the stock updater only accepts a package with the unit's own name. The identity stays the
 same for every Frodhes version. Each release attaches the three files under these names
-(the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest)). The SMK builds play 10 voices,
-as the FM-1 ([polyphony](MANUAL.md#10-sustain-and-polyphony)).
+(the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest)). The SMK builds use both cores and
+play 14 voices, as the FM-1 ([polyphony](MANUAL.md#10-sustain-and-polyphony)).
 
 ## Before you install: back up your flash
 
@@ -130,9 +130,9 @@ keys: KEY VEL is the velocity of a medium press, and TOUCH works as on the FM-1 
 
 | Pad | Does | Pad | Does |
 | --- | --- | --- | --- |
-| 1..6 | TYPE: ST77, SUIT, FELT, DYNO, VIBE, MRMB (WHURLI: ALGORITHM or a preset) | 9 | DRIVE on / off |
-| 7 | previous preset | 10 | COMP on / off |
-| 8 | next preset | 11 | FILTER on / off |
+| 1..7 | TYPE: ST77, SUIT, FELT, DYNO, VIBE, MRMB, WHURLI | 9 | DRIVE on / off |
+| 8 | next preset (K4 PRESETS goes both ways) | 10 | COMP on / off |
+| | | 11 | FILTER on / off |
 | | | 12 | TREM/WAH on / off (VIBES: the motor) |
 | | | 13 / 14 / 15 | PHASER / CHORUS / DELAY on / off |
 | | | 16 | SUSTAIN: held, or a tap latches; one latch with REC (a tap on either lets go, a hold on either releases it) |

@@ -178,7 +178,7 @@ Manager; how to install it and what to report:
 
 ## Other keyboards
 
-Frodhes also runs on the SMK-37 Pro, SMK-37 Elite and MKE-P37, with 10 voices on one processor core. Read
+Frodhes also runs on the SMK-37 Pro, SMK-37 Elite and MKE-P37, with 14 voices on both processor cores. Read
 [docs/SMK37.md](docs/SMK37.md) before you install one.
 
 The files on the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest):

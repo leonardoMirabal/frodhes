@@ -1,5 +1,5 @@
 # SMK-37 build only (make test-smk): the 16 pads are Frodhes' own controls (smk_pad_events, no notes). Hardware pads:
-# top row 0..7 (pads 1..8), bottom row 8..15 (9..16). 0..5 TYPE, 6 / 7 the previous / next preset, 8 DRIVE, 9 COMP,
+# top row 0..7 (pads 1..8), bottom row 8..15 (9..16). 0..6 TYPE (6 WHURLI), 7 the next preset, 8 DRIVE, 9 COMP,
 # 10 FILTER, 11 TREM/WAH (VIBES: MOTOR), 12 PHASER, 13 CHORUS, 14 DELAY, 15 SUSTAIN (tests/smk/pedal.txt).
 # p.0 TYPE, p.50 DRIVE's switch, p.33 / p.34 COMP's switch / THRESH, p.40 the filter's type, p.2 TREM/WAH, p.28 PHASER,
 # p.8 CHORUS, p.13 DELAY, p.54 MOTOR. "pad.N": its light, 0 off, 1 on, 2 on while sounding.
@@ -21,12 +21,20 @@
 800 keys 0x80
 900 expect state pad.0 2
 1000 keys 0
-# NEXT, PREV: the presets as PRESETS turns them (they load 400 ms after)
+# NEXT: the presets as PRESETS turns them (it loads 400 ms after); WHURLI (TYPE 6) on pad 7 (hardware 6)
 1500 pad 7 100
 1550 pad 7 0
 2100 expect state preset 1
 2200 pad 6 100
 2250 pad 6 0
+2300 expect state p.0 6
+2300 expect state pad.6 1
+2300 expect state pad.0 0
+2400 pad 0 100
+2450 pad 0 0
+2500 expect state p.0 0
+# back to preset 0 (0.9.14's previous-preset pad is K4 PRESETS turned back now): a program change
+2550 midi 0xC0 0 0
 2800 expect state preset 0
 # DRIVE, COMP, FILTER, TREM/WAH, PHASER, CHORUS, DELAY: on / off (a press counts once: a bounce 50 ms on does nothing)
 2900 expect state p.50 1

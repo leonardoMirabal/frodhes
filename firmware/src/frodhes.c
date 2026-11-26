@@ -70,8 +70,8 @@
 #define FR_C1 0
 #endif
 #if FR_C1
-#if (defined(BOARD_SMK37) && BOARD_SMK37) || defined(FR_HQ)
-#error "FR_C1: the FM-1 firmware and its host build only"
+#if defined(FR_HQ)
+#error "FR_C1: the FM-1 and SMK-37 firmware and their host builds, not FR_HQ"
 #endif
 #ifndef FR_VOICES
 #define FR_VOICES 14u
