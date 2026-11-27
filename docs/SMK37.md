@@ -154,7 +154,8 @@ Everything in the [manual](MANUAL.md) applies, with these differences:
 
 ## For developers
 
-`./build.sh --board smk37 [--model elite|mke]` builds a package; `make test-smk` runs every host script on the SMK
+`./build.sh --board smk37 [--model elite|mke] --c1` builds the package the release ships (two cores, 14 voices; without
+`--c1`: one core, 10 voices, for development); `make test-smk` and `make test-smk-c1` run every host script on the SMK
 build (tests/smk/ has the SMK's own: knobs, wheels, faders, pads, pedal, keys, its buttons and lights; the FM-1-only
 ones are listed in tests/smk/known.txt), and `BOARD=smk37 tests/run_host.sh [script]` renders one. Script lines for
 the SMK: `vel V`, `xkey K V`, `pad P V`, `fader F V`, `wheel W RAW`, `pedal RAW`, `ids smk` (tests/host.c). The app

@@ -206,9 +206,10 @@ def test_release_workflow_wiring():
     builds = [s.get("run", "") for s in j["release"]["steps"]]
     smk = " ".join(j["release"]["steps"][names.index("build the SMK-37 packages")]["run"].split())
     assert names.index("build") < names.index("build the SMK-37 packages") < names.index("draft release")
-    for m in ("", " --model elite", " --model mke"):
-        assert f'./build.sh --board smk37{m} --release "$V"' in smk
-    assert sum(b.count("./build.sh") for b in builds) == 4        # the FM-1 once (two cores), each SMK-37 model once
+    assert 'for m in "" elite mke; do' in smk                     # each SMK-37 model once, two cores (0.9.15)
+    assert './build.sh --board smk37 ${m:+--model $m} --c1 --release "$V"' in smk
+    assert 'cp "build/frodhes-$V-smk37${m:+-$m}-c1.fwsc" "build/frodhes-$V-smk37${m:+-$m}.fwsc"' in smk
+    assert sum(b.count("./build.sh") for b in builds) == 2        # the FM-1 once (two cores), the SMK-37 loop once
     b0 = " ".join(j["release"]["steps"][names.index("build")]["run"].split())
     assert './build.sh --c1 --release "$V"' in b0 and './build.sh --release "$V"' not in b0   # the FM-1: two cores only
     assert 'cp "build/frodhes-$V-c1.fwsc" "build/frodhes-$V.fwsc"' in b0      # frodhes.fwsc / frodhes-X.Y.Z.fwsc = it

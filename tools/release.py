@@ -100,7 +100,7 @@ PAGES_URL = "https://leonardomirabal.github.io/frodhes/"
 STABLE = "frodhes.fwsc"                       # release.yml uploads the package under this name too
 # the FM-1 package once more under the name The Firmware Hub follows (0.9.12-0.9.13 lacked it: the hub stayed on 0.9.11)
 HUB_ASSETS = ("frodhes-c1.fwsc", "frodhes-{v}-c1.fwsc")
-# release.yml also builds and attaches the SMK-37 packages (./build.sh --board smk37 [--model elite|mke]), each under
+# release.yml also builds and attaches the SMK-37 packages (./build.sh --board smk37 [--model elite|mke] --c1), each under
 # the fixed name and the build's own versioned one: the fixed name -> the build's file (tools/build.py package())
 SMK_ASSETS = {"frodhes-smk37-pro.fwsc": "frodhes-{v}-smk37.fwsc",
               "frodhes-smk37-elite.fwsc": "frodhes-{v}-smk37-elite.fwsc",
