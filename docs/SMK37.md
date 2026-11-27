@@ -130,7 +130,7 @@ keys: KEY VEL is the velocity of a medium press, and TOUCH works as on the FM-1 
 
 | Pad | Does | Pad | Does |
 | --- | --- | --- | --- |
-| 1..7 | TYPE: ST77, SUIT, FELT, DYNO, VIBE, MRMB, WHURLI | 9 | DRIVE on / off |
+| 1..7 | TYPE, in the ALGORITHM order: ST77, SUIT, FELT, DYNO, WHURLI, VIBE, MRMB | 9 | DRIVE on / off |
 | 8 | next preset (K4 PRESETS goes both ways) | 10 | COMP on / off |
 | | | 11 | FILTER on / off |
 | | | 12 | TREM/WAH on / off (VIBES: the motor) |
