@@ -272,7 +272,12 @@ def build_app():
                 r = " *(.text*) *(.rodata*)"
                 if txt.count(r) != 1:
                     raise SystemExit("app.ld: the .rodata line was not found (--c1 .rodata padding)")
-                txt = txt.replace(r, f" *(.text*) . = . + {int(ro[-1].split('+')[1])}; *(.rodata*)")
+                v = ro[-1].split(None, 1)[1].strip()
+                # ".rodata @ADDR": the tables pinned at that address (. counts from .text's start, 0x02000120), so the
+                # code before them growing or shrinking no longer moves them off the cache sets they were measured on;
+                # ld fails when the code reaches it. ".rodata +N": N bytes of padding (the older, relative form)
+                pad = f"{int(v[1:], 16) - 0x02000120:#x}" if v.startswith("@") else f". + {int(v[1:])}"
+                txt = txt.replace(r, f" *(.text*) . = {pad}; *(.rodata*)")
     if RAM2:
         # the one-core FM-1 image: RAMTEXT up to 0x01C07F00 (the room --c1 gives .ramx; crt0's boot status words stay
         # at 0x01C07F00) for more of the audio's hot loops (frodhes.c FR_RAM2): the code it read from flash had

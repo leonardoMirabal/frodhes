@@ -260,7 +260,7 @@ FR_COLD static int sel_is_hold(void) { return ui_page == PG_ARP || arp_on(); }
 FR_COLD static int play_is_seq(void) { return ui_page == PG_SEQ && !arp_on(); }
 static uint32_t ui_dirty = ~0u;
 static uint32_t ui_msg_t, ui_hot_t, ui_last_draw;
-#define UI_STARVE_MS 40u                       /* ui_draw: an element dirty this long is drawn next */
+#define UI_STARVE_MS 40u                       /* ui_draw: the SEQUENCER's strip or NOW / NEXT dirty this long is drawn next */
 static uint32_t ui_dirty_t[E_N];               /* ui_draw: when each element (E_HEADER .. E_ROLL) went dirty */
 static uint8_t ui_hot_card = 0xFF;
 static char ui_msg[32];
@@ -1875,11 +1875,12 @@ FR_COLD static void ui_draw(void)
     if (!d || fm1_ms - ui_last_draw < 4u) return;
     e = d >> E_FOOTER & 1u ? E_FOOTER : d & 1u ? E_HEADER : d >> E_TITLE & 1u ? E_TITLE : 0xFF;
     if (e == 0xFF) for (e = E_CARD0; e < E_N && !(d >> e & 1u); e++) {}
-    {   /* one waiting UI_STARVE_MS or more goes first, the oldest: a fader or a knob moving at every poll re-marks the
-         * footer's message, the header and the cards, and drawn first they starved the rest (the SEQUENCER's strip and
-         * NOW / NEXT stood still while an SMK-37 fader moved, issue #53) */
+    if (ui_page == PG_SEQ) {   /* the strip or NOW / NEXT waiting UI_STARVE_MS or more goes first: a fader or a knob moving
+         * at every poll re-marks the footer's message, the header and the cards, and drawn first they starved the playhead
+         * (it stood still while an SMK-37 fader moved, issue #53). The SEQUENCER only: on every page the same ageing drew
+         * the cards a MIDI storm starves, and their transfers raised the ISR's worst by 200 .. 470 us (row-277 soak) */
         uint32_t k, age = UI_STARVE_MS - 1u;
-        for (k = 0; k < E_N; k++)
+        for (k = E_METER; k <= E_ROLL; k++)
             if (ui_dirty_t[k] && fm1_ms - ui_dirty_t[k] > age) { age = fm1_ms - ui_dirty_t[k]; e = k; }
     }
     ui_dirty &= ~(1u << e);
