@@ -307,6 +307,12 @@ The instrument's own pages: on an electric piano type there are two, right after
 | K3 | **NOISE** | The instrument's mechanical sounds: the damper's soft knock and the felt's sound when you let go, a soft thud when the sustain pedal (or REC's latch) goes down or up, and (on SUITCASE, EARLY FELT and BELL DYNO, not on STAGE 77) the hammer's thunk as a key is struck. The key-up and pedal sounds follow the note: they are always under it, quieter after a soft or a faded note, so letting go never makes the sound louder. 0 is none |
 | K4 | **TUNE** | Fine tuning, ±50 cents |
 
+The VOICE settings (and TYPE, TUNE, SPREAD) apply from the next strike: a note that is already ringing keeps the
+sound it was struck with. Strike that note again after a change and it starts over with the new settings, the old
+sound fading out in 1.5 ms, as a note taken over does ([polyphony](#10-sustain-and-polyphony)); strike it again with
+nothing changed and the new strike adds to the ringing note, as on the instrument. The same holds on VIBES and
+MARIMBA.
+
 ### VOICE 3/3: velocity
 
 The last VOICE page of every TYPE (VOICE 3/3 on the electric piano types and MARIMBA, VOICE 4/4 on VIBES) holds the
@@ -1184,8 +1190,9 @@ the latch stays on until you tap REC again.
 
 **Polyphony: 14 voices** on every instrument, counting notes still ringing under the sustain and the notes that
 chord mode, the arpeggiator and the sequencer play. Striking a note that is still sounding reuses its voice, so
-repeated notes do not use up voices. One note more takes over the quietest released note first, or else the oldest
-held one, with a short fade (1.5 ms), so there is no click. On every instrument, more than 5 notes at the same
+repeated notes do not use up voices (after a change to the voice settings the ringing note fades out first, as below,
+and the new strike takes the new settings: [VOICE](#voice-13-and-23)). One note more takes over the quietest released
+note first, or else the oldest held one, with a short fade (1.5 ms), so there is no click. On every instrument, more than 5 notes at the same
 instant (a chord of 6 or more from a computer, a sequencer step) start 5 at a time, 2.9 ms apart, in order. The audio also has a safety guard: if it ever ran late, the quietest released note
 would be faded out rather than letting the sound break up. In testing, with every voice struck and every effect on,
 the guard never acts.

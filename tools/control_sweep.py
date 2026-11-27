@@ -114,8 +114,11 @@ class Case:
     static values (default 0, 32, 64, 96, 127; an enum: its band centres)"""
 
     def __init__(self, name, cc, setup=(), engine="rhodes", kind="knob", additive=False, mono=False, statics=None,
-                 page="", skip=(), through=False, xfade=False, near=False, run=False, zref=(), span=False):
+                 page="", skip=(), through=False, xfade=False, near=False, run=False, zref=(), span=False, latch=False):
         self.name, self.cc, self.setup, self.engine, self.kind = name, cc, list(setup), engine, kind
+        self.latch = latch                       # each restrike takes the control's value then (issue #53): jump
+        # leaves out the steps at the restrikes (latch_mask), stuck strikes once more at 0 and compares that with
+        # the chord struck there alone (a voice the sweep left ringing, or state it left, still shows)
         self.near = near                         # jump: against renders held near the sweep's value (jump_near_db)
         self.span = span                         # jump3: the 3-window step against renders held near (jump3_db)
         self.run = run                           # the sweep starts at 1 from 200 ms, not 0: the effect runs from the
@@ -147,9 +150,12 @@ def _cases():
                 sk.add("noeff")                  # chord all through (test_every_control lets go)
             if eng == "marimba":                 # struck again every 800 ms during the sweep, each strike latching the
                 sk |= {"jump", "stuck", "pitch"}  # knob's value then: the sweep's level and pitch follow the strikes
-            add(Case(f"{eng} {lab}", cc, engine=eng, page="VOICE", skip=sk))
-    add(Case("rhodes TYPE", 80, kind="select", statics=bands(4), page="FRODHES"))
-    add(Case("rhodes TYPE SPREAD", 80, [(105, 100)], kind="select", statics=bands(4), page="FRODHES"))
+            # (issue #53) the chord's restrike after a voicing change starts fresh at the knob's value then: latch
+            # (NOISE is not baked into the voice: checked as before)
+            add(Case(f"{eng} {lab}", cc, engine=eng, page="VOICE", skip=sk, latch=eng != "marimba" and cc != 104))
+    add(Case("rhodes TYPE", 80, kind="select", statics=bands(4), page="FRODHES", latch=True))   # (the restrike takes
+    add(Case("rhodes TYPE SPREAD", 80, [(105, 100)], kind="select", statics=bands(4), page="FRODHES",   # the TYPE: #53)
+             latch=True))
     for lab, cc in (("DEPTH", 48), ("SPEED", 49), ("SHAPE", 50)):
         add(Case(f"vibes MOTOR {lab}", cc, [(47, 127)], engine="vibes", kind="pitch" if lab == "SPEED" else "knob",
                  page="MOTOR"))
@@ -237,7 +243,7 @@ def _cases():
     add(Case("rev TYPE", 95, [(91, 48)], kind="select", statics=[16, 48, 80, 112], additive=True, page="REVERB",
              skip={"trans"}))                    # (MANUAL: the old tail fades out, the new TYPE starts empty)
     # SPREAD, LEVEL, MASTER
-    add(Case("SPREAD", 105, kind="mix", page="MIDI"))
+    add(Case("SPREAD", 105, kind="mix", page="MIDI", latch=True))   # (each restrike takes SPREAD: #53)
     add(Case("LEVEL", 110, page="SETUP"))
     add(Case("MASTER", None, page="(the MASTER knob)",   # (no jump: the knob sweeps the level from 0 by its square
              skip={"jump"}))                     # law, 2 dB a window at -75 dBFS by design; the zipper is checked)
@@ -248,7 +254,7 @@ CASES = _cases()
 BY_NAME = {c.name: c for c in CASES}
 
 
-def script(case, value=None, sweep=False, off=False, flip=None):
+def script(case, value=None, sweep=False, off=False, flip=None, alone=False):
     """a render's script: the effect off (off), the control held at value, swept 0 -> 127 -> 0, or held at value
     and moved to flip at T_FLIP (that render ends T_FLIP + 800 ms)"""
     L = [f"50 midi 0xB0 {c} {v}" for c, v in BASE]
@@ -265,9 +271,12 @@ def script(case, value=None, sweep=False, off=False, flip=None):
             L += [f"{t} midi 0x90 {n} 100" for n in CHORD] + [f"{t + 100} midi 0x80 {n} 0" for n in CHORD]
             t += 800
     else:                                                  # struck again every second, held by the pedal (0.9.10)
-        for t in range(T_NOTE, T_SW1, RESTRIKE):          # (let go after 100 ms, the pedal holds it: a key held
+        for t in ([] if alone else range(T_NOTE, T_SW1, RESTRIKE)):          # (let go after 100 ms, the pedal holds it: a key held
             L += [f"{t} midi 0x90 {n} 100" for n in CHORD] + [f"{t + 100} midi 0x80 {n} 0" for n in CHORD]   # down
                                                            # is not struck again by a second note-on)
+    if case.latch and (sweep or alone):                    # (latch: struck once more with the sweep back at 0; alone:
+        t = T_SW1 + STEP                                   # that strike only, the reference stuck reads it against)
+        L += [f"{t} midi 0x90 {n} 100" for n in CHORD] + [f"{t + 100} midi 0x80 {n} 0" for n in CHORD]
     if sweep:
         for k, v in enumerate(list(range(1, 128)) + list(range(126, -1, -1))):
             L.append(f"{T_SW0 + k * STEP} midi 0xB0 {case.cc} {v}")
@@ -384,21 +393,34 @@ def zipper_ratio(sweep, statics):
     return float((m_s / (M + 1.0)).max())
 
 
-def jump_db(sweep, statics):
+def latch_mask(a, b, case):
+    """latch cases: False for the window steps (a..b) that see a restrike (from 1024 samples before it to 100 ms
+    after: the fade and the fresh attack), True elsewhere; every step for the rest"""
+    keep = np.ones(b - a, bool)
+    if getattr(case, "latch", False):
+        for t in range(T_NOTE, T_SW1, RESTRIKE):
+            lo, hi = ms(t) - 1024, ms(t + 100)
+            for i in range(b - a):
+                if (a + i) * 1024 < hi and (a + i + 2) * 1024 > lo:
+                    keep[i] = False
+    return keep
+
+
+def jump_db(sweep, statics, case=None):
     """the sweep's largest window-to-window level step over the statics' largest step in the same window"""
     a, b = ms(T_SW0) // 1024, ms(T_SW1) // 1024
     w = win_db(sweep)
     ds = np.abs(np.diff(w))[a:b]
     D = np.max([np.abs(np.diff(win_db(s)))[a:b] for s in statics], 0)
-    live = np.minimum(w[a:b], w[a + 1:b + 1]) > -90       # (not across the silence gate: -66 dBFS, then exact 0)
-    return float((ds - D)[live].max()) if live.any() else 0.0
+    live = (np.minimum(w[a:b], w[a + 1:b + 1]) > -90) & latch_mask(a, b, case)   # (not across the silence gate:
+    return float((ds - D)[live].max()) if live.any() else 0.0                    # -66 dBFS, then exact 0)
 
 
 NEAR = list(range(0, 128, 4)) + [127]         # jump_near_db: the held values (every 4th, and the end)
 SEQ = list(range(1, 128)) + list(range(126, -1, -1))   # the sweep's values, one per STEP from T_SW0
 
 
-def jump_near_db(sweep, held, span=6):
+def jump_near_db(sweep, held, span=6, case=None):
     """jump_db against the renders held within span of the sweep's value in each window (held: value -> render)
     instead of the statics: a control whose own movement grows with its value (an LFO's depth) moves the level
     between windows as much in a render held there"""
@@ -411,7 +433,7 @@ def jump_near_db(sweep, held, span=6):
         t = (a + i) * 1024 * 1000.0 / FS
         v = SEQ[max(0, min(len(SEQ) - 1, int((t - T_SW0) // STEP)))]
         D[i] = max(st[u][i] for u in st if abs(u - v) <= span)
-    live = np.minimum(w[a:b], w[a + 1:b + 1]) > -90
+    live = (np.minimum(w[a:b], w[a + 1:b + 1]) > -90) & latch_mask(a, b, case)
     return float((ds - D)[live].max()) if live.any() else 0.0
 
 
@@ -568,6 +590,8 @@ def measure(case, binary=BIN):
             r["trans"][f"{a}>{b}"] = (round(hi, 1), round(lo, 1))
         r["noeff"] = float(max(np.abs(x - stl[0]).max() for x in stl[1:])) if len(stl) > 1 else None
         z = st[case.statics[0]] if case.statics[0] == 0 or case.kind == "select" else render(script(case, value=0), binary)
+        if case.latch:                           # (the chord struck at 0 alone: what the sweep's last strike must be)
+            z = render(script(case, value=0 if case.kind != "select" else case.statics[0], alone=True), binary)
         a, b = ms(T_SW1 + 200), ms(T_END)
         # both floored at the silence gate's level (fx.c GATE_LO 32 LSB, -60 dBFS): under it the gate's own 406 ms
         # hold decides, not the control (a chord filtered to -73 dBFS still sounds in the sweep's hold, the held
@@ -594,9 +618,9 @@ def measure(case, binary=BIN):
             if v not in st:
                 st[v] = render(script(case, value=v), binary)
     if case.near:
-        r["jump"] = round(jump_near_db(sw, {v: st[v] for v in NEAR}), 2)
+        r["jump"] = round(jump_near_db(sw, {v: st[v] for v in NEAR}, case=case), 2)
     else:
-        r["jump"] = round(jump_db(sw, stl), 2)
+        r["jump"] = round(jump_db(sw, stl, case), 2)
     if case.span:
         r["jump3"] = round(jump3_db(sw, {v: st[v] for v in NEAR}), 2)
     r["dropout"] = round(dropout_db(sw, stl), 1)

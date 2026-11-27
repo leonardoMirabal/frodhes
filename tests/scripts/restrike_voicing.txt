@@ -1,0 +1,117 @@
+# A re-strike of a note still ringing takes the voicing of now (issue #53): with a voice setting changed since the
+# ringing voice's strike (TONE, BARK, BELL, HAMMER, DECAY, RELEASE, SPREAD, TUNE, the TYPE), the voice fades as a
+# steal's (64 samples) and the note starts fresh with the new settings (rhodes.c rh_strike / bars.c bar_strike,
+# host_state "fresh" counts them); with nothing changed it superposes on the same voice as always (sample for sample
+# the same as before: tools/gate_r.py). The pedal holds every note; each key is let go before it is struck again.
+50 midi 0xB0 64 127
+60 midi 0xB0 80 0
+# STAGE 77: a re-strike with nothing changed superposes (one voice, nothing fresh)
+100 midi 0x90 60 100
+300 midi 0x80 60 0
+600 midi 0x90 60 100
+650 expect state fresh 0
+650 expect state vn60 1
+650 expect state voices 1
+800 midi 0x80 60 0
+# DECAY 0 while it rings: the re-strike starts fresh and dies away at DECAY 0 (superposed on the DECAY 64 voice it
+# rang on: -34.8 / -41.2 dB at 1.5 / 2 s after it, before this change)
+1000 midi 0xB0 102 0
+1200 midi 0x90 60 100
+1250 expect state fresh 1
+1250 expect state vn60 1
+1250 expect state voices 1
+1400 midi 0x80 60 0
+2700 expect rms < -44
+3200 expect rms < -50
+# DECAY back, then TONE: each a fresh start; the same TONE again (sent twice): superposed
+3300 midi 0xB0 102 64
+3500 midi 0x90 60 100
+3550 expect state fresh 2
+3700 midi 0x80 60 0
+3800 midi 0xB0 28 100
+4000 midi 0x90 60 100
+4050 expect state fresh 3
+4200 midi 0x80 60 0
+4300 midi 0xB0 28 100
+4500 midi 0x90 60 100
+4550 expect state fresh 3
+4550 expect state voices 1
+4700 midi 0x80 60 0
+# BARK, BELL, HAMMER, RELEASE, SPREAD: one fresh start each
+4800 midi 0xB0 29 90
+4900 midi 0x90 60 100
+4950 expect state fresh 4
+5000 midi 0x80 60 0
+5100 midi 0xB0 30 90
+5200 midi 0x90 60 100
+5250 expect state fresh 5
+5300 midi 0x80 60 0
+5400 midi 0xB0 31 90
+5500 midi 0x90 60 100
+5550 expect state fresh 6
+5600 midi 0x80 60 0
+5700 midi 0xB0 103 90
+5800 midi 0x90 60 100
+5850 expect state fresh 7
+5900 midi 0x80 60 0
+6000 midi 0xB0 105 90
+6100 midi 0x90 60 100
+6150 expect state fresh 8
+6150 expect state voices 1
+6200 midi 0x80 60 0
+# TUNE (SETUP) while it rings
+6300 tune 10
+6400 midi 0x90 60 100
+6450 expect state fresh 9
+6500 midi 0x80 60 0
+6600 tune 0
+# a chord, then TONE: only the re-struck note starts fresh, the others ring on
+6700 midi 0x90 64 100
+6700 midi 0x90 67 100
+6800 midi 0x80 64 0
+6800 midi 0x80 67 0
+6850 midi 0xB0 28 80
+6900 midi 0x90 64 100
+6950 expect state fresh 10
+6950 expect state vn64 1
+6950 expect state vn67 1
+6950 expect state vn60 1
+# VIBES: a re-strike with nothing changed superposes; RING (CC 102) changed: fresh
+7000 midi 0xB0 102 64
+7100 midi 0xB0 79 0
+7400 midi 0x90 67 100
+7500 midi 0x80 67 0
+7700 midi 0x90 67 100
+7750 expect state bars 1
+7750 expect state fresh 10
+7750 expect state vn67 1
+7800 midi 0x80 67 0
+7900 midi 0xB0 102 20
+8000 midi 0x90 67 100
+8050 expect state fresh 11
+8050 expect state vn67 1
+8050 expect state voices 1
+8100 midi 0x80 67 0
+8200 midi 0xB0 28 30
+8300 midi 0x90 67 100
+8350 expect state fresh 12
+8400 midi 0x80 67 0
+# WHURLI (the reed type on the Rhodes path): the same
+8500 midi 0xB0 80 127
+8800 midi 0x90 60 100
+8900 midi 0x80 60 0
+9100 midi 0x90 60 100
+9150 expect state fresh 12
+9150 expect state vn60 1
+9200 midi 0x80 60 0
+9300 midi 0xB0 28 90
+9500 midi 0x90 60 100
+9550 expect state fresh 13
+9550 expect state vn60 1
+9550 expect state voices 1
+9600 midi 0x80 60 0
+# the pedal up: everything ends
+9800 midi 0xB0 64 0
+9900 expect state held 0
+14000 expect rms < -60
+14000 end

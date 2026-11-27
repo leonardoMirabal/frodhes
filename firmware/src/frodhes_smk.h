@@ -12,7 +12,7 @@
  *               G#5..C6) are the sources SRC_EXT 156..165 (notes.c); through SCALE and chord mode as the FM-1's keys.
  *               Each key strikes at its own velocity (the unit's factory curve, smk_input.h) through the touch curve
  *               (smk_vel): KEY VEL is a medium press, as on the FM-1 with key velocity
- *   pads        top row 1..6 the TYPE (ST77 SUIT FELT DYNO VIBE MRMB), 7 / 8 the previous / next preset; bottom row
+ *   pads        top row 1..7 the TYPE (ST77 SUIT FELT DYNO WHURLI VIBE MRMB), 8 the next preset (K4 PRESETS: both ways); bottom row
  *               9 DRIVE, 10 COMP, 11 FILTER, 12 TREM/WAH (VIBES: its MOTOR), 13 PHASER, 14 CHORUS, 15 DELAY on / off,
  *               16 SUSTAIN (held: down; a tap latches, as REC). Lights: off dark orange, on light blue, bright while
  *               sounding; at DISPLAY BRIGHTNESS
@@ -51,9 +51,10 @@ FR_COLD static uint32_t smk_vel(uint32_t v)            /* the keybed's velocity 
 #define FR_KEY_VEL(k) smk_vel(fm1_in.key_vel[SMK_KEY_F3 + (k)])   /* a middle key (keybed 5..31) */
 
 /* ---- state */
-#define SMK_TYPE_PADS 6u                       /* pads 1..6 pick TYPE 0..5 (the four pianos, VIBES, MARIMBA); WHURLI (TYPE 6) is reached
-                                                * by ALGORITHM (docs/SMK37.md): the pad row has no free pad */
-enum { SP_PREV = SMK_TYPE_PADS, SP_NEXT, SP_DRIVE, SP_COMP, SP_FILTER, SP_TREM, SP_PHA, SP_CHO, SP_DLY, SP_SUS };   /* pads 1..6 TYPE */
+#define SMK_TYPE_PADS 7u                       /* pads 1..7 pick the TYPE in ALGORITHM's order (TYPE_ORDER: the four pianos, WHURLI,
+                                                * VIBES, MARIMBA); pad 8 the next
+                                                * preset (0.9.14's pad 7, the previous one, is K4 PRESETS turned back) */
+enum { SP_NEXT = SMK_TYPE_PADS, SP_DRIVE, SP_COMP, SP_FILTER, SP_TREM, SP_PHA, SP_CHO, SP_DLY, SP_SUS };   /* pads 1..7 TYPE */
 static const uint8_t SMK_OFF[3] = {110, 38, 0}, SMK_ON[3] = {40, 120, 210}, SMK_ACT[3] = {190, 230, 255};   /* R G B */
 static uint8_t smk_bank;                       /* FADER BANK: 0 = A (the voice), 1 = B (the PERFORM knobs) */
 static struct {
@@ -137,10 +138,10 @@ FR_COLD static void smk_fx_switch(uint32_t k)          /* TREM/WAH, CHORUS, DELA
 FR_COLD static void smk_pad_hit(uint32_t p)
 {
     if (p < SMK_TYPE_PADS) {                   /* the TYPE, as ALGORITHM sets it */
-        type_pick((int32_t)p);
+        type_pick((int32_t)TYPE_ORDER[p]);
         ui_say_big(N_TYPE_LONG[PV(P_TYPE)]);
-    } else if (p == SP_PREV || p == SP_NEXT)
-        presets_poll(p == SP_NEXT ? 1 : -1, 0, 0, 0);   /* (as a PRESETS detent: it loads 400 ms later) */
+    } else if (p == SP_NEXT)
+        presets_poll(1, 0, 0, 0);              /* (as a PRESETS detent: it loads 400 ms later) */
     else if (p == SP_DRIVE) {
         param_set(P_DRV_SW, !PV(P_DRV_SW));
         fx_wake(P_DRV_SW);
@@ -357,9 +358,8 @@ FR_COLD static void smk_pad_rgb(uint32_t p, int on, int act)
 FR_COLD static void smk_leds(void)
 {
     uint32_t p, snd = (uint32_t)smk_sounding(), fx = snd && !fx_bypass, pos = pg_pos(ui_page, ui_vp_ok());
-    for (p = 0; p < SMK_TYPE_PADS; p++) smk_pad_rgb(p, PV(P_TYPE) == p, (int)snd);
-    smk_pad_rgb(SP_PREV, smk_pad_t[SP_PREV] && fm1_ms - smk_pad_t[SP_PREV] < 200u, 1);   /* (a flash when pressed) */
-    smk_pad_rgb(SP_NEXT, smk_pad_t[SP_NEXT] && fm1_ms - smk_pad_t[SP_NEXT] < 200u, 1);
+    for (p = 0; p < SMK_TYPE_PADS; p++) smk_pad_rgb(p, PV(P_TYPE) == TYPE_ORDER[p], (int)snd);
+    smk_pad_rgb(SP_NEXT, smk_pad_t[SP_NEXT] && fm1_ms - smk_pad_t[SP_NEXT] < 200u, 1);   /* (a flash when pressed) */
     smk_pad_rgb(SP_DRIVE, PV(P_DRV_SW) && PV(P_DRIVE), (int)fx);
     smk_pad_rgb(SP_COMP, PV(P_CMP_SW) != 0, (int)fx);
     smk_pad_rgb(SP_FILTER, PV(P_FL_TYPE) != 0, (int)fx);
