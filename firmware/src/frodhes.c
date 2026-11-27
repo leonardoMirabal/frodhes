@@ -2106,6 +2106,8 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "quiet")) snprintf(v, n, "%d", eng_quiet() && fx_quiet());
     else if (!strcmp(key, "batt")) snprintf(v, n, "%u", batt_shown());
     else if (!strcmp(key, "battraw")) snprintf(v, n, "%d", batt_raw());
+    else if (!strcmp(key, "fresh")) snprintf(v, n, "%u", (unsigned)(rh_h_fresh + bar_h_fresh));   /* the re-strikes
+                                                         * started fresh, the voicing changed (rh_strike, bar_strike) */
     else if (!strcmp(key, "engvel")) snprintf(v, n, "%u", (unsigned)rh_host_vel);   /* the velocity of the Rhodes's
                                                          * last strike: what reached the engine (RESPONSE is a gain,
                                                          * rhodes.c rh_dyn, never a new velocity) */

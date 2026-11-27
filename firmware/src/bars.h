@@ -133,6 +133,9 @@ typedef struct {
     int32_t felt_lp;
     int32_t lvl, lvl0;                          /* the block's mode sum, the highest since the strike (bar_left) */
     uint16_t felt_g;                            /* Q15: the key-up felt noise's gain (bar_left) */
+    uint32_t sig;                               /* bar_vsig() at the strike (bar_init): a re-strike starts fresh when
+                                                 * the voicing changed since (bar_strike; last: the fields above keep
+                                                 * their offsets) */
 } bar_voice_t;
 
 static bar_voice_t bv[BAR_NV];

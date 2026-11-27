@@ -193,6 +193,9 @@ typedef struct {
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
     int32_t tb;                                /* (host: the bend the voice is tuned to; frodhes.c "rtbend") */
 #endif
+    uint32_t sig;                              /* rh_vsig() at the strike (rh_init): a re-strike starts fresh when
+                                                * the voicing changed since (rh_strike; last: the fields above keep
+                                                * their offsets) */
 } rh_voice_t;
 #ifdef RH_VMAP
 #define RH_IS_MAP(v) ((v)->vm)
@@ -237,6 +240,7 @@ static int32_t rh_mono[256] __attribute__((section(".bss.rh_buf"))), rh_xF[2u * 
 static uint32_t rh_ages;
 #ifdef DINGHY_HOST
 static uint32_t rh_h_steals;                   /* host: the steals (engine.c eng_host_report, tools/engine_ab.py) */
+static uint32_t rh_h_fresh;                    /* host: the re-strikes started fresh, the voicing changed (rh_strike) */
 static int32_t rh_h_kth = -1, rh_h_kfelt = -1;  /* host: the last key-up's knock force and felt noise gain (bars.c
                                                  * too; frodhes.c host_state "keyup", tests/py/test_half_pedal.py) */
 #endif
@@ -353,6 +357,24 @@ static volatile int32_t rh_k_decay = 65536;    /* Q16: 1/S of the sustain T60 (D
 static volatile int32_t rh_k_rel = 65536;      /* Q16: 1/S of the release T60 (RELEASE) */
 static volatile int32_t rh_tune_t;             /* Q30: 2^(c/1200) - 1 (TUNE) */
 static volatile int32_t rh_thump, rh_felt;     /* Q15: damper thump force, felt-noise level (NOISE) */
+/* the voicing a strike bakes into its voice (rh_init: TYPE, TONE, BARK, BELL, HAMMER, DECAY, RELEASE, TUNE, SPREAD;
+ * HQ on the Move) as one 32-bit signature (FNV-1a over the words). A re-strike compares it with the voice's own
+ * (v->sig): equal, it superposes as always (sample for sample the same); changed (a knob turned while the note rang,
+ * issue #53: the re-strike kept the first strike's voicing), the voice fades as a steal's and the note starts fresh
+ * with the knobs of now (rh_strike). Read at the strike, on the ISR side, so every writer counts (params.c, ui.c's
+ * TUNE, the plugin's bridge, the tests) without a counter of its own; a collision only keeps the old superpose */
+static inline uint32_t rh_vsig(void)
+{
+    uint32_t h = 0x811C9DC5u;
+#define RH_VSIG_W(x) h = (h ^ (uint32_t)(x)) * 0x01000193u
+    RH_VSIG_W(rh_type); RH_VSIG_W(rh_tone_off); RH_VSIG_W(rh_bark_s); RH_VSIG_W(rh_bell); RH_VSIG_W(rh_ham);
+    RH_VSIG_W(rh_k_decay); RH_VSIG_W(rh_k_rel); RH_VSIG_W(rh_tune_t); RH_VSIG_W(rh_spread);
+#ifdef FR_HQ
+    RH_VSIG_W(hq_mode);
+#endif
+#undef RH_VSIG_W
+    return h;
+}
 /* the key-up thump never louder than the note it ends (2026-10-25: a fixed thump was up to 12 dB over a soft note
  * with the FM-1's real key velocity, 30 dB at NOISE 127: "I press a key and get 2 sounds"): its force is capped at
  * RH_THUMP_CAP x the strike's force (the note's own velocity law, v->pamp) x the level left (lvl / lvl0), Q15. A loud
@@ -1607,6 +1629,7 @@ static void rh_init_rd(rh_voice_t *v, uint32_t note, uint32_t vel)
 static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
 {
     const rh_type_t *ty = &RH_TYPE[rh_type];
+    v->sig = rh_vsig();                         /* (WHURLI too: the voicing this strike bakes in) */
     if (rh_type == RH_T_REED) { rh_init_rd(v, note, vel); return; }   /* WHURLI: its own tables */
     v->rd = 0;
     uint32_t m, n = note < RH_KEY_LO ? RH_KEY_LO : note > RH_KEY_LO + RH_NKEY - 1u ? RH_KEY_LO + RH_NKEY - 1u : note;
@@ -1843,6 +1866,25 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
         if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) {
             rh_voice_t *v = &rv[i];
             uint32_t m, vo = v->vel;                    /* (the old strike's velocity: rh_vm_restrike) */
+            if (v->sig != rh_vsig()) {                  /* the voicing changed since its strike (issue #53): its
+                                                         * strike fades out (the steal fade, 64 samples, as a shed's:
+                                                         * no note waits for it) and the note starts fresh with the
+                                                         * knobs of now on a free voice, on time (as a new note); no
+                                                         * free voice: this one, its note waiting for the fade as a
+                                                         * steal's (rh_start_pend: a key-up, the pedal, an all-off
+                                                         * meanwhile as for any steal). 2026-11-27: the waiting start
+                                                         * always left the bars a hole up to the block's end */
+                uint32_t j;
+#ifdef DINGHY_HOST
+                rh_h_fresh++;
+#endif
+                v->fade = 32767;
+                for (j = 0; j < RH_NA; j++)
+                    if (!rv[j].alive) { v->held = 0; rh_init(&rv[j], note, vel); return 1; }
+                if (i >= RH_NA) break;                  /* (past the voices a strike may take: a steal, below) */
+                v->pend = 1; v->pend_note = (uint8_t)note; v->pend_vel = (uint8_t)vel;
+                return 1;
+            }
             for (m = 0; m < RH_NM; m++) if (rh_mode_runs(v->k, m)) v->m[m].live = 1;
             v->vel = (uint8_t)vel; v->held = 1; v->age = ++rh_ages; v->life = v->k->life; v->lvl0 = v->lvl;
             rh_set_damper_n(v, 0, 1);                   /* the felt off at once: the damper lifts as the key goes
@@ -2823,6 +2865,13 @@ static int rh_mid_one(uint32_t note, uint32_t vel)
     if (rh_type != rhc_rt || (rh_spread && !rh_side_tail)) return 0;
     for (i = 0; i < RH_NV; i++)
         if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) break;
+    if (i < RH_NV && rv[i].sig != rh_vsig()) {  /* a re-strike that starts fresh (the voicing changed: rh_strike fades
+                                                 * this voice out, as a steal's, and starts the note on a free voice
+                                                 * or, with none, on this one): no felt noise running (the fade); past
+                                                 * RH_NA the block's start */
+        if (i >= RH_NA || rv[i].felt_n) return 0;
+        for (kind = 2, i = 0; i < RH_NA; i++) if (!rv[i].alive) kind = 0;
+    } else
     if (i == RH_NV) {                           /* (not a re-strike) */
         kind = 0;
         for (i = 0; i < RH_NA && rv[i].alive; i++) ;
