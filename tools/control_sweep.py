@@ -147,9 +147,16 @@ def _cases():
                 sk.add("noeff")                  # chord all through (test_every_control lets go)
             if eng == "marimba":                 # struck again every 800 ms during the sweep, each strike latching the
                 sk |= {"jump", "stuck", "pitch"}  # knob's value then: the sweep's level and pitch follow the strikes
+            elif cc != 104:                      # (issue #53) the chord's restrike after a voicing change starts fresh
+                sk |= {"jump", "stuck"}          # at the knob's value then, as MARIMBA's strikes: the level steps at
+                                                 # each restrike and the sweep's last one (at its value then, not 0)
+                                                 # still rings at the end. Until then a restrike superposed on the
+                                                 # first strike's voicing: these held (the knob did nothing to the
+                                                 # ringing chord, the bug). NOISE is not baked in: checked as before
             add(Case(f"{eng} {lab}", cc, engine=eng, page="VOICE", skip=sk))
-    add(Case("rhodes TYPE", 80, kind="select", statics=bands(4), page="FRODHES"))
-    add(Case("rhodes TYPE SPREAD", 80, [(105, 100)], kind="select", statics=bands(4), page="FRODHES"))
+    add(Case("rhodes TYPE", 80, kind="select", statics=bands(4), page="FRODHES", skip={"jump", "stuck"}))   # (the
+    add(Case("rhodes TYPE SPREAD", 80, [(105, 100)], kind="select", statics=bands(4), page="FRODHES",       # restrike
+             skip={"jump", "stuck"}))                                                    # takes the TYPE: issue #53)
     for lab, cc in (("DEPTH", 48), ("SPEED", 49), ("SHAPE", 50)):
         add(Case(f"vibes MOTOR {lab}", cc, [(47, 127)], engine="vibes", kind="pitch" if lab == "SPEED" else "knob",
                  page="MOTOR"))
@@ -237,7 +244,7 @@ def _cases():
     add(Case("rev TYPE", 95, [(91, 48)], kind="select", statics=[16, 48, 80, 112], additive=True, page="REVERB",
              skip={"trans"}))                    # (MANUAL: the old tail fades out, the new TYPE starts empty)
     # SPREAD, LEVEL, MASTER
-    add(Case("SPREAD", 105, kind="mix", page="MIDI"))
+    add(Case("SPREAD", 105, kind="mix", page="MIDI", skip={"jump", "stuck"}))   # (each restrike takes SPREAD: #53)
     add(Case("LEVEL", 110, page="SETUP"))
     add(Case("MASTER", None, page="(the MASTER knob)",   # (no jump: the knob sweeps the level from 0 by its square
              skip={"jump"}))                     # law, 2 dB a window at -75 dBFS by design; the zipper is checked)
