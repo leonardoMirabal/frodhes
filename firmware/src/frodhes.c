@@ -2048,6 +2048,9 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
         if (ui_page == PG_VOICE) snprintf(v, n, "%s %u/%u", PAGE_TITLE[ui_page], ui_vp_ok() + 1u, vp_count());
         else snprintf(v, n, "%s", PAGE_TITLE[ui_page]);
     }
+    else if (!strcmp(key, "sqstale"))                   /* the SEQUENCER strip playing but not drawn for 300 ms (its playhead
+                                                         * moves every 16th: 125 ms at 120 BPM) */
+        snprintf(v, n, "%u", ui_page == PG_SEQ && seq_play && fm1_ms - sq_strip_t > 300u ? 1u : 0u);
     else if (!strcmp(key, "seqpos")) { seq_pos_text(t); snprintf(v, n, "%s", t); }   /* the SEQUENCER title's right text */
     else if (!strcmp(key, "count")) {                  /* the title's right text: the page n/m */
         fmt_frac(t, pg_pos(ui_page, ui_vp_ok()) + 1u, pg_count());   /* (the SEQUENCER draws seqpos there) */
