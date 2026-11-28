@@ -103,6 +103,7 @@ aa8af4a32a5bf1e426cd4c18623b319472960d3cda589cf78c25ad2031c8644d  scripts/vibes_
 # host-only scripts/presets_save_cand: FM-1 input lines: btn, turn
 # host-only scripts/quiet_gated: FM-1 input lines: btn, turn
 # host-only scripts/release_vel: FM-1 input lines: keys
+# host-only scripts/restrike_voicing: FM-1 input lines: tune
 # host-only scripts/rev_freeze_save: FM-1 input lines: btn
 # host-only scripts/rev_hold_release: FM-1 input lines: btn
 # host-only scripts/reverb_pages: FM-1 input lines: btn, turn

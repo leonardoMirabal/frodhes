@@ -25,8 +25,8 @@ the [pages](MANUAL.md#4-the-pages) in section 4); the SMK-37 reaches them as bel
 
 Use the file for your model: the stock updater only accepts a package with the unit's own name. The identity stays the
 same for every Frodhes version. Each release attaches the three files under these names
-(the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest)). The SMK builds play 10 voices,
-as the FM-1 ([polyphony](MANUAL.md#10-sustain-and-polyphony)).
+(the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest)). The SMK builds use both cores and
+play 14 voices, as the FM-1 ([polyphony](MANUAL.md#10-sustain-and-polyphony)).
 
 ## Before you install: back up your flash
 
@@ -130,9 +130,9 @@ keys: KEY VEL is the velocity of a medium press, and TOUCH works as on the FM-1 
 
 | Pad | Does | Pad | Does |
 | --- | --- | --- | --- |
-| 1..6 | TYPE: ST77, SUIT, FELT, DYNO, VIBE, MRMB (WHURLI: ALGORITHM or a preset) | 9 | DRIVE on / off |
-| 7 | previous preset | 10 | COMP on / off |
-| 8 | next preset | 11 | FILTER on / off |
+| 1..7 | TYPE, in the ALGORITHM order: ST77, SUIT, FELT, DYNO, WHURLI, VIBE, MRMB | 9 | DRIVE on / off |
+| 8 | next preset (K4 PRESETS goes both ways) | 10 | COMP on / off |
+| | | 11 | FILTER on / off |
 | | | 12 | TREM/WAH on / off (VIBES: the motor) |
 | | | 13 / 14 / 15 | PHASER / CHORUS / DELAY on / off |
 | | | 16 | SUSTAIN: held, or a tap latches; one latch with REC (a tap on either lets go, a hold on either releases it) |
@@ -154,7 +154,8 @@ Everything in the [manual](MANUAL.md) applies, with these differences:
 
 ## For developers
 
-`./build.sh --board smk37 [--model elite|mke]` builds a package; `make test-smk` runs every host script on the SMK
+`./build.sh --board smk37 [--model elite|mke] --c1` builds the package the release ships (two cores, 14 voices; without
+`--c1`: one core, 10 voices, for development); `make test-smk` and `make test-smk-c1` run every host script on the SMK
 build (tests/smk/ has the SMK's own: knobs, wheels, faders, pads, pedal, keys, its buttons and lights; the FM-1-only
 ones are listed in tests/smk/known.txt), and `BOARD=smk37 tests/run_host.sh [script]` renders one. Script lines for
 the SMK: `vel V`, `xkey K V`, `pad P V`, `fader F V`, `wheel W RAW`, `pedal RAW`, `ids smk` (tests/host.c). The app

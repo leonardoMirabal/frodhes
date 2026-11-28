@@ -187,9 +187,11 @@ jobs:
       - name: build the SMK-37 packages
         run: |
           V="${GITHUB_REF_NAME#v}"
-          ./build.sh --board smk37 --release "$V"
-          ./build.sh --board smk37 --model elite --release "$V"
-          ./build.sh --board smk37 --model mke --release "$V"
+          # two cores, 14 voices, as the FM-1 (0.9.15); the files keep their names (frodhes-X.Y.Z-smk37[-elite|-mke].fwsc)
+          for m in "" elite mke; do
+            ./build.sh --board smk37 ${m:+--model $m} --c1 --release "$V"
+            cp "build/frodhes-$V-smk37${m:+-$m}-c1.fwsc" "build/frodhes-$V-smk37${m:+-$m}.fwsc"
+          done
           ls -l "build/frodhes-$V.fwsc" "build/frodhes-$V-smk37.fwsc" "build/frodhes-$V-smk37-elite.fwsc" \
             "build/frodhes-$V-smk37-mke.fwsc"
           sha256sum "build/frodhes-$V.fwsc" "build/frodhes-$V-smk37.fwsc" "build/frodhes-$V-smk37-elite.fwsc" \

@@ -202,7 +202,10 @@ ri_input
 ri_xrows
 ri_mix
 fx_width
-.rodata +4016  # (2026-11-15: the a14 merge's main-loop code (fx_pend_*, fx_set, preset_load), 80 B in the rest of .text:
+.rodata @0x2029390  # (2026-11-27: pinned at 0.9.14's address: the screen's SEQUENCER fix grew the rest of .text 278 B, the
+                    # tables one step on (KH_G 0x20369d4 -> 0x2036ae4) and row 277's worst +200 .. 470 us (app / whole
+                    # ISR); with padding, every main-loop change moved them. Before: +4016, after the a14 merge)
+#  # (2026-11-15: the a14 merge's main-loop code (fx_pend_*, fx_set, preset_load), 80 B in the rest of .text:
                # the tables after it (the KHLON drive's KH_G / KH_GFS / KH_RCP, TSH8's, the voices', the effects' small
                # ones at the end) one cache way on, the same sets as on 0.9.12's storm passes; off by 704..784 B (a11b,
                # a11c) the storm's KHLON thirds ran ~+140 us of core-1 busy)

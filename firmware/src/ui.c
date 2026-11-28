@@ -260,6 +260,8 @@ FR_COLD static int sel_is_hold(void) { return ui_page == PG_ARP || arp_on(); }
 FR_COLD static int play_is_seq(void) { return ui_page == PG_SEQ && !arp_on(); }
 static uint32_t ui_dirty = ~0u;
 static uint32_t ui_msg_t, ui_hot_t, ui_last_draw;
+#define UI_STARVE_MS 40u                       /* ui_draw: the SEQUENCER's strip or NOW / NEXT dirty this long is drawn next */
+static uint32_t ui_dirty_t[E_N];               /* ui_draw: when each element (E_HEADER .. E_ROLL) went dirty */
 static uint8_t ui_hot_card = 0xFF;
 static char ui_msg[32];
 
@@ -1611,8 +1613,14 @@ FR_COLD static void draw_now(void)                              /* NOW (big) and
     }
     cv_blit(0, SQ_NOW_Y);
 }
+#ifdef DINGHY_HOST
+static uint32_t sq_strip_t;                                     /* (host: the strip's last draw, frodhes.c "sqstale") */
+#endif
 FR_COLD static void draw_strip(void)                            /* the bar playing: 16 cells (16ths) in two rows of 8 */
 {
+#ifdef DINGHY_HOST
+    sq_strip_t = fm1_ms;
+#endif
     uint32_t p = sq_view_tick(), b0 = p / (4u * SQ_PPQ) * 4u * SQ_PPQ, i, L = sq_len();
     uint32_t cur = seq_play && sq_tick() >= b0 && sq_tick() < b0 + 4u * SQ_PPQ ? (sq_tick() - b0) / 24u : 99u;   /* the playhead */
     uint8_t hit[16] = {0};
@@ -1861,10 +1869,22 @@ FR_COLD static void ui_draw(void)
         if (sq_roll_dirty && fm1_ms - roll_t >= 250u) { roll_t = fm1_ms; sq_roll_dirty = 0; ui_mark(E_ROLL); ui_mark(E_METER); ui_mark(E_FOOTER); }
     }
     d = ui_dirty & ((1u << E_N) - 1u);
+    for (e = 0; e < E_N; e++)                           /* when each element went dirty (0: clean) */
+        if (!(d >> e & 1u)) ui_dirty_t[e] = 0;
+        else if (!ui_dirty_t[e]) ui_dirty_t[e] = fm1_ms | 1u;
     if (!d || fm1_ms - ui_last_draw < 4u) return;
     e = d >> E_FOOTER & 1u ? E_FOOTER : d & 1u ? E_HEADER : d >> E_TITLE & 1u ? E_TITLE : 0xFF;
     if (e == 0xFF) for (e = E_CARD0; e < E_N && !(d >> e & 1u); e++) {}
+    if (ui_page == PG_SEQ) {   /* the strip or NOW / NEXT waiting UI_STARVE_MS or more goes first: a fader or a knob moving
+         * at every poll re-marks the footer's message, the header and the cards, and drawn first they starved the playhead
+         * (it stood still while an SMK-37 fader moved, issue #53). The SEQUENCER only: on every page the same ageing drew
+         * the cards a MIDI storm starves, and their transfers raised the ISR's worst by 200 .. 470 us (row-277 soak) */
+        uint32_t k, age = UI_STARVE_MS - 1u;
+        for (k = E_METER; k <= E_ROLL; k++)
+            if (ui_dirty_t[k] && fm1_ms - ui_dirty_t[k] > age) { age = fm1_ms - ui_dirty_t[k]; e = k; }
+    }
     ui_dirty &= ~(1u << e);
+    ui_dirty_t[e] = 0;
     ui_last_draw = fm1_ms;
     if (e == E_HEADER) draw_header();
     else if (e == E_TITLE) draw_title();

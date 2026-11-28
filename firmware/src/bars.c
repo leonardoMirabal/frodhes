@@ -328,6 +328,25 @@ static const bar_cc_t *bar_cc_find(uint32_t n, uint32_t tyi)   /* ISR: a slot st
     return 0;
 }
 #endif
+/* the voicing a strike bakes into its bar voice (bar_init: STRIKE, MALLET, TUBE, WEIGHT, RING, DAMPER, TUNE; HQ on the
+ * Move) as one signature, as rhodes.c rh_vsig: a re-strike with it changed fades the voice as a steal's and starts the
+ * note fresh (bar_strike, issue #53); unchanged, it superposes as always. (bar_sub never changes under a live voice:
+ * engine.c eng_switch) */
+static inline uint32_t bar_vsig(void)
+{
+    uint32_t h = 0x811C9DC5u;
+#define BAR_VSIG_W(x) h = (h ^ (uint32_t)(x)) * 0x01000193u
+    BAR_VSIG_W(bar_pos); BAR_VSIG_W(bar_fam); BAR_VSIG_W(bar_tube); BAR_VSIG_W(bar_bell); BAR_VSIG_W(bar_mass);
+    BAR_VSIG_W(bar_massi); BAR_VSIG_W(bar_k_decay); BAR_VSIG_W(bar_k_rel); BAR_VSIG_W(bar_ring); BAR_VSIG_W(rh_tune_t);
+#ifdef FR_HQ
+    BAR_VSIG_W(hq_mode);
+#endif
+#undef BAR_VSIG_W
+    return h;
+}
+#ifdef DINGHY_HOST
+static uint32_t bar_h_fresh;                        /* host: the re-strikes started fresh (frodhes.c host_state "fresh") */
+#endif
 static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
 {
     uint32_t tyi = bar_sub < BAR_NTYPE ? bar_sub : 0u;
@@ -337,7 +356,7 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     int32_t tone = bar_pos, s = bar_tube;
     uint32_t q = (uint32_t)tone * (16u * 256u) / 127u, pi = q >> 8, pf = q & 255u;
     const int16_t (*pos)[BAR_NPC] = BAR_PS[k->band];
-    v->k = k;
+    v->k = k; v->sig = bar_vsig();
 #if BAR_CC
     const bar_cc_t *cc = bar_cc_find(n - BAR_KEY_LO, tyi);
 #endif
@@ -483,6 +502,22 @@ static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already wa
         if (bv[i].alive && !bv[i].pend && bv[i].note == note && bv[i].fade == 32768) {
             bar_voice_t *v = &bv[i];
             uint32_t m;
+            if (v->sig != bar_vsig()) {              /* the voicing changed since its strike (issue #53): its strike
+                                                     * fades out (as a shed's) and the note starts fresh on a free
+                                                     * voice, on time; no free voice: this one, the note waiting for
+                                                     * the fade as a steal's (bar_start_pend, at the block's end: a
+                                                     * hole the free voice avoids) */
+                uint32_t j;
+#ifdef DINGHY_HOST
+                bar_h_fresh++;
+#endif
+                v->fade = 32767;
+                for (j = 0; j < BAR_NA; j++)
+                    if (!bv[j].alive) { v->held = 0; bar_init(&bv[j], note, vel); return 1; }
+                if (i >= BAR_NA) break;              /* (past the voices a strike may take: a steal, below) */
+                v->pend = 1; v->pend_note = (uint8_t)note; v->pend_vel = (uint8_t)vel;
+                return 1;
+            }
 #ifdef FR_HQ
             for (m = BAR_UP0; m < BAR_NMV(v); m++)   /* relight (a fading slot keeps its state); bar_budget() trims */
 #else
